@@ -8,6 +8,7 @@ import { ValueSection } from "./ValueSection";
 import { ROISection } from "./ROISection";
 import { SelfCoordinationSection } from "./SelfCoordinationSection";
 import { ProofAndPricingSection } from "./ProofAndPricingSection";
+import { FounderSection } from "./FounderSection";
 import { FinalCTA } from "./FinalCTA";
 import { MarketingFooter } from "./MarketingFooter";
 import type { MarketingLocaleProps } from "./marketing-locale";
@@ -37,6 +38,7 @@ export function LandingPage({ locale }: MarketingLocaleProps) {
       <ROISection locale={locale} />
       <SelfCoordinationSection locale={locale} />
       <ProofAndPricingSection locale={locale} />
+      <FounderSection locale={locale} />
       <FinalCTA locale={locale} sourcePage="home" />
       <MarketingFooter locale={locale} />
     </div>

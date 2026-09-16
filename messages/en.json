@@ -134,29 +134,42 @@
       "closeMenu": "Close menu"
     },
     "hero": {
-      "badge": "AI-NATIVE CONSTRUCTION INTELLIGENCE",
+      "badge": "FOR THE PERSON WHO SIGNS THE CHEQUES",
       "statChips": {
         "coordination": "10x Coordination",
         "productivity": "5x Productivity",
         "savings": "2x Savings"
       },
-      "headingLine1": "Every deadline, drawing and decision.",
-      "headingLine2": "One coordinated system.",
-      "subhead": "PROJEXA replaces the scattered spreadsheets, WhatsApp threads and missed follow-ups that quietly cost construction and interior design projects time and money — with one system for schedule, site, and spend, with VERI built in from day one.",
+      "headingLine1": "Your projects are profitable.",
+      "headingLine2": "On paper.",
+      "subhead": "Ten hand-offs — a variation not billed, a claim not matched, a bus GPS notice never put up — quietly cost the average project 8–15% of its value. PROJEXA is the system that closes them, and shows you the number closing.",
       "manifesto": "We're engineers, not a sales team. We won't sweet-talk you into a demo — we'll show you exactly how the system thinks, and you decide.",
       "ctaTalk": "Talk to an Engineer",
-      "ctaHowItWorks": "See How It Works",
       "preview": {
         "url": "app.projexa.ai/villa-21-whitefield",
         "projectName": "Villa 21 — Whitefield",
         "greeting": "Good morning. I'm VERI, your assistant — here's where Villa 21 stands today. Everything below updates itself, nobody re-typed a thing.",
         "tiles": {
-          "schedule": { "label": "Schedule", "value": "On track — 2 tasks due this week" },
-          "budget": { "label": "Budget", "value": "₹12.4L spent of ₹18L" },
-          "rfis": { "label": "RFIs", "value": "1 open — awaiting vendor, 4 days" },
-          "team": { "label": "Team on site", "value": "4 active — PM, Site, Design, Procurement" }
+          "schedule": {
+            "label": "% Complete by BOQ",
+            "value": "62% — ₹11.2L of ₹18L earned"
+          },
+          "budget": {
+            "label": "Budget vs Actual",
+            "value": "₹12.4L of ₹18L — within budget"
+          },
+          "rfis": {
+            "label": "RFIs",
+            "value": "1 open — vendor, 4 days"
+          },
+          "permits": {
+            "label": "Permits Expiring",
+            "value": "1 — within 30 days"
+          }
         }
-      }
+      },
+      "ctaProof": "Start the 30-Day Proof",
+      "ctaSub": "No card today. Paid from Day 31. Refunded in full on Day 60 if it hasn’t paid for itself."
     },
     "problem": {
       "eyebrow": "The real cost",
@@ -185,16 +198,66 @@
         "heading": "The ten problems that create 90% of rework, confusion and cost escalation.",
         "subhead": "Each one is a hand-off that fails between two people. Each one has a fix in PROJEXA that runs without anyone remembering to do it.",
         "items": {
-          "p01": { "title": "Extra work is done, never billed", "body": "Variations agreed on site by phone, forgotten by invoicing. Margin gone before the bill is raised.", "cost": "2–4% of project value", "fix": "Every site instruction becomes a variation the moment it is logged. It sits in the next progress bill automatically." },
-          "p02": { "title": "Site builds from the old drawing", "body": "Revision C is on the consultant's email. Revision B is on the wall. The wall wins.", "cost": "Rework, days lost", "fix": "Each revision is stamped, sent, and acknowledged by name on site before work continues." },
-          "p03": { "title": "Approvals stuck for a week", "body": "Client, consultant, owner. One of them is travelling. Crews stand idle, then rush.", "cost": "Idle crews, penalties", "fix": "One link, one tap, any phone. Chased by the system every day until approved, with the owner copied." },
-          "p04": { "title": "Material ordered twice, or late", "body": "PO in one file, delivery note in a drawer, stock in someone's head.", "cost": "Cash locked, delays", "fix": "PO → delivery → stock matched in one chain. Duplicate or late orders are flagged before they are placed." },
-          "p05": { "title": "The daily report never arrives", "body": "Engineers hate typing. The owner learns about a delay when the client calls.", "cost": "Late decisions", "fix": "One photo and one number from a shared link. Progress, manpower and delay reason are recorded in 30 seconds." },
-          "p06": { "title": "Manpower on paper, payroll disputes", "body": "Headcount on site, headcount on the sheet and headcount in payroll are three different numbers.", "cost": "Payroll leakage", "fix": "Daily manpower is captured at source and reconciled with timesheets and payroll." },
-          "p07": { "title": "Six versions of the BOQ", "body": "Estimation, site, procurement and accounts each keep their own Excel. Nobody knows the true budget.", "cost": "Budget unknown", "fix": "One BOQ, imported from your Excel, live against spend. Every trade sees budget left, today." },
-          "p08": { "title": "Subcontractor invoices don't match the work", "body": "Certified quantity, claimed quantity and paid quantity drift apart, and retention becomes a fight.", "cost": "Overpayment, disputes", "fix": "Claims are matched to measured progress and the BOQ before approval, with retention tracked automatically." },
-          "p09": { "title": "Snags lost, retention held", "body": "Handover lists on paper and in photos on five phones. The last 5–10% of the contract waits for months.", "cost": "5–10% retention delayed", "fix": "Snags logged with photos, assigned, closed with evidence. The handover pack generates itself." },
-          "p10": { "title": "The owner decides from memory", "body": "Twelve WhatsApp groups, three phone calls and a feeling. The real number arrives on Friday, as a surprise.", "cost": "Late, expensive calls", "fix": "One morning screen: money, delays, what needs you. Overruns are flagged before they become a Friday." }
+          "p01": {
+            "title": "Extra work is done, never billed",
+            "body": "Variations agreed on site by phone, forgotten by invoicing. Margin gone before the bill is raised.",
+            "cost": "2–4% of project value",
+            "fix": "Every site instruction becomes a variation the moment it is logged. It sits in the next progress bill automatically."
+          },
+          "p02": {
+            "title": "Site builds from the old drawing",
+            "body": "Revision C is on the consultant's email. Revision B is on the wall. The wall wins.",
+            "cost": "Rework, days lost",
+            "fix": "Each revision is stamped, sent, and acknowledged by name on site before work continues."
+          },
+          "p03": {
+            "title": "Approvals stuck for a week",
+            "body": "Client, consultant, owner. One of them is travelling. Crews stand idle, then rush.",
+            "cost": "Idle crews, penalties",
+            "fix": "One link, one tap, any phone. Chased by the system every day until approved, with the owner copied."
+          },
+          "p04": {
+            "title": "Material ordered twice, or late",
+            "body": "PO in one file, delivery note in a drawer, stock in someone's head.",
+            "cost": "Cash locked, delays",
+            "fix": "PO → delivery → stock matched in one chain. Duplicate or late orders are flagged before they are placed."
+          },
+          "p05": {
+            "title": "The daily report never arrives",
+            "body": "Engineers hate typing. The owner learns about a delay when the client calls.",
+            "cost": "Late decisions",
+            "fix": "One photo and one number from a shared link. Progress, manpower and delay reason are recorded in 30 seconds."
+          },
+          "p06": {
+            "title": "Manpower on paper, payroll disputes",
+            "body": "Headcount on site, headcount on the sheet and headcount in payroll are three different numbers.",
+            "cost": "Payroll leakage",
+            "fix": "Daily manpower is captured at source and reconciled with timesheets and payroll."
+          },
+          "p07": {
+            "title": "Six versions of the BOQ",
+            "body": "Estimation, site, procurement and accounts each keep their own Excel. Nobody knows the true budget.",
+            "cost": "Budget unknown",
+            "fix": "One BOQ, imported from your Excel, live against spend. Every trade sees budget left, today."
+          },
+          "p08": {
+            "title": "Subcontractor invoices don't match the work",
+            "body": "Certified quantity, claimed quantity and paid quantity drift apart, and retention becomes a fight.",
+            "cost": "Overpayment, disputes",
+            "fix": "Claims are matched to measured progress and the BOQ before approval, with retention tracked automatically."
+          },
+          "p09": {
+            "title": "Snags lost, retention held",
+            "body": "Handover lists on paper and in photos on five phones. The last 5–10% of the contract waits for months.",
+            "cost": "5–10% retention delayed",
+            "fix": "Snags logged with photos, assigned, closed with evidence. The handover pack generates itself."
+          },
+          "p10": {
+            "title": "The owner decides from memory",
+            "body": "Twelve WhatsApp groups, three phone calls and a feeling. The real number arrives on Friday, as a surprise.",
+            "cost": "Late, expensive calls",
+            "fix": "One morning screen: money, delays, what needs you. Overruns are flagged before they become a Friday."
+          }
         },
         "sumline": {
           "stat": "90%",
@@ -262,18 +325,42 @@
         "heading": "All ten are the same problem. So one system ends all ten.",
         "subhead": "Coordination is not a people problem; it is a hand-off problem. PROJEXA moves every hand-off into the system, where it cannot be forgotten, delayed or lost.",
         "roles": {
-          "owner": { "label": "For the owner", "title": "You see it today, not Friday", "body": "Money, delays and decisions on one screen every morning. Nothing waits for a meeting." },
-          "pm": { "label": "For the project manager", "title": "You chase nothing", "body": "Approvals, deliveries, drawings and claims are chased by the system. You approve, in one line." },
-          "site": { "label": "For the site", "title": "Nothing to learn, nothing to install", "body": "A shared link, a photo, a number. Thirty seconds. The rest is done for them." }
+          "owner": {
+            "label": "For the owner",
+            "title": "You see it today, not Friday",
+            "body": "Money, delays and decisions on one screen every morning. Nothing waits for a meeting."
+          },
+          "pm": {
+            "label": "For the project manager",
+            "title": "You chase nothing",
+            "body": "Approvals, deliveries, drawings and claims are chased by the system. You approve, in one line."
+          },
+          "site": {
+            "label": "For the site",
+            "title": "Nothing to learn, nothing to install",
+            "body": "A shared link, a photo, a number. Thirty seconds. The rest is done for them."
+          }
         },
         "method": {
           "headline": "15 minutes a day. No data feeding. You tell it by email or a shared link. AI completes it.",
           "small": "Share any task from your own phone, by email or a shared link. Built for your industry: BOQ, progress, procurement, labour, drawings, approvals, invoices, VAT."
         },
         "outcomes": {
-          "recovered": { "value": "10%", "label": "of project cost recovered", "note": "pilot target, measured per project" },
-          "approvals": { "value": "1 day", "label": "approvals, not 1 week", "note": "pilot target" },
-          "groupChats": { "value": "0", "label": "group chats needed to run a site", "note": "one inbox, one link" }
+          "recovered": {
+            "value": "10%",
+            "label": "of project cost recovered",
+            "note": "pilot target, measured per project"
+          },
+          "approvals": {
+            "value": "1 day",
+            "label": "approvals, not 1 week",
+            "note": "pilot target"
+          },
+          "groupChats": {
+            "value": "0",
+            "label": "group chats needed to run a site",
+            "note": "one inbox, one link"
+          }
         }
       }
     },
@@ -476,9 +563,21 @@
       "eyebrow": "Proof, not a demo",
       "heading": "Proven on your own project in 30 days. Paid, not free — serious firms only.",
       "days": {
-        "day0": { "label": "Day 0", "title": "Your project, live", "body": "Company, project, users and their roles set up. BOQ loaded. First site update within the hour." },
-        "day31": { "label": "Day 31", "title": "Customised, free", "body": "Reports and screens shaped to how your firm works. Earned by your team using it." },
-        "day60": { "label": "Day 60", "title": "Money back", "body": "If it has not paid for itself, your first quarter is refunded in full." }
+        "day0": {
+          "label": "Day 0",
+          "title": "Your project, live",
+          "body": "Company, project, users and their roles set up. BOQ loaded. First site update within the hour."
+        },
+        "day31": {
+          "label": "Day 31",
+          "title": "Customised, free",
+          "body": "Reports and screens shaped to how your firm works. Earned by your team using it."
+        },
+        "day60": {
+          "label": "Day 60",
+          "title": "Money back",
+          "body": "If it has not paid for itself, your first quarter is refunded in full."
+        }
       },
       "price": {
         "amount": "USD 100",
@@ -571,11 +670,27 @@
         }
       },
       "facts": {
-        "fact1": { "value": "1", "label": "Login. Every module, every project, one place." },
-        "fact2": { "value": "0", "label": "Manual re-entry between modules." },
-        "fact3": { "value": "38", "label": "Real modules, one coordinated system." }
+        "fact1": {
+          "value": "1",
+          "label": "Login. Every module, every project, one place."
+        },
+        "fact2": {
+          "value": "0",
+          "label": "Manual re-entry between modules."
+        },
+        "fact3": {
+          "value": "38",
+          "label": "Real modules, one coordinated system."
+        }
       },
       "backToHome": "Back to projexa-ai.com"
+    },
+    "founder": {
+      "eyebrow": "Who built this",
+      "name": "Sumeet S Aggarwal",
+      "role": "Project Management Professional & Interior Designer · 20+ years in Fit-Out · Dubai, UAE",
+      "quote": "Twenty years running fit-out projects taught me exactly where the money and the time disappear. PROJEXA is the system I wished I had on every one of them.",
+      "linkedin": "View full profile on LinkedIn →"
     }
   }
 }
