@@ -43,6 +43,30 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (interactive, Claude Desktop, ct-ca session) -- WO-PROJEXA-AI-LINK-001: AI Link + email-as-interface"
+    claimed_at: "2026-09-16T (this session)"
+    claim: |
+      Owner directive relayed from the VERIDIAN-AIOS.COM (compliance-tracker) session,
+      confirmed directly by the Owner in this session: build (1) a read-only "AI Link"
+      per-(org,user) token -> public GET route -> SQL SECURITY DEFINER STABLE projection
+      function (personal-data exclusion enforced at the DB layer, not app code) -> a
+      verb-allowlisted proposal-apply flow (ASSIGN/SET_DUE/NOTE/MARK_STATUS/DRAFT on
+      todos and construction items reached via the existing veridian-client.ts assistant
+      proxy), and (2) email-as-interface: send.projexa-ai.com / reply.projexa-ai.com
+      Resend subdomains, membership-scoped one-click action tokens enforced by a real DB
+      trigger (org match, not app-layer check), digest emails off `todos`. Building the
+      vertical slice first per the work order's own instruction, not the full surface.
+      File scope: new drizzle/ migration(s) for org_ai_link + email_action_token (+
+      trigger), src/app/api/ai/[token]/route.ts (new, public), a new proposal-apply
+      route, src/lib/email/* (new), src/lib/db/schema.ts (additive only, same convention
+      veridianCredentials already uses), a small persistent UI entry point in the app
+      shell. NOT touching compliance-tracker's repo or its existing codeReference/
+      ai-link/AiConnectorPicker features -- calling through to the existing
+      POST /api/v1/projexa/assistant codeReference dispatch for construction-domain data
+      rather than duplicating its personal-data boundary. Vercel: `vercel.json`'s
+      ignoreCommand (R87, 2026-09-13) already permits a real push to `main` to deploy --
+      not blocked by the stale R76 lockdown prose still in this file's CLAUDE.md, which
+      documents the pre-R87 state.
   - session_label: "claude-code (task-20260727-122821-projexa-e2e--pwa-offline-sync---real-tas) -- PWA/offline infra + dependency-blocking enforcement"
     claimed_at: "2026-07-27T (this session)"
     claim: |
