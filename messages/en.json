@@ -119,14 +119,14 @@
   "Marketing": {
     "header": {
       "navLinks": {
-        "aiOs": "AI OS",
-        "system": "System",
+        "system": "AI System",
         "howItWorks": "How It Works",
         "paysForItself": "It pays for itself",
-        "selfCoordination": "Self Coordination",
+        "selfCoordination": "AI Coordination",
         "modules": "Modules",
         "veri": "VERI — Your AI Assistant",
-        "value": "Value"
+        "value": "Value",
+        "whoBuiltThis": "Who Built This"
       },
       "login": "Log in",
       "talkToEngineer": "Talk to an Engineer",
@@ -134,7 +134,7 @@
       "closeMenu": "Close menu"
     },
     "hero": {
-      "badge": "FOR THE PERSON WHO SIGNS THE CHEQUES",
+      "badge": "FOR THE PERSON WHO RUNS THE PROJECTS",
       "statChips": {
         "coordination": "10x Coordination",
         "productivity": "5x Productivity",

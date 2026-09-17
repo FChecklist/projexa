@@ -16,14 +16,22 @@ import { Button } from "@/components/ui/button";
 // these live as bare anchor ids rather than full hrefs: this header is
 // shared by both marketing pages, and an anchor that's same-page on "/" has
 // to become "/#id" when rendered from a non-home route.
+//
+// 2026-09-17 (owner directive): "AI OS" dropped -- it's already the hero
+// section's own heading, redundant as a nav item pointing at the very top
+// of the page. "Who Built This" added after "Value", anchored to
+// FounderSection's id -- that section is English-only by design (see its
+// own header comment), so this link resolves to nothing on the Hindi page;
+// same already-accepted tradeoff that section's own translation-key
+// handling documents.
 const NAV_LINK_KEYS = [
-  { key: "aiOs", anchor: "ai-os" },
   { key: "system", anchor: "system" },
   { key: "paysForItself", anchor: "pays-for-itself" },
   { key: "selfCoordination", anchor: "self-coordination" },
   { key: "modules", anchor: "modules" },
   { key: "veri", anchor: "veri" },
   { key: "value", anchor: "value" },
+  { key: "whoBuiltThis", anchor: "who-built-this" },
 ] as const;
 
 export function MarketingHeader() {
