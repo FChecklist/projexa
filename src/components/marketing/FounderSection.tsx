@@ -23,7 +23,7 @@ export async function FounderSection({ locale }: MarketingLocaleProps) {
   const t = await getTranslations({ locale, namespace: "Marketing.founder" });
 
   return (
-    <section className="border-b border-border bg-background py-16 sm:py-20">
+    <section id="who-built-this" className="border-b border-border bg-background py-16 sm:py-20">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
         <Reveal>
           <div className="grid grid-cols-[auto_1fr] gap-6 rounded-2xl border border-border bg-card p-6 shadow-card sm:p-8">
