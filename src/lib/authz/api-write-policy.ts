@@ -89,6 +89,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/audit-engagements": "ORG_ADMIN",
   "/audit-findings": "ORG_ADMIN",
   "/audit-findings/[id]": "ORG_ADMIN",
+  // Sumeet requirement #3 (2026-09-18): same tier as /change-orders below --
+  // both routes' POST/PATCH call requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE).
+  "/billing-claims": "PM_OR_ABOVE",
+  "/billing-claims/[id]": "PM_OR_ABOVE",
   "/board": "FIELD",
   "/change-orders": "PM_OR_ABOVE",
   "/change-orders/[id]": "PM_OR_ABOVE",
