@@ -72,6 +72,18 @@ const ENTRIES: Entry[] = [
     query: {},
     needsProject: true,
   },
+  // Sumeet requirement (new, 2026-09-18): "PROJEXA-AI.COM SHOULD BE ABLE TO
+  // CAPTURE, ANALYZE, FIX, ALL OF THESE" -- 28 deterministic checks for
+  // real-world project-management failure modes. See ExceptionsClient.tsx
+  // and construction-exceptions-service.ts's own headers.
+  {
+    key: "exceptions",
+    label: "Exceptions",
+    description: "28 deterministic checks -- extra work never billed, stuck approvals, missed daily reports, disputes, retention held, and more.",
+    path: "/analysis/exceptions",
+    query: {},
+    needsProject: true,
+  },
 ];
 
 /**

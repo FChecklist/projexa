@@ -10,18 +10,19 @@ describe("analysisScreens", () => {
     }
   });
 
-  test("the five analytical screens (the four the audit named, plus Project 360), at their real routes", () => {
+  test("the six analytical screens (the four the audit named, plus Project 360 and Exceptions), at their real routes", () => {
     const byKey = Object.fromEntries(analysisScreens("p1").map((s) => [s.key, s.href]));
     expect(byKey["work-progress-analytics"]).toBe("/work-progress?tab=analytics&projectId=p1");
     expect(byKey["cost-variance"]).toBe("/scope?tab=variance&projectId=p1");
     expect(byKey["category-distribution"]).toBe("/dashboard/project?projectId=p1");
     expect(byKey["designer-cost"]).toBe("/reports?report=designer-timesheet&projectId=p1");
     expect(byKey["project-360"]).toBe("/analysis/project-360?projectId=p1");
+    expect(byKey["exceptions"]).toBe("/analysis/exceptions?projectId=p1");
   });
 
   test("with no project the rows stay, flagged -- a shorter list on some days teaches nothing", () => {
     const screens = analysisScreens(null);
-    expect(screens).toHaveLength(5);
+    expect(screens).toHaveLength(6);
     expect(screens.every((s) => s.needsProject)).toBe(true);
     expect(screens[0].href).toBe("/work-progress?tab=analytics");
   });
