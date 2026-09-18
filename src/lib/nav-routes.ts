@@ -39,6 +39,9 @@ export const SHIPPED_ROUTES: readonly string[] = [
   // exceptions report, listed from /analysis alongside Project 360.
   "/analysis/exceptions",
   "/auth/callback",
+  // Sumeet requirement #3 ("BILLING MILESTONES"): the real progress-claim
+  // write UI, in the Finance sidebar section next to Invoices.
+  "/billing-milestones",
   // R67 D-62: these three are now redirects onto /finance/budgets*, kept so
   // every existing link, bookmark and screenshot still lands on the screen it
   // was pointing at rather than a 404.
