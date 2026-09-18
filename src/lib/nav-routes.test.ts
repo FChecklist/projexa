@@ -221,6 +221,9 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // above), not from AppSidebar directly -- a fifth top-level "Analysis" nav
   // entry would duplicate the one that already exists.
   "/analysis/project-360",
+  // Sumeet requirement (new, 2026-09-18): same reasoning, also reached from
+  // /analysis's own list.
+  "/analysis/exceptions",
 
   // R67 E-01 (R-007) and E-02 (R-012): both of these are now REDIRECTS to
   // /dashboard. Their screens were retired as destinations -- the project rows

@@ -35,6 +35,9 @@ export const SHIPPED_ROUTES: readonly string[] = [
   // Sumeet requirement #7: the combined BOQ/scope/billing/milestones/
   // timeline analysis view, listed from /analysis alongside the other four.
   "/analysis/project-360",
+  // Sumeet requirement (new, 2026-09-18): the 28-item deterministic
+  // exceptions report, listed from /analysis alongside Project 360.
+  "/analysis/exceptions",
   "/auth/callback",
   // Sumeet requirement #3 ("BILLING MILESTONES"): the real progress-claim
   // write UI, in the Finance sidebar section next to Invoices.
