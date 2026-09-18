@@ -22,7 +22,8 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
-import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { useOrgMoney } from "@/lib/use-org-money";
+import { formatNumber } from "@/lib/format-number";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
 type MoneyFigure = number | "NOT_SET";
@@ -70,9 +71,9 @@ const SIGN_VARIANT: Record<ProjectAnalysisRow["commitmentDriftSign"], "default" 
 };
 
 export default function Project360Client({ projectId, projectName }: { projectId: string; projectName: string }) {
-  const currencies = useCurrencies();
-  const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? "Not yet baselined" : `${currencyLabel(undefined, currencies)}${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
-  const fmtPercent = (v: MoneyFigure) => (v === "NOT_SET" ? "—" : `${v.toFixed(1)}%`);
+  const orgMoney = useOrgMoney();
+  const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? "Not yet baselined" : orgMoney.money(v, { fractionDigits: 0 }));
+  const fmtPercent = (v: MoneyFigure) => (v === "NOT_SET" ? "—" : `${formatNumber(v, { fractionDigits: 1 })}%`);
 
   const [analysis, setAnalysis] = useState<ProjectAnalysisRow | null>(null);
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
