@@ -43,6 +43,64 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (interactive, Claude Desktop, same session as PROJEXA-DECK-001 above) -- Sumeet's 8 PROJEXA requirements, Owner directive 2026-09-18. Full detail in FChecklist/compliance-tracker's own ACTIVE-CLAIMS.yaml entry (same session)"
+    claimed_at: "2026-09-18T (this session)"
+    claim: |
+      Phase 1 (change-orders bug, item 5): investigated, no code change
+      needed -- see compliance-tracker's entry for the full finding.
+
+      Phase 2 (milestones, item 2): new /api/milestones + /api/milestones/[id]
+      proxies, new MilestonesClient.tsx, wired as a 5th Schedule tab
+      (src/lib/schedule-tabs.ts, src/components/ScheduleTabsClient.tsx --
+      updated its own test's hardcoded 4-tab assertion to 5).
+
+      Phase 3 (Project 360 Analysis, items 6/7/8): new
+      /api/reports/boq-analysis + /api/billing-claims proxies, new
+      src/components/Project360Client.tsx, new page
+      src/app/(app)/analysis/project-360/page.tsx, listed from the existing
+      /analysis screen (src/lib/analysis-screens.ts, now 5 entries --
+      updated analysis-screens.test.ts) alongside its other 4 analytical
+      screens. New route registered in src/lib/nav-routes.ts's
+      SHIPPED_ROUTES and in nav-routes.test.ts's
+      ROUTES_INTENTIONALLY_NOT_IN_NAV allowlist (reached via /analysis's own
+      list, same class as /dashboard/project -- not a duplicate top-level
+      sidebar entry).
+
+      File scope: src/app/api/milestones/route.ts + [id]/route.ts,
+      src/app/api/reports/boq-analysis/route.ts, src/app/api/billing-claims/
+      route.ts, src/components/MilestonesClient.tsx (+test),
+      src/components/Project360Client.tsx (+test), src/lib/schedule-tabs.ts,
+      src/components/ScheduleTabsClient.tsx (+test update),
+      src/lib/analysis-screens.ts (+test update), src/lib/nav-routes.ts,
+      src/lib/nav-routes.test.ts.
+  - session_label: "claude-code (interactive, Claude Desktop, PROJEXA-DECK-001) -- full PROJEXA user-manual PowerPoint with real local screenshots, per Owner work order dated 2026-09-18"
+    claimed_at: "2026-09-18T (this session)"
+    claim: |
+      Owner work order PROJEXA-DECK-001 (Downloads\PROJEXA-DECK-001.md, from
+      raajat.agarwal@gmail.com): a complete, non-technical, click-by-click user
+      manual for projexa-ai.com as a PowerPoint (100-150 slides), for Sumeet's
+      team. Production (projexa-ai.com) is 503 DEPLOYMENT_PAUSED, so per the
+      work order's own explicit instruction this is captured from the LOCAL dev
+      server (bun run dev, port 3100) against the real evpckeuxgvahguwsaeul
+      Supabase project -- NOT from Vercel, and nothing is deployed to Vercel as
+      part of this task.
+      File/data scope, this repo: `_deck_capture.mjs` at repo root (a one-off,
+      untracked Playwright screenshot-capture script, deleted when the deck is
+      done -- not meant to be committed), 3 new Supabase Auth users + memberships
+      added to the EXISTING org "Skyline Builders (PROJEXA Demo)"
+      (organizations.id 6dfebbde-3ded-4df5-aebd-64f85b7d9e85, already bridged via
+      veridian_credentials to compliance-tracker's rich pre-seeded
+      'projexa_demo_org' / 'projexa_demo_project' construction dataset): CEO
+      (ceo@demo.projexa-ai.com, role owner), Demo PM (pm@demo.projexa-ai.com,
+      role pm), Demo Site Engineer (site@demo.projexa-ai.com, role
+      site_engineer) -- password not recorded here, session-local only. Did NOT
+      remove the org's 2 pre-existing accounts (suresh.pillai/arjun.mehta). NOT
+      touching any application source file under src/, drizzle/, or any other
+      PROJEXA code -- this is a data-and-screenshot task, not a build task. If
+      screens turn out broken/unfinished during capture, the work order's own
+      instruction is to screenshot and report them, NOT fix them here (fixing is
+      explicitly out of scope for this task). See compliance-tracker's own
+      ACTIVE-CLAIMS.yaml for that repo's (passive, dev-server-only) role.
   - session_label: "claude-code (interactive, Claude Desktop, ct-ca session) -- WO-PROJEXA-AI-LINK-001: AI Link + email-as-interface"
     claimed_at: "2026-09-16T (this session)"
     claim: |

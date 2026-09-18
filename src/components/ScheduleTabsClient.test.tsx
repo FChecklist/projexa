@@ -176,9 +176,9 @@ describe("D-44 header band", () => {
 describe("D-44 tabs", () => {
   test("shows the user's words while keeping the existing ?tab= values", async () => {
     const { container } = renderTabs();
-    await waitFor(() => expect(container.querySelectorAll('[role="tab"]').length).toBe(4));
+    await waitFor(() => expect(container.querySelectorAll('[role="tab"]').length).toBe(5));
     const tabs = [...container.querySelectorAll('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(["Timeline", "Board", "Phases", "Time"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["Timeline", "Milestones", "Board", "Phases", "Time"]);
     // The VALUES must not move -- every existing ?tab=sprints/?tab=timesheet
     // link in the wild still has to land on the same panel.
     expect(tabs.map((t) => t.getAttribute("value") ?? t.getAttribute("data-value") ?? "")).not.toContain("phases");
