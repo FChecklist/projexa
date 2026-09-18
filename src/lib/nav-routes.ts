@@ -32,6 +32,9 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/accounting/journal-entries/new",
   // R67 E-27 (R-213): the Analysis leaf's real destination.
   "/analysis",
+  // Sumeet requirement #7: the combined BOQ/scope/billing/milestones/
+  // timeline analysis view, listed from /analysis alongside the other four.
+  "/analysis/project-360",
   "/auth/callback",
   // R67 D-62: these three are now redirects onto /finance/budgets*, kept so
   // every existing link, bookmark and screenshot still lands on the screen it

@@ -11,7 +11,11 @@
 // and moved isScheduleTab into it -- went live at 2026-08-27T08:50:10Z).
 // This module has no "use client" directive, so both the server page and
 // the client tabs component can import and call these directly.
-export const SCHEDULE_TABS = ["timeline", "board", "sprints", "timesheet"] as const;
+// "milestones" added for Sumeet requirement #2 ("TIMELINES AND MILESTONES OF
+// A PROJECT (BOTH ARE DIFFERENT)") -- a real, distinct tab alongside
+// Timeline, backed by pms_milestones rather than pms_issues. See
+// MilestonesClient.tsx's header comment.
+export const SCHEDULE_TABS = ["timeline", "milestones", "board", "sprints", "timesheet"] as const;
 export type ScheduleTab = (typeof SCHEDULE_TABS)[number];
 
 export function isScheduleTab(value: string | undefined): value is ScheduleTab {

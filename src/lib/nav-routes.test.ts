@@ -216,6 +216,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
   "/dashboard/project",
+  // Sumeet requirement #7: reached from /analysis's own list
+  // (analysisScreens(), same as /dashboard/project and /reports?report=...
+  // above), not from AppSidebar directly -- a fifth top-level "Analysis" nav
+  // entry would duplicate the one that already exists.
+  "/analysis/project-360",
 
   // R67 E-01 (R-007) and E-02 (R-012): both of these are now REDIRECTS to
   // /dashboard. Their screens were retired as destinations -- the project rows

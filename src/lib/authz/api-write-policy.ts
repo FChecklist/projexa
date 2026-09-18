@@ -203,6 +203,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/meetings": "FIELD",
   "/meetings/[id]": "FIELD",
   "/meetings/[id]/outcomes": "FIELD",
+  // Sumeet requirement #2 (2026-09-18): same tier as /change-orders above --
+  // both routes' POST/PATCH call requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE).
+  "/milestones": "PM_OR_ABOVE",
+  "/milestones/[id]": "PM_OR_ABOVE",
   "/moms": "FIELD",
   "/moms/[id]": "FIELD",
   "/moms/[id]/action-items": "FIELD",

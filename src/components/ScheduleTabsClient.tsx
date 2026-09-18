@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import ScheduleGanttClient, { type RegistryColumn, type GanttPayload } from "@/components/ScheduleGanttClient";
+import MilestonesClient from "@/components/MilestonesClient";
 import ScheduleBoardClient from "@/components/ScheduleBoardClient";
 import ScheduleSprintsClient from "@/components/ScheduleSprintsClient";
 import ScheduleTimesheetClient from "@/components/ScheduleTimesheetClient";
@@ -74,6 +75,7 @@ export { SCHEDULE_TABS, isScheduleTab, type ScheduleTab };
 // call, which additionally computes the critical path.
 const TAB_LABELS: Record<ScheduleTab, string> = {
   timeline: "Timeline",
+  milestones: "Milestones",
   board: "Board",
   sprints: "Phases",
   timesheet: "Time",
@@ -81,6 +83,7 @@ const TAB_LABELS: Record<ScheduleTab, string> = {
 
 const TAB_CAPTIONS: Record<ScheduleTab, string> = {
   timeline: "Your programme. Import an Excel plan or add activities; bars show planned (grey) and actual (blue).",
+  milestones: "Date-boxed markers a project reaches, separate from any one activity. % complete is derived from the activities linked to each one.",
   board: "Move activities between statuses by dragging.",
   sprints: "Group activities into phases and close them when done.",
   timesheet: "Hours logged against activities.",
@@ -339,6 +342,9 @@ export function ScheduleTabsClient({
               titleFilter={query}
               onMessage={onBaselineMessage}
             />
+          </TabsContent>
+          <TabsContent value="milestones">
+            <MilestonesClient projectId={projectId} />
           </TabsContent>
           <TabsContent value="board">
             <ScheduleBoardClient projectId={projectId} />

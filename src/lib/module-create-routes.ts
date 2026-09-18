@@ -75,7 +75,14 @@ export const MODULE_CREATE_ACTIONS: Record<CreateMenuModule, ModuleCreateAction[
 export const DEFAULT_ACTION_BY_TAB: Record<CreateMenuModule, Record<string, string>> = {
   labour: { roster: "Worker", attendance: "Attendance" },
   materials: { master: "Material", receipts: "Receipt", "cost-report": "Material" },
-  schedule: { timeline: "Task", board: "Task", sprints: "Sprint", timesheet: "Log time" },
+  // "milestones" falls back to the module's own first object (same rule this
+  // file's own header describes for the report-only tabs) rather than to
+  // nothing: a milestone's own create action is the inline "+ New Milestone"
+  // form on that tab itself (MilestonesClient.tsx), not a separate route --
+  // this menu system is route-based (ModuleCreateAction.route), and inventing
+  // a route for a form that has none would violate this file's own "same name
+  // reaches the same destination as the pills" rule (DE-40) rather than serve it.
+  schedule: { timeline: "Task", milestones: "Task", board: "Task", sprints: "Sprint", timesheet: "Log time" },
 };
 
 /**

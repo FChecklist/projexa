@@ -61,6 +61,17 @@ const ENTRIES: Entry[] = [
     query: { report: "designer-timesheet" },
     needsProject: true,
   },
+  // Sumeet requirement #7: "for a project, the change of BOQ, change of
+  // scope, billing, milestones, timelines analysis" -- one combined view,
+  // not a fifth isolated chart. See Project360Client.tsx's own header.
+  {
+    key: "project-360",
+    label: "Project 360 Analysis",
+    description: "Did we make the margin we quoted, and where did it go -- combined with scope changes, billing milestones and schedule slippage in one place.",
+    path: "/analysis/project-360",
+    query: {},
+    needsProject: true,
+  },
 ];
 
 /**
