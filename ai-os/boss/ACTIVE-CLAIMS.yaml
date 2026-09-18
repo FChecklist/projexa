@@ -43,7 +43,7 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
-  - session_label: "claude-code (interactive, Claude Desktop, same session as PROJEXA-DECK-001 above) -- Sumeet's 8 PROJEXA requirements, Owner directive 2026-09-18. Full detail in FChecklist/compliance-tracker's own ACTIVE-CLAIMS.yaml entry (same session)"
+  - session_label: "claude-code (interactive, Claude Desktop, same session as PROJEXA-DECK-001 above) -- Sumeet's 8 PROJEXA requirements, Owner directive 2026-09-18. Full detail in FChecklist/compliance-tracker's own ACTIVE-CLAIMS.yaml entry (same session) [DONE, merged as PR #283 (projexa) + FChecklist/compliance-tracker PR #1749]"
     claimed_at: "2026-09-18T (this session)"
     claim: |
       Phase 1 (change-orders bug, item 5): investigated, no code change
