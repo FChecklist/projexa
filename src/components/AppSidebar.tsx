@@ -12,6 +12,7 @@ import {
   ShieldAlert, Calculator, ReceiptText, NotebookText, Library, Warehouse, ClipboardCheck,
   LineChart,
   Clock,
+  Milestone,
 } from "lucide-react";
 import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
 import { filterShippedNav } from "@/lib/nav-routes";
@@ -165,6 +166,10 @@ const NAV_SECTIONS: NavSection[] = [
       { labelKey: "items.expenses", href: "/expenses", icon: Receipt },
       { labelKey: "items.accounting", href: "/accounting", icon: Calculator },
       { labelKey: "items.invoices", href: "/invoices", icon: ReceiptText },
+      // Sumeet requirement #3 ("BILLING MILESTONES"): the real progress-claim
+      // write UI (draft/submit/approve/reject/invoice), not the read-only
+      // count tile Project 360 Analysis already shows.
+      { labelKey: "items.billingMilestones", href: "/billing-milestones", icon: Milestone },
     ],
   },
   {

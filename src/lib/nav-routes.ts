@@ -36,6 +36,9 @@ export const SHIPPED_ROUTES: readonly string[] = [
   // timeline analysis view, listed from /analysis alongside the other four.
   "/analysis/project-360",
   "/auth/callback",
+  // Sumeet requirement #3 ("BILLING MILESTONES"): the real progress-claim
+  // write UI, in the Finance sidebar section next to Invoices.
+  "/billing-milestones",
   // R67 D-62: these three are now redirects onto /finance/budgets*, kept so
   // every existing link, bookmark and screenshot still lands on the screen it
   // was pointing at rather than a 404.
