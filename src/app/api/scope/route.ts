@@ -67,7 +67,13 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
   const requestedLineItems = Array.isArray(body?.lineItems) ? body.lineItems.length : 0;
 
   try {
-    const data = await callVeridian<CreatedBoqResponse>("/scope", { organizationId: ctx.organizationId!, method: "POST", body });
+    const data = await callVeridian<CreatedBoqResponse>("/scope", {
+      organizationId: ctx.organizationId!,
+      method: "POST",
+      body,
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
+    });
 
     const savedId = typeof data?.id === "string" ? data.id.trim() : "";
     if (!savedId) {

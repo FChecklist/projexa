@@ -61,6 +61,14 @@ const STATUS_VARIANT: Record<ClaimStatus, "default" | "secondary" | "destructive
 
 export const NAME_REQUIRED = "Milestone description is required";
 export const CUSTOMER_REQUIRED = "Customer is required";
+// GAP FOUND (2026-09-19, Playwright gap-closure sweep): the backend route
+// (POST /api/v1/projexa/billing-claims -> createProgressClaim) has always
+// required scheduledDate -- confirmed live, a real 400 "scheduledDate is
+// required" -- but this form's own client-side guard never checked for it,
+// so a user who filled description+customer and left the date blank got a
+// toast error with the form left open, instead of the same inline
+// Save-button guidance NAME_REQUIRED/CUSTOMER_REQUIRED already give.
+export const SCHEDULED_DATE_REQUIRED = "Scheduled date is required";
 export const NO_APPROVED_BOQ_REASON = "This project has no approved BOQ yet -- a billing milestone needs one to bill against.";
 
 /**
@@ -143,7 +151,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
   }
 
   async function createClaim() {
-    if (!milestoneDescription.trim() || !customerId || !boqId) return;
+    if (!milestoneDescription.trim() || !customerId || !boqId || !scheduledDate) return;
     setSaving(true);
     try {
       await fetchJson("/api/billing-claims", {
@@ -194,7 +202,15 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
     }
   }
 
-  const saveLabel = saving ? "Saving…" : !milestoneDescription.trim() ? `Save (${NAME_REQUIRED})` : !customerId ? `Save (${CUSTOMER_REQUIRED})` : "Save";
+  const saveLabel = saving
+    ? "Saving…"
+    : !milestoneDescription.trim()
+      ? `Save (${NAME_REQUIRED})`
+      : !customerId
+        ? `Save (${CUSTOMER_REQUIRED})`
+        : !scheduledDate
+          ? `Save (${SCHEDULED_DATE_REQUIRED})`
+          : "Save";
 
   return (
     <div className="space-y-4">
@@ -236,7 +252,11 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
               <Textarea id="claim-description" value={milestoneDescription} onChange={(e) => setMilestoneDescription(e.target.value)} placeholder="e.g. Foundation complete, ready to bill" />
             </div>
             <div className="flex gap-2">
-              <Button onClick={createClaim} disabled={saving || !milestoneDescription.trim() || !customerId} title={!milestoneDescription.trim() ? NAME_REQUIRED : !customerId ? CUSTOMER_REQUIRED : undefined}>
+              <Button
+                onClick={createClaim}
+                disabled={saving || !milestoneDescription.trim() || !customerId || !scheduledDate}
+                title={!milestoneDescription.trim() ? NAME_REQUIRED : !customerId ? CUSTOMER_REQUIRED : !scheduledDate ? SCHEDULED_DATE_REQUIRED : undefined}
+              >
                 {saveLabel}
               </Button>
               <Button variant="ghost" onClick={() => setFormOpen(false)}>Cancel</Button>
