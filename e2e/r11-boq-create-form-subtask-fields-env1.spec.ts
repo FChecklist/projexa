@@ -250,11 +250,25 @@ test.describe("R-11: sub-task fields (Item Code / Parent Item Code / Breakdown %
 // the gate itself works, rather than asserting the opposite of the real
 // policy.
 test.describe("R-11 (member role): BOQ creation is correctly REFUSED for a role below PM_OR_ABOVE", () => {
-  test.use({ storageState: "playwright/.auth/finance.json", navigationTimeout: 90_000, actionTimeout: 45_000 });
+  // SWITCHED FROM finance.json TO hr.json (2026-09-19, Playwright gap-closure
+  // Round 2): Deepak Joshi (Finance) is no longer a genuine "member"-role
+  // fixture -- his membership.role was promoted to "pm" in an earlier fix
+  // this same day (compliance-tracker PR #1755's own companion DB change) so
+  // BOQ approval could be exercised by a real, different, sufficiently-
+  // privileged approver (approveBoq's self-approval guard needs a real
+  // PM_OR_ABOVE approver distinct from the creator, and Arjun/CEO is the
+  // only other seeded account above "member"). Confirmed live: a
+  // POST /api/scope as Finance now returns 201, not 403 -- this test's own
+  // premise silently broke the moment that DB row changed, even though
+  // nothing in this file or the product changed. Sneha Reddy (HR
+  // administrator) is still seeded at "member" (unaffected by the BOQ-
+  // approval fix, which only ever touched the Finance account), so she is
+  // the fixture that now actually exercises this negative case.
+  test.use({ storageState: "playwright/.auth/hr.json", navigationTimeout: 90_000, actionTimeout: 45_000 });
 
-  test("as Finance (member role): the create form is reachable, but Save is refused with a visible, named reason (403, not a silent hang)", async ({ page }) => {
+  test("as HR (member role): the create form is reachable, but Save is refused with a visible, named reason (403, not a silent hang)", async ({ page }) => {
     await page.goto(`/scope/new?projectId=${PROJECT_ID}`);
-    await page.getByLabel("Title").fill(`R-11 spec Finance-refused ${Date.now()}`);
+    await page.getByLabel("Title").fill(`R-11 spec HR-refused ${Date.now()}`);
     await page.getByLabel("Description, line 1").fill("R-11 spec root line");
     await page.getByLabel("Unit, line 1").fill("sqm");
     await page.getByLabel("Qty, line 1").fill("100");
@@ -274,7 +288,7 @@ test.describe("R-11 (member role): BOQ creation is correctly REFUSED for a role 
     // this same click made returns 403, not 201 -- same assertion style as
     // R-01's "must not server-error", just the opposite expected status.
     const apiRes = await page.request.post("/api/scope", {
-      data: { projectId: PROJECT_ID, title: `R-11 spec Finance-refused API-check ${Date.now()}`, lineItems: [{ description: "x", unit: "m2", quantity: 1, rate: 1 }] },
+      data: { projectId: PROJECT_ID, title: `R-11 spec HR-refused API-check ${Date.now()}`, lineItems: [{ description: "x", unit: "m2", quantity: 1, rate: 1 }] },
     });
     expect(apiRes.status(), "the real write path must answer 403 for a member-role account, matching PM_OR_ABOVE").toBe(403);
   });

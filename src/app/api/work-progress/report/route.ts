@@ -121,11 +121,20 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const signal = combineAbortSignals(request.signal, deadlineController.signal);
 
   try {
+    // GAP FOUND (2026-09-19, Playwright gap-closure Round 2): each callVeridian
+    // call below defaulted to VERIDIAN_FETCH_TIMEOUT_MS (8s), independent of
+    // this route's own REPORT_DEADLINE_MS (30s) -- so under real, if elevated,
+    // load a single slow upstream call in this Promise.all still aborted at
+    // 8s and turned the WHOLE report into a 503, even with 22s of the route's
+    // own intended budget still unused. Reproduced live: a real 200 turned
+    // into a real 503 once, upstreamMaxMs logged at 8010ms. Every call here
+    // now gets an explicit timeoutMs so the outer deadline this route already
+    // computes is the one that actually governs.
     const [scopeData, workProgressData, progressData, rosterData] = await Promise.all([
-      callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, { organizationId: orgId, signal }),
-      callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, { organizationId: orgId, signal }),
-      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}&dateTo=${encodeURIComponent(to)}`, { organizationId: orgId, signal }),
-      callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { organizationId: orgId, root: true, signal }),
+      callVeridian<{ boqs: BoqResponse[] }>(`/scope?${qp}`, { organizationId: orgId, signal, timeoutMs: REPORT_DEADLINE_MS }),
+      callVeridian<{ activities: Activity[]; categories: Category[] }>(`/work-progress/activities?${qp}`, { organizationId: orgId, signal, timeoutMs: REPORT_DEADLINE_MS }),
+      callVeridian<{ entries: ProgressEntry[] }>(`/work-progress?${qp}&dateTo=${encodeURIComponent(to)}`, { organizationId: orgId, signal, timeoutMs: REPORT_DEADLINE_MS }),
+      callVeridian<{ roster: LabourRoster[] }>(`/construction/labour-roster?${qp}`, { organizationId: orgId, root: true, signal, timeoutMs: REPORT_DEADLINE_MS }),
     ]);
 
     // Scope-wise / category-wise are computed from the latest, non-superseded
@@ -170,7 +179,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
     // the same request, just one microtask later than the fully-parallel path.
     const attendanceData = await callVeridian<{ attendance: Attendance[] }>(
       `/attendance?${qp}&from=${encodeURIComponent(effectiveFrom)}&to=${encodeURIComponent(to)}`,
-      { organizationId: orgId, signal }
+      { organizationId: orgId, signal, timeoutMs: REPORT_DEADLINE_MS }
     );
 
     const report = buildWorkProgressReport({

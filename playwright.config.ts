@@ -39,7 +39,19 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     navigationTimeout: 30_000,
-    actionTimeout: 15_000,
+    // GAP FOUND (2026-09-19, Playwright gap-closure Round 2): Playwright's
+    // own actionTimeout also governs page.request.*() API calls (not just
+    // UI actions), and 15s was too tight for this app's own documented
+    // local-dev-only overhead (CLAUDE.md's "Next.js dev-server on-demand
+    // compilation costs ~6s on a route's first hit" note) compounding with
+    // ordinary CPU/RAM contention on this machine -- server-side timing logs
+    // showed the SAME route's `proxy.ts` phase (Next's own dev-mode request
+    // handling, not this app's route logic, which stayed under 2.3s every
+    // time) spiking to 14-18s under load while genuinely returning 200/201.
+    // Raised to match navigationTimeout (already 30s, already proven
+    // sufficient for this exact class of slowdown) rather than leaving the
+    // two timeouts inconsistent for no reason.
+    actionTimeout: 30_000,
   },
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },
