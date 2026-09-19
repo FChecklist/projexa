@@ -15,6 +15,8 @@ export const POST = withTiming("POST", async function POST(request: Request, { p
   try {
     const data = await callVeridian(`/scope/${encodeURIComponent(id)}/submit`, {
       organizationId: ctx.organizationId!, method: "POST",
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
     });
     return NextResponse.json(data);
   } catch (err) {
