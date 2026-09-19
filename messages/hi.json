@@ -120,14 +120,14 @@
   "Marketing": {
     "header": {
       "navLinks": {
-        "aiOs": "AI OS",
-        "system": "सिस्टम",
+        "system": "AI सिस्टम",
         "howItWorks": "यह कैसे काम करता है",
         "paysForItself": "यह अपनी लागत खुद चुकाता है",
-        "selfCoordination": "स्वयं-समन्वय",
+        "selfCoordination": "AI समन्वय",
         "modules": "मॉड्यूल",
         "veri": "VERI — आपका AI सहायक",
-        "value": "मूल्य"
+        "value": "मूल्य",
+        "whoBuiltThis": "इसे किसने बनाया"
       },
       "login": "लॉग इन करें",
       "talkToEngineer": "किसी इंजीनियर से बात करें",
@@ -135,7 +135,7 @@
       "closeMenu": "मेनू बंद करें"
     },
     "hero": {
-      "badge": "जो चेक पर हस्ताक्षर करता है, उसके लिए",
+      "badge": "जो प्रोजेक्ट्स चलाता है, उसके लिए",
       "statChips": {
         "coordination": "10 गुना समन्वय",
         "productivity": "5 गुना उत्पादकता",
