@@ -142,6 +142,14 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // the caller's OWN membership -- self-service on one's own record, same
   // shape as /todos.
   "/email/send-digest": "ANY_MEMBER",
+  // Owner directive 2026-09-19 (org email-digest schedule): Postmark's
+  // inbound webhook. Public by design, same posture as
+  // /internal/email-digest-cadence/run below -- it has no user session and
+  // no org context at request time (a reply's org/membership are resolved
+  // FROM the request body itself), so its real gate is the HTTP Basic Auth
+  // check inside the route (src/app/api/email/inbound/route.ts's own
+  // isAuthorized()), not a role.
+  "/email/inbound": "PUBLIC",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
   "/expenses": "PM_OR_ABOVE",
@@ -243,6 +251,11 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // (src/app/api/organization/currency/route.ts's own comment explains why
   // the gate has to live in THIS app, not on VERIDIAN's side of the call).
   "/organization/currency": "ORG_ADMIN",
+  // Owner directive 2026-09-19: the org-configurable digest schedule.
+  // Matches this route's own requireRole(ctx, ROLE_GROUPS.ORG_ADMIN) gate on
+  // PUT -- same tier and same reasoning as /organization/currency above
+  // (GET is open to any member, only an admin may change it).
+  "/organization/email-schedule": "ORG_ADMIN",
   "/payroll/employees/[id]/income-tax-slab": "ORG_ADMIN",
   "/payroll/employees/[id]/tax-exemptions": "ORG_ADMIN",
   "/payroll/income-tax-slabs": "ORG_ADMIN",

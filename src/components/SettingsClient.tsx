@@ -15,6 +15,7 @@ import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
 import BoqCategoriesCard from "@/components/BoqCategoriesCard";
+import DailyDigestCard from "@/components/DailyDigestCard";
 // roles.ts deliberately has no imports of its own (it exists so middleware can
 // use the role vocabulary in the Edge runtime), so a client component can
 // import it without dragging in anything server-only.
@@ -217,6 +218,12 @@ export default function SettingsClient() {
           card for something the pm may legitimately write; a wider one would
           show controls that 403. */}
       {info && <BoqCategoriesCard canEdit={CAN_EDIT_BOQ_CATEGORIES.has(info.role)} />}
+
+      {/* Owner directive 2026-09-19: the org-configurable start-of-day/
+          end-of-day digest schedule. Same canEdit gate as the cards above --
+          the real boundary is requireRole(ORG_ADMIN) on
+          PUT /api/organization/email-schedule. */}
+      {info && <DailyDigestCard canEdit={CAN_ASSIGN_ROLES.has(info.role)} />}
 
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Team</CardTitle></CardHeader>
