@@ -16,7 +16,11 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #7/#8: Project 360 combines P&L, change of BOQ, scope changes, milestones, timeline and billing in one real view", async ({ page }) => {
-  const responses = await Promise.all([
+  // Destructured (not indexed) so each variable keeps its own, non-nullable
+  // `Response` type -- page.goto()'s own return type is `Response | null`,
+  // and indexing the Promise.all tuple with a plain number widens every
+  // element to the union of all six, including that null.
+  const [boqAnalysisRes, changeOrdersRes, milestonesRes, ganttRes, billingClaimsRes] = await Promise.all([
     page.waitForResponse((r) => r.url().includes("/api/reports/boq-analysis") && r.request().method() === "GET"),
     page.waitForResponse((r) => r.url().includes("/api/change-orders") && r.request().method() === "GET"),
     page.waitForResponse((r) => r.url().includes("/api/milestones") && r.request().method() === "GET"),
@@ -24,6 +28,7 @@ test("Sumeet #7/#8: Project 360 combines P&L, change of BOQ, scope changes, mile
     page.waitForResponse((r) => r.url().includes("/api/billing-claims") && r.request().method() === "GET"),
     page.goto(`/analysis/project-360?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" }),
   ]);
+  const responses = [boqAnalysisRes, changeOrdersRes, milestonesRes, ganttRes, billingClaimsRes];
   for (const [i, label] of ["boq-analysis", "change-orders", "milestones", "schedule/gantt", "billing-claims"].entries()) {
     expect(responses[i].ok(), `the real ${label} API this screen depends on must succeed, not be silently swallowed behind the generic error banner`).toBe(true);
   }
@@ -58,7 +63,7 @@ test("Sumeet #7/#8: Project 360 combines P&L, change of BOQ, scope changes, mile
   // Cross-check the "Scope changes" card's own count against the real API
   // response this same page load already fetched -- a real, specific
   // number, not just "some card rendered".
-  const changeOrdersBody = await responses[1].json();
+  const changeOrdersBody = await changeOrdersRes.json();
   const expectedCount = (changeOrdersBody.changeOrders ?? []).length;
   const scopeChangesCard = page.locator("text=Scope changes").locator("xpath=ancestor::*[contains(@class,'shadow-card')][1]");
   await expect(scopeChangesCard.getByText(String(expectedCount), { exact: true }), `the Scope changes card must show the real count (${expectedCount}) from the API it just fetched`).toBeVisible();
