@@ -43,7 +43,51 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
-  - session_label: "claude-code (interactive, Claude Desktop, same session as PROJEXA-DECK-001 above) -- Sumeet's 8 PROJEXA requirements, Owner directive 2026-09-18. Full detail in FChecklist/compliance-tracker's own ACTIVE-CLAIMS.yaml entry (same session) [DONE, merged as PR #283 (projexa) + FChecklist/compliance-tracker PR #1749]"
+  - session_label: "claude-code (interactive, Claude Desktop) -- org-configurable start-of-day/end-of-day email digest, actionable by reply (Owner directive 2026-09-19). Follow-up on WO-PROJEXA-AI-LINK-001's own deliberately-deferred scope (digest.ts's header: 'does NOT implement the mandatory cadence engine... or a cron trigger' -- that comment is now partly stale, a fixed single daily cron exists, but per-org schedule/timezone, morning/evening split, and inbound reply parsing genuinely do not)."
+    claimed_at: "2026-09-19T (this session)"
+    claim: |
+      Owner directive: every PROJEXA user should get 1-3 emails/day (org-configurable
+      frequency and local time, default 09:00/18:00) covering their open todos plus
+      org-wide open RFIs/submittals/punch-list/billing-milestones, actionable either by
+      one-click link (existing mechanism, unchanged) or by replying to the email in
+      plain text (new). Working in an isolated worktree at
+      C:\ct\projexa-email-digest, branch feat/org-email-digest-schedule, off
+      origin/main @ f4d1d9b -- NOT touching the feat/merge6-project-workspace branch's
+      uncommitted work sitting in the main C:\ct\projexa checkout.
+
+      File/scope: new migration under drizzle/ (organizations.timezone column;
+      new tables org_email_schedule, email_digest_run, email_digest_delivery,
+      email_digest_item, daily_report_note -- all additive, existing
+      email_action_token/emailActionToken one-click flow left untouched),
+      src/lib/db/schema.ts (additive), src/lib/email/schedule-service.ts (new),
+      src/lib/email/digest.ts (extended, not replaced -- runDigestCadence becomes
+      schedule-aware), src/lib/email/reply-parser.ts (new),
+      src/lib/services/digest-item-dispatcher.ts (new), a small extraction of shared
+      service functions out of the existing src/app/api/{rfis,submittals,
+      punch-list,billing-claims}/[id]/route.ts PATCH handlers (so the dispatcher and
+      the authenticated route share logic instead of duplicating it),
+      src/app/api/email/inbound/route.ts (new, public, Postmark webhook),
+      src/app/api/organization/email-schedule/route.ts (new),
+      src/components/SettingsClient.tsx (new "Daily Digest" card),
+      src/app/api/internal/email-digest-cadence/run/route.ts (unchanged endpoint,
+      now idempotent per org/slot/local-date so both the existing vercel.json cron
+      and a new GitHub Actions poller can safely hit it redundantly),
+      .github/workflows/email-digest-poll.yml (new, */15 cron), a new
+      HANDOFF_DNS_POSTMARK_INBOUND.md (owner-facing DNS/Postmark-account handoff,
+      same style as the existing HANDOFF_DNS_RESEND.md -- inbound needs a second
+      provider since Resend is send-only, confirmed in that file).
+
+      Deliberately deferred (named, not silently dropped): change-order actions and
+      billing-milestone invoice (need structured payloads unsafe to free-text-parse),
+      work-progress entry creation (existing offline-queue UI already covers this),
+      true per-assignee filtering (no real assignee field exists on
+      RFIs/submittals/punch-list/change-orders today -- confirmed by reading their
+      schemas/UI), and AI/LLM-assisted reply parsing (deterministic parsing +
+      unmatched-text-becomes-a-report-note only, for Phase 1 safety).
+
+      Vercel/DNS: nothing deployed to Vercel or changed in DNS by this session --
+      code-complete + locally/Supabase-verified only, per the owner's standing
+      local+Supabase+GitHub-first policy; PR opened for review, not pushed to main.
     claimed_at: "2026-09-18T (this session)"
     claim: |
       Phase 1 (change-orders bug, item 5): investigated, no code change
