@@ -13,21 +13,24 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const projectId = request.nextUrl.searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId query param is required" }, { status: 400 });
   try {
-    // REAL PERFORMANCE GAP FOUND (2026-09-19, Playwright gap-closure sweep):
-    // getProjectExceptions() runs its 24 detector functions sequentially,
-    // not via Promise.all (construction-exceptions-service.ts's own header,
-    // matching boq-analysis-service.ts's pool-contention reasoning) -- a
-    // deliberate, correct choice for a 5-connection pool, but it means the
-    // real end-to-end call measures ~8s against the live database, right at
-    // the default VERIDIAN_FETCH_TIMEOUT_MS edge, so ordinary network
-    // jitter reproducibly timed this call out even on a genuinely
-    // successful (200) backend response. Raised, not shortened elsewhere --
-    // this route's own sequential-by-design cost is real and belongs to
-    // this call site, not something to paper over by making the DB queries
-    // themselves race each other on a small pool.
+    // REAL PERFORMANCE GAP FOUND (2026-09-19, Playwright gap-closure sweep),
+    // BUDGET RAISED AGAIN SAME DAY (Merge 6 workspace embed, real browser
+    // run against this machine's current load): getProjectExceptions() runs
+    // its 24 detector functions sequentially, not via Promise.all
+    // (construction-exceptions-service.ts's own header, matching
+    // boq-analysis-service.ts's pool-contention reasoning) -- a deliberate,
+    // correct choice for a 5-connection pool. The first pass here measured
+    // ~8s and raised the budget to 20s; a real end-to-end browser run today
+    // measured compliance-tracker's own server log completing the SAME call
+    // in a consistent ~20.0s under this machine's current RAM pressure,
+    // meaning 20s was no longer a real margin, just a near-exact tie the
+    // call lost almost every time (confirmed via a direct fetch: 503
+    // UPSTREAM_TIMEOUT at 20357ms). Raised again, not shortened elsewhere,
+    // same reasoning as before: this call's sequential-by-design cost is
+    // real and belongs here, not something to paper over upstream.
     const data = await callVeridian(`/exceptions?projectId=${encodeURIComponent(projectId)}`, {
       organizationId: ctx.organizationId!,
-      timeoutMs: 20_000,
+      timeoutMs: 35_000,
     });
     return NextResponse.json(data);
   } catch (err) {

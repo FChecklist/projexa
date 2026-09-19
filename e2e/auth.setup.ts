@@ -36,3 +36,8 @@ setup("authenticate as Site Supervisor (Manoj Yadav)", async ({ page }) => {
   await loginAs("siteSupervisor", page);
   await page.context().storageState({ path: "playwright/.auth/siteSupervisor.json" });
 });
+
+setup("authenticate as client viewer (Karan Malhotra)", async ({ page }) => {
+  await loginAs("clientViewer", page);
+  await page.context().storageState({ path: "playwright/.auth/clientViewer.json" });
+});
