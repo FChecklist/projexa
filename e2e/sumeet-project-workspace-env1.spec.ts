@@ -11,7 +11,7 @@ import { DEFAULT_PROJECT } from "./helpers";
 // through the real page.
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
-// GAP FOUND (2026-09-19, this spec's own first run, two rounds):
+// GAP FOUND (2026-09-19, this spec's own first run, THREE rounds):
 // (1) every section title except "Insights" renders via shadcn's
 // <CardTitle>, which this app's own card.tsx defines as a plain <div>
 // (React.ComponentProps<"div">), not a semantic h1-h6 -- confirmed by
@@ -25,6 +25,20 @@ const PROJECT_ID = DEFAULT_PROJECT.id;
 // href) resolves both: the title lives inside that container, the pill does
 // not, and a role that cannot see the section at all means the container
 // itself never renders, so a scoped locator still correctly reports zero.
+// (3) found by a later, larger combined run (this file plus 5 sibling
+// requirement-coverage specs, which gave lazy-mounted content more real
+// wall-clock time to fully render before these assertions ran): Timeline
+// specifically has a SECOND ambiguity even inside #timeline -- the section's
+// own outer CardTitle says "Timeline", AND ScheduleGanttClient.tsx renders
+// an independent, further-nested Card of its own (the SVAR gantt widget)
+// whose OWN CardTitle also reads "Timeline". A bare getByText(label) scoped
+// only to #timeline still matches both once that inner card is mounted.
+// Fixed the same way e2e/sumeet-workspace-milestones-scope.spec.ts's own
+// `ownSectionHeading` helper already had to: a direct-child data-slot
+// combinator (data-slot="card"/"card-header"/"card-title" are shadcn's own
+// real attributes, card.tsx) from the section id, which only the section's
+// OWN immediate wrapper Card can satisfy -- ScheduleGanttClient's inner card
+// lives several levels deeper inside CardContent, so it never matches.
 const SECTION_ID: Record<string, string> = {
   "Progress (WPR)": "progress",
   "Site Diary": "site-diary",
@@ -40,8 +54,9 @@ const SECTION_ID: Record<string, string> = {
 };
 
 function sectionLabel(page: import("@playwright/test").Page, label: string) {
-  const container = page.locator(`#${SECTION_ID[label]}`);
-  return label === "Insights" ? container.getByRole("heading", { name: label, exact: true }) : container.getByText(label, { exact: true });
+  const sectionId = SECTION_ID[label];
+  if (label === "Insights") return page.locator(`#${sectionId}`).getByRole("heading", { name: label, exact: true });
+  return page.locator(`#${sectionId} > [data-slot="card"] > [data-slot="card-header"] [data-slot="card-title"]`).filter({ hasText: label });
 }
 
 test.describe("Sumeet Merge 6: role-aware section visibility, end to end", () => {
