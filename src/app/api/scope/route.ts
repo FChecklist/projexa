@@ -5,6 +5,7 @@ import { veridianErrorResponse } from "@/lib/veridian-response";
 import { MODULE_TAGS } from "@/lib/module-list-source";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { withTiming } from "@/lib/with-timing";
+import { createBoqVerified, BoqCreateVerificationError } from "@/lib/services/boq-create-service";
 
 export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
@@ -51,8 +52,9 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
 // after the inserts, so checking it is a genuine read-back rather than an
 // echo of the request. Anything short of that leaves here as a non-2xx with
 // a message the dialog can show, so a failed write can never again surface
-// as "BOQ created".
-type CreatedBoqResponse = { id?: unknown; lineItems?: unknown; error?: unknown };
+// as "BOQ created". This verification now lives in
+// src/lib/services/boq-create-service.ts so the Google Sheets bulk-entry
+// sync gets the exact same protection.
 
 export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
@@ -64,32 +66,9 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
   } catch {
     return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
   }
-  const requestedLineItems = Array.isArray(body?.lineItems) ? body.lineItems.length : 0;
 
   try {
-    const data = await callVeridian<CreatedBoqResponse>("/scope", {
-      organizationId: ctx.organizationId!,
-      method: "POST",
-      body,
-      actingUserId: ctx.user?.id,
-      actingUserEmail: ctx.user?.email ?? undefined,
-    });
-
-    const savedId = typeof data?.id === "string" ? data.id.trim() : "";
-    if (!savedId) {
-      return NextResponse.json(
-        { error: "BOQ was not created: the scope service reported success but returned no saved BOQ. Nothing has been saved — please try again." },
-        { status: 502 }
-      );
-    }
-
-    const savedLineItems = Array.isArray(data.lineItems) ? data.lineItems.length : 0;
-    if (savedLineItems < requestedLineItems) {
-      return NextResponse.json(
-        { error: `BOQ was not saved correctly: ${requestedLineItems} line item(s) were submitted but only ${savedLineItems} came back saved. Check the BOQ list before retrying.` },
-        { status: 502 }
-      );
-    }
+    const data = await createBoqVerified(ctx.organizationId!, body, { actingUserId: ctx.user?.id, actingUserEmail: ctx.user?.email ?? undefined });
 
     // R67 F-18: the cached list must be cleared or the new row is
     // invisible until the 30 s window expires, which reads as a failed save.
@@ -112,6 +91,9 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
     revalidatePath("/scope");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
+    if (err instanceof BoqCreateVerificationError) {
+      return NextResponse.json({ error: err.message }, { status: 502 });
+    }
     return veridianErrorResponse(err, "Failed to create BOQ");
   }
 });

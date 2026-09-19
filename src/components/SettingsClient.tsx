@@ -16,6 +16,7 @@ import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
 import BoqCategoriesCard from "@/components/BoqCategoriesCard";
 import DailyDigestCard from "@/components/DailyDigestCard";
+import GoogleSheetsCard from "@/components/GoogleSheetsCard";
 // roles.ts deliberately has no imports of its own (it exists so middleware can
 // use the role vocabulary in the Edge runtime), so a client component can
 // import it without dragging in anything server-only.
@@ -203,6 +204,7 @@ export default function SettingsClient() {
           API plus RLS in drizzle/0015_org_invites.sql. */}
       {info && <WorkspaceConnectionCard canRepair={CAN_ASSIGN_ROLES.has(info.role)} />}
       {info && CAN_ASSIGN_ROLES.has(info.role) && <OrgInvitesCard />}
+      {info && <GoogleSheetsCard canManage={CAN_ASSIGN_ROLES.has(info.role)} />}
 
       {/* R67 lane I (WS-I item I-05, R-177): the org-level BOQ category list.
           Rendered for everyone -- a site engineer picking a category on a BOQ
