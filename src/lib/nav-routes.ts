@@ -244,6 +244,13 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/wiki/new",
   "/work-progress",
   "/work-progress/[id]",
+  // Owner directive 2026-09-19 ("Merge 6" single-project workspace): one
+  // scrollable page combining Progress/Site Diary/BOQ/Timeline/Milestones/
+  // Scope & Change Orders/RFIs/Billing Milestones/Resources/Records/
+  // Insights for ONE project, reached by its own real, shareable URL
+  // (project id as a path segment, not ?projectId=). Purely additive --
+  // every domain's own existing route is unchanged and still reachable.
+  "/workspace/[id]",
 ];
 
 const STATIC_ROUTES = new Set(SHIPPED_ROUTES.filter((r) => !r.includes("[")));

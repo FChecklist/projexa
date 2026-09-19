@@ -30,8 +30,17 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
 export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
-  const roleError = requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE);
-  if (roleError) return roleError;
+  // GUARDRAIL CHANGE -- same explicit Owner sign-off as [id]/route.ts's PATCH
+  // (chat, 2026-09-19): member (acting as Finance) may create a new billing
+  // milestone -- "draft/submit/invoice" per the Owner's own Merge 6 role
+  // spec -- since drafting one starts here, not only at the PATCH
+  // transition. client_viewer never creates one (they only decide on an
+  // existing Submitted claim), so they still fall through to PM_OR_ABOVE
+  // and are correctly refused.
+  if (ctx.role !== "member") {
+    const roleError = requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE);
+    if (roleError) return roleError;
+  }
   const body = await request.json();
   try {
     const data = await callVeridian("/billing-claims", { organizationId: ctx.organizationId!, method: "POST", body });

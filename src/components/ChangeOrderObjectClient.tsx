@@ -24,6 +24,11 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 type ChangeOrder = {
   id: string; projectId: string; number: number; title: string; reason: string | null;
   costImpact: string; scheduleImpactDays: number; status: string;
+  // R-98 fix (2026-09-19, Owner-authorized): the real link to whichever BOQ
+  // revision carried this approved change's scope forward -- null until
+  // someone actually creates one from this screen (see the "approved"
+  // block below). See schema.ts's own column comment for the full history.
+  boqRevisionId: string | null;
 };
 type SignatureStatus = {
   signatureRequest: {
@@ -47,6 +52,7 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [creatingRevision, setCreatingRevision] = useState(false);
 
   async function load() {
     try {
@@ -63,6 +69,30 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
   }
 
   useEffect(() => { load(); }, [changeOrderId]);
+
+  // R-98 fix (2026-09-19, Owner-authorized): resolves the project's own
+  // CURRENT BOQ (same real GET WorkspaceBoqCard/BillingMilestonesClient
+  // already use for this) and navigates to its own Create Revision screen,
+  // carrying this change order's id so the new revision links back to it --
+  // ScopeReviseClient.tsx reads ?fromChangeOrder= and forwards it as
+  // sourceChangeOrderId to POST /api/scope/[id]/revisions.
+  async function createBoqRevisionFromThisChangeOrder() {
+    if (!co) return;
+    setCreatingRevision(true);
+    try {
+      const boqRes = await fetch(`/api/reports/boq-analysis?projectId=${encodeURIComponent(co.projectId)}`);
+      const boqData = await boqRes.json().catch(() => ({}));
+      if (!boqRes.ok || !boqData.row?.boqId) {
+        toast.error("This project has no approved BOQ to revise yet");
+        return;
+      }
+      router.push(`/scope/${boqData.row.boqId}/revise?fromChangeOrder=${encodeURIComponent(co.id)}`);
+    } catch {
+      toast.error("Couldn't resolve this project's current BOQ");
+    } finally {
+      setCreatingRevision(false);
+    }
+  }
 
   async function submitForApproval() {
     if (!signerName.trim() || !signerEmail.trim()) {
@@ -134,6 +164,27 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
                   <Button size="sm" disabled={submitting} onClick={submitForApproval}>{submitting ? "Sending…" : "Send"}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setSendingOpen(false)}>Cancel</Button>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {co.status === "approved" && (
+          <div className="border-t border-ct-border pt-3">
+            <Label className="text-ct-muted">BOQ Link</Label>
+            {co.boqRevisionId ? (
+              <p className="mt-1 text-sm text-ct-navy">
+                This change is reflected in{" "}
+                <button type="button" className="underline underline-offset-2" onClick={() => router.push(`/scope/${co.boqRevisionId}`)}>
+                  a BOQ revision
+                </button>.
+              </p>
+            ) : (
+              <div className="mt-1 space-y-1.5">
+                <p className="text-sm text-ct-muted">This approved change has not yet been carried into a BOQ revision.</p>
+                <Button size="sm" variant="outline" disabled={creatingRevision} onClick={createBoqRevisionFromThisChangeOrder}>
+                  {creatingRevision ? "Opening…" : "Create BOQ Revision from this Change Order"}
+                </Button>
               </div>
             )}
           </div>

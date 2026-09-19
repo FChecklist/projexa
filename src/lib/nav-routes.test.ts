@@ -400,6 +400,12 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // /work-progress. Same class as "/permits/[id]" -- an href with no id in it
   // would be meaningless in the sidebar.
   "/work-progress/[id]",
+  // Merge 6 (owner directive, 2026-09-19): the single-project workspace
+  // page. Reached by clicking "Open project workspace" in the Quick actions
+  // list on /dashboard/project (DashboardProjectClient.tsx), which already
+  // carries the project id it needs -- an href with no id in it would be
+  // meaningless in the sidebar, same class as "/customers/[id]" above.
+  "/workspace/[id]",
 ]);
 
 describe("every module route is reachable by clicking (C01 REACHABLE)", () => {

@@ -494,6 +494,7 @@ export default function WorkProgressReportClient({
   projectName = "this project",
   projectStartDate = null,
   initialParams,
+  embedded = false,
 }: {
   projectId: string;
   projectName?: string;
@@ -506,6 +507,20 @@ export default function WorkProgressReportClient({
    * per side, is exactly the hydration mismatch format-date.ts exists to stop.
    */
   initialParams?: WprParams;
+  /**
+   * Merge 6 workspace embed (2026-09-19): this component's own filter state
+   * is normally "the URL is the state" (writeParamsToUrl's own comment) --
+   * fine at its dedicated /work-progress route, but fatal inside
+   * /workspace/[id], where writeParamsToUrl's hardcoded `/work-progress?...`
+   * target would router.replace/push the WHOLE workspace page away to that
+   * route on this component's own mount effect (it auto-runs and writes to
+   * the URL whenever the incoming searchParams have no `from`, which a
+   * /workspace/[id] visit never does). `embedded` keeps every filter/state
+   * update exactly as-is and only turns writeParamsToUrl into a no-op, so
+   * the card's own controls still work, they just don't try to own the
+   * host page's address bar.
+   */
+  embedded?: boolean;
 }) {
   const router = useRouter();
   // R67 C-06: fills the control strip when Run Report is pressed.
@@ -715,6 +730,7 @@ export default function WorkProgressReportClient({
    * undoing a parameter they never chose.
    */
   function writeParamsToUrl(next: { from: string; to: string; view: WprView; boqVersion: number | null }, push = false) {
+    if (embedded) return;
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", "report");
     params.set("projectId", projectId);
