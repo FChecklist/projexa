@@ -5,7 +5,7 @@
 // own line items to seed the form (a revision starts from the existing
 // scope, not blank), same as the old dialog's openRevisionDialog() did.
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 // R67 D-24/D-27: the PROJEXA-local ObjectScreen fork (programme decision
 // D-09), so this screen gets the same disabled-with-reason primary the create
 // screen uses and its server errors land in the persistent messages band.
@@ -27,6 +27,13 @@ import { useBoqCategories } from "@/components/BoqCategorySelect";
 
 export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   const router = useRouter();
+  // R-98 (2026-09-19, Owner-authorized): the real link from an approved
+  // Change Order to the BOQ revision it caused --
+  // ChangeOrderObjectClient.tsx's own "Create BOQ Revision" button
+  // navigates here with this param. Absent for every ordinary revision
+  // (the normal case), which behaves exactly as before.
+  const searchParams = useSearchParams();
+  const sourceChangeOrderId = searchParams.get("fromChangeOrder");
   const [boq, setBoq] = useState<Boq | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -129,7 +136,10 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
     try {
       const res = await fetch(`/api/scope/${boqId}/revisions`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, lineItems: toPayloadLineItems(validLines), allowScopeReductionOverride }),
+        body: JSON.stringify({
+          title, lineItems: toPayloadLineItems(validLines), allowScopeReductionOverride,
+          ...(sourceChangeOrderId ? { sourceChangeOrderId } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 409) {
@@ -210,6 +220,11 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       messages={messages}
     >
       <div className="space-y-3 px-4 py-3">
+        {sourceChangeOrderId && (
+          <p className="rounded-md border border-ct-border bg-ct-cloud/40 px-3 py-2 text-[13px] text-ct-muted" data-testid="revise-linked-change-order-banner">
+            This revision will be linked to the approved Change Order that caused it.
+          </p>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="revision-title">Revision Title (required)</Label>
           <Input

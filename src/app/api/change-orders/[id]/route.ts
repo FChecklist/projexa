@@ -29,7 +29,21 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/change-orders/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    // R-97 fix (2026-09-19, Owner-authorized): action:"submit" (send for
+    // e-signature) needs a real acting user to attribute the request to --
+    // forwarded the same way every other per-user-attributed call in this
+    // file's own sibling routes already does (scope/[id]/route.ts,
+    // timesheets/[id]/route.ts). Without these, VERIDIAN's own PATCH always
+    // 400'd "requires a real user session, not an API key" for every
+    // PROJEXA-proxied caller, since ctx.dbUser is unconditionally null for
+    // the shared per-org API key this server calls VERIDIAN with.
+    const data = await callVeridian(`/change-orders/${encodeURIComponent(id)}`, {
+      organizationId: ctx.organizationId!,
+      method: "PATCH",
+      body,
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
+    });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update change order");

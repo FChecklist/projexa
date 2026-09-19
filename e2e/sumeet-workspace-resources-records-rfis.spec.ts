@@ -239,39 +239,56 @@ for (const { label, storageState } of ROLES) {
 test.describe("Sumeet Merge 6: Materials cost figures inside the embed, for site_engineer specifically", () => {
   test.use({ storageState: "playwright/.auth/siteSupervisor.json" });
 
-  // R-C08/R-C09, real finding verified by reading source before writing this
-  // assertion (see the block comment at the bottom of this file for the full
-  // citation): unlike the BOQ section (workspace-visibility.ts's own header
-  // comment + the R-50 redaction test in sumeet-project-workspace-env1.spec.ts),
-  // Materials has NO cost-visibility gate anywhere -- MaterialsClient.tsx and
-  // src/app/api/materials/master/route.ts return and render `unitCost`
-  // unconditionally. This test asserts the REAL, current (unredacted) state
-  // rather than the absence this task's instructions left open as a
-  // possibility -- if a future change adds real redaction here, this test is
-  // meant to start failing, which is the correct signal that this comment
-  // and finding are now stale.
-  test("the Unit Cost column shows a real, unredacted figure for site_engineer (documented gap, not fixed here)", async ({ page }) => {
+  // R-C08/R-C09 -- FIXED (2026-09-19, Owner-authorized). This test used to
+  // document a real, verified gap: Materials had no cost-visibility gate at
+  // all, unlike BOQ. src/app/api/materials/master/route.ts now redacts
+  // unitCost to null (rendered as the shared money() formatter's own "–")
+  // for site_engineer and client_viewer, gated on PROJEXA's own real role
+  // directly at the proxy layer -- not compliance-tracker's cost-visibility
+  // config, which has no concept of site_engineer at all (every PROJEXA
+  // site_engineer resolves there as plain "member", indistinguishable from
+  // a real Finance-titled member; see the route's own comment for the full
+  // reasoning). member is left unredacted for now -- distinguishing a real
+  // Finance member from a site_engineer mapped to "member" needs the same
+  // per-org config architecture BOQ already has, a separate follow-up.
+  test("the Unit Cost column is redacted (en-dash, not a figure) for site_engineer", async ({ page }) => {
     await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
     const section = page.locator("#resources");
     const [materialsRes] = await Promise.all([
       page.waitForResponse((r) => r.url().includes("/api/materials/master?projectId=") && r.request().method() === "GET"),
       section.scrollIntoViewIfNeeded(),
     ]);
-    const { materials } = (await materialsRes.json()) as { materials?: { name: string; unitCost: string }[] };
+    const { materials } = (await materialsRes.json()) as { materials?: { name: string; unitCost: string | null }[] };
     test.skip(!materials || materials.length === 0, "no materials exist on this project -- the cost column has no row to check");
+
+    expect(materials!.every((m) => m.unitCost === null), "the real API response itself must carry no unitCost value for site_engineer -- structural redaction, not a client-side hide").toBe(true);
 
     const headerCells = section.locator("table thead th");
     await expect(headerCells.filter({ hasText: "Unit Cost" })).toHaveCount(1);
     const unitCostColumnIndex = await headerCells.evaluateAll((ths) => ths.findIndex((th) => th.textContent?.trim() === "Unit Cost"));
-    expect(unitCostColumnIndex, "the Unit Cost column must actually exist in the rendered table").toBeGreaterThanOrEqual(0);
+    expect(unitCostColumnIndex, "the Unit Cost column must still exist in the rendered table (redacted, not hidden)").toBeGreaterThanOrEqual(0);
 
     const firstRowCells = section.locator("table tbody tr").first().locator("td");
     const unitCostCell = firstRowCells.nth(unitCostColumnIndex);
-    // Not redacted: a real formatted money figure (contains a digit), never
-    // an en-dash/blank/asterisked placeholder -- proving site_engineer sees
-    // the same figure an owner/pm would, unlike BOQ's own server-redacted
-    // money fields.
-    await expect(unitCostCell).toHaveText(/\d/);
+    // Redacted: the shared money() formatter's own documented "–" for a null
+    // value (format-money.ts), never a real digit.
+    await expect(unitCostCell).not.toHaveText(/\d/);
+  });
+});
+
+test.describe("Sumeet Merge 6: Materials cost figures inside the embed, for owner (control -- the fix must not over-redact)", () => {
+  test.use({ storageState: "playwright/.auth/ceo.json" });
+
+  test("owner still sees the real, unredacted Unit Cost figure", async ({ page }) => {
+    await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
+    const section = page.locator("#resources");
+    const [materialsRes] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/api/materials/master?projectId=") && r.request().method() === "GET"),
+      section.scrollIntoViewIfNeeded(),
+    ]);
+    const { materials } = (await materialsRes.json()) as { materials?: { name: string; unitCost: string | null }[] };
+    test.skip(!materials || materials.length === 0, "no materials exist on this project -- the cost column has no row to check");
+    expect(materials!.some((m) => m.unitCost !== null), "owner must still see a real unitCost value -- the site_engineer/client_viewer redaction must not over-redact everyone").toBe(true);
   });
 });
 

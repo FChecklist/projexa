@@ -20,26 +20,24 @@ import { DEFAULT_PROJECT } from "./helpers";
 //     alone), plus one deeper, non-fragile R-100 angle tying a real
 //     API-fetched boolean to what actually renders.
 //
-// REAL, SURPRISING FINDING (grounded in source, not guessed -- see
-// src/lib/authz/roles.ts, src/lib/authz/api-write-policy.ts, and the two
-// billing-claims route.ts files): workspace-visibility.ts grants BOTH
-// `member` (MEMBER_FINANCE) and `client_viewer` (CLIENT_VIEWER) VIEW access
-// to the Billing Milestones section, and BillingMilestonesClient.tsx takes
-// no role prop -- it renders the exact same Draft/Submit/Approve/Reject/
-// Invoice buttons to every caller who can see a claim in that status,
-// regardless of who they are. But POST /api/billing-claims and
-// PATCH /api/billing-claims/[id] both gate on requireRole(ctx,
-// ROLE_GROUPS.PM_OR_ABOVE) = ["owner","admin","pm"] -- which EXCLUDES both
-// `member` and `client_viewer`. So a member or client_viewer genuinely sees
-// live, enabled write controls for a feature the real API refuses them for.
-// This is the exact same class of gap r90-real-backend-error-in-toast-env1.spec.ts
-// and r11-boq-create-form-subtask-fields-env1.spec.ts already document for
-// /scope -- not a new defect, but not previously checked for THIS route or
-// THIS embedded-workspace surface either. Per this task's own instruction to
-// stay honest about what's reachable rather than force a fictitious "success"
-// path, the member/client_viewer tests below assert the REAL behavior (a
-// visible, named 403 refusal, state unchanged) rather than the transition
-// itself succeeding.
+// FIXED (2026-09-19, Owner sign-off, chat): src/app/api/billing-claims/
+// route.ts's POST and src/app/api/billing-claims/[id]/route.ts's PATCH used
+// to gate EVERY action on requireRole(ctx, ROLE_GROUPS.PM_OR_ABOVE) =
+// ["owner","admin","pm"] -- which excluded both `member` and `client_viewer`
+// even though workspace-visibility.ts grants both of them VIEW access to
+// this section, and BillingMilestonesClient.tsx renders the same
+// Draft/Submit/Approve/Reject/Invoice buttons to any caller who can see a
+// claim in that status, with no role prop. That contradicted the Owner's
+// own Merge 6 role spec verbatim ("member w/ cost-visibility ... Billing
+// (draft/submit/invoice, not decide)"; "client_viewer ... Billing
+// Milestones (approve/reject at Submitted only)"). Both routes now narrow
+// PM_OR_ABOVE per-action instead of replacing it: member reaches
+// draft/submit/invoice (not approve/reject), client_viewer reaches
+// approve/reject (not draft/submit/invoice), owner/admin/pm keep every
+// action exactly as before. The tests below assert the NEW real behavior
+// (a real, persisted transition) for the actions each role is now granted,
+// and confirm the deliberately-still-refused actions (member deciding,
+// client_viewer drafting) still 403.
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 // Shared across describes below. playwright.config.ts sets
@@ -266,14 +264,14 @@ test.describe("Billing Milestones (#billing-milestones): owner/pm write authorit
   });
 });
 
-test.describe("Billing Milestones (#billing-milestones): member (Sneha Reddy, 'Finance'-titled but real role=member) sees the create control, but the real API refuses it (authz gap, R-95)", () => {
+test.describe("Billing Milestones (#billing-milestones): member (Sneha Reddy, 'Finance'-titled, real role=member) can now draft a real milestone (R-95 authz fix)", () => {
   test.use({ storageState: "playwright/.auth/hr.json" });
 
-  test("New Billing Milestone is visible and enabled for member, but Save is refused 403 -- ROLE_GROUPS.PM_OR_ABOVE excludes member", async ({ page }) => {
+  test("New Billing Milestone succeeds for member -- POST /api/billing-claims now allows member, per the Owner's own 'draft/submit/invoice' Finance spec", async ({ page }) => {
     const boqRes = await page.request.get(`/api/reports/boq-analysis?projectId=${PROJECT_ID}`);
     test.skip(!boqRes.ok(), "boq-analysis must be reachable to run this check");
     const { row } = await boqRes.json();
-    test.skip(!row?.boqId, "no approved BOQ exists for this project -- the create control's OWN client-side gate (disabled={!boqId}, unrelated to the role gate this test is about) would already disable it, confounding the assertion");
+    test.skip(!row?.boqId, "no approved BOQ exists for this project -- the create control's OWN client-side gate (disabled={!boqId}) would already disable it, confounding the assertion");
 
     const customersRes = await page.request.get("/api/customers");
     test.skip(!customersRes.ok(), "customers list must be reachable to fill the create form");
@@ -286,37 +284,40 @@ test.describe("Billing Milestones (#billing-milestones): member (Sneha Reddy, 'F
     await section.scrollIntoViewIfNeeded();
 
     const newButton = section.getByRole("button", { name: /new billing milestone/i });
-    // REAL, SURPRISING FINDING (see the file header comment): the button is
-    // only ever disabled on `!boqId` in BillingMilestonesClient.tsx -- it
-    // takes no role prop, so member sees the exact same enabled create
-    // control an owner/pm does.
-    await expect(newButton, "member sees the SAME enabled create control an owner/pm does -- section-level visibility does not narrow which actions render inside it").toBeEnabled({ timeout: 15_000 });
+    await expect(newButton, "member sees the same enabled create control an owner/pm does").toBeEnabled({ timeout: 15_000 });
 
     await newButton.click();
-    const description = `Workspace member-gap spec ${Date.now()}`;
+    const description = `Workspace member-authz-fix spec ${Date.now()}`;
     await section.getByLabel("Customer").selectOption({ index: 1 });
     await section.getByLabel("Milestone description").fill(description);
     await section.getByLabel("Scheduled date").fill("2026-11-19");
     await section.getByRole("button", { name: /^save$/i }).click();
 
-    const toast = page.locator("[data-sonner-toast]").filter({ hasText: /forbidden|role.*permit/i });
-    await expect(toast, "a member Save click must surface a real, visible Forbidden refusal (toast.error, per BillingMilestonesClient.tsx's own catch block) -- not a silent hang and not a false 'created' success").toBeVisible({ timeout: 15_000 });
-    await expect(section.locator("li", { hasText: description }), "the write must never have landed -- no such milestone should appear in the list for a refused create").toHaveCount(0);
+    await expect(section.locator("li", { hasText: description }), "member's real create must persist and re-render, same as it would for owner/pm").toBeVisible({ timeout: 15_000 });
 
-    // Direct, timing-independent confirmation of the same gate (same style
-    // as e2e/r11-boq-create-form-subtask-fields-env1.spec.ts's own member-role
-    // check for /scope).
+    // Direct, timing-independent confirmation of the fix (same style as the
+    // 403 checks elsewhere in this suite): a fresh POST as member succeeds.
+    const description2 = `Workspace member-authz-fix spec direct ${Date.now()}`;
     const apiRes = await page.request.post("/api/billing-claims", {
-      data: { projectId: PROJECT_ID, boqId: row.boqId, customerId: customers[0].id, milestoneDescription: description, scheduledDate: "2026-11-19", retentionPercent: 0 },
+      data: { projectId: PROJECT_ID, boqId: row.boqId, customerId: customers[0].id, milestoneDescription: description2, scheduledDate: "2026-11-19", retentionPercent: 0 },
     });
-    expect(apiRes.status(), "PM_OR_ABOVE gate must answer 403 for member, matching the UI refusal just observed").toBe(403);
+    expect(apiRes.ok(), "member must now be able to create a billing milestone directly via the API too").toBe(true);
+    const created = await apiRes.json();
+
+    // But member still cannot DECIDE (approve/reject) -- only draft/submit/
+    // invoice, per the Owner's own "not decide" wording. Draft it first so
+    // there's a real claim id, then confirm the decide actions still 403.
+    const draftRes = await page.request.patch(`/api/billing-claims/${created.id}`, { data: { action: "draft" } });
+    expect(draftRes.ok(), "member must be able to draft the claim they just created").toBe(true);
+    const approveRes = await page.request.patch(`/api/billing-claims/${created.id}`, { data: { action: "approve" } });
+    expect(approveRes.status(), "member must still be refused approve -- Owner spec: draft/submit/invoice, NOT decide").toBe(403);
   });
 });
 
-test.describe("Billing Milestones (#billing-milestones): client_viewer (Karan Malhotra) sees the Submitted-stage approve/reject control, but the real API refuses it too (same authz gap, R-95)", () => {
+test.describe("Billing Milestones (#billing-milestones): client_viewer (Karan Malhotra) can now decide at the Submitted stage (R-95 authz fix)", () => {
   test.use({ storageState: "playwright/.auth/clientViewer.json" });
 
-  test("Approve/Reject render for a real Submitted milestone, but clicking Approve is refused 403 -- ROLE_GROUPS.PM_OR_ABOVE excludes client_viewer", async ({ page }) => {
+  test("Approve succeeds for client_viewer at Submitted -- PATCH now allows client_viewer for approve/reject, per the Owner's own Merge 6 spec", async ({ page }) => {
     test.skip(!submittedMilestoneDescription, "the owner-role setup test above did not produce a Submitted milestone to check (see its own skip reason -- most likely no approved BOQ was reachable/creatable)");
 
     await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
@@ -329,28 +330,25 @@ test.describe("Billing Milestones (#billing-milestones): client_viewer (Karan Ma
     await expect(row.getByText(/^submitted$/i)).toBeVisible();
 
     const approveButton = row.getByRole("button", { name: /^approve$/i });
-    const rejectButton = row.getByRole("button", { name: /^reject$/i });
-    // REAL, SURPRISING FINDING (see the file header comment): both controls
-    // render for client_viewer exactly as they would for owner/pm --
-    // BillingMilestonesClient.tsx renders them purely off `c.status ===
-    // "submitted"`, with no role check at all.
-    await expect(approveButton, "BillingMilestonesClient.tsx renders Approve/Reject for ANY caller who can see a Submitted claim -- it takes no role prop and does not hide these for client_viewer").toBeVisible();
-    await expect(rejectButton).toBeVisible();
+    await expect(approveButton, "BillingMilestonesClient.tsx renders Approve for any caller who can see a Submitted claim").toBeVisible();
 
     await approveButton.click();
-    const toast = page.locator("[data-sonner-toast]").filter({ hasText: /forbidden|role.*permit/i });
-    await expect(toast, "a client_viewer Approve click must surface a real, visible Forbidden refusal -- not a silent no-op and not a false success").toBeVisible({ timeout: 15_000 });
-    await expect(row.getByText(/^submitted$/i), "the claim must remain Submitted -- a refused write must never advance the real state machine").toBeVisible();
+    await expect(row.getByText(/^client_approved$/i), "the real transition must persist and re-render for client_viewer, same as it would for owner/pm").toBeVisible({ timeout: 15_000 });
 
-    // Direct, timing-independent confirmation of the same gate, against the
-    // real claim id (resolved via the same GET the embedded card itself uses).
+    // Direct, timing-independent confirmation: client_viewer still cannot
+    // draft/submit/invoice (they only ever decide at Submitted) -- create a
+    // fresh claim as owner-equivalent context is out of scope here, so just
+    // confirm the "draft" action itself still 403s for client_viewer against
+    // the claim they just approved (an invalid transition either way, but
+    // the role gate must fire before the state-machine gate would).
     const listRes = await page.request.get(`/api/billing-claims?projectId=${encodeURIComponent(PROJECT_ID)}&all=true`);
-    expect(listRes.ok(), "client_viewer must still be able to READ the claims list -- GET is not PM_OR_ABOVE-gated").toBe(true);
+    expect(listRes.ok(), "client_viewer must still be able to READ the claims list -- GET is not role-gated").toBe(true);
     const { claims } = await listRes.json();
     const claim = (claims ?? []).find((c: { milestoneDescription: string }) => c.milestoneDescription === submittedMilestoneDescription);
-    test.skip(!claim, "could not re-resolve the claim's id via the list API -- the UI-level refusal above already stands on its own");
-    const patchRes = await page.request.patch(`/api/billing-claims/${claim.id}`, { data: { action: "approve" } });
-    expect(patchRes.status(), "PM_OR_ABOVE gate must answer 403 for client_viewer, matching the UI refusal just observed").toBe(403);
+    test.skip(!claim, "could not re-resolve the claim's id via the list API -- the UI-level success above already stands on its own");
+    expect(claim.status, "the claim's real, re-fetched status must reflect the approval").toBe("client_approved");
+    const draftRes = await page.request.patch(`/api/billing-claims/${claim.id}`, { data: { action: "draft" } });
+    expect(draftRes.status(), "client_viewer must still be refused draft -- Owner spec: approve/reject ONLY, never draft/submit/invoice").toBe(403);
   });
 });
 

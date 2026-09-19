@@ -182,30 +182,23 @@ test.describe("Sumeet R-96/R-97: Scope & Change Orders works end to end from the
     await fieldByLabel(page.locator("body"), "Signer email").fill(USERS.ceo.email);
     await page.getByRole("button", { name: /^send$/i }).click();
 
-    // REAL, PRE-EXISTING BUG FOUND (2026-09-19, this test's own first real
-    // run) -- NOT introduced by the Merge 6 workspace embed, and NOT test
-    // flakiness. compliance-tracker's PATCH /api/v1/projexa/change-orders/
-    // [id] (action:"submit") refuses with 400 "Submitting for approval
-    // requires a real user session, not an API key" whenever ctx.dbUser is
-    // null -- and ctx.dbUser IS ALWAYS null for a PROJEXA-proxied call:
-    // requireAuthOrApiKey()'s own fast API-key path (auth-guard.ts ~line
-    // 424, its own comment: "exactly how PROJEXA's server authenticates")
-    // hardcodes `dbUser: null` whenever a request carries a Bearer key and
-    // no session cookie, which is unconditionally true for every single
-    // PROJEXA->compliance-tracker call. So "Send for Approval" cannot
-    // succeed from PROJEXA's real UI for ANY user, on ANY change order --
-    // this is not a per-test race, it is 100% reproducible, confirmed by
-    // reading both files directly. This directly affects R-97 ("Change of
-    // scope of work in a project must work end-to-end"), which
-    // platform.sumeet_requirements marks CLOSED -- that closure did not
-    // cover this specific step. Filed here as a real, actionable gap for the
-    // Owner rather than fixed in this pass: the fix needs the same
-    // acting-user-resolution pattern cost-visibility-service.ts's
-    // resolveRoleForCostVisibility() already uses elsewhere (X-Acting-User
-    // headers -> resolveActingUser()), threaded into this route and
-    // submitChangeOrderForApproval() -- a real backend change, not a test
-    // workaround, and not attempted here under this session's time budget.
-    await expect(page.getByText(/requires a real user session, not an api key/i), "documents the real, currently-open R-97 gap -- remove this expectation (and restore the success-path assertions below, in version control history) once the acting-user fix ships").toBeVisible({ timeout: 15_000 });
+    // R-97 FIXED (2026-09-19, Owner-authorized). Was: compliance-tracker's
+    // PATCH /api/v1/projexa/change-orders/[id] (action:"submit") refused
+    // with 400 "Submitting for approval requires a real user session, not
+    // an API key" for EVERY PROJEXA-proxied call, 100% reproducibly --
+    // ctx.dbUser is unconditionally null on that path (auth-guard.ts's fast
+    // API-key path, ~line 424), so "Send for Approval" could never succeed
+    // from PROJEXA's real UI for any user, on any change order. Fixed by
+    // threading the same acting-user-resolution pattern
+    // cost-visibility-service.ts's resolveRoleForCostVisibility() already
+    // uses (X-Acting-User / X-Acting-User-Email -> resolveActingUser() ->
+    // a real compliance.users row) into this route and
+    // submitChangeOrderForApproval(), on both sides of the proxy (PROJEXA's
+    // own PATCH now forwards ctx.user's id/email; compliance-tracker's PATCH
+    // now resolves them instead of requiring ctx.dbUser directly).
+    await expect(page.getByText("Sent for e-signature approval")).toBeVisible({ timeout: 15_000 });
+    // co.status.replace(/_/g, " ") => "pending approval" (ChangeOrderObjectClient.tsx).
+    await expect(page.getByText(/pending approval/i)).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -237,95 +230,88 @@ test.describe("Sumeet: client_viewer and the Scope & Change Orders section (Owne
   });
 });
 
-test.describe("Sumeet R-98 (STILL OPEN -- do not let this get re-closed without an actual schema change): approving a Change Order produces no visible/linked BOQ revision", () => {
-  test.use({ storageState: "playwright/.auth/ceo.json" });
+test.describe("Sumeet R-98 FIXED (2026-09-19, Owner-authorized): an approved Change Order can now be linked to the BOQ revision it caused", () => {
+  test.use({ storageState: "playwright/.auth/finance.json" });
 
-  // Ground truth independently re-verified before writing this test (per
-  // this task's own instruction), both against compliance-tracker's schema
-  // and this app's own code:
-  //   - `grep -n changeOrderId C:\ct\ct\src\lib\db\schema.ts` => 0 matches.
-  //   - `constructionChangeOrders` (schema.ts, ~line 11882) has columns
-  //     id/orgId/projectId/number/title/description/reason/costImpact/
-  //     scheduleImpactDays/status/requestedById/approvedById/approvedAt/
-  //     esignatureRequestId/createdAt/trade(+ more added since) -- NO
-  //     boqRevisionId, NO boqLineItemId, NO parentBoqId, no BOQ reference of
-  //     any kind.
-  //   - BOQ revisions (also schema.ts, ~line 10871) chain via their OWN
-  //     `parentBoqId` self-FK, with nothing on either side pointing at a
-  //     change order.
-  //   - ChangeOrderObjectClient.tsx's `facets` are only Cost Impact /
-  //     Schedule Impact -- no BOQ facet exists to render even if the data
-  //     existed.
-  // CORRECTED (2026-09-19, this run): the assumption that "no field on
-  // either side names the other" turned out to be half-stale. A real,
-  // additive schema column DOES now exist --
-  // constructionChangeOrders.boqRevisionId (schema.ts ~line 11920), added
-  // per that column's own comment for "Sumeet requirement (new) #2 ...
-  // and #6's own R-98 caveat (Owner directive 2026-09-18)" -- i.e. a PRIOR
-  // round already made the real schema change the earlier note demanded
-  // ("don't let a future session re-claim this closed without an actual
-  // schema change"). What's STILL open is narrower and more precise than
-  // "no field exists at all": the column exists, but nothing in
-  // approveChangeOrder() (or anywhere else in the write path) ever POPULATES
-  // it -- confirmed live below, a real already-approved change order's own
-  // `boqRevisionId` reads back as `null`. The column's own comment says as
-  // much ("an approved change order whose extra scope was never carried
-  // into a BOQ revision ... has no linkage"), so this is not a surprising
-  // discovery so much as the intended-but-not-yet-wired half of the fix.
-  // R-98 ("BOQ must change/track when scope of work changes") is therefore
-  // STILL genuinely open -- regardless of what platform.sumeet_requirements'
-  // stale `CLOSED` row says -- for THIS reason, not the old one. Approving a
-  // change order through the UI is not reachable from this spec (see the
-  // describe block above -- there is no Approve button anywhere; approval
-  // only happens via a real external e-signature completion), so this
-  // demonstrates the gap the honest way available: a real, already-approved
-  // change order (if this project's seed data has one) is inspected end to
-  // end through the real API AND the real Object Page UI, plus a
-  // schema-shape check that holds for any change order regardless of status.
-  test("R-98 gap demonstration: an approved change order's real boqRevisionId column exists but is never populated", async ({ page }) => {
+  // Prior state (kept here for history, not re-asserted): constructionChangeOrders.boqRevisionId
+  // (schema.ts ~11920) existed as a column but nothing in the write path
+  // ever populated it, and ChangeOrderObjectClient.tsx had no BOQ facet or
+  // control at all. Fixed end to end: construction-boq-service.ts's
+  // createBoqRevision() now accepts an optional sourceChangeOrderId (only
+  // for an ALREADY-APPROVED change order, and only once per change order --
+  // both enforced server-side, verified below), and
+  // ChangeOrderObjectClient.tsx's new "approved" block offers a real
+  // "Create BOQ Revision from this Change Order" button when unlinked, or
+  // a real link to the resulting revision once one exists.
+  test("creating a BOQ revision from an approved Change Order sets boqRevisionId, end to end through the real UI", async ({ page }) => {
     const listRes = await page.request.get(`/api/change-orders?projectId=${PROJECT_ID}`);
     expect(listRes.ok(), `GET /api/change-orders => ${listRes.status()}`).toBe(true);
     const { changeOrders } = await listRes.json();
-    const approved = (changeOrders ?? []).find((c: { status: string }) => c.status === "approved");
-    test.skip(!approved, "no already-approved change order exists in this project's seed data, and this spec cannot itself complete a real e-signature to produce one -- see the schema-level test below, which runs regardless");
+    const approved = (changeOrders ?? []).find((c: { status: string; boqRevisionId: string | null }) => c.status === "approved" && !c.boqRevisionId);
+    test.skip(!approved, "no already-approved, not-yet-linked change order exists in this project's seed data to drive this flow against");
 
-    const detailRes = await page.request.get(`/api/change-orders/${approved.id}`);
-    expect(detailRes.ok(), `GET /api/change-orders/${approved.id} => ${detailRes.status()}`).toBe(true);
-    const detail = await detailRes.json();
-    expect(
-      Object.prototype.hasOwnProperty.call(detail, "boqRevisionId"),
-      "the boqRevisionId column must exist on the real API response (it does, per schema.ts ~11920) -- if this now fails, the column itself was removed"
-    ).toBe(true);
-    expect(
-      detail.boqRevisionId,
-      "R-98: an approved change order's own boqRevisionId is still never populated by the write path -- this is the concrete, still-open part of the requirement"
-    ).toBeNull();
+    const boqRes = await page.request.get(`/api/reports/boq-analysis?projectId=${PROJECT_ID}`);
+    test.skip(!boqRes.ok(), "boq-analysis must be reachable to resolve the project's current BOQ");
+    const { row } = await boqRes.json();
+    test.skip(!row?.boqId, "no approved BOQ exists for this project -- the revise flow has nothing to revise");
 
     await page.goto(`/change-orders/${approved.id}`, { waitUntil: "networkidle" });
-    const bodyText = (await page.locator("body").innerText()).toLowerCase();
-    expect(
-      bodyText,
-      'R-98: the real Change Order Object Page must show no "BOQ" text anywhere -- an approved CO still produces no VISIBLE link back to any BOQ revision, even though the backing column exists'
-    ).not.toContain("boq");
+    await expect(page.getByText("This approved change has not yet been carried into a BOQ revision.")).toBeVisible();
 
-    console.log(`R98_GAP_STILL_OPEN changeOrderId=${approved.id} status=${approved.status} number=CO-${approved.number} boqRevisionId=${detail.boqRevisionId} -- column exists, value never populated, no "BOQ" text anywhere on its own Object Page`);
+    await page.getByRole("button", { name: /create boq revision from this change order/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/scope/${row.boqId}/revise\\?fromChangeOrder=${approved.id}`));
+    await expect(page.getByTestId("revise-linked-change-order-banner"), "the revise screen must visibly confirm the link it's about to create").toBeVisible();
+
+    await page.getByLabel(/Revision Title/i).fill(`R-98 link spec ${Date.now()}`);
+    await page.getByRole("button", { name: /^save$/i }).click();
+
+    await expect(page).toHaveURL(/\/scope\/[a-zA-Z0-9_-]+$/, { timeout: 15_000 });
+    const newBoqId = page.url().split("/scope/")[1];
+
+    // Direct, timing-independent confirmation: the change order's own
+    // record now carries the real link.
+    const detailRes = await page.request.get(`/api/change-orders/${approved.id}`);
+    expect(detailRes.ok()).toBe(true);
+    const detail = await detailRes.json();
+    expect(detail.boqRevisionId, "R-98: the approved change order's boqRevisionId must now point at the revision just created").toBe(newBoqId);
+
+    // And the Object Page itself now shows the real link instead of the button.
+    await page.goto(`/change-orders/${approved.id}`, { waitUntil: "networkidle" });
+    await expect(page.getByRole("button", { name: /create boq revision from this change order/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /a boq revision/i })).toBeVisible();
   });
 
-  test("R-98 gap demonstration (schema-level, runs regardless of seed data): boqRevisionId exists as a column but the write path never sets it", async ({ page }) => {
+  test("a change order that is not yet approved cannot be linked (server-side guard, not just a hidden UI control)", async ({ page }) => {
     const listRes = await page.request.get(`/api/change-orders?projectId=${PROJECT_ID}`);
-    expect(listRes.ok(), `GET /api/change-orders => ${listRes.status()}`).toBe(true);
+    expect(listRes.ok()).toBe(true);
     const { changeOrders } = await listRes.json();
-    test.skip(!changeOrders?.length, "no change order exists yet in this project's seed data to inspect");
+    const notApproved = (changeOrders ?? []).find((c: { status: string }) => c.status !== "approved");
+    test.skip(!notApproved, "every change order in this project's seed data is already approved -- nothing to test this guard against");
 
-    const detailRes = await page.request.get(`/api/change-orders/${changeOrders[0].id}`);
-    expect(detailRes.ok(), `GET /api/change-orders/${changeOrders[0].id} => ${detailRes.status()}`).toBe(true);
-    const detail = await detailRes.json();
-    const fields = Object.keys(detail);
-    console.log(`R98_FIELD_LIST changeOrderId=${changeOrders[0].id} status=${changeOrders[0].status} fields=${JSON.stringify(fields)}`);
-    expect(fields, "boqRevisionId is a real, intentional column (schema.ts ~11920) -- its ABSENCE would itself be a regression").toContain("boqRevisionId");
-    expect(
-      detail.boqRevisionId,
-      "R-98: confirmed still open -- the column exists but is null regardless of the change order's own status, since nothing in the write path ever sets it"
-    ).toBeNull();
+    const boqRes = await page.request.get(`/api/reports/boq-analysis?projectId=${PROJECT_ID}`);
+    const { row } = await boqRes.json();
+    test.skip(!row?.boqId, "no approved BOQ exists for this project");
+
+    const res = await page.request.post(`/api/scope/${row.boqId}/revisions`, {
+      data: { title: "Should be refused", sourceChangeOrderId: notApproved.id },
+    });
+    expect(res.status(), "createBoqRevision must refuse to link a change order that is not approved").toBe(400);
+  });
+
+  test("a change order already linked to a revision cannot be linked to a second one", async ({ page }) => {
+    const listRes = await page.request.get(`/api/change-orders?projectId=${PROJECT_ID}`);
+    expect(listRes.ok()).toBe(true);
+    const { changeOrders } = await listRes.json();
+    const alreadyLinked = (changeOrders ?? []).find((c: { status: string; boqRevisionId: string | null }) => c.status === "approved" && c.boqRevisionId);
+    test.skip(!alreadyLinked, "no already-linked change order exists yet in this project's seed data -- run after the first test in this file to get one");
+
+    const boqRes = await page.request.get(`/api/reports/boq-analysis?projectId=${PROJECT_ID}`);
+    const { row } = await boqRes.json();
+    test.skip(!row?.boqId, "no approved BOQ exists for this project");
+
+    const res = await page.request.post(`/api/scope/${row.boqId}/revisions`, {
+      data: { title: "Should be refused, already linked", sourceChangeOrderId: alreadyLinked.id },
+    });
+    expect(res.status(), "createBoqRevision must refuse to re-link a change order that already has a boqRevisionId").toBe(409);
   });
 });
