@@ -61,6 +61,29 @@ export const veridianCredentials = pgTable("veridian_credentials", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// One row per PROJEXA org that has connected the Google Sheets integration
+// (see src/lib/google-sheets/). A single PROJEXA-owned Google service
+// account creates and owns every org's spreadsheet -- there is no per-org
+// Google OAuth token to store, only which spreadsheet belongs to this org
+// and the token used to authenticate the sheet's own Apps Script back to
+// this app. webhookTokenHash is a sha256 of the raw token embedded in the
+// generated Apps Script source (see apps-script-template.ts); the raw token
+// itself is never stored, mirroring how this repo never stores a password.
+export const googleSheetsIntegration = pgTable("google_sheets_integration", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  spreadsheetId: text("spreadsheet_id").notNull().unique(),
+  spreadsheetUrl: text("spreadsheet_url").notNull(),
+  webhookTokenHash: text("webhook_token_hash").notNull(),
+  status: text("status").notNull().default("idle"), // idle | syncing | error
+  lastError: text("last_error"),
+  lastPushedAt: timestamp("last_pushed_at", { withTimezone: true }),
+  lastPulledAt: timestamp("last_pulled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Generic app/collaboration data for the VeriComposer-style Mode Pills /
 // Chain Selector / Chatbox port -- not construction domain data.
 
