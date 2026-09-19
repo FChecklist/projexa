@@ -20,7 +20,13 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const push = mock(() => {});
-mock.module("next/navigation", () => ({ useRouter: () => ({ push, prefetch: mock(() => {}) }) }));
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push, prefetch: mock(() => {}) }),
+  // ScopeReviseClient reads ?fromChangeOrder= to show the linked-change-order
+  // banner; no test here sets it, so every existing scenario behaves exactly
+  // as before an ordinary revision (the param absent).
+  useSearchParams: () => new URLSearchParams(),
+}));
 mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
 
 const ScopeReviseClient = (await import("./ScopeReviseClient")).default;
