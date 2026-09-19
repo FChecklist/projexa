@@ -88,7 +88,7 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
     expect(bad).toEqual([]);
   });
 
-  test("only the three routes that are public by design carry the PUBLIC tier", () => {
+  test("only the four routes that are public by design carry the PUBLIC tier", () => {
     const publicRoutes = Object.entries(API_WRITE_POLICY)
       .filter(([, tier]) => tier === "PUBLIC")
       .map(([route]) => route)
@@ -96,11 +96,14 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
     // /org/invites/preview is GET-only, so it has no write policy entry at all.
     // /internal/email-digest-cadence/run is Vercel Cron's entry point -- see
     // its own CRON_SECRET-bearer comment in api-write-policy.ts.
-    expect(publicRoutes).toEqual(["/contact", "/internal/email-digest-cadence/run", "/org/provision"]);
+    // /email/inbound (added 2026-09-19, org email-digest schedule) is
+    // Postmark's inbound webhook -- same reasoning, its own HTTP Basic Auth
+    // check inside the route is the real gate, not a role.
+    expect(publicRoutes).toEqual(["/contact", "/email/inbound", "/internal/email-digest-cadence/run", "/org/provision"]);
   });
 
   test("no mutating route outside the PUBLIC set is left ungated", () => {
-    const PUBLIC_BY_DESIGN = new Set(["/contact", "/internal/email-digest-cadence/run", "/org/provision"]);
+    const PUBLIC_BY_DESIGN = new Set(["/contact", "/email/inbound", "/internal/email-digest-cadence/run", "/org/provision"]);
     const ungated = mutatingRoutes.filter((r) => {
       const tier = API_WRITE_POLICY[r];
       return tier === "PUBLIC" && !PUBLIC_BY_DESIGN.has(r);

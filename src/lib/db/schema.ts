@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, unique, boolean, jsonb, primaryKey, date } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, unique, boolean, jsonb, primaryKey, date, integer } from "drizzle-orm/pg-core";
 
 // PROJEXA's own tenant/auth/billing schema. All construction domain data
 // (BOQ, progress, site diary, budgets, etc.) lives in VERIDIAN -- see
@@ -19,6 +19,12 @@ export const organizations = pgTable("organizations", {
   // real source of truth for country-conditional PROJEXA UI -- see
   // src/hooks/use-org-role.ts.
   country: text("country").default("IN"),
+  // drizzle/0025: IANA timezone (e.g. "Asia/Kolkata") used to compute when
+  // this org's email-digest schedule slots are due -- see
+  // src/lib/email/schedule-service.ts. Defaults to Asia/Kolkata (PROJEXA's
+  // primary market) rather than UTC so a newly-provisioned org with no
+  // explicit setting still gets a sensible local send time.
+  timezone: text("timezone").notNull().default("Asia/Kolkata"),
 });
 
 export const memberships = pgTable(
@@ -288,4 +294,111 @@ export const emailActionToken = pgTable("email_action_token", {
   issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
+});
+
+// ── drizzle/0025: org-configurable start-of-day/end-of-day digest ─────────
+// Additive alongside email_action_token above, not a replacement -- the
+// existing todos-only one-click flow keeps working unchanged. These tables
+// generalize it to a real per-org schedule, multiple entity types, and
+// reply-by-email. See src/lib/email/schedule-service.ts,
+// src/lib/email/digest.ts, src/lib/email/reply-parser.ts,
+// src/lib/services/digest-item-dispatcher.ts.
+
+export const orgEmailSchedule = pgTable(
+  "org_email_schedule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    slot: text("slot").notNull(), // 'morning' | 'evening' | 'custom' -- DB CHECK constraint enforces this
+    label: text("label").notNull().default(""),
+    localTime: text("local_time").notNull(), // "HH:MM", 24h, org-local -- DB CHECK constraint enforces the shape
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.organizationId, t.slot)]
+  // NOTE: the real DB constraint (drizzle/0025) is a PARTIAL unique index
+  // (only for slot IN ('morning','evening')) so 'custom' rows aren't
+  // limited to one -- drizzle-kit can't express a partial index via this
+  // builder, so this line exists only so `bun run db:generate` doesn't
+  // propose dropping an index it doesn't know is partial. The real,
+  // authoritative constraint lives in the migration SQL, applied directly.
+);
+
+export const emailDigestRun = pgTable(
+  "email_digest_run",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // Nullable: a manual "send me my digest now" run has no schedule behind
+    // it. NULLs are distinct under the (scheduleId, localDate) unique
+    // constraint, so manual runs never collide with each other or a real one.
+    scheduleId: uuid("schedule_id").references(() => orgEmailSchedule.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(), // "YYYY-MM-DD", org-local calendar date this run represents
+    status: text("status").notNull().default("pending"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    membershipsSent: integer("memberships_sent").notNull().default(0),
+    membershipsFailed: integer("memberships_failed").notNull().default(0),
+  },
+  (t) => [unique().on(t.scheduleId, t.localDate)]
+  // The idempotency key: makes it safe for more than one trigger source
+  // (the existing vercel.json daily cron + the new GitHub Actions poller)
+  // to hit the run endpoint redundantly.
+);
+
+export const emailDigestDelivery = pgTable("email_digest_delivery", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Nullable for the same reason emailDigestRun.scheduleId is: a manual
+  // "send me my digest now" delivery (buildAndSendDigest called with
+  // runId: null) has no run behind it either.
+  runId: uuid("run_id").references(() => emailDigestRun.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  membershipId: uuid("membership_id")
+    .notNull()
+    .references(() => memberships.id, { onDelete: "cascade" }),
+  // Reply-To local-part: d-{replyToken}@reply.projexa-ai.com. Plaintext, not
+  // hashed -- on its own it only ever resolves to a read (which items were
+  // on this delivery); applying a verb also requires the inbound route's
+  // From-address-matches-this-membership's-profile check.
+  replyToken: text("reply_token").notNull().unique(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const emailDigestItem = pgTable(
+  "email_digest_item",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deliveryId: uuid("delivery_id")
+      .notNull()
+      .references(() => emailDigestDelivery.id, { onDelete: "cascade" }),
+    refCode: integer("ref_code").notNull(), // 1-based, per delivery -- what the user types in their reply
+    entityType: text("entity_type").notNull(), // 'todo' | 'rfi' | 'submittal' | 'punch_list' | 'billing_milestone'
+    entityId: text("entity_id").notNull(), // text, not uuid: VERIDIAN entity ids aren't always uuid-shaped
+    allowedVerbs: jsonb("allowed_verbs").notNull().default([]).$type<string[]>(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    appliedVerb: text("applied_verb"),
+    appliedPayload: jsonb("applied_payload").$type<Record<string, unknown>>(),
+  },
+  (t) => [unique().on(t.deliveryId, t.refCode)]
+);
+
+export const dailyReportNote = pgTable("daily_report_note", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  membershipId: uuid("membership_id")
+    .notNull()
+    .references(() => memberships.id, { onDelete: "cascade" }),
+  deliveryId: uuid("delivery_id").references(() => emailDigestDelivery.id, { onDelete: "set null" }),
+  rawText: text("raw_text").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
