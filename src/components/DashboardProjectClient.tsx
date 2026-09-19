@@ -665,6 +665,12 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             { label: "New BOQ revision", onClick: () => router.push(`/scope?projectId=${projectId}`) },
             { label: "Import BOQ", onClick: () => router.push(`/scope?projectId=${projectId}`) },
             { label: "Run WPR", onClick: () => router.push(`/work-progress?projectId=${projectId}&tab=report`) },
+            // Merge 6: the one real click path into /workspace/[id] (the new
+            // single-page combined view) from anywhere in the product --
+            // without this, nav-routes.test.ts's C01 REACHABLE guard is
+            // right to fail, since the route existed on disk with no way to
+            // reach it except typing the URL.
+            { label: "Open project workspace", onClick: () => router.push(`/workspace/${projectId}`) },
           ]}
         />
       }
