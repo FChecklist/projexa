@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { createClient } from "@/lib/supabase/server";
+import { getSettingsOrgInfo } from "@/lib/settings-source";
 import { withTiming } from "@/lib/with-timing";
 
 // Real PROJEXA-side data (organizations table), not VERIDIAN -- see
@@ -8,21 +8,19 @@ import { withTiming } from "@/lib/with-timing";
 // organizationId/role from the membership row; this just adds the
 // organization's own name/slug, which nothing else in the app has needed
 // to fetch until now.
+//
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): the actual query moved into
+// settings-source.ts's getSettingsOrgInfo(), which /settings's own server
+// component now ALSO calls (SSR'd + streamed, so this route is no longer
+// the only way to get this data) -- one implementation, two callers, same
+// precedent as risk-register-service.ts's *WithDb extraction. This route's
+// own behavior (shape, status codes) is unchanged; it's still the real
+// client-side refresh path SettingsClient's currency/role edits use.
 export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
-  const supabase = await createClient();
-  const { data: org, error } = await supabase
-    .from("organizations")
-    // Priority 19 Part 2, Workstream C: country added so client components
-    // (CustomersClient/VendorsClient/PayrollClient) can gate India-specific
-    // fields (GSTIN/GST/Income Tax Slabs) on country === 'IN' instead of
-    // always rendering them regardless of the org's actual country.
-    .select("id, name, slug, created_at, country")
-    .eq("id", ctx.organizationId!)
-    .single();
-
-  if (error || !org) return NextResponse.json({ error: error?.message ?? "Organization not found" }, { status: 404 });
-  return NextResponse.json({ organization: org, role: ctx.role, email: ctx.user!.email });
+  const result = await getSettingsOrgInfo(ctx);
+  if ("error" in result) return NextResponse.json({ error: result.error }, { status: 404 });
+  return NextResponse.json(result);
 });

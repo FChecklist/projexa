@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
@@ -27,6 +28,10 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
   const body = await request.json();
   try {
     const data = await callVeridian(`/knowledge-base/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    // PROJEXA-E2E-001 cold-load fix (2026-09-21) -- see the list POST
+    // route's identical comment. A title change or archive/publish toggle
+    // should not sit invisible in the list for up to 30s.
+    revalidateTag("knowledge-base");
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update knowledge base page");
