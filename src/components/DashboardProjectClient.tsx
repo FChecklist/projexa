@@ -342,8 +342,14 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
             // server-side either way (D-4: never summed in the browser); this
             // path just asks the already-registered "category-progress" report
             // for it separately.
+            // PROJEXA-E2E-001 section 4: R67 E-32 flipped this endpoint's
+            // DEFAULT body to the generic table shape; this fallback reads
+            // body.categories directly (the handler's own shape), so without
+            // format=legacy it would silently read undefined -- rare in
+            // practice (only hit when data.categories is absent above), but
+            // still real and worth not leaving broken.
             void readJson<{ categories?: CategoryRow[] }>(
-              `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`,
+              `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}&format=legacy`,
               signal,
               "Couldn't load the category breakdown"
             )

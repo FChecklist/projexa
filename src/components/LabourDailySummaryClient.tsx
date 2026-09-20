@@ -127,8 +127,12 @@ export default function LabourDailySummaryClient({
       // which reaches the same VERIDIAN /reports/manpower-daily-summary and adds
       // withTiming() + veridianErrorResponse(). See the merge note in
       // src/app/api/attendance/summary/route.ts.
+      // PROJEXA-E2E-001 section 4: R67 E-32 flipped this endpoint's DEFAULT
+      // body to the generic table shape; this reads the handler's own
+      // DailySummaryResponse fields directly, so without format=legacy the
+      // Manpower Daily Summary tab silently loses its figures.
       const data = await fetchJson<DailySummaryResponse>(
-        `/api/reports/manpower-daily-summary?projectId=${encodeURIComponent(projectId)}&date=${encodeURIComponent(date)}`
+        `/api/reports/manpower-daily-summary?projectId=${encodeURIComponent(projectId)}&date=${encodeURIComponent(date)}&format=legacy`
       );
       setSummary(data);
       setError(null);
