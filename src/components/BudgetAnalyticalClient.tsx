@@ -104,7 +104,15 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
     inFlight.current = true;
     setLoading(true);
     try {
-      const res = await fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}`);
+      // PROJEXA-E2E-001 section 4: R67 E-32 flipped GET /reports/{name}'s
+      // DEFAULT body to the generic { columns, rows, totals, currency }
+      // table (construction-reports-service.ts / [reportName]/route.ts).
+      // This screen reads the handler's own BudgetReport shape (lines,
+      // totalBudget, ...) directly, so it needs format=legacy the same way
+      // report-destinations.ts's reportDestination() and the six sites the
+      // E-32 follow-up commit already migrated do -- without it every
+      // figure here silently reads undefined instead of erroring.
+      const res = await fetch(`/api/reports/budget-variance?projectId=${encodeURIComponent(projectId)}&format=legacy`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         // The old screen had no catch at all: a failed read left it on

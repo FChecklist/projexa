@@ -122,3 +122,35 @@ describe("DashboardProjectClient: one dashboard call carries the panels it used 
     await waitFor(() => expect(container.textContent).toContain("Substructure"), WAIT);
   });
 });
+
+// PROJEXA-E2E-001 section 4: R67 E-32 flipped GET /reports/{name}'s DEFAULT
+// body to the generic { columns, rows, totals, currency } table. The "legacy
+// VERIDIAN only" fallback above (triggered when the dashboard payload carries
+// no `categories` field) reads `cat.categories` directly -- the handler's own
+// shape -- so its fetch must ask for format=legacy or it would silently read
+// undefined against the real endpoint.
+describe("DashboardProjectClient: legacy-VERIDIAN category-progress fallback", () => {
+  test("when the dashboard payload has no categories, the fallback fetch asks for format=legacy", async () => {
+    requested = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requested.push(url);
+      if (url.includes("/api/currencies")) {
+        return new Response(JSON.stringify({ currencies: [{ code: "AED", isBaseCurrency: true }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes("/api/reports/category-progress")) {
+        return new Response(JSON.stringify({ categories: [{ categoryId: "c1", name: "Substructure", percentComplete: 30 }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      // The main dashboard payload, deliberately missing `categories`/`recentEntries`.
+      const { categories: _categories, recentEntries: _recentEntries, ...withoutFoldedPanels } = DASHBOARD;
+      return new Response(JSON.stringify(withoutFoldedPanels), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    render(<DashboardProjectClient projectId="p1" />);
+
+    await waitFor(() => expect(requested.some((u) => u.includes("/api/reports/category-progress"))).toBe(true), WAIT);
+    expect(
+      requested.filter((u) => u.includes("/api/reports/category-progress")).every((u) => u.includes("format=legacy"))
+    ).toBe(true);
+  });
+});

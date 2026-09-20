@@ -113,6 +113,19 @@ describe("Design Studio > Cost Analysis (R67 E-16 x H-03)", () => {
     expect(calls.some((u) => u.includes("/api/reports/designer-timesheet"))).toBe(true);
   });
 
+  // PROJEXA-E2E-001 section 4: R67 E-32 flipped GET /reports/{name}'s DEFAULT
+  // body to the generic { columns, rows, totals, currency } table -- this
+  // screen reads the handler's own payload() shape (period/projectScoped/
+  // orgWide) directly, so the fetch must ask for format=legacy or every
+  // figure here would silently read undefined against the real endpoint.
+  test("PROJEXA-E2E-001 section 4: the designer-timesheet fetch asks for format=legacy", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, payload());
+    render(<DesignStudioCostAnalysisClient projectId="p-1" projectName="Cedar Heights Villa" />);
+    await waitFor(() => expect(calls.some((u) => u.includes("/api/reports/designer-timesheet"))).toBe(true));
+    expect(calls.filter((u) => u.includes("/api/reports/designer-timesheet")).every((u) => u.includes("format=legacy"))).toBe(true);
+  });
+
   test("all three cuts are reachable, and each says what it is scoped to", async () => {
     const calls: string[] = [];
     stubFetch(calls, payload());

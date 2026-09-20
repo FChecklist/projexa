@@ -115,6 +115,11 @@ describe("LabourDailySummaryClient (D-53)", () => {
     // manpower-daily-summary report through the generic reports proxy. The
     // assertion still pins "this tab asks for exactly one project's one day".
     expect(lastUrl).toContain("/api/reports/manpower-daily-summary?projectId=p1");
+    // PROJEXA-E2E-001 section 4: R67 E-32 flipped this endpoint's DEFAULT
+    // body to the generic table shape -- this screen reads SUMMARY's own
+    // fields (rows/totals/people) directly, so the request must ask for
+    // format=legacy or it would silently lose every figure.
+    expect(lastUrl).toContain("format=legacy");
     // The day itself is on screen in the org's dd-mm-yyyy form.
     expect(getByText("02-09-2026")).toBeDefined();
 

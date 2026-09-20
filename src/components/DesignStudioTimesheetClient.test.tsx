@@ -92,6 +92,32 @@ function mountWith(entries: unknown[], byDesigner: unknown[] = []) {
   );
 }
 
+describe("PROJEXA-E2E-001 section 4: R67 E-32 format=legacy", () => {
+  // GET /reports/{name}'s DEFAULT body is now the generic table shape; this
+  // screen reads the handler's own byDesigner field directly, so the fetch
+  // must ask for format=legacy or it would silently render an empty
+  // designer-wise status list against the real endpoint. mountWith()'s
+  // fetchRouter matches on URL substring regardless of query string (the
+  // same blind spot report-destinations.test.ts's own R67 E-32 test names),
+  // so this checks the REQUEST, not just that rendering works.
+  test("the designer-approval-status fetch asks for format=legacy", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requested.push(url);
+      if (url.includes("/api/timesheets")) return jsonRes({ entries: [] });
+      if (url.includes("/api/schedule/tasks")) return jsonRes({ tasks: [] });
+      if (url.includes("/api/reports/designer-approval-status")) return jsonRes({ byDesigner: [] });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+    render(<DesignStudioTimesheetClient projectId="project-1" projectName="Cedar Heights Villa - Phase 1" projects={PROJECTS} today={TODAY} />);
+    await waitFor(() => expect(requested.some((u) => u.includes("/api/reports/designer-approval-status"))).toBe(true));
+    expect(
+      requested.filter((u) => u.includes("/api/reports/designer-approval-status")).every((u) => u.includes("format=legacy"))
+    ).toBe(true);
+  });
+});
+
 describe("the Design Studio day grid (item H-04 acceptance)", () => {
   test("the grid header cells read exactly Date, Project, Category, Task, Hours, in that order", async () => {
     const { container } = mountWith([]);

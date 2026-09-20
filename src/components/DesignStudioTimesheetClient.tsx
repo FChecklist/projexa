@@ -145,7 +145,11 @@ export default function DesignStudioTimesheetClient({
 
     const [entriesResult, statusResult] = await Promise.allSettled([
       fetchJson<{ entries?: TimesheetEntry[] }>(`/api/timesheets?${listQuery.toString()}`),
-      fetchJson<{ byDesigner?: DesignerStatusRow[] }>(`/api/reports/designer-approval-status?projectId=${encodeURIComponent(projectId)}`),
+      // PROJEXA-E2E-001 section 4: R67 E-32 flipped this endpoint's DEFAULT
+      // body to the generic table shape; this reads body.byDesigner directly
+      // (the handler's own shape), so without format=legacy the designer-wise
+      // status list silently renders empty.
+      fetchJson<{ byDesigner?: DesignerStatusRow[] }>(`/api/reports/designer-approval-status?projectId=${encodeURIComponent(projectId)}&format=legacy`),
     ]);
 
     if (entriesResult.status === "fulfilled") setEntries(entriesResult.value.entries ?? []);
