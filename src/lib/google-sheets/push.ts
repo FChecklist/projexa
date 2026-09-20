@@ -131,7 +131,13 @@ async function pushReportsTab(spreadsheetId: string, organizationId: string, pro
   }
 
   try {
-    const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}?projectId=${encodeURIComponent(project.id)}`, { organizationId });
+    // PROJEXA-E2E-001 section 4: R67 E-32 flipped GET /reports/{name}'s
+    // DEFAULT body to the generic { columns, rows, totals, currency } table.
+    // flattenReportToGrid() below is built to dump the handler's own rich
+    // per-field payload into readable sheet rows (same contract every other
+    // report consumer in this app relies on -- see report-destinations.ts),
+    // not that envelope, so this asks for format=legacy the same way.
+    const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}?projectId=${encodeURIComponent(project.id)}&format=legacy`, { organizationId });
     const grid = flattenReportToGrid(data);
     await sheets.spreadsheets.values.update({
       spreadsheetId,
@@ -168,7 +174,8 @@ async function pushAnalysisTab(spreadsheetId: string, organizationId: string, pr
   const grid: string[][] = [];
   for (const reportName of ANALYSIS_REPORT_NAMES) {
     try {
-      const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}?projectId=${encodeURIComponent(project.id)}`, { organizationId });
+      // Same format=legacy reasoning as pushReportsTab above.
+      const data = await callVeridian(`/reports/${encodeURIComponent(reportName)}?projectId=${encodeURIComponent(project.id)}&format=legacy`, { organizationId });
       grid.push(...flattenReportToGrid(data, reportName), []);
     } catch (err) {
       grid.push([`### ${reportName}`], [err instanceof Error ? err.message : "Failed to load"], []);

@@ -63,7 +63,11 @@ export default function BudgetActualClient({ projectId }: { projectId: string })
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setReport(await fetchJson<VarianceReport>(`/api/reports/budget-variance?${query}`));
+      // PROJEXA-E2E-001 section 4: same R67 E-32 gap as BudgetAnalyticalClient
+      // -- this reads the handler's own VarianceReport shape directly, so it
+      // needs format=legacy or every revenue/budget/actual figure silently
+      // reads undefined against the new default table shape.
+      setReport(await fetchJson<VarianceReport>(`/api/reports/budget-variance?${query}&format=legacy`));
       setLoadError(null);
     } catch (err) {
       setReport(null);

@@ -266,4 +266,24 @@ describe("readCategoryProgress -- the chart's failure is the chart's own", () =>
     expect(outcome.status).toBe("ready");
     if (outcome.status === "ready") expect(outcome.rows[0]?.name).toBe("Civil");
   });
+
+  // PROJEXA-E2E-001 section 4: R67 E-32 flipped GET /reports/{name}'s DEFAULT
+  // body to the generic { columns, rows, totals, currency } table. This
+  // reads body.categories directly (the handler's own shape), so without
+  // format=legacy the real endpoint would answer a table with no
+  // `categories` key, and `body.categories ?? []` would silently produce an
+  // empty bar set rather than an error -- the exact class of bug this task
+  // is a sweep for. The stub above matches on URL prefix regardless of query
+  // string (the same blind spot report-destinations.test.ts's own R67 E-32
+  // test names), so this checks the REQUEST, not just that parsing works.
+  test("PROJEXA-E2E-001 section 4: the request asks for format=legacy", async () => {
+    let requestedUrl = "";
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response(JSON.stringify({ categories: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    await readCategoryProgress("p-1");
+    expect(requestedUrl).toContain("/api/reports/category-progress");
+    expect(requestedUrl).toContain("format=legacy");
+  });
 });

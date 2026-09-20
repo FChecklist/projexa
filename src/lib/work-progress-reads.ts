@@ -162,8 +162,14 @@ export async function readCategoryProgress(
   signal?: AbortSignal
 ): Promise<ListOutcome<CategoryProgress>> {
   try {
+    // PROJEXA-E2E-001 section 4: R67 E-32 flipped this endpoint's DEFAULT
+    // body to the generic table shape. This reads body.categories directly
+    // (the handler's own shape), so without format=legacy the category bars
+    // on the Work Progress Analytics screen (analysis-screens.ts's
+    // "work-progress-analytics" entry) silently render empty -- `?? []`
+    // below never errors, it just quietly shows nothing.
     const body = await fetchJson<{ categories?: CategoryProgress[] }>(
-      `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}`,
+      `/api/reports/category-progress?projectId=${encodeURIComponent(projectId)}&format=legacy`,
       { signal }
     );
     return listOutcomeFromRows(body.categories ?? []);

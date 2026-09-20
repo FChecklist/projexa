@@ -48,7 +48,13 @@ export default function DesignStudioCostAnalysisClient({ projectId, projectName 
     setLoading(true);
     setLoadErrors([]);
     try {
-      const data = await fetchJson<DesignerTimesheetReportShape>(`/api/reports/designer-timesheet?projectId=${encodeURIComponent(projectId)}`);
+      // PROJEXA-E2E-001 section 4: R67 E-32 flipped this endpoint's DEFAULT
+      // body to the generic table shape; this reads the handler's own
+      // DesignerTimesheetReportShape fields directly, so without
+      // format=legacy the Design Studio > Cost Analysis screen (reached from
+      // the Reports picker's "Designer Timesheet" hosted-report navigation)
+      // silently loses every figure.
+      const data = await fetchJson<DesignerTimesheetReportShape>(`/api/reports/designer-timesheet?projectId=${encodeURIComponent(projectId)}&format=legacy`);
       setReport(data);
     } catch (err) {
       setLoadErrors([err instanceof Error ? err.message : "Could not load the cost analysis"]);
