@@ -90,14 +90,63 @@ active:
       (/v1/projexa/reports/boq-analysis), never routed through the
       [reportName] dynamic dispatcher R67 E-32 changed.
 
-      Also auditing (not yet reported): the other 4 analysis-screens.ts
-      entries + main /dashboard for the same silent-null class against real
-      Supabase data (projexa_demo_org), traceability/drill-down on a sample
-      of figures, cross-role reconciliation (CEO/PM/Site Engineer from
-      e2e/users.ts) on the same report, and empty/partial/heavy project
-      states. Will update this claim with final results. Per owner's ground
-      rules: local bun dev + live Supabase + GitHub CI only, never Vercel;
-      PR(s) opened, CI green, left OPEN/UNMERGED, not merged by this session.
+      [DONE, 2026-09-20 same session] PR opened: FChecklist/projexa#306,
+      CI green (Lint/Type Check/Test/Build/Migration guard/Secret Scanning
+      all pass; "Vercel: Deployment was blocked" is the R87 ignoreCommand
+      gate working as designed on a non-main branch, not a failure), left
+      OPEN/UNMERGED per the owner's ground rules.
+
+      Remaining audit items, completed by static/code analysis rather than
+      live UI (see below for why): the other 4 analysis-screens.ts entries
+      (category-distribution already had format=legacy via the pre-existing
+      category-distribution proxy routes; project-360 is boq-analysis-based,
+      unaffected; exceptions calls /api/exceptions, not /api/reports/, also
+      unaffected) -- no further silent-null class bugs found by code
+      inspection. Traceability: real drill-down exists on exactly 2 of ~22
+      reports -- BudgetActualClient.tsx and BudgetAnalyticalClient.tsx both
+      link a BOQ line/code to /scope/{boqId}[#line-{id}] -- but
+      ProjectStatusCard.tsx (the Project Status card PR #300 fixed) and
+      ReportOutput.tsx (the generic renderer used for ~16-18 of the 22
+      REPORT_REGISTRY reports shown inside the Reports frame) have ZERO
+      Link/href anywhere -- a real, significant, work-order-relevant gap,
+      reported rather than shortcut-fixed (building drill-down for 16+
+      reports is a real feature, not a quick fix). Cross-role: the ONLY
+      role-based figure gate found anywhere in REPORT_REGISTRY is
+      "budget-vs-actual" -> requires manager+ (construction-reports-service
+      .ts/[reportName]/route.ts, explicitly commented as deliberate, R48
+      gap-closure); every other report/dashboard computes identically
+      regardless of caller role, and the Reports picker UI itself has zero
+      role-based filtering -- so the only cross-role divergence in this
+      product is that one documented, deliberate gate (a clean 403 with the
+      backend's own words, not a silently different number), not an
+      accidental query-filter bug. Empty/partial/heavy states: confirmed via
+      direct Supabase query (pcrjmlpuqsbocqfwoxod) real candidates exist in
+      BOTH orgs -- projexa_demo_org's "Villa 21 - Whitefield" (164 BOQ
+      lines/35 progress entries, NOT ~2,467 as an earlier session's report
+      claimed -- recounted directly, worth someone reconciling that number)
+      is the heavy project; org 4ecc472f-4152-4310-ae8d-cf8b7c52ab6d
+      (Meridian Construction Group, e2e/users.ts's own org) has an even
+      heavier "Meridian Heights - Residential Tower A" (5,102 BOQ
+      lines/611 progress entries), several 12-line/0-progress partial
+      projects, and multiple genuinely empty (0/0) "E2E-BatchA-*" projects
+      -- all confirmed to exist, ready for a future session's live UI pass.
+
+      LIVE UI VERIFICATION WAS BLOCKED, honestly reported rather than
+      faked: this machine hit 0.06 GB free RAM mid-session (multiple
+      concurrent sessions sharing it per this file's own other active
+      entries), and the already-running shared dev server at :3100
+      genuinely, repeatedly failed with "The construction data service did
+      not respond in time" on every project-load attempt (a live instance
+      of the already-documented R83 construction-data-service timeout, not
+      a defect introduced by this task -- a direct fetch() from the page
+      itself hung past 45s). Did not spin up a second dev server instance
+      given the RAM state. So: the format=legacy fixes are proven by
+      falsifiability-tested unit tests + direct backend-source reading (not
+      a live click), and the dashboard/traceability/cross-role/empty-state
+      findings above are from live database + static code analysis, not a
+      live browser session against real UI. A future session with more
+      headroom should do the live-browser pass this one could not safely
+      attempt.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
