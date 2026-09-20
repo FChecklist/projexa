@@ -1,29 +1,29 @@
 // R76 (2026-09-06) established this drift guard for the original all-branches-
-// blocked lockdown. R87 (2026-09-13, D158) revised the policy after finding a
-// real bug in that original config: git.deploymentEnabled's "*" key is a
-// minimatch glob that does NOT cross "/", so it silently never matched this
-// repo's own branch-naming convention (feat/..., fix/..., r87/..., etc.) --
-// PROJEXA had zero deploy-gating of any kind before this fix (this was its
-// first-ever vercel.json), so unlike compliance-tracker's sibling file there
-// was no working "*" key to have been silently broken -- only the new,
-// intended state matters here. Same test, same policy, as compliance-
-// tracker's own src/lib/vercel-lockdown.test.ts (a separate repo, a separate
-// vercel.json, needs its own copy of this guard).
+// blocked lockdown. R87 (2026-09-13, D158) revised the policy to a branch-name
+// + docs-path ignoreCommand after finding git.deploymentEnabled's "*" glob
+// never matched this repo's own branch-naming convention (feat/..., fix/...,
+// r87/..., etc.). Same test, same policy, as compliance-tracker's own
+// src/lib/vercel-lockdown.test.ts (a separate repo, a separate vercel.json,
+// needs its own copy of this guard).
 //
-// Policy: git.deploymentEnabled is not used at all (it was the buggy,
-// glob-ambiguous mechanism compliance-tracker found). The sole gate is a
-// single, testable ignoreCommand that:
-//   1. Skips (exit 0) any branch that isn't literally "main" -- no previews
-//      build, full stop, regardless of what changed.
-//   2. On main, skips (exit 0) when the commit's diff touches only docs/
-//      governance paths (*.md, *.jsonl, kt/**, ai-os/**, .github/**).
-//   3. On main, proceeds (exit 1) when the diff touches real app code.
-// Unlike compliance-tracker's own file, PROJEXA gets this branch/path gate
-// with no OWNER_DEPLOY_APPROVAL layer on top -- the owner's separate,
-// explicit choice for this project (R87/D158).
+// PROJEXA-E2E-001 (2026-09-20, owner directive, quoted verbatim): "Confirm
+// the Ignored Build Step is live on both projects so only production can
+// build: `if [ "$VERCEL_ENV" = "production" ]; then exit 1; else exit 0; fi`.
+// Report the commit. Every branch and PR should then cost zero." This session
+// prepared the change on this branch per AGENTS.md Rule 9 (guardrail change,
+// owner instruction quoted in the PR) -- it is NOT merged to main yet. The
+// owner's own PROJEXA-E2E-001 methodology ("Phase A: nothing goes to main,
+// because main is what triggers a build... Phase B: one merge to main, one
+// build") means this repo's actual ignoreCommand stays on the R87 script
+// until Phase B's batch merge, at which point this branch's change lands
+// alongside it. Both scripts already achieve the load-bearing property (zero
+// preview builds on any non-main/non-production ref) -- this is a strictly
+// simpler, VERCEL_ENV-based mechanism replacing the git-diff-based one, not a
+// weakening: Vercel sets VERCEL_ENV=production only for the deployment
+// targeting the project's production branch, so this reads Vercel's own
+// classification instead of re-deriving it from a branch-name string compare.
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 function readVercelJson() {
@@ -31,99 +31,49 @@ function readVercelJson() {
   return JSON.parse(raw)
 }
 
-function sh(cmd: string, cwd: string) {
-  const proc = Bun.spawnSync(["sh", "-c", cmd], { cwd })
-  if (proc.exitCode !== 0) {
-    throw new Error(`setup command failed: ${cmd}\n${proc.stderr?.toString()}`)
+function runIgnoreCommand(cmd: string, vercelEnv: string | undefined): number | null {
+  const env = { ...process.env }
+  if (vercelEnv === undefined) {
+    delete env.VERCEL_ENV
+  } else {
+    env.VERCEL_ENV = vercelEnv
   }
-}
-
-/** A throwaway git repo, isolated from this repo's own real history, so the
- * ignoreCommand's `git diff HEAD^ HEAD` can be driven by controlled fixture
- * commits instead of whatever this repo's actual last commit happens to be. */
-function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "vercel-lockdown-"))
-  sh("git init -q -b main", dir)
-  sh("git config user.email t@example.com", dir)
-  sh("git config user.name t", dir)
-  writeFileSync(join(dir, "README.md"), "base")
-  sh("git add -A && git commit -q -m base", dir)
-  return dir
-}
-
-function runIgnoreCommand(cmd: string, cwd: string, branch: string): number | null {
-  const proc = Bun.spawnSync(["sh", "-c", cmd], {
-    cwd,
-    env: { ...process.env, VERCEL_GIT_COMMIT_REF: branch },
-  })
+  const proc = Bun.spawnSync(["sh", "-c", cmd], { env })
   return proc.exitCode
 }
 
-describe("Vercel deploy lockdown (R87/D158) -- ignoreCommand is the sole gate", () => {
-  test("git.deploymentEnabled is not relied upon (the buggy '*' glob mechanism is not used)", () => {
+describe("Vercel deploy lockdown (PROJEXA-E2E-001) -- ignoreCommand gates on VERCEL_ENV alone", () => {
+  test("git.deploymentEnabled is not relied upon (still gone since R87)", () => {
     const v = readVercelJson()
     expect(v.git).toBeUndefined()
   })
 
-  test("ignoreCommand exists and references VERCEL_GIT_COMMIT_REF", () => {
+  test("ignoreCommand exists and references VERCEL_ENV, not branch name or git diff", () => {
     const v = readVercelJson()
     expect(typeof v.ignoreCommand).toBe("string")
-    expect(v.ignoreCommand).toContain("VERCEL_GIT_COMMIT_REF")
+    expect(v.ignoreCommand).toContain("VERCEL_ENV")
+    expect(v.ignoreCommand).not.toContain("VERCEL_GIT_COMMIT_REF")
+    expect(v.ignoreCommand).not.toContain("git diff")
   })
 
-  test("a non-main branch is always skipped, even with a real src change", () => {
+  test("VERCEL_ENV=production proceeds to build (exit 1)", () => {
     const v = readVercelJson()
-    const dir = makeRepo()
-    try {
-      writeFileSync(join(dir, "app.ts"), "console.log(1)")
-      sh("git add -A && git commit -q -m 'feat: real change'", dir)
-      expect(runIgnoreCommand(v.ignoreCommand, dir, "feature/some-branch")).toBe(0)
-      expect(runIgnoreCommand(v.ignoreCommand, dir, "dependabot/npm_and_yarn/x-1.0.0")).toBe(0)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    expect(runIgnoreCommand(v.ignoreCommand, "production")).toBe(1)
   })
 
-  test("main + a docs/governance-only commit is skipped", () => {
+  test("VERCEL_ENV=preview is skipped (exit 0) -- every branch/PR build", () => {
     const v = readVercelJson()
-    const dir = makeRepo()
-    try {
-      writeFileSync(join(dir, "NOTES.md"), "docs update")
-      writeFileSync(join(dir, "log.jsonl"), '{"a":1}\n')
-      sh("mkdir -p kt/sub ai-os/sub .github/workflows", dir)
-      writeFileSync(join(dir, "kt/sub/f.txt"), "kt note")
-      writeFileSync(join(dir, "ai-os/sub/f.txt"), "ai-os note")
-      writeFileSync(join(dir, ".github/workflows/f.yml"), "name: x")
-      sh("git add -A && git commit -q -m 'docs: governance-only change'", dir)
-      expect(runIgnoreCommand(v.ignoreCommand, dir, "main")).toBe(0)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    expect(runIgnoreCommand(v.ignoreCommand, "preview")).toBe(0)
   })
 
-  test("main + a real app-code change proceeds to build", () => {
+  test("VERCEL_ENV=development is skipped (exit 0)", () => {
     const v = readVercelJson()
-    const dir = makeRepo()
-    try {
-      writeFileSync(join(dir, "src-app.ts"), "export const x = 1")
-      sh("git add -A && git commit -q -m 'fix: real app change'", dir)
-      expect(runIgnoreCommand(v.ignoreCommand, dir, "main")).toBe(1)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    expect(runIgnoreCommand(v.ignoreCommand, "development")).toBe(0)
   })
 
-  test("main + a mixed doc+app-code commit proceeds to build (docs-only exemption doesn't mask real changes)", () => {
+  test("VERCEL_ENV unset is skipped (exit 0) -- fail closed, not open", () => {
     const v = readVercelJson()
-    const dir = makeRepo()
-    try {
-      writeFileSync(join(dir, "NOTES.md"), "docs update")
-      writeFileSync(join(dir, "src-app.ts"), "export const x = 1")
-      sh("git add -A && git commit -q -m 'feat: mixed change'", dir)
-      expect(runIgnoreCommand(v.ignoreCommand, dir, "main")).toBe(1)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+    expect(runIgnoreCommand(v.ignoreCommand, undefined)).toBe(0)
   })
 })
 
