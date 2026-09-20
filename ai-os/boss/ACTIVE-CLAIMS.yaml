@@ -43,6 +43,36 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, isolated worktree C:\ct\projexa-schedule-fix, branch fix/schedule-project-switcher) -- PROJEXA-E2E-001 section 5 item 6: /schedule ignores the global project switcher, reads only ?projectId="
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Root cause confirmed by reading the code (not assumed from the owner's
+      description): /schedule/page.tsx is the ONLY project-scoped screen that
+      calls resolveRouteProject() (src/lib/project-selection.ts -- the A-13
+      "strict URL-only, no cookie fallback" resolver), while every other
+      project-scoped page calls resolveSelectedProject()/resolveProjectForModule(),
+      both of which also honour the rail's own veri.rail.project cookie.
+      M24Shell.tsx's chooseProject() (the global switcher's handler) only
+      pushes the new id into the URL when the CURRENT url already carries a
+      ?projectId= (routeProjectId truthy); otherwise it writes the cookie and
+      calls router.refresh() -- which works for the ~50 cookie-aware pages but
+      is a no-op for /schedule, which never reads that cookie. So landing on
+      /schedule with no ?projectId= (fresh nav, bookmark, typed URL) and then
+      using the top-rail switcher visibly does nothing.
+
+      Fix (in progress): pickRouteProject() (src/lib/project-preference.ts)
+      gains a `preferred` fallback tier -- the rail's own remembered cookie
+      choice, exactly what pickProject() already grants the other ~50 pages --
+      inserted between "nothing named" and "ask", and resolveRouteProject()
+      threads readPreferredProjectId() into it. The first-project GUESS A-13
+      exists to forbid stays forbidden (pickRouteProject still never reaches
+      projects[0]); only the "did the user already tell us, via the switcher"
+      tier is added. Explicit ?projectId= deep links are unaffected (URL still
+      wins outright). File scope: src/lib/project-preference.ts (+.test.ts),
+      src/lib/project-selection.ts, src/app/(app)/schedule/page.tsx (comment
+      only), regression test (unit + e2e TBD). Does not touch
+      change-orders/site-diary/reports/scope (siblings already fixed/claimed
+      elsewhere in this same work order).
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
