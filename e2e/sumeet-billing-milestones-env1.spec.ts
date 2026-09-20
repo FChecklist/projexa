@@ -62,17 +62,53 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // depend on which one -- so poll for non-null rather than for this exact
   // id, which also absorbs the real one-request propagation delay observed
   // in an earlier run of this same spec.
+  //
+  // TIMEOUT RAISED 15_000 -> 30_000 (R-95 re-audit, 2026-09-20). A fresh
+  // audit found this exact assertion genuinely fails in real CI ("Received:
+  // null" after the full 15s). Investigated the backend end to end
+  // (compliance-tracker's boq-analysis-service.ts/construction-boq-
+  // service.ts -- resolveApprovedBoq, getEffectiveContractValueForProject,
+  // submitBoq/approveBoq) and confirmed via code review AND a real local
+  // create->submit->approve->poll run against the live Supabase project
+  // that there is no logic defect: an approved BOQ is visible to this exact
+  // query immediately after approveBoq() commits. The real cause is this
+  // program's own extensively-documented "E2E Tests (Env-1, cross-repo)"
+  // CI job history (compliance-tracker's .github/workflows/ci.yml, inline
+  // comments dated 2026-09-13): real, severe connection-latency spikes on
+  // GitHub-hosted runners talking to the Supabase pooler (IPv6/Supavisor
+  // auth-retry cascades documented there as pushing individual request
+  // latency past 15s, up to 30s+). This poll's own 15_000ms was tighter
+  // than this repo's own established minimum for a network-dependent
+  // Playwright check (playwright.config.ts's actionTimeout/
+  // navigationTimeout are both 30_000ms, raised for this identical
+  // documented CI-latency class -- see that file's own "GAP FOUND
+  // (2026-09-19, Playwright gap-closure Round 2)" comment). The assertion
+  // itself is unchanged (still requires a real, non-null boqId, never
+  // relaxed to tolerate a genuinely-missing approval) -- only the headroom
+  // given to a slow-but-correct upstream now matches this suite's own
+  // proven-sufficient standard instead of being the one outlier below it.
+  // lastAnalysisStatus is logged (not asserted on) purely so a future
+  // failure of this poll shows whether the upstream was ever answering with
+  // a non-2xx (a real auth/scope/5xx problem) vs. only ever timing out
+  // (the documented CI-latency class this fix targets) -- console output is
+  // captured in the test report either way.
+  let lastAnalysisStatus: number | null = null;
   await expect
     .poll(
       async () => {
         const res = await page.request.get(`/api/reports/boq-analysis?projectId=${PROJECT_ID}`);
+        lastAnalysisStatus = res.status();
         if (!res.ok()) return null;
         const { row } = await res.json();
         return row?.boqId ?? null;
       },
-      { message: "boq-analysis must report SOME approved BOQ before the create form can be exercised", timeout: 15_000 }
+      { message: "boq-analysis must report SOME approved BOQ before the create form can be exercised", timeout: 30_000 }
     )
-    .not.toBeNull();
+    .not.toBeNull()
+    .catch((err) => {
+      console.log(`boq-analysis poll's last response status: ${lastAnalysisStatus}`);
+      throw err;
+    });
 
   // A real customer must exist for the create form's own customer <select>.
   const customersRes = await page.request.get("/api/customers");
