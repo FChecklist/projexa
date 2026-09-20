@@ -10,18 +10,31 @@
 // (MeetingObjectClient.tsx, which gained a real Edit this conversion --
 // updateMeeting() didn't exist before) instead of the old "View" Dialog
 // popup.
-import { useEffect, useState } from "react";
+//
+// Cold-load fix (owner-flagged "single biggest risk to a live demo", 10-20s
+// on /meetings among 8 named routes). THE DEFECT: meetings/page.tsx used to
+// await resolveSelectedProject() directly with no <Suspense> boundary and no
+// cache, so the WHOLE PAGE (including the title) blocked on an uncached
+// upstream call -- and only THEN did this component fire a second, separate
+// client fetch after hydration. Two sequential VERIDIAN hops before a usable
+// screen, exactly the anti-pattern R67 F-18/F-30 already fixed on
+// /labour, /reports, /documents and /budgets, just never applied here.
+// Measured cold vs warm on this exact route: 48.5s cold, 3.1s warm (the
+// largest cold/warm ratio of the owner's 8 routes) -- almost entirely
+// first-hit-only cost, which is exactly what this fix collapses into one
+// server-side round trip. See module-list-source.ts's fetchMeetingsList and
+// meetings/page.tsx for the other half.
 import { useRouter } from "next/navigation";
 import { formatDateTimeMedium } from "@/lib/format-date";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Plus } from "lucide-react";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import { useListRead } from "@/lib/use-list-read";
+import type { ModuleListInitial } from "@/lib/module-list-state";
 
-type Meeting = {
+export type Meeting = {
   id: string;
   title: string;
   scheduledAt: string;
@@ -34,28 +47,28 @@ type Meeting = {
 // fully pinned helper now.
 const formatDateTime = formatDateTimeMedium;
 
-export default function MeetingsClient({ projectId }: { projectId: string }) {
+export default function MeetingsClient({
+  projectId,
+  initial = null,
+}: {
+  projectId: string;
+  /**
+   * What meetings/page.tsx already fetched on the server for this project
+   * (via fetchMeetingsList). Present, the hook starts ANSWERED and makes no
+   * round trip on first paint. Only the first url is seeded -- a project
+   * switch still reads normally.
+   */
+  initial?: ModuleListInitial<Meeting>;
+}) {
   const router = useRouter();
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
-  async function load() {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await fetchJson<{ meetings?: Meeting[] }>(`/api/meetings?projectId=${encodeURIComponent(projectId)}`);
-      setMeetings(data.meetings ?? []);
-    } catch (err) {
-      const msg = errorMessage(err, "Couldn't load meetings");
-      setLoadError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, [projectId]);
+  const read = useListRead<Meeting>({
+    url: `/api/meetings?projectId=${encodeURIComponent(projectId)}`,
+    select: (body) => (body as { meetings?: Meeting[] })?.meetings,
+    initial,
+  });
+  const meetings = read.rows;
+  const loading = read.status === "loading" || read.status === "idle";
 
   return (
     <div className="space-y-4">
@@ -68,9 +81,9 @@ export default function MeetingsClient({ projectId }: { projectId: string }) {
       <Card className="shadow-card">
         <CardContent className="p-0">
           {loading ? (
-            <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : loadError ? (
-            <DataLoadError messages={[loadError]} onRetry={load} />
+            <div className="grid h-32 place-items-center" aria-busy="true"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : read.status === "error" ? (
+            <DataLoadError messages={[read.error?.message ?? "Couldn't load meetings"]} onRetry={read.reload} />
           ) : meetings.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No meetings scheduled yet.</p>
           ) : (
