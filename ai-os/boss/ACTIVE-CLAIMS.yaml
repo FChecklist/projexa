@@ -43,6 +43,49 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Owner work order PROJEXA-E2E-001 (pasted in chat, not a file on disk -- searched
+      Desktop/Downloads/Documents/OneDrive/both repos, does not exist; treating the
+      pasted text as source of truth and writing it to PROJEXA-E2E-001.md at this
+      repo's root as the durable record). DPDP work in compliance-tracker is PAUSED
+      per the owner's own instruction until this closes.
+
+      Order (owner's own section 8): (1) re-verify the 14 rows in
+      platform.sumeet_requirements (Supabase pcrjmlpuqsbocqfwoxod) that allegedly cite
+      Playwright e2e/ tests that don't exist -- re-open and write real tests, re-close
+      only what genuinely passes; (2) fix the 8 broken screens named in section 5,
+      starting with /change-orders; (3) reports/dashboards (heaviest weight); (4)
+      requirement-by-requirement, 4 surfaces (one-page/ERP/AI-link/email), every role;
+      (5) the cold-load (10-20s) investigation.
+
+      Ground rules from the owner, binding for the whole work order: local `bun dev`
+      + GitHub CI + live Supabase only. NO Vercel preview/branch deploys "just to
+      check" -- Vercel gets exactly one deployment, at the very end, only after
+      everything is green AND the owner has explicitly said so. External reachability
+      (AI link pasted into a chat engine, email links clicked from a real inbox) uses
+      a cloudflared tunnel to the local dev server, not a Vercel preview. Also
+      confirming/fixing the Vercel "Ignored Build Step" on both projects
+      (veridian-compliance-ai and projexa) so only `main` can trigger a build --
+      read-only check first, reporting before any change, per the owner's explicit
+      "report the commit" instruction once applied.
+
+      Initial finding already contradicts the owner's own count and is being verified
+      further before reporting: all e2e/ files cited by the 20 e2e-citing rows in the
+      register (across both repos' e2e/ directories) DO exist on origin/main by simple
+      path check -- "phantom" must mean something subtler (file exists but doesn't
+      contain a real assertion for that specific requirement id, is excluded from the
+      CI job that would actually run it, is skipped/fixme, or the cited CI run/commit
+      doesn't check out) -- not reporting a false "0 phantom" until this is confirmed
+      file-by-file, test-by-test.
+
+      File/scope: e2e/ in both repos (read/write), the 8 named broken screens (mostly
+      projexa src/app/(app)/*), platform.sumeet_requirements (PM-only writer per its
+      own comment), vercel.json in both repos (Ignored Build Step only, not touching
+      the existing R87 main-branch gate logic without checking it first),
+      PROJEXA-E2E-001.md (new, this repo root). NOT touching compliance-tracker's
+      DPDP work (explicitly paused by the owner for the duration of this order).
   - session_label: "claude-code (interactive, Claude Desktop) -- org-configurable start-of-day/end-of-day email digest, actionable by reply (Owner directive 2026-09-19). Follow-up on WO-PROJEXA-AI-LINK-001's own deliberately-deferred scope (digest.ts's header: 'does NOT implement the mandatory cadence engine... or a cron trigger' -- that comment is now partly stale, a fixed single daily cron exists, but per-org schedule/timezone, morning/evening split, and inbound reply parsing genuinely do not)."
     claimed_at: "2026-09-19T (this session)"
     claim: |
