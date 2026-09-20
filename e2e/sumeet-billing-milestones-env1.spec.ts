@@ -16,18 +16,27 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #3: a billing milestone can be created, drafted, submitted and approved through the real UI", async ({ page }) => {
-  // e2e-env1 CI fix (2026-09-20): this test chains 7+ real, sequential
-  // network round trips (BOQ create/submit/approve-as-a-different-user,
-  // a poll, a customers list, the create form, then 3 more status
-  // transitions each waited on individually) against a live Supabase
-  // project -- a real CI run showed the config's 75_000ms default test
-  // timeout firing while still inside the Draft-click wait (which itself
-  // had NOT yet hit its own, already-widened 30_000ms budget), meaning
-  // the cumulative cost of everything before it had already consumed most
-  // of the 75s. Raised the whole test's own budget, same fix already
-  // applied to the two sibling /api/exceptions specs for the identical
-  // "individually-widened waits, insufficient overall budget" pattern.
+  // TEST-LEVEL TIMEOUT RAISED (R-95 re-audit, 2026-09-20): this test chains
+  // SIX sequential network-dependent waits, each individually raised to
+  // 30_000ms below for the same documented CI-latency reasons (create,
+  // submit, approve, the boq-analysis poll, then Draft/Submit/Approve
+  // status-badge waits, then the timeline). A real isolated CI run
+  // (compliance-tracker workflow_dispatch run 35498527292) hit playwright.
+  // config.ts's default per-test budget (75_000ms) with "Test timeout of
+  // 75000ms exceeded" while legitimately waiting on the LAST of those six
+  // steps -- the sum of several individually-justified 30s waits can
+  // exceed a 75s whole-test budget even when no single step is actually
+  // broken.
+  //
+  // MERGE NOTE (PROJEXA-E2E-001, 2026-09-20): two independent sessions
+  // raised this same budget concurrently -- this PR's own branch proposed
+  // 120_000ms, while `main` had already landed 150_000ms via the identical
+  // "e2e-env1 CI fix" pattern applied to the sibling /api/exceptions specs.
+  // Kept the larger, already-CI-proven value rather than shrinking it back
+  // down; both figures were derived from the same six/seven-step chain, so
+  // there is no functional disagreement, only a difference in headroom.
   test.setTimeout(150_000);
+
   // Setup: the create form is disabled until the project has an APPROVED
   // BOQ (BillingMilestonesClient.tsx's own NO_APPROVED_BOQ_REASON gate) --
   // a live check this run found every existing BOQ on this project is
@@ -74,17 +83,53 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // depend on which one -- so poll for non-null rather than for this exact
   // id, which also absorbs the real one-request propagation delay observed
   // in an earlier run of this same spec.
+  //
+  // TIMEOUT RAISED 15_000 -> 30_000 (R-95 re-audit, 2026-09-20). A fresh
+  // audit found this exact assertion genuinely fails in real CI ("Received:
+  // null" after the full 15s). Investigated the backend end to end
+  // (compliance-tracker's boq-analysis-service.ts/construction-boq-
+  // service.ts -- resolveApprovedBoq, getEffectiveContractValueForProject,
+  // submitBoq/approveBoq) and confirmed via code review AND a real local
+  // create->submit->approve->poll run against the live Supabase project
+  // that there is no logic defect: an approved BOQ is visible to this exact
+  // query immediately after approveBoq() commits. The real cause is this
+  // program's own extensively-documented "E2E Tests (Env-1, cross-repo)"
+  // CI job history (compliance-tracker's .github/workflows/ci.yml, inline
+  // comments dated 2026-09-13): real, severe connection-latency spikes on
+  // GitHub-hosted runners talking to the Supabase pooler (IPv6/Supavisor
+  // auth-retry cascades documented there as pushing individual request
+  // latency past 15s, up to 30s+). This poll's own 15_000ms was tighter
+  // than this repo's own established minimum for a network-dependent
+  // Playwright check (playwright.config.ts's actionTimeout/
+  // navigationTimeout are both 30_000ms, raised for this identical
+  // documented CI-latency class -- see that file's own "GAP FOUND
+  // (2026-09-19, Playwright gap-closure Round 2)" comment). The assertion
+  // itself is unchanged (still requires a real, non-null boqId, never
+  // relaxed to tolerate a genuinely-missing approval) -- only the headroom
+  // given to a slow-but-correct upstream now matches this suite's own
+  // proven-sufficient standard instead of being the one outlier below it.
+  // lastAnalysisStatus is logged (not asserted on) purely so a future
+  // failure of this poll shows whether the upstream was ever answering with
+  // a non-2xx (a real auth/scope/5xx problem) vs. only ever timing out
+  // (the documented CI-latency class this fix targets) -- console output is
+  // captured in the test report either way.
+  let lastAnalysisStatus: number | null = null;
   await expect
     .poll(
       async () => {
         const res = await page.request.get(`/api/reports/boq-analysis?projectId=${PROJECT_ID}`);
+        lastAnalysisStatus = res.status();
         if (!res.ok()) return null;
         const { row } = await res.json();
         return row?.boqId ?? null;
       },
-      { message: "boq-analysis must report SOME approved BOQ before the create form can be exercised", timeout: 15_000 }
+      { message: "boq-analysis must report SOME approved BOQ before the create form can be exercised", timeout: 30_000 }
     )
-    .not.toBeNull();
+    .not.toBeNull()
+    .catch((err) => {
+      console.log(`boq-analysis poll's last response status: ${lastAnalysisStatus}`);
+      throw err;
+    });
 
   // A real customer must exist for the create form's own customer <select>.
   const customersRes = await page.request.get("/api/customers");
@@ -113,21 +158,28 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // Real, specific assertion: the new milestone renders in the list by its
   // own real, unique description text -- not just "a row appeared".
   const row = page.locator("li", { hasText: description });
-  await expect(row, "the created milestone must appear in the real list, not just a toast").toBeVisible({ timeout: 15_000 });
+  await expect(row, "the created milestone must appear in the real list, not just a toast").toBeVisible({ timeout: 30_000 });
   await expect(row.getByText(/milestone achieved/i), "a freshly created claim must start in milestone_achieved status").toBeVisible();
 
   // Draft -> Submit -> Approve, each a real click, each asserted by the
   // status badge actually changing -- not by the button disappearing alone
   // (a stale list would also make the old button vanish).
   //
-  // e2e-env1 CI fix (2026-09-20): 10_000ms was tight for a real API round
-  // trip under this job's own documented real latency (a genuine, cross-
-  // repo call through PROJEXA's proxy into compliance-tracker's live
-  // Supabase project, not a local mock) -- a real, reproducible timeout was
-  // observed on this exact assertion in CI. Raised to 30_000ms, matching
-  // the convention this same suite already uses elsewhere for a real
-  // single-status-transition UI update (e.g. r81-d603-scope.spec.ts,
-  // r90-real-backend-error-in-toast-env1.spec.ts).
+  // TIMEOUTS RAISED 10_000 -> 30_000 (R-95 re-audit, 2026-09-20, same pass
+  // as the boq-analysis poll fix above). A real CI run on the fixed poll
+  // got past it cleanly and then failed HERE instead ("status badge must
+  // read Drafted after the real Draft click", Timeout: 10000ms) -- proving
+  // this is the same documented CI-latency class hitting a DIFFERENT
+  // network-dependent step in the same spec (click -> server mutation ->
+  // UI re-fetch), not a one-off. Each of these four checks now matches this
+  // suite's own established 30_000ms standard (playwright.config.ts's
+  // actionTimeout/navigationTimeout), same reasoning as the poll fix --
+  // independently corroborated by a second session's "e2e-env1 CI fix"
+  // pass that landed the identical 30_000ms value on `main` for the same
+  // reason (a genuine, cross-repo call through PROJEXA's proxy into
+  // compliance-tracker's live Supabase project hitting real latency, not a
+  // local mock), matching the convention this suite already uses elsewhere
+  // (e.g. r81-d603-scope.spec.ts, r90-real-backend-error-in-toast-env1.spec.ts).
   await row.getByRole("button", { name: /^draft$/i }).click();
   await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 30_000 });
 
@@ -141,7 +193,7 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // steps fetched from GET /api/billing-claims/[id].
   await row.getByRole("button", { name: description }).click();
   const timelineList = row.locator("ul.space-y-1");
-  await expect(timelineList, "the real timeline must render after expanding, not stay a spinner").toBeVisible({ timeout: 10_000 });
+  await expect(timelineList, "the real timeline must render after expanding, not stay a spinner").toBeVisible({ timeout: 30_000 });
   await expect(timelineList, "the timeline must name the real stages this spec actually drove the claim through").toContainText(/drafted/i);
   await expect(timelineList).toContainText(/submitted/i);
 });
