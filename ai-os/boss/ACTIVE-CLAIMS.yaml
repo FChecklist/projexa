@@ -43,6 +43,23 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- R-95 billing-milestones closure re-audit (platform.sumeet_requirements, id='R-95'): e2e/sumeet-billing-milestones-env1.spec.ts's own poll timeout is too tight for this program's documented CI-latency class."
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Scope: e2e/sumeet-billing-milestones-env1.spec.ts ONLY (raising the
+      "boq-analysis must report SOME approved BOQ" poll's timeout from
+      15_000ms to 30_000ms, matching playwright.config.ts's own
+      actionTimeout/navigationTimeout precedent for this exact documented
+      CI-latency class -- see compliance-tracker's ACTIVE-CLAIMS.yaml entry
+      for the full root-cause writeup and the backend code this session
+      independently verified is NOT the defect). Working in an isolated
+      worktree at C:\ct\projexa-worktrees\wo-r95-billing-milestones, branch
+      wo/r95-billing-milestones-boq-analysis-poll, off origin/main -- NOT
+      touching the fix/rb2-demo-gate-six-tcs-real-ui branch's in-progress
+      work sitting in the main C:\ct\projexa checkout, and NOT touching the
+      feat/merge6-project-workspace or other in-flight PROJEXA-E2E-001
+      sub-task work. Per the owner's PROJEXA-E2E-001 ground rules: local dev
+      + GitHub CI + live Supabase only, no Vercel, PR left open/unmerged.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
