@@ -86,6 +86,31 @@ active:
       the existing R87 main-branch gate logic without checking it first),
       PROJEXA-E2E-001.md (new, this repo root). NOT touching compliance-tracker's
       DPDP work (explicitly paused by the owner for the duration of this order).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- /scope Filter+Export marked 'Not yet available' (work order section 5 item 4)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Isolated worktree C:\ct\projexa-scope-fix, branch fix/scope-filter-export, off
+      origin/main @ eb33f85 -- NOT working in the shared C:\ct\projexa checkout
+      (several parallel sessions use it) or C:\ct\ct (backend not touched by this
+      sub-task; no schema/service change needed).
+
+      Confirmed by reading src/components/ScopeClient.tsx directly: Filter and
+      Export are genuinely UNBUILT stub buttons (`disabled title="Not yet
+      available"`, no onClick, no data wired to either) -- not a bug masking a
+      silent failure, unlike the /change-orders and /site-diary findings earlier
+      in this work order. Building a real minimal version, reusing this repo's own
+      established patterns rather than inventing new ones: the Filter/Export header
+      trio + inline filter bar from DocumentsClient.tsx (R67 D-14) and the CSV
+      builder from src/lib/csv-export.ts (toCsv/downloadCsv, already used by
+      BudgetAnalyticalClient/DocumentsClient/ProjectsListClient/etc.).
+
+      File scope: src/components/ScopeClient.tsx, new
+      src/components/ScopeClient.test.tsx additions (existing file already has
+      some tests -- extending, not replacing). NOT touching ScopeObjectClient.tsx,
+      ScopeCompareClient.tsx, ScopeCreateClient.tsx, ScopeImportClient.tsx, or
+      ScopeReviseClient.tsx (separate screens, out of this sub-task's scope) or
+      any compliance-tracker file (the BOQ list API already returns everything
+      this filter/export needs; no backend change required).
   - session_label: "claude-code (interactive, Claude Desktop) -- org-configurable start-of-day/end-of-day email digest, actionable by reply (Owner directive 2026-09-19). Follow-up on WO-PROJEXA-AI-LINK-001's own deliberately-deferred scope (digest.ts's header: 'does NOT implement the mandatory cadence engine... or a cron trigger' -- that comment is now partly stale, a fixed single daily cron exists, but per-org schedule/timezone, morning/evening split, and inbound reply parsing genuinely do not)."
     claimed_at: "2026-09-19T (this session)"
     claim: |
