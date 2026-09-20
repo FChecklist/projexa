@@ -30,10 +30,19 @@ describe("reportDestination", () => {
     expect(d.kind === "navigate" && d.href).toBe("/materials?tab=cost-report&projectId=p-1&from=2026-09-01&to=2026-09-02");
   });
 
-  test("every other report is still FETCHED, exactly as before", () => {
+  test("every other report is still FETCHED, exactly as before -- and asks for the legacy handler payload", () => {
     const d = reportDestination("project-status", { projectId: "p-1" });
     expect(d.kind).toBe("fetch");
-    expect(d.kind === "fetch" && d.path).toBe("/api/reports/project-status?projectId=p-1");
+    // PROJEXA-E2E-001 section 5 item 2: R67 E-32/R-265 flipped GET
+    // /reports/{name}'s DEFAULT body to the generic { columns, rows, totals,
+    // currency } table. Every downstream reader of this fetch (ProjectStatusCard,
+    // ReportOutput, reportResultToCsv) is built against the handler's own
+    // payload shape, never the table -- so this MUST ask for format=legacy, the
+    // same escape hatch E-32 shipped and the same fix already proven on the six
+    // call sites the E-32 follow-up commit migrated. Its absence is exactly the
+    // defect that made the Project Status card show a dash for every figure on
+    // a project with real BOQ/progress data.
+    expect(d.kind === "fetch" && d.path).toBe("/api/reports/project-status?projectId=p-1&format=legacy");
   });
 
   test("the weekly report carries its week start; nothing else does", () => {
@@ -45,7 +54,7 @@ describe("reportDestination", () => {
 
   test("a report name with a slash or a space cannot escape its own path segment", () => {
     const d = reportDestination("a/b c", { projectId: "p-1" });
-    expect(d.kind === "fetch" && d.path).toBe("/api/reports/a%2Fb%20c?projectId=p-1");
+    expect(d.kind === "fetch" && d.path).toBe("/api/reports/a%2Fb%20c?projectId=p-1&format=legacy");
   });
 
   test("isHostedReport agrees with reportDestination -- one fact, not two", () => {
