@@ -9,17 +9,58 @@
 // (approve the stuck CO, file the missing diary, release the retention...)
 // on THAT record's own screen -- change-orders, milestones, billing-
 // milestones, scope -- not from this report.
+//
+// Drill-down navigation (fixed 2026-09-21, was previously zero Link/href/
+// onClick beyond the accordion toggle despite every record already carrying
+// the real record's id): recordHref() below maps each record's own
+// `recordType` (added to the API payload alongside this fix, see
+// construction-exceptions-service.ts's ExceptionRecordType) to the real
+// object screen that type already has in this codebase -- the SAME
+// router.push(`/change-orders/${id}`) pattern ChangeOrdersClient.tsx's own
+// row-click already uses, not a new convention. Three record types
+// (vendor_dispute, customer_complaint, invoice_item) and the date-only
+// #20/#26 "missing daily report" rows genuinely have no per-record screen
+// anywhere in PROJEXA yet -- recordHref() returns null for those and the UI
+// renders plain (non-clickable) text rather than a fabricated dead link.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { toast } from "sonner";
 
-type ExceptionRecord = { id: string; detail: string };
+type ExceptionRecordType =
+  | "change_order" | "boq" | "boq_line_item" | "work_progress_entry" | "site_diary"
+  | "material_issue" | "labour_roster" | "punch_list_item" | "interim_bill"
+  | "vendor_dispute" | "customer_complaint" | "invoice_item" | "date";
+type ExceptionRecord = { id: string; detail: string; recordType?: ExceptionRecordType; linkId?: string };
 type ExceptionCheck = { item: number; title: string; flagged: boolean; count: number; records: ExceptionRecord[]; formula: string };
 
+/**
+ * The real object-screen route for a flagged record, or null when this
+ * record type has no per-record screen in PROJEXA today (recorded honestly
+ * rather than guessed at) -- see the header comment above for which.
+ */
+function recordHref(r: ExceptionRecord): string | null {
+  const linkId = r.linkId ?? r.id;
+  if (!linkId) return null;
+  switch (r.recordType) {
+    case "change_order": return `/change-orders/${linkId}`;
+    case "boq": return `/scope/${linkId}`;
+    case "boq_line_item": return `/scope/${linkId}`; // no per-line screen -- lands on the parent BOQ (linkId), the real "scope" screen
+    case "work_progress_entry": return `/work-progress/${linkId}`;
+    case "site_diary": return `/site-diary/${linkId}`;
+    case "material_issue": return `/materials/${linkId}`; // linkId is the MATERIAL's id, not the issue's own id -- no per-issue screen exists
+    case "labour_roster": return `/labour/${linkId}`;
+    case "punch_list_item": return `/punch-list/${linkId}`;
+    case "interim_bill": return `/invoices?highlight=${linkId}`; // same pattern BillingMilestonesClient.tsx's own "View invoice" action already uses
+    default: return null; // vendor_dispute / customer_complaint / invoice_item (no screen yet) or "date" (not a record)
+  }
+}
+
 export default function ExceptionsClient({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const [checks, setChecks] = useState<ExceptionCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +133,23 @@ export default function ExceptionsClient({ projectId }: { projectId: string }) {
                   </button>
                   {expanded && c.records.length > 0 && (
                     <ul className="mt-2 space-y-1 pl-6 text-xs text-px-muted">
-                      {c.records.map((r) => <li key={r.id}>{r.detail}</li>)}
+                      {c.records.map((r) => {
+                        const href = recordHref(r);
+                        if (!href) return <li key={r.id}>{r.detail}</li>;
+                        return (
+                          <li key={r.id}>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-left text-px-ink underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                              onClick={(e) => { e.stopPropagation(); router.push(href); }}
+                              title="Open the real record this exception names"
+                            >
+                              {r.detail}
+                              <ExternalLink className="size-3 shrink-0" />
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </li>
