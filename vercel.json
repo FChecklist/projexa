@@ -3,7 +3,7 @@
   "regions": [
     "bom1"
   ],
-  "ignoreCommand": "sh -c 'test \"$VERCEL_GIT_COMMIT_REF\" = \"main\" || exit 0; git diff --quiet HEAD^ HEAD -- . \":(exclude)*.md\" \":(exclude)*.jsonl\" \":(exclude)kt/**\" \":(exclude)ai-os/**\" \":(exclude).github/**\" && exit 0; exit 1'",
+  "ignoreCommand": "sh -c 'if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; else exit 0; fi'",
   "crons": [
     { "path": "/api/internal/email-digest-cadence/run", "schedule": "0 8 * * *" }
   ]
