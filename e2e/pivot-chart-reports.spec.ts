@@ -38,7 +38,16 @@ test.describe("Reports pivot/chart view switch (/reports)", () => {
     await expect(page.getByRole("alert")).not.toBeVisible({ timeout: 20_000 });
 
     const tableTab = page.getByRole("tab", { name: "Table" });
-    const hasTabs = await tableTab.isVisible({ timeout: 10_000 }).catch(() => false);
+    // TIMEOUT RAISED 10_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+    // sweep): whether these tabs render at all depends on the real report
+    // run above (through the VERIDIAN-proxy path) having finished landing
+    // its data -- matches this suite's own established minimum for a
+    // network-dependent check (playwright.config.ts's actionTimeout/
+    // navigationTimeout, both already 30_000 for this reason). The
+    // Table<->Pivot<->Chart tab switch further down stays untouched: that's
+    // a pure client-side re-render of the already-fetched data, no new
+    // round trip.
+    const hasTabs = await tableTab.isVisible({ timeout: 30_000 }).catch(() => false);
     test.skip(!hasTabs, "report returned zero rows -- no Table/Pivot/Chart tabs to switch between");
 
     await expect(tableTab).toBeVisible();

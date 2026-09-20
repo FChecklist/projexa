@@ -133,11 +133,24 @@ describe("AppSidebar's declared nav entries (R-81 regression guard)", () => {
 // R52 / R48_NAV_OMITS_LIVE_MODULE_ROUTE_01. The guard above only ever asked
 // one of the two questions -- "does every nav entry have a page behind it?"
 // It never asked the reverse, "does every page have a nav entry in front of
-// it?", and that is the direction /site-materials fell through: a live,
-// fully-rendering module (HTTP 200, its own heading, three working tabs) with
-// no nav entry at all, reachable only by typing the URL. C01 REACHABLE calls
-// that a fail in its own words -- "reachable by clicking through the app shell
-// from the home screen, without typing a URL".
+// it?", and that is the direction /site-materials originally fell through: a
+// live, fully-rendering module (HTTP 200, its own heading, three working
+// tabs) with no nav entry at all, reachable only by typing the URL. C01
+// REACHABLE calls that a fail in its own words -- "reachable by clicking
+// through the app shell from the home screen, without typing a URL".
+//
+// /site-materials itself is gone now (PROJEXA-E2E-001 item 5, 2026-09-20):
+// investigated per the owner's explicit "real screen or remove the route?"
+// question and found it was never a distinct domain concept -- same
+// constructionMaterials table as /materials (already project/site-scoped;
+// no org-wide master exists to distinguish a "site" view from), one
+// sumeet_requirements row (R-C08) covering both, two of its three tabs
+// permanently dead since R52. It had already been reduced to a silent
+// server redirect to /materials on 2026-08-30; keeping a sidebar entry
+// whose only job was to send a click to another entry one line up added
+// nothing but a second, confusing door to the same room, so it was removed
+// rather than kept as a redirect shim. The regression test at the bottom of
+// this describe block now asserts the opposite of what it used to.
 //
 // The fault record asked for exactly this check to become standing rather than
 // a one-off measurement, so here it is. The allowlist below is the whole point
@@ -426,8 +439,9 @@ describe("every module route is reachable by clicking (C01 REACHABLE)", () => {
     expect(stale).toEqual([]);
   });
 
-  test("/site-materials specifically is in the nav -- the route this guard was written for", () => {
-    expect(sidebarHrefs()).toContain("/site-materials");
+  test("/site-materials stays gone -- removed as a redundant duplicate of /materials (PROJEXA-E2E-001 item 5), not left as a nav entry or a page on disk", () => {
+    expect(sidebarHrefs()).not.toContain("/site-materials");
+    expect(routesOnDisk()).not.toContain("/site-materials");
   });
 });
 

@@ -1,6 +1,17 @@
 import { test, expect } from "@playwright/test";
 import { fieldByLabel } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below waits on a real
+// GET/POST round trip through the VERIDIAN-proxy path (dashboard/tab loads,
+// or a create-then-redirect-then-re-render cycle) -- raised to 30_000ms to
+// match this suite's own established minimum for a network-dependent
+// Playwright check. playwright.config.ts's actionTimeout/navigationTimeout
+// are both already 30_000ms, raised for the identical documented CI-latency
+// class (see that file's own comments, and the R-95 boq-analysis-poll fix in
+// e2e/sumeet-billing-milestones-env1.spec.ts / PR #297 for the full
+// root-cause writeup). Assertions themselves are unchanged -- only the
+// headroom given to a slow-but-correct upstream.
 test.use({ storageState: "playwright/.auth/ceo.json" });
 
 // GAP: verified live via direct API calls before writing these tests --
@@ -43,7 +54,7 @@ test.describe("GRC (/grc)", () => {
     // below permanently adds one on every re-run) -- assert the dashboard
     // renders real summary cards instead of a fixed zero, so this stays
     // accurate across repeated live runs.
-    await expect(page.getByText("Open Risks")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Open Risks")).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: log a Risk in the Risk Register, verify it persists", async ({ page }) => {
@@ -65,7 +76,7 @@ test.describe("GRC (/grc)", () => {
     // Register never had a detail view before this) rather than closing a
     // dialog back onto the list.
     await expect(page).toHaveURL(/\/grc\/risks\/[0-9a-f-]+$/);
-    await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(title)).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: plan an Audit engagement and record a finding against it", async ({ page }) => {
@@ -84,7 +95,7 @@ test.describe("GRC (/grc)", () => {
     // get/update-single route exists server-side for engagements yet (list
     // -with-nested-findings + create only), an honest scope cut.
     await expect(page).toHaveURL(/\/grc\?tab=audits/);
-    await expect(page.getByText(engagementName)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(engagementName)).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole("button", { name: /record finding/i }).click();
     // Stale: this used to open a Dialog too. AuditsPanel's own comment
@@ -109,7 +120,7 @@ test.describe("GRC (/grc)", () => {
     // Page (PolicyObjectClient.tsx) rather than closing a dialog back onto
     // the list.
     await expect(page).toHaveURL(/\/grc\/policies\/[0-9a-f-]+$/);
-    await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(title)).toBeVisible({ timeout: 30_000 });
 
     // Stale: "Request Publish" used to be a list-row button, clicked from
     // the Policies table. PolicyObjectClient.tsx:6-8's own header comment
@@ -158,7 +169,7 @@ test.describe("GRC (/grc)", () => {
     // unresolved naming overlap with the separate /api/vendors master-vendor
     // CRUD surface), an honest scope cut.
     await expect(page).toHaveURL(/\/grc\?tab=vendor-risk/);
-    await expect(page.getByText(name)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(name)).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: log a Fraud/Incident case", async ({ page }) => {
@@ -177,13 +188,13 @@ test.describe("GRC (/grc)", () => {
     // Case Register never had a detail view before this) rather than
     // closing a dialog back onto the list.
     await expect(page).toHaveURL(/\/grc\/cases\/[0-9a-f-]+$/);
-    await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(title)).toBeVisible({ timeout: 30_000 });
   });
 
   test("Compliance Register tab is read-only with real search/status filter controls", async ({ page }) => {
     await page.goto("/grc");
     await page.getByRole("tab", { name: "Compliance Register" }).click();
-    await expect(page.getByText("No compliance obligations found.")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("No compliance obligations found.")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("button", { name: /log|create|new|add/i })).toHaveCount(0);
   });
 });

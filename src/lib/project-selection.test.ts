@@ -78,6 +78,88 @@ describe("resolveSelectedProject", () => {
   });
 });
 
+// ─── PROJEXA-E2E-001 section 5 item 6 ─────────────────────────────────────
+//
+// resolveRouteProject() (A-13, used only by /schedule and /workspace/[id]) is
+// asserted end to end here, cookie and all -- not just pickRouteProject()'s
+// pure function in project-preference.test.ts -- because the actual defect
+// lived in the wiring between them: resolveRouteProject() never called
+// readPreferredProjectId() at all, so pickRouteProject()'s new `preferred`
+// parameter would have gone unused even with the pure function fixed. The
+// mock mirrors module-list-source.test.ts's own established next/headers
+// stub (the cookie-validation tests for the OTHER ~50 pages' resolver).
+const realHeaders = await import("next/headers");
+let routeCookieValue: string | null = null;
+
+function installRouteCookieMock() {
+  mock.module("next/headers", () => ({
+    cookies: async () => ({
+      get: (name: string) =>
+        name === "veri.rail.project" && routeCookieValue !== null ? { name, value: routeCookieValue } : undefined,
+    }),
+  }));
+}
+
+describe("resolveRouteProject", () => {
+  afterEach(async () => {
+    routeCookieValue = null;
+    await mock.module("next/headers", () => realHeaders);
+  });
+
+  test("the URL still wins outright over the rail's remembered cookie -- explicit deep links are unaffected", async () => {
+    routeCookieValue = "p1";
+    installRouteCookieMock();
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject({ projectId: "p2" }, null, "org-1");
+    expect(result.project).toEqual(PROJECTS[1]);
+    expect(result.source).toBe("route");
+    expect(result.missing).toBe(false);
+  });
+
+  test("the rail's remembered cookie answers when the URL says nothing -- THE FIX: the switcher now reaches /schedule", async () => {
+    routeCookieValue = "p2";
+    installRouteCookieMock();
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toEqual(PROJECTS[1]);
+    expect(result.source).toBe("preference");
+    expect(result.missing).toBe(false);
+    // Not a guess, so not reported as one -- consistent with resolveSelectedProject's own "preference" (fellBack: false).
+    expect(result.fellBack).toBe(false);
+  });
+
+  test("neither the URL nor the cookie says anything -- the screen still asks, it never guesses projects[0]", async () => {
+    routeCookieValue = null;
+    installRouteCookieMock();
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toBeNull();
+    expect(result.missing).toBe(true);
+    expect(result.mode).toBe("all");
+  });
+
+  test("a cookie naming a project this org cannot see (stale, another org) is ignored, not obeyed", async () => {
+    routeCookieValue = "not-this-orgs-project";
+    installRouteCookieMock();
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toBeNull();
+    expect(result.missing).toBe(true);
+    // "unreachable" is reserved for a project the URL/object explicitly named -- a
+    // silently-ignored stale cookie is the "nothing said which" sentence, not this one.
+    expect(result.unreachable).toBe(false);
+  });
+
+  test("an object page's own project still outranks the cookie (A-21 precedent, unaffected by this fix)", async () => {
+    routeCookieValue = "p2";
+    installRouteCookieMock();
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, "p1", "org-1");
+    expect(result.project).toEqual(PROJECTS[0]);
+    expect(result.source).toBe("route");
+  });
+});
+
 // ─── R67 D-70 (audit R-262): what a create route says when this fails ────────
 //
 // These are pure functions, so unlike the block above they need no module stub.

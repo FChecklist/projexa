@@ -341,8 +341,21 @@ export type RouteProjectSelection = ProjectSelection & {
  * board under a heading naming that project, while the top rail could be saying
  * something else entirely -- and nothing on screen admitted that the choice had
  * been made for the user. The URL is the source of truth, so this resolves
- * STRICTLY from it (or from the object the page is about) and returns nothing
- * when it says nothing, letting the page ask instead of guess.
+ * from it (or from the object the page is about) FIRST, and never falls back
+ * to a guess (projects[0]) the way resolveSelectedProject() does.
+ *
+ * PROJEXA-E2E-001 section 5 item 6 FIX (2026-09-20): it used to stop there --
+ * "the URL, or nothing" -- which also refused the one thing that is not a
+ * guess: the rail's OWN remembered choice, written by the top-rail project
+ * switcher into the same veri.rail.project cookie readPreferredProjectId()
+ * below reads for every other project-scoped page. A user standing on
+ * /schedule with no ?projectId= yet in the URL and picking a project from the
+ * switcher saw nothing happen -- the switcher wrote the cookie and asked for a
+ * refresh, correctly, but this resolver never looked at it, so the "Pick a
+ * project" card just came back. `pickRouteProject()` now takes that cookie as
+ * a `preferred` tier between "the URL/object named one" and "ask" -- see its
+ * own comment in project-preference.ts for why this is not A-13's forbidden
+ * guess. An explicit `?projectId=` in the URL still outranks it outright.
  *
  * `missing` and `unreachable` are separate because they are different
  * sentences: one asks for a decision, the other reports a fact.
@@ -358,9 +371,13 @@ export async function resolveRouteProject(
     // F-03 exists to get off the render path -- and it is on the render path
     // of every screen that belongs to one project.
     const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
+    // A-05/A-13 FIX: the same cookie resolveSelectedProject() reads, so the
+    // rail's remembered choice means the same thing on every screen.
+    const preferred = await readPreferredProjectId();
     const picked = pickRouteProject({
       requested: searchParams?.projectId ?? null,
       objectProjectId: objectProjectId ?? null,
+      preferred,
       projects,
     });
     return {
@@ -371,8 +388,10 @@ export async function resolveRouteProject(
       // R67 D-70: the upstream status, for the caller's logging only. null on a
       // successful read -- there is no failure to report.
       status: null,
-      // A-13's strict resolution never picks for the user, so it can never
-      // have fallen back; with no project the screen IS org-wide, and asks.
+      // Neither the URL/object tier nor the remembered-preference tier is a
+      // guess, so this can never have "fallen back" in the D-07/A-04 sense --
+      // that label is reserved for source: "auto", which pickRouteProject()
+      // never produces. With no project at all the screen IS org-wide, and asks.
       mode: picked.project ? "project" : "all",
       fellBack: false,
       missing: picked.missing,

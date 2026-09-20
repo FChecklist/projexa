@@ -74,32 +74,72 @@ export function pickProject<T extends { id: string }>({
 // "No active projects yet" across all of them (A-05 kept it deliberately, and
 // made it admit to itself via source: "auto").
 //
-// A-13 rules that on a project's OWN screen that last resort is wrong: "The
-// URL wins", and "/schedule renders strictly from the URL's projectId and
-// shows the sentence 'Pick a project' when absent instead of defaulting to the
-// first project". Ten reloads of /schedule?projectId=X must render X, and a
-// /schedule with no project must ask rather than silently pick one and show
-// another project's board under the same heading.
+// A-13 rules that on a project's OWN screen that last resort -- GUESSING, i.e.
+// projects[0] -- is wrong: "The URL wins", and "/schedule renders strictly
+// from the URL's projectId and shows the sentence 'Pick a project' when
+// absent instead of defaulting to the first project". Ten reloads of
+// /schedule?projectId=X must render X, and a /schedule with no project must
+// ask rather than silently pick one and show another project's board under
+// the same heading.
 //
-// So this is the same question answered without the fallback, and it
-// distinguishes the two ways of having no project, because they need different
-// sentences: nothing was asked for (ask), and something was asked for that this
-// user cannot reach (say so).
+// PROJEXA-E2E-001 section 5 item 6 FIX (2026-09-20): "the URL, or nothing"
+// went one step too far and took the user's own EXPLICIT prior choice down
+// with the guess it was never the same thing as. The top-rail project
+// switcher (M24Shell.tsx's chooseProject()) writes that choice to the
+// veri.rail.project cookie and, on a screen with NO ?projectId= yet in its
+// URL, can only replay it via router.refresh() -- the same mechanism that
+// already works for the ~50 pages built on pickProject(), which reads that
+// exact cookie as its "preferred" tier. /schedule was the one screen that
+// never looked at it, so refresh()ing after a switcher click landed back on
+// "Pick a project" with no visible reaction at all: correct per the letter of
+// A-13, but indistinguishable from the switcher being broken.
+//
+// The fix is NOT to remove A-13 -- the guess it forbids is still forbidden,
+// pickRouteProject() below still never reaches projects[0]. It is to notice
+// that "the user's own remembered choice" and "a guess" are different
+// sources, exactly as pickProject() above already distinguishes them
+// ("preference" vs "auto"), and give this strict resolver the one tier
+// pickProject() has that it was missing. `preferred` is optional and
+// defaults to unset, so every existing caller (workspace/[id]/page.tsx, which
+// always supplies objectProjectId and therefore never reaches this tier
+// anyway) is unaffected.
+//
+// So this is the same question answered without the GUESS, and it
+// distinguishes the three ways of having no url/object-named project, because
+// they need different sentences: something was asked for that this user
+// cannot reach (say so), nothing was asked for but the rail remembers a real
+// choice (honour it, and say it came from "preference" so the UI can label it
+// exactly as it labels every other screen's remembered choice), and nothing
+// was asked for or remembered at all (ask).
 
 export type PickRouteProjectInput<T extends { id: string }> = {
   /** The URL's own ?projectId=. */
   requested?: string | null;
   /** An object page's own project, e.g. the BOQ's or the meeting's. */
   objectProjectId?: string | null;
+  /**
+   * PROJEXA-E2E-001 section 5 item 6: the rail's own remembered choice (the
+   * veri.rail.project cookie), read server-side exactly as pickProject()'s
+   * `preferred` is. An EXPLICIT prior choice the user made via the top-rail
+   * switcher, never a guess -- so honouring it does not reopen the
+   * first-project fallback A-13 forbids.
+   */
+  preferred?: string | null;
   /** Everything the user can actually reach. The only authority. */
   projects: readonly T[];
 };
 
 export type PickRouteProjectResult<T> = {
   project: T | null;
-  /** "route" whenever the URL or the object named a reachable project. */
-  source: Extract<ProjectSource, "route"> | null;
-  /** Nothing named a project at all -- the screen asks for one. */
+  /**
+   * "route" whenever the URL or the object named a reachable project.
+   * "preference" when nothing did, but the rail's own remembered choice
+   * resolved to one -- mirrors pickProject()'s own vocabulary so a screen
+   * using either resolver labels an auto-picked project the same way.
+   */
+  source: Extract<ProjectSource, "route" | "preference"> | null;
+  /** Nothing named a project at all, and nothing was remembered either --
+   *  the screen asks for one. */
   missing: boolean;
   /** A project WAS named and this user cannot reach it. */
   unreachable: boolean;
@@ -108,13 +148,24 @@ export type PickRouteProjectResult<T> = {
 export function pickRouteProject<T extends { id: string }>({
   requested,
   objectProjectId,
+  preferred,
   projects,
 }: PickRouteProjectInput<T>): PickRouteProjectResult<T> {
   const named = (requested ?? objectProjectId ?? "").trim();
-  if (!named) return { project: null, source: null, missing: true, unreachable: false };
-  const found = projects.find((p) => p.id === named);
-  if (found) return { project: found, source: "route", missing: false, unreachable: false };
-  return { project: null, source: null, missing: false, unreachable: true };
+  if (named) {
+    const found = projects.find((p) => p.id === named);
+    if (found) return { project: found, source: "route", missing: false, unreachable: false };
+    return { project: null, source: null, missing: false, unreachable: true };
+  }
+  // Nothing in the URL or the object. The rail's own remembered choice, if it
+  // still names a project this user can reach, is an answer the user already
+  // gave -- not the guess A-13 forbids. A stale/foreign id (another org,
+  // another user's browser) is silently ignored here exactly as pickProject()
+  // ignores one, rather than "resolved" to nothing being wrong (`unreachable`
+  // is reserved for a project the URL/object explicitly named).
+  const remembered = preferred ? projects.find((p) => p.id === preferred) : undefined;
+  if (remembered) return { project: remembered, source: "preference", missing: false, unreachable: false };
+  return { project: null, source: null, missing: true, unreachable: false };
 }
 
 /** The stored preference, or null. Never throws: a browser with storage

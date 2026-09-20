@@ -94,7 +94,12 @@ test("R-23 / R-C13: reducing the quantity of a progressed BOQ line is blocked, a
   await page.getByRole("button", { name: /^save$/i }).click();
 
   const scopeBlock = page.locator("p.text-px-error").first();
-  await expect(scopeBlock, "a real scope-reduction refusal must be shown, not a silent success").toBeVisible({ timeout: 15_000 });
+  // TIMEOUT RAISED 15_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+  // sweep): same real createBoqRevision POST round trip (through the
+  // VERIDIAN-proxy path) as the identical assertion in the sibling
+  // r22-boq-revision-remove-progressed-line-blocked-env1.spec.ts -- see
+  // that file's own comment for the full CI-latency precedent.
+  await expect(scopeBlock, "a real scope-reduction refusal must be shown, not a silent success").toBeVisible({ timeout: 30_000 });
   const bodyText = await page.locator("body").innerText();
   expect(bodyText, "the conflicts table must name the exact real line this spec progressed").toContain("R23C13-PROGRESSED");
 });

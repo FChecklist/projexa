@@ -27,18 +27,22 @@
 // the same uncontrolled-Tabs-no-URL-sync bug found and fixed repeatedly
 // this session.
 //
-// Same conversion also folds in module #31 (Site Materials, the duplicate
-// module found at /site-materials): its Catalog tab was this same
-// constructionMaterials table under a different label, and its Inbound tab
-// called a VERIDIAN path (/construction/materials/inbound) that never
+// Same conversion also folded in module #31 (Site Materials, the duplicate
+// module that used to live at /site-materials): its Catalog tab was this
+// same constructionMaterials table under a different label, and its Inbound
+// tab called a VERIDIAN path (/construction/materials/inbound) that never
 // existed -- always a dead request. Rather than duplicate the real Materials
-// screen, /site-materials now redirects here (see site-materials/page.tsx)
-// and this file gains its one genuinely new capability, Cost Report, backed
-// by a real getMaterialCostReport() aggregation added this same conversion
+// screen, /site-materials redirected here first (2026-08-30) and this file
+// gained its one genuinely new capability, Cost Report, backed by a real
+// getMaterialCostReport() aggregation added this same conversion
 // (construction-materials-service.ts) -- the proxy it calls
 // (api/construction-materials/cost-report/route.ts) had been calling a
 // VERIDIAN path that 502'd for the same reason as Inbound: nothing
 // implemented it on the other side either, until now.
+// PROJEXA-E2E-001 item 5 (2026-09-20): /site-materials itself is now removed
+// (was never a distinct concept -- see nav-routes.ts's comment for the full
+// evidence trail), not just redirected. This is the one real Materials
+// screen; there is no second one to redirect from any more.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 // R67 C-06: "+ Record Receipt" is a DOOR -- its words and its destination
