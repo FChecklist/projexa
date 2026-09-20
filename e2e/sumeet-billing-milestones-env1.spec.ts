@@ -107,14 +107,23 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // Draft -> Submit -> Approve, each a real click, each asserted by the
   // status badge actually changing -- not by the button disappearing alone
   // (a stale list would also make the old button vanish).
+  //
+  // e2e-env1 CI fix (2026-09-20): 10_000ms was tight for a real API round
+  // trip under this job's own documented real latency (a genuine, cross-
+  // repo call through PROJEXA's proxy into compliance-tracker's live
+  // Supabase project, not a local mock) -- a real, reproducible timeout was
+  // observed on this exact assertion in CI. Raised to 30_000ms, matching
+  // the convention this same suite already uses elsewhere for a real
+  // single-status-transition UI update (e.g. r81-d603-scope.spec.ts,
+  // r90-real-backend-error-in-toast-env1.spec.ts).
   await row.getByRole("button", { name: /^draft$/i }).click();
-  await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 30_000 });
 
   await row.getByRole("button", { name: /^submit$/i }).click();
-  await expect(row.getByText(/^submitted$/i), "status badge must read Submitted after the real Submit click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/^submitted$/i), "status badge must read Submitted after the real Submit click").toBeVisible({ timeout: 30_000 });
 
   await row.getByRole("button", { name: /^approve$/i }).click();
-  await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real Approve click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real Approve click").toBeVisible({ timeout: 30_000 });
 
   // Timeline expansion: the row's own toggle button, then the real timeline
   // steps fetched from GET /api/billing-claims/[id].

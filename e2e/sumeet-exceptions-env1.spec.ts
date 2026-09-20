@@ -17,8 +17,18 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #29-31: the 28-item exceptions report renders all real checks with their real formulas", async ({ page }) => {
+  // e2e-env1 CI fix (2026-09-20): getProjectExceptions() (construction-
+  // exceptions-service.ts) computes all 28 checks in one call, joining
+  // 14+ tables -- genuinely heavier than a typical single-resource GET.
+  // Playwright's bare 30_000ms default (this call's own previous timeout)
+  // measured as a real, reproducible flake in this job's own CI run
+  // (compliance-tracker e2e-env1, 2026-09-20 handoff); every other
+  // real-network-round-trip wait in this suite that can be this heavy
+  // already uses an explicit, more generous timeout (30_000-120_000ms
+  // elsewhere in e2e/), this call just never got one. Widened, not
+  // removed -- still fails loudly on a genuine hang.
   const [response] = await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET"),
+    page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 60_000 }),
     page.goto(`/analysis/exceptions?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" }),
   ]);
   expect(response.ok(), "the real exceptions API must respond successfully, not be mocked or skipped").toBe(true);

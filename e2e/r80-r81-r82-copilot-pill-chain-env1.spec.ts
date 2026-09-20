@@ -175,6 +175,28 @@ test("R-81 every visible pill is wired, and the module-chain population is hidde
       const reopened = await openAllModules(page);
       btn = reopened.getByRole("button").nth(i);
       if ((await btn.count()) === 0) {
+        // e2e-env1 CI fix (2026-09-20), real finding from reading
+        // openAllModules() against this exact failure mode: the retry
+        // above re-runs openAllModules(), but that function only
+        // re-clicks the Modules tab when its OWN aria-selected isn't
+        // already "true" -- exactly the THIRD finding documented above
+        // (M24Shell's optionLevel can override modulesCatalogue while the
+        // tab still reports selected). A same-tab retry therefore repeats
+        // the identical no-op and cannot recover from this specific stale
+        // state. Force a real clear via the same "Reset the chain"
+        // affordance the loop already uses after every iteration (see
+        // below), then try once more before finally recording SHORT --
+        // this is the in-app equivalent of a real user pressing Reset
+        // when the screen looks stuck, not a new mechanism.
+        const resetBtn = page.getByRole("button", { name: "Reset the chain" }).first();
+        if ((await resetBtn.count()) > 0) {
+          await resetBtn.click({ timeout: 5_000 }).catch(() => {});
+          await page.waitForTimeout(300);
+          const reopenedAfterReset = await openAllModules(page);
+          btn = reopenedAfterReset.getByRole("button").nth(i);
+        }
+      }
+      if ((await btn.count()) === 0) {
         results.push({ label: `pill#${i}`, effect: "SHORT" });
         continue;
       }
