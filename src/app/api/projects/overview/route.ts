@@ -29,8 +29,16 @@ export const GET = withTiming("GET", async function GET() {
   if (ctx.response) return ctx.response;
 
   try {
+    // R-50 REOPENED FIX: this screen renders VERIDIAN's real money trio
+    // (contractValue/projectValue/earnedValue etc, see this file's own header
+    // above) off the SAME /dashboard payload the org-level Dashboard Home
+    // fetches -- so it needs the same actingUserId/actingUserEmail forwarding
+    // for VERIDIAN's financial-visibility gate to resolve a real role for
+    // this shared-API-key caller instead of failing closed for everyone.
     const data = await callVeridian<{ projects: Record<string, unknown>[] }>("/dashboard", {
       organizationId: ctx.organizationId!,
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
     });
     return NextResponse.json({ projects: data.projects ?? [] });
   } catch (err) {

@@ -65,7 +65,13 @@ export const GET = withTiming("GET", async function GET(request: NextRequest, { 
   const path = qs ? `/dashboard?${qs}` : "/dashboard";
 
   try {
-    const data = await callVeridian<HierarchyDashboard>(path, { organizationId: scope.companyId });
+    // R-50 REOPENED FIX: actingUserId forwarded so VERIDIAN's financial-
+    // visibility gate (src/app/api/v1/projexa/dashboard/route.ts) has a real
+    // role to check for this shared-API-key caller, same as the org-level
+    // Dashboard Home fetch -- see that route's own header for the full
+    // story. requireCompanyScope() only exposes userId (not email) today;
+    // the D-05 identity bridge resolves on id alone when it maps.
+    const data = await callVeridian<HierarchyDashboard>(path, { organizationId: scope.companyId, actingUserId: scope.userId });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load dashboard");
