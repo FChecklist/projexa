@@ -21,9 +21,9 @@ const SKELETON = (
 
 async function MoodBoardsSection({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(requestedProjectId, organizationId, {
-    cacheSeconds: 30,
-  });
+  // See meetings/page.tsx's MeetingsSection for why cacheSeconds is
+  // deliberately NOT passed here.
+  const { project, errorMessage } = await resolveSelectedProject(requestedProjectId, organizationId);
 
   if (errorMessage) return <ProjectLoadError message={errorMessage} />;
   if (!project) {

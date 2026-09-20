@@ -32,14 +32,16 @@ const SKELETON = (
 
 async function MeetingsSection({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
-  // R67 F-06/F-07/F-09 style caching: the project LIST is memoised 30s per
-  // org, matching fetchMeetingsList's own tag revalidate window below. Which
-  // project is SELECTED is still decided outside the cache on every call
-  // (chooseProject(), see project-selection.ts), so switching project stays
-  // instant and a cached list can never pin the wrong selection.
-  const { project, errorMessage } = await resolveSelectedProject(requestedProjectId, organizationId, {
-    cacheSeconds: 30,
-  });
+  // NOT passing cacheSeconds here, deliberately matching every other already
+  // -shipped caller of resolveSelectedProject/resolveProjectForModule
+  // (documents/page.tsx, labour/page.tsx's resolveLanding -- neither opts
+  // in): the project list is already cached 60s per-org on the backend
+  // (project-selection.ts's own F-03 comment), and listProjects()'s
+  // unstable_cache path is untested outside a real Next.js request context
+  // -- passing cacheSeconds here was tried and reverted after it broke this
+  // page's own render-level test (project-scoped-page-error-isolation.test.tsx)
+  // with "Invariant: incrementalCache missing in unstable_cache".
+  const { project, errorMessage } = await resolveSelectedProject(requestedProjectId, organizationId);
 
   if (errorMessage) return <ProjectLoadError message={errorMessage} />;
   if (!project) {
