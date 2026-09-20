@@ -43,6 +43,25 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (interactive, isolated worktrees C:/ct/ct-worktrees/wo-exceptions-fix + C:/ct/projexa-worktrees/wo-exceptions-fix, branch wo/exceptions-drilldown-navigation + wo/exceptions-item24-and-navigation) -- PROJEXA-E2E-001: direct fix (not deferred) for the 2 real bugs found by the R-92..R-100/31-vs-28 exceptions reconciliation session (2026-09-20/21) -- Bug 1 (compliance-tracker, read-only here): construction-exceptions-service.ts getProjectExceptions() 29-vs-28 array-length bug; Bug 2 (this repo): ExceptionsClient.tsx had zero drill-down navigation from a flagged exception to the real record it names [DONE -- both fixed, unit/component tests green locally, PRs open/unmerged pending real CI e2e verification]"
+    claimed_at: "2026-09-21T (this session)"
+    completed_at: "2026-09-21T (this session)"
+    claim: |
+      File scope this repo: src/components/ExceptionsClient.tsx + its
+      .test.tsx sibling. Added recordHref() consuming a new recordType/
+      linkId field the companion compliance-tracker fix adds to each
+      ExceptionRecord, mapping each flagged record to its real object
+      screen (/change-orders/[id], /scope/[id], /site-diary/[id],
+      /work-progress/[id], /labour/[id], /punch-list/[id], /materials/[id]
+      via linkId=materialId, /invoices?highlight=[id] for interim bills --
+      same pattern BillingMilestonesClient.tsx's own "View invoice" action
+      already uses). 3 record types (vendor disputes, customer complaints,
+      subcontractor invoice lines) and the date-only #20/#26 rows have no
+      real per-record screen in PROJEXA today -- left as plain text, not a
+      fabricated link, documented honestly in the component's own header
+      comment. Full detail (including the sandbox network constraint that
+      shaped this session's verification strategy) in compliance-tracker's
+      own ACTIVE-CLAIMS.yaml entry for this same work.
   - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 work order section 4) -- systemic sweep: EVERY GET /reports/{name} consumer for the R67 E-32 format=legacy gap, plus dashboard/analytics silent-wrong-shape audit, traceability, cross-role reconciliation, empty/partial/heavy states"
     claimed_at: "2026-09-20T (this session)"
     claim: |
