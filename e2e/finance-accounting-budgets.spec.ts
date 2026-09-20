@@ -1,6 +1,18 @@
 import { test, expect } from "@playwright/test";
 import { fieldInput, activeTabPanel } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below waits on a real
+// GET/POST round trip through the VERIDIAN-proxy path (dashboard/tab loads,
+// or a create-then-redirect-then-re-render cycle) -- raised to 30_000ms to
+// match this suite's own established minimum for a network-dependent
+// Playwright check. playwright.config.ts's actionTimeout/navigationTimeout
+// are both already 30_000ms, raised for the identical documented CI-latency
+// class (see that file's own comments, and the R-95 boq-analysis-poll fix in
+// e2e/sumeet-billing-milestones-env1.spec.ts / PR #297 for the full
+// root-cause writeup). Assertions themselves are unchanged -- only the
+// headroom given to a slow-but-correct upstream.
+//
 // Logged in as Deepak Joshi (Finance & Accounts Manager by job title).
 // NOTE (verified live, 2026-07-19): unlike Employees/Payroll's isHrAdmin
 // gate, Accounting/Budgets have no PROJEXA-local role gate at all -- every
@@ -22,13 +34,13 @@ test.describe("Accounting (/accounting)", () => {
     // /api/project-budgets (0). So this dashboard is honestly empty, not
     // broken. Assert the real empty-state text rather than fake numbers.
     const dashboardCard = page.locator("text=Cash Position").first();
-    await expect(dashboardCard).toBeVisible({ timeout: 15_000 });
+    await expect(dashboardCard).toBeVisible({ timeout: 30_000 });
   });
 
   test("General Ledger tab: real empty state + status filter renders real options", async ({ page }) => {
     await page.goto("/accounting");
     await page.getByRole("tab", { name: "General Ledger" }).click();
-    await expect(page.getByText("No journal entries found.")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("No journal entries found.")).toBeVisible({ timeout: 30_000 });
 
     // Real filter control: status Select must expose the real enum values.
     // Scoped to the active tab panel -- an unscoped page.getByRole("combobox")
@@ -80,7 +92,7 @@ test.describe("Accounting (/accounting)", () => {
     // redirects to /accounting?tab=companies on success, where
     // AccountingClient's loadCompanies() effect re-fetches on mount.
     await expect(page).toHaveURL(/\/accounting\?tab=companies$/);
-    await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 30_000 });
   });
 
   test("New Journal Entry: chart-of-accounts dependency is honestly empty", async ({ page }) => {
@@ -142,7 +154,7 @@ test.describe("Budgets (/finance/budgets)", () => {
     await expect(page.getByText("Annual Budgets", { exact: true })).toBeVisible();
     // BudgetsClient.tsx:118 EMPTY_COPY -- the real empty state now names the
     // org and is no longer the bare "No budgets found." string.
-    await expect(page.getByText(/^No budgets yet for /)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^No budgets yet for /)).toBeVisible({ timeout: 30_000 });
 
     // BudgetsClient.tsx:279-281: the empty state's own "+ New Budget"
     // button (distinct from the header's bare "+ New" per ScreenFrame's
@@ -156,6 +168,6 @@ test.describe("Budgets (/finance/budgets)", () => {
     // placeholder string BudgetCreateClient.tsx:314 renders when
     // GET /api/fiscal-years returns empty. Same exact string as before;
     // only the container (a real page, not a dialog) changed.
-    await expect(page.getByText("No fiscal years found in VERIDIAN")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("No fiscal years found in VERIDIAN")).toBeVisible({ timeout: 30_000 });
   });
 });

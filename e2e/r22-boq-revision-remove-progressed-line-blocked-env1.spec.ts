@@ -113,7 +113,14 @@ test("R-22: removing a BOQ line already recorded as progressed on site is blocke
 
   // Condition 2: the guard's real, specific refusal.
   const scopeBlock = page.locator("p.text-px-error").first();
-  await expect(scopeBlock, "a real scope-reduction refusal must be shown, not a silent success").toBeVisible({ timeout: 15_000 });
+  // TIMEOUT RAISED 15_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+  // sweep): the Save click above triggers a real createBoqRevision POST
+  // through the VERIDIAN-proxy path -- same real network round trip class
+  // documented (up to 29.5s tail under CI load) in the sibling
+  // r11-boq-create-form-subtask-fields-env1.spec.ts and the R-95
+  // boq-analysis-poll fix (PR #297). Matches playwright.config.ts's
+  // actionTimeout/navigationTimeout (both already 30_000 for this reason).
+  await expect(scopeBlock, "a real scope-reduction refusal must be shown, not a silent success").toBeVisible({ timeout: 30_000 });
   const bodyText = await page.locator("body").innerText();
   expect(bodyText, "the conflicts table must name the exact real line this spec progressed").toContain("R22-PROGRESSED");
 });

@@ -1,6 +1,17 @@
 import { test, expect } from "@playwright/test";
 import { activeTabPanel, fieldInput } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below waits on a real
+// create-then-redirect-then-re-render cycle, or a real catalog/search
+// round trip through the VERIDIAN-proxy path -- raised to 30_000ms to match
+// this suite's own established minimum for a network-dependent Playwright
+// check. playwright.config.ts's actionTimeout/navigationTimeout are both
+// already 30_000ms, raised for the identical documented CI-latency class
+// (see that file's own comments, and the R-95 boq-analysis-poll fix in
+// e2e/sumeet-billing-milestones-env1.spec.ts / PR #297 for the full
+// root-cause writeup). Assertions themselves are unchanged -- only the
+// headroom given to a slow-but-correct upstream.
 test.use({ storageState: "playwright/.auth/ceo.json" });
 
 test.describe("KPIs (/kpis)", () => {
@@ -42,7 +53,7 @@ test.describe("KPIs (/kpis)", () => {
     // to the new /kpis/[id] object page, where the metric name becomes the
     // page's own <h1> title.
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText(metricName)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(metricName)).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: submit an actual value against a KPI definition", async ({ page }) => {
@@ -60,7 +71,7 @@ test.describe("KPIs (/kpis)", () => {
     await page.getByPlaceholder(/e.g. 2026-07/i).fill("2026-07");
     await page.locator('input[type="number"]').last().fill("92");
     await page.getByRole("button", { name: /^submit/i }).click();
-    await expect(page.getByText("No actual values submitted yet.")).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("No actual values submitted yet.")).not.toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -95,7 +106,7 @@ test.describe("Reports (/reports)", () => {
     // before the search input even had a value, proving nothing about
     // filtering. Scoped to the real per-entry container instead.
     const cards = page.locator("div.rounded-lg.border.border-px-border", { hasText: /revenue/i });
-    await expect(cards.first()).toBeVisible({ timeout: 10_000 });
+    await expect(cards.first()).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: run a live definition-backed report (revenue) and see real output", async ({ page }) => {
