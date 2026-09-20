@@ -43,6 +43,27 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- e2e timeout sweep: 22 files with 10-15s explicit timeouts on individual expect/poll calls, found via a raw grep during the R-95 billing-milestones closure (PR #297)."
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Scope: e2e/*.spec.ts ONLY (no source files) -- reading each of the 22
+      grep hits (`grep -rl "timeout: (1[0-5])_000" e2e/`) in context and
+      deciding per-file whether the short timeout guards a real network
+      round-trip through the same VERIDIAN-proxy path documented as flaky
+      in compliance-tracker's .github/workflows/ci.yml "E2E Tests (Env-1,
+      cross-repo)" job (raise to 30_000ms to match playwright.config.ts's
+      own actionTimeout/navigationTimeout precedent, with a comment) or
+      whether it's intentionally testing fast-fail/non-network behavior
+      (leave alone, note why). Working in an isolated worktree at
+      C:\ct\projexa-worktrees\wo-r95-e2e-timeout-audit, branch
+      wo/r95-e2e-timeout-audit, off origin/main -- NOT touching the
+      fix/rb2-demo-gate-six-tcs-real-ui branch's in-progress work sitting
+      in the main C:\ct\projexa checkout, NOT touching the still-active
+      wo-r95-billing-milestones worktree (PR #297, already merged scope:
+      sumeet-billing-milestones-env1.spec.ts only, no overlap), and NOT
+      touching the PM session's broader PROJEXA-E2E-001 work above. Per the
+      owner's PROJEXA-E2E-001 ground rules: local dev + GitHub CI + live
+      Supabase only, no Vercel, PR left open/unmerged.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
