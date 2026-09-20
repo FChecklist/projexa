@@ -20,16 +20,19 @@ test("Sumeet #29-31: the 28-item exceptions report renders all real checks with 
   // e2e-env1 CI fix (2026-09-20): getProjectExceptions() (construction-
   // exceptions-service.ts) computes all 28 checks in one call, joining
   // 14+ tables -- genuinely heavier than a typical single-resource GET.
-  // Playwright's bare 30_000ms default (this call's own previous timeout)
-  // measured as a real, reproducible flake in this job's own CI run
-  // (compliance-tracker e2e-env1, 2026-09-20 handoff); every other
-  // real-network-round-trip wait in this suite that can be this heavy
-  // already uses an explicit, more generous timeout (30_000-120_000ms
-  // elsewhere in e2e/), this call just never got one. Widened, not
-  // removed -- still fails loudly on a genuine hang.
+  // FIRST attempt (widening only the waitForResponse to 60s) was proven
+  // insufficient by a real CI run: page.goto's own navigationTimeout
+  // (30_000ms, playwright.config.ts) fires independently of the response
+  // wait and isn't covered by widening that alone. Second, complete fix:
+  // give the goto its own longer timeout, AND raise the whole test's
+  // budget (config's 75_000ms default) so the later assertions still have
+  // real room after this genuinely slow call -- matching the pattern
+  // already established elsewhere in this suite for a real multi-step
+  // Env-1 test (e.g. r41-r42-r43's Finance test, r80-r81-r82's R-81 test).
+  test.setTimeout(120_000);
   const [response] = await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 60_000 }),
-    page.goto(`/analysis/exceptions?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" }),
+    page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 90_000 }),
+    page.goto(`/analysis/exceptions?projectId=${PROJECT_ID}`, { waitUntil: "networkidle", timeout: 90_000 }),
   ]);
   expect(response.ok(), "the real exceptions API must respond successfully, not be mocked or skipped").toBe(true);
   const body = await response.json();

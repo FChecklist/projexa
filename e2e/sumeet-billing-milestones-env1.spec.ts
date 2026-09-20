@@ -16,6 +16,18 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #3: a billing milestone can be created, drafted, submitted and approved through the real UI", async ({ page }) => {
+  // e2e-env1 CI fix (2026-09-20): this test chains 7+ real, sequential
+  // network round trips (BOQ create/submit/approve-as-a-different-user,
+  // a poll, a customers list, the create form, then 3 more status
+  // transitions each waited on individually) against a live Supabase
+  // project -- a real CI run showed the config's 75_000ms default test
+  // timeout firing while still inside the Draft-click wait (which itself
+  // had NOT yet hit its own, already-widened 30_000ms budget), meaning
+  // the cumulative cost of everything before it had already consumed most
+  // of the 75s. Raised the whole test's own budget, same fix already
+  // applied to the two sibling /api/exceptions specs for the identical
+  // "individually-widened waits, insufficient overall budget" pattern.
+  test.setTimeout(150_000);
   // Setup: the create form is disabled until the project has an APPROVED
   // BOQ (BillingMilestonesClient.tsx's own NO_APPROVED_BOQ_REASON gate) --
   // a live check this run found every existing BOQ on this project is

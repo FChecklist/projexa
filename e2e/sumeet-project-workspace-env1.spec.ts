@@ -203,13 +203,17 @@ test.describe("Sumeet Merge 6: reused components carry real data, not placeholde
   });
 
   test("the Insights section shows the real Project 360 P&L card and a real Exceptions count from the API", async ({ page }) => {
-    await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
     // e2e-env1 CI fix (2026-09-20): same real, heavy /api/exceptions call
     // (getProjectExceptions(), 28 checks across 14+ tables) as the sibling
-    // sumeet-exceptions-env1.spec.ts hits directly -- widened for the same
-    // reason, see that file's own comment on this exact endpoint.
+    // sumeet-exceptions-env1.spec.ts hits directly. FIRST attempt (widening
+    // only the waitForResponse) was proven insufficient by a real CI run:
+    // the config's 75_000ms default test timeout fired before the later
+    // assertions got a turn, once this call's own real latency is this
+    // high. Raised the whole test's budget too, same fix as that sibling.
+    test.setTimeout(120_000);
+    await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
     const [exceptionsRes] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 60_000 }),
+      page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 90_000 }),
       page.locator("#insights").scrollIntoViewIfNeeded(),
     ]);
     const { checks } = await exceptionsRes.json();
