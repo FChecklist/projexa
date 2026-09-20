@@ -16,6 +16,18 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #3: a billing milestone can be created, drafted, submitted and approved through the real UI", async ({ page }) => {
+  // e2e-env1 CI fix (2026-09-20): this test chains 7+ real, sequential
+  // network round trips (BOQ create/submit/approve-as-a-different-user,
+  // a poll, a customers list, the create form, then 3 more status
+  // transitions each waited on individually) against a live Supabase
+  // project -- a real CI run showed the config's 75_000ms default test
+  // timeout firing while still inside the Draft-click wait (which itself
+  // had NOT yet hit its own, already-widened 30_000ms budget), meaning
+  // the cumulative cost of everything before it had already consumed most
+  // of the 75s. Raised the whole test's own budget, same fix already
+  // applied to the two sibling /api/exceptions specs for the identical
+  // "individually-widened waits, insufficient overall budget" pattern.
+  test.setTimeout(150_000);
   // Setup: the create form is disabled until the project has an APPROVED
   // BOQ (BillingMilestonesClient.tsx's own NO_APPROVED_BOQ_REASON gate) --
   // a live check this run found every existing BOQ on this project is
@@ -107,14 +119,23 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // Draft -> Submit -> Approve, each a real click, each asserted by the
   // status badge actually changing -- not by the button disappearing alone
   // (a stale list would also make the old button vanish).
+  //
+  // e2e-env1 CI fix (2026-09-20): 10_000ms was tight for a real API round
+  // trip under this job's own documented real latency (a genuine, cross-
+  // repo call through PROJEXA's proxy into compliance-tracker's live
+  // Supabase project, not a local mock) -- a real, reproducible timeout was
+  // observed on this exact assertion in CI. Raised to 30_000ms, matching
+  // the convention this same suite already uses elsewhere for a real
+  // single-status-transition UI update (e.g. r81-d603-scope.spec.ts,
+  // r90-real-backend-error-in-toast-env1.spec.ts).
   await row.getByRole("button", { name: /^draft$/i }).click();
-  await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 30_000 });
 
   await row.getByRole("button", { name: /^submit$/i }).click();
-  await expect(row.getByText(/^submitted$/i), "status badge must read Submitted after the real Submit click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/^submitted$/i), "status badge must read Submitted after the real Submit click").toBeVisible({ timeout: 30_000 });
 
   await row.getByRole("button", { name: /^approve$/i }).click();
-  await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real Approve click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real Approve click").toBeVisible({ timeout: 30_000 });
 
   // Timeline expansion: the row's own toggle button, then the real timeline
   // steps fetched from GET /api/billing-claims/[id].
