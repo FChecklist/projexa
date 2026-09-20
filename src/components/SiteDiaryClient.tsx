@@ -26,7 +26,23 @@ type Diary = {
   issues: string | null;
 };
 
-export default function SiteDiaryClient({ projectId }: { projectId: string }) {
+export default function SiteDiaryClient({
+  projectId,
+  projectName,
+  resolvedByFallback,
+}: {
+  projectId: string;
+  /** R67 D-13/D-32 convention (see DocumentsClient.tsx / ChangeOrdersClient.tsx)
+   * -- named so the empty state can say WHICH project has no diary entries,
+   * instead of reading as a blanket "PROJEXA has no site diary" when a
+   * different project in the same org genuinely does. */
+  projectName?: string | null;
+  /** True when `projectId` was picked for the user (resolveSelectedProject's
+   * first-project fallback), not chosen by them -- see site-diary/page.tsx's
+   * header comment for the real defect this closes (owner work order
+   * PROJEXA-E2E-001 section 5 item 3). */
+  resolvedByFallback?: boolean;
+}) {
   const router = useRouter();
   const [diaries, setDiaries] = useState<Diary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +74,16 @@ export default function SiteDiaryClient({ projectId }: { projectId: string }) {
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : diaries.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No diary entries yet.</p>
+            <div className="py-10 text-center text-sm text-px-muted">
+              <p>
+                No diary entries yet{projectName ? ` for ${projectName}` : ""}.
+              </p>
+              {resolvedByFallback && (
+                <p className="mt-1 text-xs">
+                  This project was auto-selected -- switch projects above if you were looking for a different one.
+                </p>
+              )}
+            </div>
           ) : (
             <Table>
               <TableHeader>
