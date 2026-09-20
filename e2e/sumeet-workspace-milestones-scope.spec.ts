@@ -2,6 +2,18 @@ import { test, expect } from "@playwright/test";
 import { DEFAULT_PROJECT, fieldByLabel } from "./helpers";
 import { USERS } from "./users";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below is a real lazy-mount
+// data load, or a create/submit-then-redirect-then-re-render cycle, through
+// the VERIDIAN-proxy path (Timeline/Milestones/Scope & Change Orders) --
+// raised to 30_000ms to match this suite's own established minimum for a
+// network-dependent Playwright check. playwright.config.ts's actionTimeout/
+// navigationTimeout are both already 30_000ms, raised for the identical
+// documented CI-latency class (see that file's own comments, and the R-95
+// boq-analysis-poll fix in e2e/sumeet-billing-milestones-env1.spec.ts /
+// PR #297 for the full root-cause writeup). Assertions themselves are
+// unchanged -- only the headroom given to a slow-but-correct upstream.
+
 // Owner directive "Merge 6" follow-on coverage for the /workspace/[id] page
 // (src/app/(app)/workspace/[id]/page.tsx, orchestrated by
 // ProjectWorkspaceClient.tsx). sumeet-project-workspace-env1.spec.ts already
@@ -77,9 +89,9 @@ test.describe("Sumeet R-94: Timeline and Milestones are two genuinely distinct s
     // ScheduleGanttClient's own "All tasks (N)" table heading, Milestones
     // shows MilestonesClient's own "New Milestone" create control.
     await timelineSection.scrollIntoViewIfNeeded();
-    await expect(timelineSection.getByText(/All tasks \(\d+/)).toBeVisible({ timeout: 15_000 });
+    await expect(timelineSection.getByText(/All tasks \(\d+/)).toBeVisible({ timeout: 30_000 });
     await milestonesSection.scrollIntoViewIfNeeded();
-    await expect(milestonesSection.getByRole("button", { name: /new milestone/i })).toBeVisible({ timeout: 15_000 });
+    await expect(milestonesSection.getByRole("button", { name: /new milestone/i })).toBeVisible({ timeout: 30_000 });
   });
 
   test.describe("client_viewer also sees both, per workspace-visibility.ts's CLIENT_VIEWER list", () => {
@@ -135,7 +147,7 @@ test.describe("Sumeet R-96/R-97: Scope & Change Orders works end to end from the
     await expect(page, "clicking a row must be a real navigation to that change order's own Object Page, not a modal").toHaveURL(new RegExp(`/change-orders/${first.id}$`));
     // ObjectScreen renders `title` inside a real <h1> (confirmed by reading
     // node_modules/@fchecklist/veridian-ui-kit/src/screens/ObjectScreen.tsx).
-    await expect(page.getByRole("heading", { name: new RegExp(`^CO-${first.number}\\b`) })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: new RegExp(`^CO-${first.number}\\b`) })).toBeVisible({ timeout: 30_000 });
   });
 
   test("a real Scope & Change Order can be created and submitted for e-signature approval, end to end from the workspace page (R-96, R-97)", async ({ page }) => {
@@ -163,8 +175,8 @@ test.describe("Sumeet R-96/R-97: Scope & Change Orders works end to end from the
     await page.getByRole("button", { name: /^save$/i }).click();
 
     // ChangeOrderCreateClient's real create -> router.push(`/change-orders/${data.id}`).
-    await expect(page).toHaveURL(/\/change-orders\/[a-zA-Z0-9_-]+$/, { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) })).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/change-orders\/[a-zA-Z0-9_-]+$/, { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) })).toBeVisible({ timeout: 30_000 });
 
     // Submit for approval -- the real e-signature dispatch path (R-97: a
     // change of scope must work end to end). This is as far as the flow can
@@ -196,9 +208,9 @@ test.describe("Sumeet R-96/R-97: Scope & Change Orders works end to end from the
     // submitChangeOrderForApproval(), on both sides of the proxy (PROJEXA's
     // own PATCH now forwards ctx.user's id/email; compliance-tracker's PATCH
     // now resolves them instead of requiring ctx.dbUser directly).
-    await expect(page.getByText("Sent for e-signature approval")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Sent for e-signature approval")).toBeVisible({ timeout: 30_000 });
     // co.status.replace(/_/g, " ") => "pending approval" (ChangeOrderObjectClient.tsx).
-    await expect(page.getByText(/pending approval/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/pending approval/i)).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -210,7 +222,7 @@ test.describe("Sumeet: client_viewer and the Scope & Change Orders section (Owne
     const section = page.locator("#scope-change-orders");
     await expect(section, "client_viewer must see Scope & Change Orders (workspace-visibility.ts CLIENT_VIEWER)").toBeVisible();
     await section.scrollIntoViewIfNeeded();
-    await expect(section.getByRole("button", { name: /new change order/i })).toBeVisible({ timeout: 15_000 });
+    await expect(section.getByRole("button", { name: /new change order/i })).toBeVisible({ timeout: 30_000 });
 
     // HONEST NEGATIVE FINDING, not a faked pass: the Owner spec says
     // client_viewer are "the ones who DECIDE on change orders", but reading
@@ -265,7 +277,7 @@ test.describe("Sumeet R-98 FIXED (2026-09-19, Owner-authorized): an approved Cha
     await page.getByLabel(/Revision Title/i).fill(`R-98 link spec ${Date.now()}`);
     await page.getByRole("button", { name: /^save$/i }).click();
 
-    await expect(page).toHaveURL(/\/scope\/[a-zA-Z0-9_-]+$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/scope\/[a-zA-Z0-9_-]+$/, { timeout: 30_000 });
     const newBoqId = page.url().split("/scope/")[1];
 
     // Direct, timing-independent confirmation: the change order's own
