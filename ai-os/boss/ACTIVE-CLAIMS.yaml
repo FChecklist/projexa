@@ -43,6 +43,61 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 work order section 4) -- systemic sweep: EVERY GET /reports/{name} consumer for the R67 E-32 format=legacy gap, plus dashboard/analytics silent-wrong-shape audit, traceability, cross-role reconciliation, empty/partial/heavy states"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Scope: both repos, isolated worktrees (C:\ct\projexa-reports-sweep,
+      branch fix/reports-systemic-format-legacy-sweep off origin/main @
+      090139b7; compliance-tracker worktree only if a backend fix turns out
+      to be needed -- so far every finding is projexa client-side). This is
+      the FOLLOW-THROUGH task after PR #300 (fix/reports-project-status-
+      dashes, still open/unmerged as of this claim) fixed reportDestination()
+      centrally (covers every report reached via the Reports picker) plus
+      ReportsClient.tsx's budget breakup fetch -- this claim is specifically
+      for OTHER client call sites that build `/api/reports/{name}` URLs
+      directly, bypassing reportDestination(), and therefore still miss
+      format=legacy.
+
+      Already found via static read (grep for every /api/reports/ fetch site
+      in src/, cross-checked against compliance-tracker's REPORT_REGISTRY in
+      construction-reports-service.ts and the [reportName]/route.ts table-vs-
+      legacy switch): 8 more call sites read the handler's own payload shape
+      directly with no format=legacy, so each now silently gets the R67 E-32
+      default table shape instead --
+      src/components/BudgetAnalyticalClient.tsx:107 (budget-variance, Scope
+      screen's Cost Variance/budget tab), src/components/BudgetActualClient
+      .tsx:66 (budget-variance, Scope screen's Revenue/Budget/Actual tab),
+      src/components/DashboardProjectClient.tsx:346 (category-progress,
+      legacy-VERIDIAN fallback path), src/lib/work-progress-reads.ts:166
+      (category-progress, feeds the Work Progress Analytics category bars --
+      one of the 5 analysis-screens.ts entries), src/components/
+      DesignStudioTimesheetClient.tsx:148 (designer-approval-status),
+      src/components/DesignStudioCostAnalysisClient.tsx:51
+      (designer-timesheet, also an analysis-screens.ts entry, reached from
+      the Reports picker's "Designer Timesheet" hosted-report navigation),
+      src/components/LabourDailySummaryClient.tsx:131
+      (manpower-daily-summary), src/lib/google-sheets/push.ts:134+171 (ANY
+      report name a user types into the Sheets integration's Reports tab, or
+      every ANALYSIS_REPORT_NAMES entry -- feeds a generic flattener built
+      for the handler shape). Confirmed each of the first 7 reads a specific
+      handler field (`data.contractValue`, `body.categories ?? []`,
+      `report.lines`, etc.) that does not exist on the table shape, so each
+      silently renders empty/undefined rather than erroring -- exactly the
+      "no dashes where data exists" class the work order names. boq-analysis
+      consumers (ChangeOrderObjectClient, BillingMilestonesClient,
+      Project360Client, WorkspaceBoqCard) are NOT affected -- confirmed
+      boq-analysis is a standalone compliance-tracker route
+      (/v1/projexa/reports/boq-analysis), never routed through the
+      [reportName] dynamic dispatcher R67 E-32 changed.
+
+      Also auditing (not yet reported): the other 4 analysis-screens.ts
+      entries + main /dashboard for the same silent-null class against real
+      Supabase data (projexa_demo_org), traceability/drill-down on a sample
+      of figures, cross-role reconciliation (CEO/PM/Site Engineer from
+      e2e/users.ts) on the same report, and empty/partial/heavy project
+      states. Will update this claim with final results. Per owner's ground
+      rules: local bun dev + live Supabase + GitHub CI only, never Vercel;
+      PR(s) opened, CI green, left OPEN/UNMERGED, not merged by this session.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
