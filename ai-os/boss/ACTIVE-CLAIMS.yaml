@@ -43,6 +43,52 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- fix /site-diary 'Empty while Work Progress holds the same history' (work order section 5 item 3)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Worktree: C:\ct\projexa-sitediary-fix (branch fix/site-diary-empty), off
+      origin/main. Isolated from the shared C:\ct\projexa checkout other
+      parallel sessions are using.
+
+      ROOT CAUSE: same bug class already fixed for /change-orders (PR #299),
+      NOT the /reports response-shape-mismatch class (PR #300), and NOT a
+      backend/data gap. compliance-tracker's construction-site-diary-
+      service.ts's listSiteDiaries(), called directly against the live
+      Supabase project (bypassing HTTP/auth), correctly returns 5 real rows
+      for org=projexa_demo_org / project=projexa_demo_project ("Villa 21 -
+      Whitefield"), alongside 35 real work-progress entries for the same
+      project -- the table and the query were never empty or wrong. The real
+      defect: site-diary/page.tsx never named which project it was showing.
+      resolveSelectedProject()'s documented, deliberate first-project
+      fallback (project-selection.ts) silently picks the org's
+      alphabetically-first project when nothing is asked for -- "Business Bay
+      Corporate HQ", which has zero seeded site-diary entries AND zero
+      work-progress entries. /work-progress reaches its project differently
+      (module-list-source.ts's resolveProjectForModule, R67 F-18): it honours
+      an explicit ?projectId= from a project-scoped link without writing the
+      rail's remembered-project cookie, so a visit to /work-progress?projectId=
+      <villa21> can show real history while a later, plain sidebar click to
+      /site-diary (no ?projectId=, same session, cookie still unset) silently
+      falls back to the empty project -- the exact asymmetry reported.
+
+      FIX: adopted the same project-naming + "(auto-selected)" admission
+      already shipped for Documents/Labour/Drawings/MoMs/change-orders (R67
+      D-13/D-20/D-32 convention) -- site-diary/page.tsx now passes
+      project.name/fellBack through to PageHeading and SiteDiaryClient, and
+      the empty state names the project and, when auto-picked, says so and
+      points at the project switcher.
+
+      Tests: SiteDiaryClient.test.tsx (new, 4 cases -- falsifiability-checked
+      by reverting the empty-state fix, confirming 2 of 4 fail, then
+      restoring). Full existing suite (4293 tests) still green. Typecheck and
+      lint both clean on the changed files.
+
+      File scope: src/app/(app)/site-diary/page.tsx,
+      src/components/SiteDiaryClient.tsx,
+      src/components/SiteDiaryClient.test.tsx (new), this file (claim entry).
+      Did NOT touch compliance-tracker (no backend change needed -- the query
+      and data were already correct; see that repo's own ACTIVE-CLAIMS.yaml
+      for this sub-task's read-only-verification entry there).
   - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- investigate + fix PROJEXA /reports Project Status Report showing dashes against a project with real BOQ/progress figures (work order section 5 item 2, called out again in section 4 as the single worst-weighted finding)"
     claimed_at: "2026-09-20T (this session)"
     claim: |
