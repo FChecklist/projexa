@@ -16,6 +16,22 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #3: a billing milestone can be created, drafted, submitted and approved through the real UI", async ({ page }) => {
+  // TEST-LEVEL TIMEOUT RAISED (R-95 re-audit, 2026-09-20): this test chains
+  // SIX sequential network-dependent waits, each individually raised to
+  // 30_000ms below for the same documented CI-latency reasons (create,
+  // submit, approve, the boq-analysis poll, then Draft/Submit/Approve
+  // status-badge waits, then the timeline). A real isolated CI run
+  // (compliance-tracker workflow_dispatch run 35498527292) hit playwright.
+  // config.ts's default per-test budget (75_000ms) with "Test timeout of
+  // 75000ms exceeded" while legitimately waiting on the LAST of those six
+  // steps -- the sum of several individually-justified 30s waits can
+  // exceed a 75s whole-test budget even when no single step is actually
+  // broken. 120_000ms gives real headroom for that sum without the
+  // 300_000ms this suite's own heaviest test uses
+  // (r80-r81-r82-copilot-pill-chain-env1.spec.ts) -- proportionate to this
+  // test's own six-step shape, not copied wholesale.
+  test.setTimeout(120_000);
+
   // Setup: the create form is disabled until the project has an APPROVED
   // BOQ (BillingMilestonesClient.tsx's own NO_APPROVED_BOQ_REASON gate) --
   // a live check this run found every existing BOQ on this project is
