@@ -255,7 +255,7 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "materials",
     label: "Material",
     route: "/materials",
-    prefixes: ["/materials", "/site-materials"],
+    prefixes: ["/materials"],
     pillKeys: ["materials", "material"],
     placeholder: "e.g. record 20 bags of cement received today",
     examples: ["record 20 bags of cement received today", "what is the current stock of TMT bars", "which materials are running low this week"],
