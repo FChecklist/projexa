@@ -1,6 +1,20 @@
 import { test, expect } from "@playwright/test";
 import { fieldByLabel } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below waits on a real
+// GET/POST round trip through the VERIDIAN-proxy path -- table/tab loads,
+// a create-then-redirect-then-re-render cycle, or the real 400 "requires a
+// real user session" refusal (GAP #2 below), which is itself a real response
+// from a real POST, not a mock. Raised to 30_000ms to match this suite's own
+// established minimum for a network-dependent Playwright check.
+// playwright.config.ts's actionTimeout/navigationTimeout are both already
+// 30_000ms, raised for the identical documented CI-latency class (see that
+// file's own comments, and the R-95 boq-analysis-poll fix in
+// e2e/sumeet-billing-milestones-env1.spec.ts / PR #297 for the full
+// root-cause writeup). Assertions themselves are unchanged -- only the
+// headroom given to a slow-but-correct upstream.
+//
 // GAP #1, confirmed live before writing these tests (see e2e/users.ts):
 // PROJEXA's isHrAdmin gate (src/hooks/use-org-role.ts) is based on
 // PROJEXA-local memberships.role, NOT the seeded employee_profiles.job_title.
@@ -65,9 +79,9 @@ test.describe("Employees directory (/employees) -- admin actions, as CEO (owner)
   test("real seeded employees render (11 seeded, 10 shown on page 1 of the DataTable)", async ({ page }) => {
     await page.goto("/employees");
     await expect(page.getByRole("heading", { name: "Employees" })).toBeVisible();
-    await expect(page.locator("table tbody tr")).toHaveCount(10, { timeout: 15_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(10, { timeout: 30_000 });
     await page.getByRole("button", { name: "Next page" }).click();
-    await expect(page.locator("table tbody tr")).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(1, { timeout: 30_000 });
   });
 
   test("department filter and employee search are real, working controls", async ({ page }) => {
@@ -75,12 +89,12 @@ test.describe("Employees directory (/employees) -- admin actions, as CEO (owner)
     await page.waitForSelector("table tbody tr");
     const firstName = (await page.locator("table tbody tr").first().locator("td").first().innerText()).trim();
     await page.getByPlaceholder(/search employees/i).fill(firstName);
-    await expect(page.locator("table tbody tr").first()).toContainText(firstName, { timeout: 10_000 });
+    await expect(page.locator("table tbody tr").first()).toContainText(firstName, { timeout: 30_000 });
   });
 
   test("Employee Profile button is visible for owner-role, but the write itself hits the real dbUser architecture gap (GAP #2)", async ({ page }) => {
     await page.goto("/employees");
-    await expect(page.getByRole("button", { name: /employee profile/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /employee profile/i })).toBeVisible({ timeout: 30_000 });
 
     const resp = await page.evaluate(async () => {
       const res = await fetch("/api/employees", {
@@ -110,13 +124,13 @@ test.describe("Employees directory (/employees) -- admin actions, as CEO (owner)
     // shape hr/departments/route.ts:24-29 still uses can no longer throw at
     // query-build time. Source-only finding (no dev server run to
     // reconfirm live) -- if this still 500s, revert to the old assertion.
-    await expect(page.locator("table tbody tr")).toHaveCount(6, { timeout: 15_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(6, { timeout: 30_000 });
   });
 
   test("Org Chart tab renders the real 1-CEO + 10-employee reporting hierarchy", async ({ page }) => {
     await page.goto("/employees");
     await page.getByRole("tab", { name: "Org Chart" }).click();
-    await expect(page.getByText("Arjun Mehta")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Arjun Mehta")).toBeVisible({ timeout: 30_000 });
   });
 
   test("Leave tab: real write -- approving a seeded pending leave request fails on the real dbUser architecture gap (GAP #2)", async ({ page }) => {
@@ -137,7 +151,7 @@ test.describe("Employees directory (/employees) -- admin actions, as CEO (owner)
     // user session, not an API key"). The UI surfaces this as a toast; the
     // row correctly stays "pending" because the write genuinely did not
     // happen -- this assertion documents the real broken behavior.
-    await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 30_000 });
     await expect(pendingRow).toContainText("pending");
   });
 });
@@ -186,7 +200,7 @@ test.describe("Employees directory (/employees) -- member-role experience, as Sn
     // limitation. Even a simple self-service "request my own leave" write,
     // gated only at "member"+"write" scope (no manager/admin requirement at
     // all), still hits it -- this isn't specific to admin actions.
-    await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -197,24 +211,24 @@ test.describe("Payroll (/payroll) -- admin actions, as CEO", () => {
     await page.goto("/payroll");
     await expect(page.getByRole("heading", { name: "Payroll" })).toBeVisible();
     await page.waitForLoadState("networkidle");
-    await expect(page.locator("table tbody tr")).toHaveCount(3, { timeout: 15_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(3, { timeout: 30_000 });
 
     await page.getByRole("tab", { name: "Salary Components" }).click();
     await page.waitForLoadState("networkidle");
-    await expect(page.locator("table tbody tr")).toHaveCount(6, { timeout: 15_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(6, { timeout: 30_000 });
 
     await page.getByRole("tab", { name: "Salary Structures" }).click();
     await page.waitForLoadState("networkidle");
     // Same shadcn DataTable pagination as Employees (page-size fixed at
     // 10) -- 11 seeded structures means 10 on page 1, 1 on page 2.
-    await expect(page.locator("table tbody tr")).toHaveCount(10, { timeout: 15_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(10, { timeout: 30_000 });
     await page.getByRole("button", { name: "Next page" }).click();
-    await expect(page.locator("table tbody tr")).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(1, { timeout: 30_000 });
   });
 
   test("Income Tax tab is present (org country confirmed IN via /api/organization)", async ({ page }) => {
     await page.goto("/payroll");
-    await expect(page.getByRole("tab", { name: "Income Tax" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("tab", { name: "Income Tax" })).toBeVisible({ timeout: 30_000 });
   });
 
   test("View Register on a processed run shows real payslip data (33 seeded payslips / 3 runs = 11 each)", async ({ page }) => {
@@ -228,7 +242,7 @@ test.describe("Payroll (/payroll) -- admin actions, as CEO", () => {
     await page.locator("table tbody tr").first().getByRole("button", { name: /view register/i }).click();
     await expect(page).toHaveURL(/\/payroll\/runs\/[^/]+$/);
     const rows = page.locator("table tbody tr");
-    await expect(rows.first()).toBeVisible({ timeout: 15_000 });
+    await expect(rows.first()).toBeVisible({ timeout: 30_000 });
     const count = await rows.count();
     expect(count, "expected payslips in at least one processed run's register").toBeGreaterThan(0);
   });
@@ -262,7 +276,7 @@ test.describe("Payroll (/payroll) -- admin actions, as CEO", () => {
     // payroll/runs/route.ts:32 still hard-requires ctx.dbUser for
     // createPayrollRun()'s audit trail and 400s the same message for
     // PROJEXA's API-key-only caller.
-    await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/real user session/i)).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -300,7 +314,7 @@ test.describe("Recruitment (/recruitment) -- no role gating AND no dbUser archit
     // -- job openings never had a detail view before it) rather than
     // closing a dialog back onto the list.
     await expect(page).toHaveURL(/\/recruitment\/openings\/[0-9a-f-]+$/);
-    await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(title)).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: add a candidate -- also succeeds", async ({ page }) => {
@@ -326,7 +340,7 @@ test.describe("Recruitment (/recruitment) -- no role gating AND no dbUser archit
     // 92-100).
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page).toHaveURL(/\/recruitment\?tab=candidates$/);
-    await expect(page.getByText(candidateName)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(candidateName)).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -336,10 +350,10 @@ test.describe("HR dashboard (/hr) -- read-only aggregate, as CEO", () => {
   test("real headcount/leave/payroll aggregates match underlying seeded data", async ({ page }) => {
     await page.goto("/hr");
     await expect(page.getByRole("heading", { name: "HR Dashboard" })).toBeVisible();
-    await expect(page.getByText("Total Headcount")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Total Headcount")).toBeVisible({ timeout: 30_000 });
     // 11 seeded users total.
     const headcountCard = page.locator(".shadow-card, [class*=card]", { hasText: "Total Headcount" }).first();
-    await expect(headcountCard).toContainText("11", { timeout: 10_000 });
+    await expect(headcountCard).toContainText("11", { timeout: 30_000 });
   });
 
   test("nav cards route to the real Employees/Payroll/Recruitment pages", async ({ page }) => {

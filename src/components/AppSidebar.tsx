@@ -119,14 +119,18 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { labelKey: "items.labour", href: "/labour", icon: Users },
       { labelKey: "items.materials", href: "/materials", icon: Package },
-      // R52 / R48_NAV_OMITS_LIVE_MODULE_ROUTE_01: /site-materials is a live,
-      // fully-rendering module (HTTP 200, its own "Site Materials" heading,
-      // three working tabs) that had no nav entry at all, so it could only be
-      // opened by typing the URL -- a direct C01 REACHABLE failure. It is the
-      // mirror of the unwired-pill problem this file already guards against:
-      // a route with no nav item in front of it, rather than a nav item with
-      // no route behind it. The test file now asserts BOTH directions.
-      { labelKey: "items.siteMaterials", href: "/site-materials", icon: Package },
+      // R52 added a "Site Materials" entry here (/site-materials) when that
+      // route was a live, fully-rendering module of its own. PROJEXA-E2E-001
+      // item 5 (2026-09-20) investigated the owner's "silently redirects to
+      // /materials -- real screen or remove the route?" question and found
+      // /site-materials was never a distinct concept: same
+      // constructionMaterials table (already project/site-scoped -- no
+      // org-wide master exists to distinguish a "site" view from) under a
+      // second label, with two of its three tabs permanently dead. It had
+      // already been turned into a silent server redirect to /materials on
+      // 2026-08-30; this entry -- a nav item whose only job was to send a
+      // click to another nav item already one line up -- is removed with it.
+      // See nav-routes.ts's own comment for the full evidence trail.
       { labelKey: "items.inventory", href: "/inventory", icon: Warehouse },
       { labelKey: "items.vendors", href: "/vendors", icon: Building2 },
       { labelKey: "items.procurement", href: "/procurement", icon: ClipboardCheck },
@@ -219,13 +223,15 @@ const NAV_SECTIONS: NavSection[] = [
 // MEASURED as of 2026-08-26: NAV_SECTIONS declared 46 entries (three
 // independent counts agreed -- 46 `href:` keys, 46 `labelKey:` keys, and 46
 // Nav.items keys in messages/en.json), and all 46 resolved to a real page, so
-// this filter hid 0 of 46. R52 added the 47th, /site-materials, which was a
-// live module with no nav entry (R48_NAV_OMITS_LIVE_MODULE_ROUTE_01); the
-// three counts are 47 each now and the filter still hides 0. It is a standing guard against the
-// next unwired entry, not a mass cull -- the honest finding is that PROJEXA's
-// SIDEBAR was never the source of the unwired-pill risk (see
-// veri-chat-context.tsx's fetchCapabilityTree for where that risk actually
-// lives).
+// this filter hid 0 of 46. R52 added a 47th, /site-materials, which was a
+// live module with no nav entry (R48_NAV_OMITS_LIVE_MODULE_ROUTE_01); that
+// entry was removed again by PROJEXA-E2E-001 item 5 (2026-09-20, see the
+// removal comment a few lines up) once /site-materials itself was retired as
+// a redundant duplicate of /materials rather than a distinct module, so the
+// count is back to 46. It is a standing guard against the next unwired
+// entry, not a mass cull -- the honest finding is that PROJEXA's SIDEBAR was
+// never the source of the unwired-pill risk (see veri-chat-context.tsx's
+// fetchCapabilityTree for where that risk actually lives).
 // R52: exported so HOME's module directory renders the SAME groups from the
 // SAME filtered source. M24 deletes the left rail and makes HOME the grouped
 // module directory that replaces it -- if the directory rebuilt its own list,

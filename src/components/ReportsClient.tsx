@@ -433,8 +433,16 @@ function ProjectReportsPanel({
       const breakupReport = BREAKUP_SOURCE_REPORT[next.report];
       const [res, breakupRes] = await Promise.all([
         fetch(destination.path, { signal: controller.signal }),
+        // Same fix as reportDestination() in report-destinations.ts (PROJEXA-
+        // E2E-001 section 5 item 2): this reads breakupBody.lines/totalBudget
+        // directly, the handler's own payload shape, so it needs
+        // format=legacy for the same reason -- without it R67 E-32's default
+        // table shape has no `lines` key, breakupBody.lines is never an
+        // array, and the budget breakup table silently shows its "no lines"
+        // empty state on every run instead of only when one is genuinely
+        // absent.
         breakupReport
-          ? fetch(`/api/reports/${breakupReport}?projectId=${encodeURIComponent(projectId)}`, { signal: controller.signal })
+          ? fetch(`/api/reports/${breakupReport}?projectId=${encodeURIComponent(projectId)}&format=legacy`, { signal: controller.signal })
           : Promise.resolve(null),
       ]);
       const data = await res.json();

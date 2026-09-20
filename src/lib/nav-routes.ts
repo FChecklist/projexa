@@ -24,6 +24,23 @@
 // brackets is a wildcard that silently matches nothing -- see that file's
 // own comment). All 161 were listed below; R67 added /projects/new (D-01) and
 // /design-studio (D-07), taking it to 163.
+//
+// PROJEXA-E2E-001 item 5 (2026-09-20): /site-materials removed (was a
+// server-redirect-only shim to /materials, added 2026-08-30). Investigated
+// per the owner's explicit "real screen or remove the route" decision ask --
+// NOT a distinct domain concept: construction_materials/
+// construction_material_receipts (compliance-tracker's own schema.ts) are
+// already project/site-scoped with no org-wide "all materials" master to
+// distinguish a "site" view from, R-C08 (platform.sumeet_requirements) is
+// ONE requirement ("Material database, material inbound, spec, cost, qty")
+// covering both, and /site-materials's own Catalog tab was confirmed
+// (2026-08-30 finding, still true) to be the identical constructionMaterials
+// table under a second label before it was turned into a redirect. Keeping
+// a sidebar entry that silently teleports to another already-listed sidebar
+// entry is redundant, not reachable-by-design -- removed rather than left as
+// a shim. See nav-routes.test.ts's own comment for the regression guard
+// that now asserts the OPPOSITE of what it used to (site-materials stays
+// gone), and AppSidebar.tsx / module-catalogue.ts for the matching removals.
 export const SHIPPED_ROUTES: readonly string[] = [
   "/",
   "/accounting",
@@ -232,7 +249,6 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/site-diary",
   "/site-diary/[id]",
   "/site-diary/new",
-  "/site-materials",
   "/submittals",
   "/submittals/[id]",
   "/submittals/new",
