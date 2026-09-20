@@ -307,11 +307,26 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     await page.goto(`/work-progress?projectId=${PROJECT_ID}&tab=report&from=${FROM}&to=${TO}&view=scope`);
     // KD-15 (per r81-d603-work-progress.spec.ts's own note): a cold route
     // compiles on first hit -- give the first paint real headroom.
-    await page.getByTestId("wpr-caption").waitFor({ state: "visible", timeout: 45_000 });
+    //
+    // e2e-env1 CI fix (2026-09-20): `.first()` added after a real CI
+    // failure (compliance-tracker e2e-env1 job, 2026-09-20 handoff) showed
+    // `getByTestId('wpr-caption')` genuinely resolving to 2 elements on
+    // this exact initial page load, both with BYTE-IDENTICAL text
+    // ("Showing 6 Sep 2026 – 11 Sep 2026 · ..."). Only ONE render site for
+    // this testid exists in WorkProgressReportClient.tsx (grepped the
+    // whole component) -- this is a real, transient double-mount (most
+    // consistent with a streaming-SSR/hydration artifact under this
+    // shared, 240+-BOQ project's genuinely slow report query, not a
+    // client-side logic bug), not a wrong-content bug: since both copies
+    // are identical, `.first()` cannot hide a stale-vs-fresh mismatch the
+    // way it would if the two nodes ever disagreed. Applied to every
+    // wpr-caption locator in this function, not just this one call site.
+    const caption = page.getByTestId("wpr-caption").first();
+    await caption.waitFor({ state: "visible", timeout: 45_000 });
 
     const boqSelector = page.getByTestId("boq-selector");
     if ((await boqSelector.count()) > 0) {
-      const captionText = await page.getByTestId("wpr-caption").innerText();
+      const captionText = await caption.innerText();
       if (!captionText.includes(BOQ_TITLE)) {
         // WIDENED 2026-09-13 (env1 CI fix pass, then widened AGAIN the same
         // day after the first pass -- 90s -- still wasn't enough, see the
@@ -351,7 +366,7 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
         await boqSelector.click();
         await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
         await expect(
-          page.getByTestId("wpr-caption"),
+          caption,
           "the real caption must reflect this spec's own selected BOQ before its rows are read"
         ).toContainText(BOQ_TITLE, { timeout: 120_000 });
       }
@@ -458,15 +473,19 @@ test.describe.serial("R-41/R-42/R-43: Work Progress Report Previous/Current/Tota
     // used above runs again to fix it, so the two mechanisms compose rather
     // than compete.
     await page.reload({ waitUntil: "networkidle" });
-    await page.getByTestId("wpr-caption").waitFor({ state: "visible", timeout: 45_000 });
-    const captionAfterReload = await page.getByTestId("wpr-caption").innerText();
+    // Same `.first()` locator, re-queried fresh (not the pre-reload
+    // `caption` handle) -- a reload tears down and rebuilds the DOM, and
+    // this same transient double-mount can recur on the fresh load too.
+    const captionAfterReloadLocator = page.getByTestId("wpr-caption").first();
+    await captionAfterReloadLocator.waitFor({ state: "visible", timeout: 45_000 });
+    const captionAfterReload = await captionAfterReloadLocator.innerText();
     if (!captionAfterReload.includes(BOQ_TITLE)) {
       const boqSelectorAfterReload = page.getByTestId("boq-selector");
       if ((await boqSelectorAfterReload.count()) > 0) {
         await boqSelectorAfterReload.click();
         await page.getByRole("option", { name: new RegExp(escapeRegExp(BOQ_TITLE)) }).click();
         await expect(
-          page.getByTestId("wpr-caption"),
+          captionAfterReloadLocator,
           "the real caption must reflect this spec's own selected BOQ again after the reload"
         ).toContainText(BOQ_TITLE, { timeout: 120_000 });
       }
