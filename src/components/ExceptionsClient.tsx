@@ -140,7 +140,7 @@ export default function ExceptionsClient({ projectId }: { projectId: string }) {
                           <li key={r.id}>
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 text-left text-px-ink underline decoration-dotted underline-offset-2 hover:text-px-orange"
+                              className="inline-flex items-center gap-1 text-left text-px-ink underline decoration-dotted underline-offset-2 hover:decoration-solid"
                               onClick={(e) => { e.stopPropagation(); router.push(href); }}
                               title="Open the real record this exception names"
                             >
