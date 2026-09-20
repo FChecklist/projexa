@@ -43,6 +43,72 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- fix /site-diary 'Empty while Work Progress holds the same history' (work order section 5 item 3)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Worktree: C:\ct\projexa-sitediary-fix (branch fix/site-diary-empty), off
+      origin/main. Isolated from the shared C:\ct\projexa checkout other
+      parallel sessions are using.
+
+      ROOT CAUSE: same bug class already fixed for /change-orders (PR #299),
+      NOT the /reports response-shape-mismatch class (PR #300), and NOT a
+      backend/data gap. compliance-tracker's construction-site-diary-
+      service.ts's listSiteDiaries(), called directly against the live
+      Supabase project (bypassing HTTP/auth), correctly returns 5 real rows
+      for org=projexa_demo_org / project=projexa_demo_project ("Villa 21 -
+      Whitefield"), alongside 35 real work-progress entries for the same
+      project -- the table and the query were never empty or wrong. The real
+      defect: site-diary/page.tsx never named which project it was showing.
+      resolveSelectedProject()'s documented, deliberate first-project
+      fallback (project-selection.ts) silently picks the org's
+      alphabetically-first project when nothing is asked for -- "Business Bay
+      Corporate HQ", which has zero seeded site-diary entries AND zero
+      work-progress entries. /work-progress reaches its project differently
+      (module-list-source.ts's resolveProjectForModule, R67 F-18): it honours
+      an explicit ?projectId= from a project-scoped link without writing the
+      rail's remembered-project cookie, so a visit to /work-progress?projectId=
+      <villa21> can show real history while a later, plain sidebar click to
+      /site-diary (no ?projectId=, same session, cookie still unset) silently
+      falls back to the empty project -- the exact asymmetry reported.
+
+      FIX: adopted the same project-naming + "(auto-selected)" admission
+      already shipped for Documents/Labour/Drawings/MoMs/change-orders (R67
+      D-13/D-20/D-32 convention) -- site-diary/page.tsx now passes
+      project.name/fellBack through to PageHeading and SiteDiaryClient, and
+      the empty state names the project and, when auto-picked, says so and
+      points at the project switcher.
+
+      Tests: SiteDiaryClient.test.tsx (new, 4 cases -- falsifiability-checked
+      by reverting the empty-state fix, confirming 2 of 4 fail, then
+      restoring). Full existing suite (4293 tests) still green. Typecheck and
+      lint both clean on the changed files.
+
+      File scope: src/app/(app)/site-diary/page.tsx,
+      src/components/SiteDiaryClient.tsx,
+      src/components/SiteDiaryClient.test.tsx (new), this file (claim entry).
+      Did NOT touch compliance-tracker (no backend change needed -- the query
+      and data were already correct; see that repo's own ACTIVE-CLAIMS.yaml
+      for this sub-task's read-only-verification entry there).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- investigate + fix PROJEXA /reports Project Status Report showing dashes against a project with real BOQ/progress figures (work order section 5 item 2, called out again in section 4 as the single worst-weighted finding)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Scope: both repos, isolated worktrees (C:\ct\projexa-reports-fix,
+      C:\ct\ct-reports-fix), branch fix/reports-project-status-dashes in
+      both. Checking first whether this is the same project-resolution
+      class of bug /change-orders had (PR #299, sibling fix, same work
+      order section 5 item 1) before assuming a genuine data/rendering bug
+      -- resolveSelectedProject()/resolveProjectForModule() is already in
+      the /reports chain (src/lib/module-list-source.ts), so verifying
+      directly against live Supabase (pcrjmlpuqsbocqfwoxod) data for
+      projexa_demo_org/projexa_demo_project rather than assuming either
+      way. Likely touches src/app/(app)/reports/page.tsx,
+      src/components/ReportsClient.tsx,
+      src/components/reports/ProjectStatusCard.tsx, src/lib/report-run.ts
+      here, and/or src/lib/services/construction-reports-service.ts /
+      construction-dashboard-service.ts in compliance-tracker. Will update
+      this claim with the real finding once confirmed. Per owner's ground
+      rules: local bun dev + live Supabase + GitHub CI only, never Vercel;
+      PR(s) opened, CI green, left OPEN/UNMERGED.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
@@ -315,6 +381,63 @@ recently_completed:
       correctness fix. Did not touch compliance-tracker (no backend change
       needed -- /materials' own Cost Report tab already owns the one real
       backend endpoint this domain uses).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- /scope Filter+Export marked 'Not yet available' (work order section 5 item 4) [DONE, PR left OPEN/UNMERGED per owner's ground rules]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Isolated worktree C:\ct\projexa-scope-fix, branch fix/scope-filter-export, off
+      origin/main @ eb33f85 -- NOT working in the shared C:\ct\projexa checkout
+      (several parallel sessions use it) or C:\ct\ct (backend not touched;
+      read-only local dev server for live verification, no schema/service change).
+
+      Confirmed by reading src/components/ScopeClient.tsx directly: Filter and
+      Export were genuinely UNBUILT stub buttons (`disabled title="Not yet
+      available"`, no onClick, no data wired to either) -- not a bug masking a
+      silent failure, unlike the /change-orders and /site-diary findings earlier
+      in this work order. Built the real, minimal, working version, reusing this
+      repo's own established patterns: the Filter/Export header trio + inline
+      filter bar (Status + Title, client-side over the rows already on screen,
+      "Showing n of m", Clear all, a distinct filtered-empty-state) from
+      DocumentsClient.tsx (R67 D-14), and the CSV builder from
+      src/lib/csv-export.ts (toCsv/downloadCsv, already used by
+      BudgetAnalyticalClient/DocumentsClient/LabourClient/etc.). Filtering
+      happens on the flat BOQ list before lineage grouping (buildLineageRows),
+      so a filtered-out revision does not drag its whole lineage along.
+
+      Live-verified against the real Supabase project (pcrjmlpuqsbocqfwoxod) via
+      local bun dev on both repos, logged in as the real, already-committed E2E
+      test CEO account (projexa's e2e/users.ts, "Meridian Construction Group
+      (E2E Test Org)" -- no password set/reset/touched, per this work order's
+      credential-safety rule): on /scope for "Meridian Heights - Residential
+      Tower A" (2,467 real BOQ rows), Status=draft narrowed to 2,068 records in
+      real time; Title="R-22" narrowed to 130 real matching rows; a combined
+      non-matching filter correctly rendered the real "No BOQs match this
+      filter" empty state with a working Clear filters action; Export with the
+      R-22 filter active downloaded a real CSV whose captured content (131
+      lines: 1 header + 130 data rows) matched the on-screen "Showing 130 of
+      2467" exactly, with real field values from the live BOQ data.
+
+      File scope: src/components/ScopeClient.tsx, src/components/
+      ScopeClient.test.tsx (30 pass, bun test --isolate; new pure-function
+      coverage for applyScopeFilters/hasActiveScopeFilter/knownScopeStatuses,
+      an interactive Status-driven render test, and an Export test that
+      captures a real downloaded CSV's exact content). Did NOT touch
+      ScopeObjectClient.tsx, ScopeCompareClient.tsx, ScopeCreateClient.tsx,
+      ScopeImportClient.tsx, ScopeReviseClient.tsx, or any compliance-tracker
+      file (the BOQ list API already returns everything this filter/export
+      needs). One documented, environment-only test gap: the Title text
+      input's own onChange is not driven via fireEvent in the render suite --
+      a pre-existing, already-recorded limitation of this repo's test
+      environment (React 19 + happy-dom under bun test; see
+      BudgetAnalyticalClient.test.tsx's own comment) -- covered instead by the
+      pure applyScopeFilters function plus the real-browser verification above.
+
+      PR: FChecklist/projexa#303, commit 46d1107. CI green (Lint/Type
+      Check/Test 30 pass/Build/Migration guard/Secret Scanning); Vercel check
+      shows "blocked" by design (R87 ignoreCommand gate on a non-main branch),
+      not touched. platform.sumeet_requirements row R-96 updated with an
+      addendum (real, verified new information; its own naming-caveat closure
+      is unrelated and untouched).
   - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- re-investigate /change-orders 'No change orders yet' (work order section 5 item 1) [DONE, work complete -- PR left OPEN/UNMERGED per owner's ground rules, pending the owner's batch merge]"
     claimed_at: "2026-09-20T (this session)"
     completed_at: "2026-09-20T (this session)"
