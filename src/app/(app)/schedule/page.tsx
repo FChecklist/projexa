@@ -8,16 +8,27 @@
 // resolution is to separate what each is actually about.
 //
 // F-18 is about WHEN the frame paints. A-13 is about WHICH project the screen
-// is allowed to show: "/schedule renders strictly from the URL's projectId and
-// shows the sentence 'Pick a project' when absent instead of defaulting to the
-// first project" -- a schedule is a project's schedule, and guessing which one
-// is the same class of mistake as logging progress against the wrong project.
+// is allowed to show: "/schedule renders from the URL's projectId, or the
+// rail's own remembered choice, and shows the sentence 'Pick a project' when
+// neither says anything -- instead of defaulting to the first project" -- a
+// schedule is a project's schedule, and GUESSING which one is the same class
+// of mistake as logging progress against the wrong project.
 //
-// F-18's generic helper (resolveProjectForModule) does the opposite of A-13: it
-// falls back to the rail's remembered cookie and then to the org's first
-// project. So this page does NOT use it. A-13's rule wins outright on the
-// question of which project, because it is a correctness ruling and F-18 is a
-// latency one.
+// F-18's generic helper (resolveProjectForModule) does almost the same thing
+// as A-13 now does, and the one remaining difference is why this page still
+// does not use it: resolveProjectForModule falls all the way through to the
+// org's first project when neither the URL nor the cookie says anything.
+// A-13's resolveRouteProject() (called below) stops one tier short of that --
+// URL, then the rail's remembered cookie, then ask -- and never guesses.
+//
+// PROJEXA-E2E-001 section 5 item 6 (2026-09-20): resolveRouteProject() used
+// to stop at the URL alone, so the top-rail project switcher -- which, with
+// no ?projectId= yet in THIS page's URL, can only record its choice in that
+// cookie and ask for a refresh -- had no way to reach this screen at all;
+// clicking it here visibly did nothing, "looks broken unless you know" per
+// the owner's own words. See project-selection.ts's resolveRouteProject() and
+// project-preference.ts's pickRouteProject() for the fix: the cookie is now a
+// real tier of this resolver too, just never the first-project guess.
 //
 // What F-18 keeps here, and loses nothing by: the resolution runs INSIDE the
 // Suspense boundary, so the heading, the four real tab labels, the timeline's
