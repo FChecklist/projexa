@@ -123,6 +123,27 @@ export function reportDestination(reportName: string, params: ReportParams): Rep
   // screen says which of the two happened.
   if (params.category) qs.append("category", params.category);
   if (params.vendorId) qs.set("vendorId", params.vendorId);
+  // PROJEXA-E2E-001 section 5 item 2 (owner-flagged, "the worst thing on this
+  // list"): the Reports screen's Project Status card showed a real dash for
+  // every figure on a project with real BOQ and progress data. Root cause --
+  // R67 E-32/R-265 flipped GET /reports/{name}'s DEFAULT body from each
+  // handler's own payload to the generic { columns, rows, totals, currency }
+  // table, keeping the old shape behind ?format=legacy. The E-32 follow-up
+  // commit (r67(E2), "every consumer that reads a handler payload asks for it
+  // by name") migrated six call sites that read handler fields directly
+  // (both category-distribution routes, manpower-cost-report,
+  // CostVarianceAnalyticalClient, DashboardProjectClient,
+  // WorkProgressAnalyticalClient) -- this function, the ONE place every
+  // non-hosted report on THIS screen is fetched from, was a seventh that
+  // reads handler fields directly (ProjectStatusCard's data.contractValue/
+  // data.budget/etc., ReportOutput's generic Object.entries grid for the
+  // other 16 reports) and was missed by that sweep. Every downstream
+  // consumer of this fetch -- ProjectStatusCard, ReportOutput, the CSV
+  // exporter (reportResultToCsv), the breakup fetch below in
+  // ReportsClient.tsx -- is built against the handler payload, never the
+  // table shape, so this asks for exactly that, the same escape hatch E-32
+  // shipped and the same fix already proven on the six.
+  qs.set("format", "legacy");
   return { kind: "fetch", path: `/api/reports/${encodeURIComponent(reportName)}?${qs.toString()}` };
 }
 

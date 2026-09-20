@@ -43,6 +43,72 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- fix /site-diary 'Empty while Work Progress holds the same history' (work order section 5 item 3)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Worktree: C:\ct\projexa-sitediary-fix (branch fix/site-diary-empty), off
+      origin/main. Isolated from the shared C:\ct\projexa checkout other
+      parallel sessions are using.
+
+      ROOT CAUSE: same bug class already fixed for /change-orders (PR #299),
+      NOT the /reports response-shape-mismatch class (PR #300), and NOT a
+      backend/data gap. compliance-tracker's construction-site-diary-
+      service.ts's listSiteDiaries(), called directly against the live
+      Supabase project (bypassing HTTP/auth), correctly returns 5 real rows
+      for org=projexa_demo_org / project=projexa_demo_project ("Villa 21 -
+      Whitefield"), alongside 35 real work-progress entries for the same
+      project -- the table and the query were never empty or wrong. The real
+      defect: site-diary/page.tsx never named which project it was showing.
+      resolveSelectedProject()'s documented, deliberate first-project
+      fallback (project-selection.ts) silently picks the org's
+      alphabetically-first project when nothing is asked for -- "Business Bay
+      Corporate HQ", which has zero seeded site-diary entries AND zero
+      work-progress entries. /work-progress reaches its project differently
+      (module-list-source.ts's resolveProjectForModule, R67 F-18): it honours
+      an explicit ?projectId= from a project-scoped link without writing the
+      rail's remembered-project cookie, so a visit to /work-progress?projectId=
+      <villa21> can show real history while a later, plain sidebar click to
+      /site-diary (no ?projectId=, same session, cookie still unset) silently
+      falls back to the empty project -- the exact asymmetry reported.
+
+      FIX: adopted the same project-naming + "(auto-selected)" admission
+      already shipped for Documents/Labour/Drawings/MoMs/change-orders (R67
+      D-13/D-20/D-32 convention) -- site-diary/page.tsx now passes
+      project.name/fellBack through to PageHeading and SiteDiaryClient, and
+      the empty state names the project and, when auto-picked, says so and
+      points at the project switcher.
+
+      Tests: SiteDiaryClient.test.tsx (new, 4 cases -- falsifiability-checked
+      by reverting the empty-state fix, confirming 2 of 4 fail, then
+      restoring). Full existing suite (4293 tests) still green. Typecheck and
+      lint both clean on the changed files.
+
+      File scope: src/app/(app)/site-diary/page.tsx,
+      src/components/SiteDiaryClient.tsx,
+      src/components/SiteDiaryClient.test.tsx (new), this file (claim entry).
+      Did NOT touch compliance-tracker (no backend change needed -- the query
+      and data were already correct; see that repo's own ACTIVE-CLAIMS.yaml
+      for this sub-task's read-only-verification entry there).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- investigate + fix PROJEXA /reports Project Status Report showing dashes against a project with real BOQ/progress figures (work order section 5 item 2, called out again in section 4 as the single worst-weighted finding)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Scope: both repos, isolated worktrees (C:\ct\projexa-reports-fix,
+      C:\ct\ct-reports-fix), branch fix/reports-project-status-dashes in
+      both. Checking first whether this is the same project-resolution
+      class of bug /change-orders had (PR #299, sibling fix, same work
+      order section 5 item 1) before assuming a genuine data/rendering bug
+      -- resolveSelectedProject()/resolveProjectForModule() is already in
+      the /reports chain (src/lib/module-list-source.ts), so verifying
+      directly against live Supabase (pcrjmlpuqsbocqfwoxod) data for
+      projexa_demo_org/projexa_demo_project rather than assuming either
+      way. Likely touches src/app/(app)/reports/page.tsx,
+      src/components/ReportsClient.tsx,
+      src/components/reports/ProjectStatusCard.tsx, src/lib/report-run.ts
+      here, and/or src/lib/services/construction-reports-service.ts /
+      construction-dashboard-service.ts in compliance-tracker. Will update
+      this claim with the real finding once confirmed. Per owner's ground
+      rules: local bun dev + live Supabase + GitHub CI only, never Vercel;
+      PR(s) opened, CI green, left OPEN/UNMERGED.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
@@ -350,6 +416,258 @@ recently_completed:
       feature to keep or remove), but because this closes out a named item
       the owner explicitly asked to be told "plainly," same posture as
       #304 (/site-materials).
+  - session_label: "claude-code (sub-agent, isolated worktree C:\ct\projexa-schedule-fix, branch fix/schedule-project-switcher) -- PROJEXA-E2E-001 section 5 item 6: /schedule ignores the global project switcher, reads only ?projectId= [DONE. PR FChecklist/projexa#305 open, not yet merged -- left open/unmerged per the owner's ground rules for this work order]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Root cause confirmed by reading the code (not assumed from the owner's
+      description): /schedule/page.tsx was the ONLY project-scoped screen
+      that called resolveRouteProject() (src/lib/project-selection.ts -- the
+      A-13 "strict URL-only, no cookie fallback" resolver), while every other
+      project-scoped page calls resolveSelectedProject()/resolveProjectForModule(),
+      both of which also honour the rail's own veri.rail.project cookie.
+      M24Shell.tsx's chooseProject() (the global switcher's handler) only
+      pushes the new id into the URL when the CURRENT url already carries a
+      ?projectId= (routeProjectId truthy); otherwise it writes the cookie and
+      calls router.refresh() -- which works for the ~50 cookie-aware pages but
+      was a no-op for /schedule, which never read that cookie. So landing on
+      /schedule with no ?projectId= (fresh nav, bookmark, typed URL) and then
+      using the top-rail switcher visibly did nothing.
+
+      FIX: pickRouteProject() (src/lib/project-preference.ts) gains a
+      `preferred` fallback tier -- the rail's own remembered cookie choice,
+      exactly what pickProject() already grants the other ~50 pages --
+      inserted between "nothing named" and "ask", and resolveRouteProject()
+      threads readPreferredProjectId() into it. The first-project GUESS A-13
+      exists to forbid stays forbidden (pickRouteProject still never reaches
+      projects[0]); only the "did the user already tell us, via the switcher"
+      tier is added. Explicit ?projectId= deep links still outrank the
+      cookie outright, so shared/deep links are unaffected.
+
+      VERIFIED LIVE: both dev servers (ct :3000, projexa :3100) against live
+      Supabase pcrjmlpuqsbocqfwoxod, logged in as the committed `ceo` e2e
+      test account -- clicked the switcher between two real projects and
+      confirmed /schedule's content updated both while ?projectId= was
+      already in the URL and on a bare re-navigation to /schedule
+      afterward. FALSIFIABILITY CHECKED: reverted just the fix files,
+      re-ran the new e2e spec, confirmed the regression assertion fails
+      exactly as expected ("Pick a project" reappears); restored the fix
+      and it passed again.
+
+      Tests: project-preference.test.ts (+9 cases), project-selection.test.ts
+      (+5 cases, resolveRouteProject end-to-end with a mocked next/headers
+      cookie), e2e/schedule-project-switcher.spec.ts (new). Full suite:
+      4298/4299 (the 1 failure, dashboard-hierarchy-no-ffe-redirect.test.ts,
+      is pre-existing/unrelated -- passes clean in isolation, touches none of
+      these files). typecheck + lint clean. File scope: src/lib/project-
+      preference.ts(+.test.ts), src/lib/project-selection.ts(+.test.ts),
+      src/app/(app)/schedule/page.tsx (comment only), e2e/schedule-project-
+      switcher.spec.ts (new). Does not touch change-orders/site-diary/
+      reports/scope (siblings already fixed/claimed elsewhere in this same
+      work order). Checked platform.sumeet_requirements for schedule/timeline
+      rows (R-C10, R-94) -- both already CLOSED on unrelated evidence
+      (schedule/milestone CRUD persistence, not project resolution); left
+      untouched per this task's own "don't touch unrelated rows" instruction.
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- investigate /site-materials silent redirect to /materials, decide real-screen-vs-remove (work order section 5 item 5) [DONE -- recommendation: remove, implemented on branch, PR left OPEN/UNMERGED per owner's ground rules, needs owner sign-off since it is a product-scope decision]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Investigated the owner's explicit ask ("real screen, or remove the route?")
+      rather than treating it as a bug fix. Evidence found: (1) compliance-tracker's
+      own schema.ts (construction_materials/construction_material_receipts) is
+      already project/site-scoped with no org-wide master to distinguish a "site"
+      view from -- the service layer's own comment says so directly; (2)
+      platform.sumeet_requirements carries exactly one row for this area (R-C08,
+      "Material database, material inbound, spec, cost, qty"), treating it as one
+      concept; (3) no crr_ruling/claude_log entry anywhere discusses "site
+      materials" as intentionally distinct; (4) /site-materials's own 2026-08-30
+      history already found its Catalog tab was the identical constructionMaterials
+      table under a second label, Inbound/Cost-Report tabs dead since R52. That
+      session redirected but kept a duplicate sidebar entry as a defensive measure
+      against an unrelated, no-longer-applicable regression -- leaving two nav
+      items ("Materials"/"Site Materials") pointing at the same screen, one via an
+      unexplained teleport, which is exactly the redundant UX the owner flagged.
+
+      Recommendation: remove, not redirect. Implemented on an isolated worktree
+      (C:\ct\projexa-sitematerials-fix, branch fix/site-materials-decision, off
+      origin/main @ eb33f85): deleted src/app/(app)/site-materials/page.tsx;
+      removed the route from nav-routes.ts's SHIPPED_ROUTES and the nav entry from
+      AppSidebar.tsx; removed the /site-materials prefix from module-catalogue.ts;
+      removed the siteMaterials i18n key from messages/en.json + hi.json; flipped
+      nav-routes.test.ts's R52 regression guard to assert /site-materials stays
+      gone (was asserting it stays in nav) so it can't be silently reintroduced.
+
+      Verified: tsc --noEmit clean, eslint clean (2 pre-existing unrelated
+      warnings only), full `bun test --isolate` 4289/4289 pass, `bun run build`
+      succeeds with /site-materials confirmed absent from the route manifest. PR:
+      FChecklist/projexa#304. Left OPEN/UNMERGED per the owner's ground rules for
+      this work order (never merge to main) -- explicitly flagged in the PR
+      description as needing the owner's own sign-off since this is a
+      product-scope decision (remove vs. build a distinct screen), not a pure
+      correctness fix. Did not touch compliance-tracker (no backend change
+      needed -- /materials' own Cost Report tab already owns the one real
+      backend endpoint this domain uses).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- /scope Filter+Export marked 'Not yet available' (work order section 5 item 4) [DONE, PR left OPEN/UNMERGED per owner's ground rules]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Isolated worktree C:\ct\projexa-scope-fix, branch fix/scope-filter-export, off
+      origin/main @ eb33f85 -- NOT working in the shared C:\ct\projexa checkout
+      (several parallel sessions use it) or C:\ct\ct (backend not touched;
+      read-only local dev server for live verification, no schema/service change).
+
+      Confirmed by reading src/components/ScopeClient.tsx directly: Filter and
+      Export were genuinely UNBUILT stub buttons (`disabled title="Not yet
+      available"`, no onClick, no data wired to either) -- not a bug masking a
+      silent failure, unlike the /change-orders and /site-diary findings earlier
+      in this work order. Built the real, minimal, working version, reusing this
+      repo's own established patterns: the Filter/Export header trio + inline
+      filter bar (Status + Title, client-side over the rows already on screen,
+      "Showing n of m", Clear all, a distinct filtered-empty-state) from
+      DocumentsClient.tsx (R67 D-14), and the CSV builder from
+      src/lib/csv-export.ts (toCsv/downloadCsv, already used by
+      BudgetAnalyticalClient/DocumentsClient/LabourClient/etc.). Filtering
+      happens on the flat BOQ list before lineage grouping (buildLineageRows),
+      so a filtered-out revision does not drag its whole lineage along.
+
+      Live-verified against the real Supabase project (pcrjmlpuqsbocqfwoxod) via
+      local bun dev on both repos, logged in as the real, already-committed E2E
+      test CEO account (projexa's e2e/users.ts, "Meridian Construction Group
+      (E2E Test Org)" -- no password set/reset/touched, per this work order's
+      credential-safety rule): on /scope for "Meridian Heights - Residential
+      Tower A" (2,467 real BOQ rows), Status=draft narrowed to 2,068 records in
+      real time; Title="R-22" narrowed to 130 real matching rows; a combined
+      non-matching filter correctly rendered the real "No BOQs match this
+      filter" empty state with a working Clear filters action; Export with the
+      R-22 filter active downloaded a real CSV whose captured content (131
+      lines: 1 header + 130 data rows) matched the on-screen "Showing 130 of
+      2467" exactly, with real field values from the live BOQ data.
+
+      File scope: src/components/ScopeClient.tsx, src/components/
+      ScopeClient.test.tsx (30 pass, bun test --isolate; new pure-function
+      coverage for applyScopeFilters/hasActiveScopeFilter/knownScopeStatuses,
+      an interactive Status-driven render test, and an Export test that
+      captures a real downloaded CSV's exact content). Did NOT touch
+      ScopeObjectClient.tsx, ScopeCompareClient.tsx, ScopeCreateClient.tsx,
+      ScopeImportClient.tsx, ScopeReviseClient.tsx, or any compliance-tracker
+      file (the BOQ list API already returns everything this filter/export
+      needs). One documented, environment-only test gap: the Title text
+      input's own onChange is not driven via fireEvent in the render suite --
+      a pre-existing, already-recorded limitation of this repo's test
+      environment (React 19 + happy-dom under bun test; see
+      BudgetAnalyticalClient.test.tsx's own comment) -- covered instead by the
+      pure applyScopeFilters function plus the real-browser verification above.
+
+      PR: FChecklist/projexa#303, commit 46d1107. CI green (Lint/Type
+      Check/Test 30 pass/Build/Migration guard/Secret Scanning); Vercel check
+      shows "blocked" by design (R87 ignoreCommand gate on a non-main branch),
+      not touched. platform.sumeet_requirements row R-96 updated with an
+      addendum (real, verified new information; its own naming-caveat closure
+      is unrelated and untouched).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- re-investigate /change-orders 'No change orders yet' (work order section 5 item 1) [DONE, work complete -- PR left OPEN/UNMERGED per owner's ground rules, pending the owner's batch merge]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Reconciled R-97's 2026-09-18 close (claimed zero seeded change orders
+      for the fallback project) against the Owner's fresh 2026-09-20
+      screenshot (claims 2 real change orders exist and aren't rendering) --
+      NOT a contradiction, both are the same underlying mechanism. Verified
+      via compliance-tracker's listChangeOrders() service called directly
+      (bypassing HTTP/auth) against org=projexa_demo_org/
+      project=projexa_demo_project: the query genuinely returns both real
+      rows, so the data/service/route layers were never at fault. Real root
+      cause: change-orders/page.tsx never named which project it was
+      showing, so resolveSelectedProject()'s documented first-project
+      (alphabetically-first) fallback could silently land any fresh visitor
+      on "Business Bay Corporate HQ" (0 seeded change orders) instead of
+      "Villa 21 - Whitefield" (2 real ones), with the empty state giving no
+      indication a different project even existed. Fixed by adopting the
+      already-shipped Documents/Labour/Drawings/MoMs convention (R67
+      D-13/D-20/D-32): name the resolved project + admit "(auto-selected)".
+      File scope: src/app/(app)/change-orders/page.tsx,
+      src/components/ChangeOrdersClient.tsx, new
+      src/components/ChangeOrdersClient.test.tsx (4 cases,
+      falsifiability-checked). PR: FChecklist/projexa#299, commit
+      a9fa2aeb2cbab93503be3229a7aa7e8bcf3058ac. CI green (Lint/Type
+      Check/Test 193 pass/Build/Migration guard/Secret Scanning); Vercel
+      check shows "blocked" by design (ignoreCommand gate on a non-main
+      branch), not touched. platform.sumeet_requirements row R-97 updated
+      with this finding (real, verified new information; not touched
+      blindly). Did NOT touch ProjectWorkspaceClient.tsx's own
+      ChangeOrdersClient call site (the "Merge 6" workspace page a
+      different active session owns per this file's `active:` section) --
+      the new props are optional so it compiles unchanged.
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- e2e timeout sweep: 22 files with 10-15s explicit timeouts on individual expect/poll calls, found via a raw grep during the R-95 billing-milestones closure (PR #297)."
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Read each of the 22 grep hits (`grep -rl "timeout: (1[0-5])_000" e2e/`)
+      in context (not a blanket find-and-replace) and raised 79 call sites
+      across 16 files to 30_000ms where the timeout guarded a real
+      GET/POST/PATCH round trip through the VERIDIAN-proxy path, each with
+      its own comment citing the specific round trip covered -- matching
+      playwright.config.ts's own actionTimeout/navigationTimeout (already
+      30_000ms) and the precedent PR #297 established for the sibling
+      sumeet-billing-milestones-env1.spec.ts. Left 6 files/10 call sites
+      unchanged with reasoning recorded at each site: 12-member-access.spec.ts
+      (auth redirect, not a data round trip), pivot-chart-reports.spec.ts
+      (client-side tab-switch re-render, no new fetch),
+      r80-r81-r82-copilot-pill-chain-env1.spec.ts (deliberately tolerant
+      `.catch(() => {})` sweep-loop probe), r81-d603-scope.spec.ts
+      (pure client-side computed state), r91-cold-start-failed-fetch-env1.spec.ts
+      (deliberately-aborted, instantaneous synthetic network failure),
+      rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts's own
+      listbox-visible line (renders synchronously on focus, confirmed via
+      source), and sumeet-exceptions-env1.spec.ts (local React state toggle
+      over already-fetched data, confirmed via ExceptionsClient.tsx).
+      sumeet-billing-milestones-env1.spec.ts itself untouched -- that fix is
+      the separate, already-open PR #297. Worked in an isolated worktree at
+      C:\ct\projexa-worktrees\wo-r95-e2e-timeout-audit, branch
+      wo/r95-e2e-timeout-audit, off origin/main. PR opened:
+      https://github.com/FChecklist/projexa/pull/298 -- left OPEN/UNMERGED
+      per the owner's PROJEXA-E2E-001 ground rules (local dev + GitHub CI +
+      live Supabase only, no Vercel; merges are the owner's own call).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- R-95 billing-milestones closure re-audit (platform.sumeet_requirements, id='R-95') [DONE, closed with a real green CI run; PR left open/unmerged: #297]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Root cause: NOT a backend defect (compliance-tracker's boq-analysis-
+      service.ts/construction-boq-service.ts verified correct via code
+      review + a real local create->submit->approve->poll run against the
+      live pcrjmlpuqsbocqfwoxod Supabase project). This spec's own timeouts
+      (15s/10s waits, 75s whole-test budget) were tighter than this
+      program's own established CI-latency standard (playwright.config.ts's
+      30s actionTimeout/navigationTimeout), compounded by compliance-
+      tracker's extensively-documented "E2E Tests (Env-1, cross-repo)" job
+      latency history.
+
+      Fixed across 3 commits on branch wo/r95-billing-milestones-boq-
+      analysis-poll (ba5c900, 2b77541, e39f543): raised the boq-analysis
+      poll (15s->30s), 5 other network-dependent step timeouts in the same
+      spec (10-15s->30s), and the test-level budget (75s->120s,
+      proportionate to its own 6-step chain). No assertion logic loosened.
+      Each fix verified against a REAL, isolated GitHub Actions dispatch
+      (compliance-tracker's ci.yml workflow_dispatch, projexa_ref +
+      projexa_spec_grep inputs targeted at this branch/spec) before the
+      next -- 3 real CI failures hit and fixed one at a time (Drafted-badge
+      timeout, a transient BOQ-creation failure, then the cumulative
+      whole-test-timeout) before a genuine green run: compliance-tracker
+      run 35499299260, "E2E Tests (Env-1, cross-repo)" job, "Run projexa
+      Env-1 spec(s)" step: 6 passed including the real target test.
+
+      platform.sumeet_requirements R-95: closure_state=CLOSED,
+      closure_commit_sha=e39f5437673554c1010338b86b369690a6e2d163,
+      closure_repo=projexa, closure_ci_run_id=35499299260 -- full
+      root-cause/fix history recorded in that row's own status field.
+
+      PR: FChecklist/projexa#297, left open/unmerged per the owner's
+      PROJEXA-E2E-001 ground rules (owner does one batch merge later,
+      backend-first then frontend). Worked in an isolated worktree
+      (C:\ct\projexa-worktrees\wo-r95-billing-milestones) rather than the
+      shared C:\ct\projexa checkout, which another PROJEXA-E2E-001 sub-task
+      (R-B2) had checked out to its own branch at the time -- avoided
+      disrupting it. Local dev servers stopped, worktree left in place for
+      any follow-up.
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
     completed_at: "2026-07-19T (this session)"

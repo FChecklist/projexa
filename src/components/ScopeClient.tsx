@@ -60,7 +60,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 // with PaneState, which says WHAT is loading and for how long. useCurrencies
 // is gone too -- G-05's useOrgMoney() resolves the org's currency itself, and
 // this file no longer formats any money by hand.
-import { Plus, GitCompare, GitBranchPlus } from "lucide-react";
+import { Plus, GitCompare, GitBranchPlus, Filter as FilterIcon, Download } from "lucide-react";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 // R67 D-74 keeps the ORG date form; R67 G-05 owns the money.
 import { formatDate } from "@/lib/format";
@@ -76,6 +76,7 @@ import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 // R67 D-23: the lineage rule -- grouping, indentation, Rev labels and which
 // revision is CURRENT -- lives in its own unit-tested module, not inline here.
 import { buildLineageRows, type LineageBoq } from "@/lib/boq-lineage";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
 // RegistryColumn): intentionally the same fields as ScreenColumn so a
@@ -137,6 +138,51 @@ const BOQ_STATUS: Record<string, SemanticStatus> = {
   approved: "current",
   superseded: "superseded",
 };
+
+// PROJEXA-E2E-001 (work order section 5 item 4): Filter and Export used to be
+// two disabled buttons reading "(Not yet available)" -- honestly labelled, but
+// genuinely unbuilt: no handler, nothing wired. This is the real minimum
+// version, following the same pattern already shipped for
+// DocumentsClient.tsx (R67 D-14: a toggled inline filter bar, "Showing n of m",
+// Export serialising exactly what's on screen) and this repo's one CSV builder
+// (src/lib/csv-export.ts's toCsv/downloadCsv, already used by
+// BudgetAnalyticalClient/DocumentsClient/LabourClient/etc.) rather than
+// inventing a second one.
+//
+// The two filterable fields that exist on this screen: Status (draft /
+// submitted / approved / superseded -- the same vocabulary BOQ_STATUS above
+// already renders) and Title (a project can carry several BOQ lineages, e.g.
+// "Villa 21 Fit-out" and "Villa 21 MEP", each its own root + revisions).
+// Project is NOT a filterable field here -- this screen is already scoped to
+// one project by scope/page.tsx's own resolveProjectForModule().
+export type ScopeFilters = { status: string; title: string };
+
+export const EMPTY_SCOPE_FILTERS: ScopeFilters = { status: "all", title: "" };
+
+/** Filtering happens on the FLAT list, before lineage grouping -- see the
+ * component body for why (a revision that doesn't match stays out of the
+ * grouped view rather than dragging its whole lineage along). */
+export function applyScopeFilters(boqs: Boq[], filters: ScopeFilters): Boq[] {
+  return boqs.filter((b) => {
+    if (filters.status !== "all" && b.status !== filters.status) return false;
+    if (filters.title.trim() && !b.title.toLowerCase().includes(filters.title.trim().toLowerCase())) return false;
+    return true;
+  });
+}
+
+export function hasActiveScopeFilter(filters: ScopeFilters): boolean {
+  return filters.status !== "all" || filters.title.trim() !== "";
+}
+
+/** The known vocabulary first (in BOQ_STATUS's own order), then anything else
+ * actually present -- so the dropdown never shows a status no BOQ here has,
+ * and never hides one an older/newer backend sends that this map doesn't know. */
+export function knownScopeStatuses(boqs: Boq[]): string[] {
+  const present = new Set(boqs.map((b) => b.status));
+  const known = Object.keys(BOQ_STATUS).filter((s) => present.has(s));
+  const other = [...present].filter((s) => !(s in BOQ_STATUS)).sort();
+  return [...known, ...other];
+}
 
 // R66 visual QA (2026-09-02): reproduced live on a real project's BOQ list --
 // the loading spinner never resolved to either real rows or the empty state
@@ -226,6 +272,12 @@ export default function ScopeClient({
   // The list the server sent answers THIS project; a switch still fetches.
   const listFromServerFor = useRef(initial ? projectId : null);
 
+  // PROJEXA-E2E-001 item 4: Filter/Export state. Client-side only -- the list
+  // this screen holds is already the whole project's BOQ set (no pagination),
+  // so there is nothing to gain from a round trip just to narrow it.
+  const [filters, setFilters] = useState<ScopeFilters>(EMPTY_SCOPE_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
+
   // R67 F-23: variation vs. the immediate parent is no longer a piece of
   // per-row client state at all -- it arrives on the row (b.variationVsPrior),
   // computed at read time by VERIDIAN in the same statement that grouped the
@@ -283,7 +335,18 @@ export default function ScopeClient({
     return () => controller.abort();
   }, [load]);
 
-  const rows = useMemo(() => buildLineageRows(boqs), [boqs]);
+  // Filtering happens on the FLAT list, BEFORE lineage grouping: a status/title
+  // filter narrows which BOQs are worth reading right now, and buildLineageRows
+  // groups whatever survives that narrowing under its nearest surviving
+  // ancestor (resolveRootId stops at the last row still in the filtered set --
+  // see boq-lineage.ts). Filtering the already-grouped `rows` instead would
+  // either have to drag a whole lineage along for one matching revision, or
+  // silently break a group apart mid-render; filtering first avoids inventing
+  // either behaviour.
+  const visibleBoqs = useMemo(() => applyScopeFilters(boqs, filters), [boqs, filters]);
+  const rows = useMemo(() => buildLineageRows(visibleBoqs), [visibleBoqs]);
+  const filterActive = hasActiveScopeFilter(filters);
+  const statusOptions = useMemo(() => knownScopeStatuses(boqs), [boqs]);
 
   /**
    * vs prior: from the list payload only. F-29's compare aggregate first,
@@ -311,19 +374,72 @@ export default function ScopeClient({
     router.push(`/scope/${id}`);
   }
 
+  /**
+   * PROJEXA-E2E-001 item 4. Serialises exactly the rows currently on screen
+   * (post-filter, post-lineage-grouping -- the same figures the table cells
+   * show, computed by the same two functions above), same honesty rule
+   * DocumentsClient's exportVisible() states: Export writes what the reader
+   * sees, not a second, silently different query against the backend.
+   */
+  function exportVisible() {
+    const csv = toCsv(
+      [
+        "Title",
+        "Revision",
+        "Status",
+        "Lines",
+        `Total${orgMoney.unitSuffix}`,
+        `Variation vs original${orgMoney.unitSuffix}`,
+        `Variation vs. prior${orgMoney.unitSuffix}`,
+        "Created",
+      ],
+      rows.map(({ boq: b, revLabel, isRoot, rootId }) => {
+        const vsOriginal = isRoot ? "" : (originalVariation(b, rootId) ?? "");
+        const vsPrior = priorVariation(b);
+        return [
+          b.title,
+          revLabel,
+          b.status,
+          b.compare ? b.compare.lineCount : "",
+          b.compare ? b.compare.total : "",
+          vsOriginal,
+          b.parentBoqId ? (vsPrior ?? "") : "",
+          b.createdAt ? formatDate(b.createdAt) : "",
+        ];
+      })
+    );
+    downloadCsv(csvFilename("scope", projectName ?? "project", new Date().toISOString().slice(0, 10)), csv);
+  }
+
+  const exportDisabledReason =
+    status === "loading" ? "Loading…" : rows.length === 0 ? "Nothing to export" : undefined;
+
   return (
     <div className="space-y-4">
-      {/* R67 D-23: the header row the audit asked for -- Filter | Export |
-          Import | + New BOQ. Filter and Export are RENDERED and disabled with
-          the reason beside them (the disabled-by-condition rule) rather than
-          being absent, so a user can tell a not-yet-built feature from a
-          broken one. Import routes to the real /scope/import screen. */}
+      {/* R67 D-23 x PROJEXA-E2E-001 item 4: the header row the audit asked for
+          -- Filter | Export | Import | + New BOQ. Filter and Export are now
+          REAL: Filter toggles the inline bar below (Status, Title), and
+          Export writes a CSV of exactly the rows the filter leaves on screen,
+          same convention as DocumentsClient.tsx (R67 D-14). Import routes to
+          the real /scope/import screen. */}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="outline" size="sm" disabled title="Not yet available">
-          Filter <span className="text-[11px] font-normal">(Not yet available)</span>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={filterOpen}
+          onClick={() => setFilterOpen((open) => !open)}
+        >
+          <FilterIcon className="size-3.5" /> Filter
         </Button>
-        <Button variant="outline" size="sm" disabled title="Not yet available">
-          Export <span className="text-[11px] font-normal">(Not yet available)</span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!!exportDisabledReason}
+          title={exportDisabledReason}
+          onClick={exportVisible}
+        >
+          <Download className="size-3.5" /> Export
+          {exportDisabledReason && <span className="text-[11px] font-normal">({exportDisabledReason})</span>}
         </Button>
         <Button variant="outline" size="sm" onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
           Import
@@ -345,7 +461,57 @@ export default function ScopeClient({
         </Button>
       </div>
 
-      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(status, boqs.length)}</p>
+      {/* PROJEXA-E2E-001 item 4: same inline-bar convention as
+          DocumentsClient.tsx -- a labelled control per filterable field, plus
+          "Showing n of m" and a Clear-all affordance once a filter is
+          actually narrowing the list. */}
+      {filterOpen && (
+        <div className="flex flex-wrap items-end gap-4 rounded-md border border-ct-border px-4 py-3">
+          <div className="space-y-1">
+            <label htmlFor="scope-filter-status" className="block text-[12.5px] text-ct-muted">Status</label>
+            {/* A plain native <select>, same as DocumentsClient's File type /
+                Relates to fields -- not the Radix Select component this
+                screen's Compare/Revise dialogs use elsewhere for a richer
+                popover, which this simple single-field dropdown does not need. */}
+            <select
+              id="scope-filter-status"
+              value={filters.status}
+              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+            >
+              <option value="all">All statuses</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="scope-filter-title" className="block text-[12.5px] text-ct-muted">Title</label>
+            <input
+              id="scope-filter-title"
+              type="text"
+              placeholder="Search title…"
+              value={filters.title}
+              onChange={(e) => setFilters({ ...filters, title: e.target.value })}
+              className="rounded-md border border-ct-border2 px-2 py-1.5 text-[13px]"
+            />
+          </div>
+          {filterActive && (
+            <div className="flex items-center gap-3 pb-1.5">
+              <span className="text-[12.5px] text-ct-muted">Showing {rows.length} of {boqs.length}</span>
+              <button
+                type="button"
+                onClick={() => setFilters(EMPTY_SCOPE_FILTERS)}
+                className="text-[12.5px] text-ct-muted underline underline-offset-2 hover:text-ct-navy"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="px-1 text-[12px] text-px-muted">{recordCountLabel(status, rows.length)}</p>
 
       <Card className="shadow-card">
         <CardContent className="p-4">
@@ -355,21 +521,36 @@ export default function ScopeClient({
             projectName={projectName}
             startedAt={startedAt}
             error={readError}
-            rowCount={boqs.length}
+            rowCount={rows.length}
             skeletonColumns={[...boqListColumns.map((c) => c.label), "Actions"]}
-            emptyMessage={`No BOQs yet for ${projectName ?? "this project"}. Import an Excel or create one.`}
+            emptyMessage={
+              // PROJEXA-E2E-001 item 4: "no BOQs at all" and "a filter is
+              // holding your BOQs back" are different facts -- same
+              // distinction DocumentsClient's emptyStateText() makes -- and
+              // conflating them is how a user concludes a real BOQ was never
+              // created when it is only hidden behind Status/Title.
+              filterActive
+                ? `No BOQs match this filter for ${projectName ?? "this project"}.`
+                : `No BOQs yet for ${projectName ?? "this project"}. Import an Excel or create one.`
+            }
             emptyAction={
-              // R67 D-23: Import is offered HERE too, not only in the header --
-              // the empty state is exactly where a first BOQ arrives, and a
-              // spreadsheet is how it usually does.
-              <span className="inline-flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
-                  Import
+              filterActive ? (
+                <Button variant="outline" size="sm" onClick={() => setFilters(EMPTY_SCOPE_FILTERS)}>
+                  Clear filters
                 </Button>
-                <Button size="sm" onClick={() => router.push(`/scope/new?projectId=${projectId}`)}>
-                  <Plus className="size-4" /> New BOQ
-                </Button>
-              </span>
+              ) : (
+                // R67 D-23: Import is offered HERE too, not only in the header --
+                // the empty state is exactly where a first BOQ arrives, and a
+                // spreadsheet is how it usually does.
+                <span className="inline-flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => router.push(`/scope/import?projectId=${projectId}`)}>
+                    Import
+                  </Button>
+                  <Button size="sm" onClick={() => router.push(`/scope/new?projectId=${projectId}`)}>
+                    <Plus className="size-4" /> New BOQ
+                  </Button>
+                </span>
+              )
             }
             lastLoadedAt={loadedAt}
             onRetry={() => void load()}

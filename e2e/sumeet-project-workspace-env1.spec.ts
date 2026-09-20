@@ -199,7 +199,14 @@ test.describe("Sumeet Merge 6: reused components carry real data, not placeholde
     await page.getByLabel("Customer").selectOption({ index: 1 });
     await page.getByLabel("Scheduled date").fill("2026-11-01");
     await page.getByRole("button", { name: /^save$/i }).click();
-    await expect(section.locator("li", { hasText: description }), "a milestone created through the embedded card must really persist and re-render, same as the standalone /billing-milestones screen").toBeVisible({ timeout: 15_000 });
+    // TIMEOUT RAISED 15_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+    // sweep): the Save click above is a real POST /api/billing-claims
+    // through the VERIDIAN-proxy path, then a re-fetch/re-render -- the
+    // identical real-network-round-trip class the R-95 boq-analysis-poll
+    // fix (PR #297, sumeet-billing-milestones-env1.spec.ts) already raised
+    // to 30_000 for. Matches playwright.config.ts's actionTimeout/
+    // navigationTimeout (both already 30_000 for this reason).
+    await expect(section.locator("li", { hasText: description }), "a milestone created through the embedded card must really persist and re-render, same as the standalone /billing-milestones screen").toBeVisible({ timeout: 30_000 });
   });
 
   test("the Insights section shows the real Project 360 P&L card and a real Exceptions count from the API", async ({ page }) => {
