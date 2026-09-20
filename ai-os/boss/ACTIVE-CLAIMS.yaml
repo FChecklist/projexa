@@ -43,6 +43,26 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- investigate + fix PROJEXA /reports Project Status Report showing dashes against a project with real BOQ/progress figures (work order section 5 item 2, called out again in section 4 as the single worst-weighted finding)"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      Scope: both repos, isolated worktrees (C:\ct\projexa-reports-fix,
+      C:\ct\ct-reports-fix), branch fix/reports-project-status-dashes in
+      both. Checking first whether this is the same project-resolution
+      class of bug /change-orders had (PR #299, sibling fix, same work
+      order section 5 item 1) before assuming a genuine data/rendering bug
+      -- resolveSelectedProject()/resolveProjectForModule() is already in
+      the /reports chain (src/lib/module-list-source.ts), so verifying
+      directly against live Supabase (pcrjmlpuqsbocqfwoxod) data for
+      projexa_demo_org/projexa_demo_project rather than assuming either
+      way. Likely touches src/app/(app)/reports/page.tsx,
+      src/components/ReportsClient.tsx,
+      src/components/reports/ProjectStatusCard.tsx, src/lib/report-run.ts
+      here, and/or src/lib/services/construction-reports-service.ts /
+      construction-dashboard-service.ts in compliance-tracker. Will update
+      this claim with the real finding once confirmed. Per owner's ground
+      rules: local bun dev + live Supabase + GitHub CI only, never Vercel;
+      PR(s) opened, CI green, left OPEN/UNMERGED.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |

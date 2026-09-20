@@ -490,6 +490,66 @@ describe("ReportsClient: the report document (R67 E-12)", () => {
     expect((await findByTestId("reports-export-reason")).textContent).toBe("Totals do not tie (difference AED 120.00)");
   });
 
+  test("PROJEXA-E2E-001 section 5 item 2: without format=legacy the real upstream answers a { columns, rows } table, and the card would show a dash for every figure -- both report fetches this run makes must ask for the legacy handler payload", async () => {
+    const calls: string[] = [];
+    // A hand-built double of the REAL upstream's R67 E-32 behaviour (not the
+    // suite's usual stubFetch, which always answers the handler payload
+    // regardless of the URL -- exactly the blind spot that let this bug ship
+    // invisibly, per the E-32 follow-up commit's own postmortem: "every
+    // projexa client test stubs fetch with hand-written legacy payloads").
+    // format=legacy -> the handler's own payload; anything else -> the
+    // generic table GET /reports/{name} now answers by default.
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push(url);
+      if (url.includes("/api/currencies")) return jsonRes({ currencies: [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }] });
+      if (url.includes("/api/reports/catalog")) return jsonRes({ catalog: [] });
+      if (url.includes("/api/companies")) return jsonRes({ companies: [] });
+      if (url.includes("/api/scope/categories")) return jsonRes({ categories: [] });
+      if (url.includes("/api/vendors")) return jsonRes({ vendors: [] });
+      const isLegacy = new URL(url, "http://localhost").searchParams.get("format") === "legacy";
+      if (url.includes("/api/reports/budget-variance")) {
+        return isLegacy
+          ? jsonRes({
+              boqId: "b-1",
+              totalBudget: 4320,
+              lines: [{ lineItemId: "l-1", boqId: "b-1", isRootLine: true, category: "Civil", code: "1.1", description: "Excavation", budget: 4320, vendorName: null, vendorAmount: null }],
+            })
+          : jsonRes({ columns: [{ key: "budget", label: "Budget", unit: "currency", align: "right" }], rows: [], currency: "AED" });
+      }
+      if (url.includes("/api/reports/project-status")) {
+        return isLegacy
+          ? jsonRes({
+              projectName: "Villa 21 - Whitefield", contractValue: 475000, budget: 462500, revenue: 210000,
+              expenses: 180500, earnedValue: 231000, percentByValue: 49, progressPercent: 52,
+              taskCount: 40, delayedTaskCount: 3, photoCount: 12,
+            })
+          // The real table shape: NONE of ProjectStatusCard's keys
+          // (contractValue/budget/...) live at the top level, so reading
+          // data.contractValue off this would be undefined -- an en dash.
+          : jsonRes({ columns: [], rows: [{ projectName: "Villa 21 - Whitefield" }], currency: "AED" });
+      }
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Villa 21 - Whitefield" />);
+
+    // The real figures render -- not the en dash EMPTY_VALUE prints for an
+    // absent field (format-number.ts's "–").
+    expect((await findByTestId("project-status-contractValue")).textContent).toBe("AED 475,000");
+    expect((await findByTestId("project-status-budget")).textContent).not.toBe("–");
+    expect((await findByTestId("project-status-revenue")).textContent).toBe("AED 210,000");
+
+    // And the request that made that possible really did ask for the legacy
+    // payload -- both report fetches this run makes, not just the first.
+    await waitFor(() => {
+      expect(calls.some((u) => u.includes("/api/reports/project-status"))).toBe(true);
+      expect(calls.some((u) => u.includes("/api/reports/budget-variance"))).toBe(true);
+    });
+    expect(calls.filter((u) => u.includes("/api/reports/project-status")).every((u) => u.includes("format=legacy"))).toBe(true);
+    expect(calls.filter((u) => u.includes("/api/reports/budget-variance")).every((u) => u.includes("format=legacy"))).toBe(true);
+  });
+
   test("Share mints a REAL public link and WhatsApp carries the title and that link", async () => {
     const calls: string[] = [];
     const written: string[] = [];
