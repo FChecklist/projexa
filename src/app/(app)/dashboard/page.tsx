@@ -140,7 +140,17 @@ async function DashboardHome({
   const [dashboardResult, currencyResult, permitsResult] = await Promise.allSettled([
     // R67 E-02: dashboardPath, not a bare "/dashboard" -- carries the Filter
     // drawer's departmentId/from/to so the filtered view is what actually loads.
-    callVeridian<OrgDashboard>(dashboardPath, { organizationId: organizationId ?? undefined }),
+    // R-50 REOPENED FIX: actingUserId/actingUserEmail forwarded so VERIDIAN's
+    // financial-visibility gate (src/app/api/v1/projexa/dashboard/route.ts)
+    // has a real role to check for this shared-API-key caller -- see that
+    // route's own header for the full story. Without this every caller
+    // (including a real manager/CEO) now gets the safe fail-closed redaction
+    // instead of the leak the gate used to have.
+    callVeridian<OrgDashboard>(dashboardPath, {
+      organizationId: organizationId ?? undefined,
+      actingUserId: authCtx.user?.id,
+      actingUserEmail: authCtx.user?.email ?? undefined,
+    }),
     // R67 F-01/F1: the currency master is a lookup table, not a live figure,
     // and is now memoised per org -- one fewer round trip on every dashboard
     // navigation. Cached only when the read is unfiltered-by-company, because

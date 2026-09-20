@@ -99,7 +99,10 @@ export const GET = withTiming("GET", async function GET(request: NextRequest, { 
 
   try {
     const [baseline, revenue, expenses, dateScopedProgress] = await Promise.all([
-      callVeridian<ProjectDashboard>(`/dashboard/${encodeURIComponent(projectId)}`, { organizationId: scope.companyId }),
+      // R-50 REOPENED FIX: actingUserId forwarded so VERIDIAN's financial-
+      // visibility gate has a real role to check for this shared-API-key
+      // caller -- see the sibling company-level dashboard route's comment.
+      callVeridian<ProjectDashboard>(`/dashboard/${encodeURIComponent(projectId)}`, { organizationId: scope.companyId, actingUserId: scope.userId }),
       fromDate || toDate ? revenueForProjectInRange(scope.companyId, projectId, fromDate, toDate) : null,
       fromDate || toDate ? expensesForProjectInRange(scope.companyId, projectId, fromDate, toDate) : null,
       progressAsOf(scope.companyId, projectId, toDate),
