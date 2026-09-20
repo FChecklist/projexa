@@ -43,6 +43,17 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- re-investigate /change-orders 'No change orders yet' (work order section 5 item 1); see compliance-tracker's own ACTIVE-CLAIMS.yaml for the full claim, same session"
+    claimed_at: "2026-09-20T (this session)"
+    claim: |
+      File scope this repo: src/app/(app)/change-orders/page.tsx,
+      src/components/ChangeOrdersClient.tsx, src/lib/project-selection.ts
+      (read/trace), plus a real local `bun run dev` (port 3100) check
+      against live Supabase. Reconciling R-97's 2026-09-18 close (claimed
+      zero seeded change orders for the fallback project) against the
+      Owner's fresh 2026-09-20 screenshot (claims 2 real change orders exist
+      and aren't rendering). Sub-task of the WORK ORDER PROJEXA-E2E-001
+      claim immediately below -- not a duplicate of it.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
