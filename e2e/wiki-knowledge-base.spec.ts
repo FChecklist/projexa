@@ -128,7 +128,13 @@ test.describe("Knowledge Base (/knowledge-base)", () => {
     await page.goto("/knowledge-base");
     await page.getByPlaceholder("Search…").fill("zzz-nonexistent-kb-query-zzz");
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("No pages yet.")).toBeVisible({ timeout: 10_000 });
+    // TIMEOUT RAISED 10_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+    // sweep): the search query is a real GET /api/knowledge-base round trip
+    // through the VERIDIAN-proxy path -- matches this suite's own
+    // established minimum for a network-dependent check
+    // (playwright.config.ts's actionTimeout/navigationTimeout, both already
+    // 30_000 for this reason).
+    await expect(page.getByText("No pages yet.")).toBeVisible({ timeout: 30_000 });
   });
 
   test("creating a knowledge base page persists and is reflected after reload (real write)", async ({ page }) => {

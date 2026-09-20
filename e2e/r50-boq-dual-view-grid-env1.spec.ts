@@ -135,7 +135,13 @@ async function assertDualViewGrid(page: Page, boqId: string, desc: string) {
   // known state for the customer-preview assertions below.
   await rateProjectCell.fill("40");
   await rateProjectCell.blur();
-  await expect(theRow, "after blur/save the row settles back to PROFIT at the real, saved value").toContainText(/PROFIT/, { timeout: 10_000 });
+  // TIMEOUT RAISED 10_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+  // sweep): unlike the live-typed LOSS/PROFIT toggle just above (pure
+  // client-side, no timeout needed), blur() here triggers a real save PATCH
+  // through the VERIDIAN-proxy path before the row settles -- same
+  // documented CI-latency class as playwright.config.ts's actionTimeout/
+  // navigationTimeout (both already 30_000 for this reason).
+  await expect(theRow, "after blur/save the row settles back to PROFIT at the real, saved value").toContainText(/PROFIT/, { timeout: 30_000 });
 
   // 2-08: the cost-coverage indicator is present and reads a real number.
   await expect(page.getByTestId("boq-cost-coverage")).toContainText(/Cost coverage:/);
