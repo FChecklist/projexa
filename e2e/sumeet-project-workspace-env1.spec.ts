@@ -210,11 +210,36 @@ test.describe("Sumeet Merge 6: reused components carry real data, not placeholde
   });
 
   test("the Insights section shows the real Project 360 P&L card and a real Exceptions count from the API", async ({ page }) => {
+    // e2e-env1 CI fix (2026-09-20), NOT FULLY RESOLVED -- see the honest
+    // record below. Same real, heavy /api/exceptions call
+    // (getProjectExceptions(), 28 checks across 14+ tables) as the sibling
+    // sumeet-exceptions-env1.spec.ts hits directly. Widening this test's
+    // own timeouts (test.setTimeout, the waitForResponse below) is a real
+    // improvement but NOT a full fix -- see /api/exceptions/route.ts's own
+    // comment: this same call's server-side upstream budget has already
+    // been raised 3 times (8s -> 20s -> 35s -> 60s) and STILL lost the
+    // race on this exact test in real CI verification (2026-09-20,
+    // ct-server.log: `"route":"/api/exceptions",...,"status":503,
+    // "upstreamMs":60001`). The real fix is very likely on the
+    // compliance-tracker side (parallelizing a subset of the 24
+    // sequential detectors), not another timeout bump here.
+    test.setTimeout(120_000);
     await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
     const [exceptionsRes] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET"),
+      page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 90_000 }),
       page.locator("#insights").scrollIntoViewIfNeeded(),
     ]);
+    // REAL BUG FOUND while investigating the above (2026-09-20): this call
+    // read `checks` off the response body with NO .ok() check. When the
+    // upstream call above times out, exceptionsRes is a real 503 with an
+    // `{error: ...}` body, `checks` is `undefined`, and `(checks ?? [])`
+    // silently produces an EMPTY array -- so this test failed by asserting
+    // "All 0 checks are clear." against the real UI (which correctly did
+    // NOT say that, since it saw the real 503 too) instead of failing
+    // loudly on the real cause. Fail here, with the real status, rather
+    // than let a masked failure mode make a genuine backend error look
+    // like a UI assertion mismatch.
+    expect(exceptionsRes.ok(), `the real exceptions API must respond successfully -- got status ${exceptionsRes.status()}`).toBe(true);
     const { checks } = await exceptionsRes.json();
     const flagged = (checks ?? []).filter((c: { flagged: boolean }) => c.flagged).length;
     const total = (checks ?? []).length;
