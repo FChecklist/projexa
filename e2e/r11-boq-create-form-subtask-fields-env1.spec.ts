@@ -281,7 +281,15 @@ test.describe("R-11 (member role): BOQ creation is correctly REFUSED for a role 
 
     // Must NOT navigate to a created BOQ -- the write is refused server-side.
     const alert = page.getByRole("alert").filter({ hasText: /forbidden|role|permit/i });
-    await expect(alert, "a member-role Save attempt must surface a visible, named refusal reason (not a silent hang)").toBeVisible({ timeout: 15_000 });
+    // TIMEOUT RAISED 15_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+    // sweep): this alert only renders after the real POST /api/scope 403
+    // above resolves -- this exact file's own createBoqRevision waitForURL
+    // (line 168) already documents that same real upstream POST /api/scope
+    // measuring up to 29.5s at the tail under CI load, so 15s left no real
+    // margin. Matches playwright.config.ts's actionTimeout/navigationTimeout
+    // (both already 30_000, raised for this identical documented CI-latency
+    // class) and the R-95 boq-analysis-poll fix (PR #297).
+    await expect(alert, "a member-role Save attempt must surface a visible, named refusal reason (not a silent hang)").toBeVisible({ timeout: 30_000 });
     await expect(page, "the page must stay on the create form -- no BOQ was created for a refused write").toHaveURL(/\/scope\/new/);
 
     // Server-side confirmation the write never landed: the real API call
