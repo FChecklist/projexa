@@ -115,7 +115,25 @@ function SignatureStatusCell({ data, loading }: { data: SignatureStatus | undefi
   );
 }
 
-export default function ChangeOrdersClient({ projectId, registryColumns }: { projectId: string; registryColumns?: RegistryColumn[] | null }) {
+export default function ChangeOrdersClient({
+  projectId,
+  projectName,
+  resolvedByFallback,
+  registryColumns,
+}: {
+  projectId: string;
+  /** R67 D-13/D-32 convention (see DocumentsClient.tsx) -- named so the empty
+   * state can say WHICH project has no change orders, instead of reading as
+   * a blanket "PROJEXA has none" when a different project in the same org
+   * genuinely does. */
+  projectName?: string | null;
+  /** True when `projectId` was picked for the user (resolveSelectedProject's
+   * first-project fallback), not chosen by them -- see change-orders/page.tsx's
+   * header comment for the real defect this closes (owner work order
+   * PROJEXA-E2E-001 section 5 item 1). */
+  resolvedByFallback?: boolean;
+  registryColumns?: RegistryColumn[] | null;
+}) {
   const router = useRouter();
   const currencies = useCurrencies();
   // Priority 17 re-sweep fix: was Intl.NumberFormat(..., { currency: "INR" })
@@ -174,7 +192,16 @@ export default function ChangeOrdersClient({ projectId, registryColumns }: { pro
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
           ) : items.length === 0 ? (
-            <p className="py-10 text-center text-sm text-px-muted">No change orders yet.</p>
+            <div className="py-10 text-center text-sm text-px-muted">
+              <p>
+                No change orders yet{projectName ? ` for ${projectName}` : ""}.
+              </p>
+              {resolvedByFallback && (
+                <p className="mt-1 text-xs">
+                  This project was auto-selected -- switch projects above if you were looking for a different one.
+                </p>
+              )}
+            </div>
           ) : (
             <Table>
               <TableHeader>
