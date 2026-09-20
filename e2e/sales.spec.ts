@@ -1,6 +1,17 @@
 import { test, expect } from "@playwright/test";
 import { apiGet, fieldInput, uniqueSuffix } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below waits on a real
+// create-then-redirect-then-re-render cycle, or a real dashboard-card load,
+// through the VERIDIAN-proxy path -- raised to 30_000ms to match this
+// suite's own established minimum for a network-dependent Playwright check.
+// playwright.config.ts's actionTimeout/navigationTimeout are both already
+// 30_000ms, raised for the identical documented CI-latency class (see that
+// file's own comments, and the R-95 boq-analysis-poll fix in
+// e2e/sumeet-billing-milestones-env1.spec.ts / PR #297 for the full
+// root-cause writeup). Assertions themselves are unchanged -- only the
+// headroom given to a slow-but-correct upstream.
 test.use({ storageState: "playwright/.auth/ceo.json" });
 
 const SEEDED_SALES_ORDER_COUNT = 6;
@@ -74,7 +85,7 @@ test.describe("Sales Orders (/sales-orders)", () => {
     // renders the real line items back from the server
     // (SalesOrderObjectClient.tsx:139-141).
     await expect(page).toHaveURL(/\/sales-orders\/[0-9a-f-]+$/);
-    await expect(page.getByText(lineDesc)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(lineDesc)).toBeVisible({ timeout: 30_000 });
 
     await page.goto("/sales-orders");
     const after = await apiGet<{ salesOrders: unknown[] }>(page, "/api/sales-orders");
@@ -103,7 +114,7 @@ test.describe("Sales dashboard (/sales)", () => {
     // (no delete UI exists) -- assert the card renders a real non-negative
     // number rather than re-asserting the one-time-true "0".
     const leadsCard = page.locator(".shadow-card", { hasText: "Total Leads" });
-    const leadsText = await leadsCard.locator(".text-2xl").innerText({ timeout: 10_000 });
+    const leadsText = await leadsCard.locator(".text-2xl").innerText({ timeout: 30_000 });
     expect(Number(leadsText)).toBeGreaterThanOrEqual(0);
   });
 
@@ -153,7 +164,7 @@ test.describe("Leads (/sales/leads)", () => {
     // redirects to the new lead's own Object Page on success, whose title
     // is the lead's real name (LeadObjectClient.tsx:87).
     await expect(page).toHaveURL(/\/sales\/leads\/[0-9a-f-]+$/);
-    await expect(page.getByRole("heading", { name: leadName })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: leadName })).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -211,7 +222,7 @@ test.describe("Customers (/customers)", () => {
     // STALE: nothing to close (no dialog) -- CustomerCreateClient.tsx:31
     // redirects to the new customer's own Object Page on success.
     await expect(page).toHaveURL(/\/customers\/[0-9a-f-]+$/);
-    await expect(page.getByRole("heading", { name: customerName })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: customerName })).toBeVisible({ timeout: 30_000 });
 
     await page.goto("/customers");
     const after = await apiGet<{ customers: { customerName: string }[] }>(page, "/api/customers");
@@ -227,7 +238,7 @@ test.describe("Customers (/customers)", () => {
     const name = (await firstLink.innerText()).trim();
     await firstLink.click();
     await expect(page).toHaveURL(/\/customers\/[a-zA-Z0-9-]+/);
-    await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Lifetime Invoiced")).toBeVisible();
   });
 });

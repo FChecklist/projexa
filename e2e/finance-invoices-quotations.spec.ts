@@ -1,6 +1,17 @@
 import { test, expect } from "@playwright/test";
 import { fieldByLabel, activeTabPanel } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below waits on a real
+// GET/POST/PATCH round trip through the VERIDIAN-proxy path (list loads,
+// search/filter results, or a create/transition-then-re-render cycle) --
+// raised to 30_000ms to match this suite's own established minimum for a
+// network-dependent Playwright check. playwright.config.ts's actionTimeout/
+// navigationTimeout are both already 30_000ms, raised for the identical
+// documented CI-latency class (see that file's own comments, and the R-95
+// boq-analysis-poll fix in e2e/sumeet-billing-milestones-env1.spec.ts /
+// PR #297 for the full root-cause writeup). Assertions themselves are
+// unchanged -- only the headroom given to a slow-but-correct upstream.
 test.use({ storageState: "playwright/.auth/finance.json" });
 
 // Real seeded counts, confirmed live via direct API calls before writing
@@ -13,7 +24,7 @@ test.describe("Invoices (/invoices)", () => {
   test("real seeded invoices render with correct total count", async ({ page }) => {
     await page.goto("/invoices");
     await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
-    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 30_000 });
 
     // >= rather than exact: this module has no delete UI, so this suite's
     // own "create a new invoice" write test (below, and any prior re-run)
@@ -41,7 +52,7 @@ test.describe("Invoices (/invoices)", () => {
     // Every visible row's Status badge must actually say "paid" -- a real
     // filter-correctness check, not just "the request didn't error."
     const badges = page.locator("table tbody tr td:last-child, table tbody tr").getByText("paid", { exact: true });
-    await expect(badges.first()).toBeVisible({ timeout: 10_000 });
+    await expect(badges.first()).toBeVisible({ timeout: 30_000 });
   });
 
   test("AR Aging tab reflects real overdue/outstanding data", async ({ page }) => {
@@ -90,7 +101,7 @@ test.describe("Invoices (/invoices)", () => {
     const customerCombo = fieldByLabel(formScope, "Customer");
     await customerCombo.click();
     const realCustomerOption = page.getByRole("option").filter({ hasNotText: "New customer" }).first();
-    await expect(realCustomerOption).toBeVisible({ timeout: 10_000 });
+    await expect(realCustomerOption).toBeVisible({ timeout: 30_000 });
     await realCustomerOption.click();
 
     const description = `E2E Batch C test line ${Date.now()}`;
@@ -129,8 +140,8 @@ test.describe("Quotations (/quotations)", () => {
   test("real seeded quotations render with correct total count", async ({ page }) => {
     await page.goto("/quotations");
     await expect(page.getByRole("heading", { name: "Quotations" })).toBeVisible();
-    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("table tbody tr")).toHaveCount(SEEDED_QUOTATION_COUNT, { timeout: 15_000 });
+    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("table tbody tr")).toHaveCount(SEEDED_QUOTATION_COUNT, { timeout: 30_000 });
   });
 
   test("live search filters by customer name (real control, not a stub)", async ({ page }) => {
@@ -152,7 +163,7 @@ test.describe("Quotations (/quotations)", () => {
     // stale rows or a crash.
     await page.getByPlaceholder(/search by customer/i).fill("zzz-no-such-customer-zzz");
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("No quotations found.")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("No quotations found.")).toBeVisible({ timeout: 30_000 });
   });
 
   test("real write: status transition on an existing seeded draft quotation persists", async ({ page }) => {
@@ -194,20 +205,20 @@ test.describe("Quotations (/quotations)", () => {
     // (SalesQuotationObjectClient.tsx:157), so the real text is "pending
     // approval" (a space) -- the raw enum "pending_approval" the old regex
     // looked for never appears in the DOM.
-    await expect(page.getByText("pending approval", { exact: false })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("pending approval", { exact: false })).toBeVisible({ timeout: 30_000 });
 
     // Verify it actually persisted: reload this same Object Page and
     // confirm the status stuck, then confirm the list (matched by the same
     // quotation number tracked above) reflects it too.
     await page.reload();
-    await expect(page.getByText("pending approval", { exact: false })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("pending approval", { exact: false })).toBeVisible({ timeout: 30_000 });
 
     await page.goto("/quotations");
     await page.waitForSelector("table tbody tr");
     const sameRow = page.locator("table tbody tr").filter({
       has: page.locator("td").first().getByText(quotationNumberCell, { exact: true }),
     });
-    await expect(sameRow).not.toContainText("draft", { timeout: 15_000 });
+    await expect(sameRow).not.toContainText("draft", { timeout: 30_000 });
     console.log(`Quotation ${quotationNumberCell} transitioned from draft to pending_approval`);
   });
 });
