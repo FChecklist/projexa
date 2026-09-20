@@ -276,6 +276,45 @@ active:
       public routes), src/middleware.test.ts (new), playwright.config.ts.
       Still PROJEXA only, still nothing authenticated.
 recently_completed:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- investigate /site-materials silent redirect to /materials, decide real-screen-vs-remove (work order section 5 item 5) [DONE -- recommendation: remove, implemented on branch, PR left OPEN/UNMERGED per owner's ground rules, needs owner sign-off since it is a product-scope decision]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Investigated the owner's explicit ask ("real screen, or remove the route?")
+      rather than treating it as a bug fix. Evidence found: (1) compliance-tracker's
+      own schema.ts (construction_materials/construction_material_receipts) is
+      already project/site-scoped with no org-wide master to distinguish a "site"
+      view from -- the service layer's own comment says so directly; (2)
+      platform.sumeet_requirements carries exactly one row for this area (R-C08,
+      "Material database, material inbound, spec, cost, qty"), treating it as one
+      concept; (3) no crr_ruling/claude_log entry anywhere discusses "site
+      materials" as intentionally distinct; (4) /site-materials's own 2026-08-30
+      history already found its Catalog tab was the identical constructionMaterials
+      table under a second label, Inbound/Cost-Report tabs dead since R52. That
+      session redirected but kept a duplicate sidebar entry as a defensive measure
+      against an unrelated, no-longer-applicable regression -- leaving two nav
+      items ("Materials"/"Site Materials") pointing at the same screen, one via an
+      unexplained teleport, which is exactly the redundant UX the owner flagged.
+
+      Recommendation: remove, not redirect. Implemented on an isolated worktree
+      (C:\ct\projexa-sitematerials-fix, branch fix/site-materials-decision, off
+      origin/main @ eb33f85): deleted src/app/(app)/site-materials/page.tsx;
+      removed the route from nav-routes.ts's SHIPPED_ROUTES and the nav entry from
+      AppSidebar.tsx; removed the /site-materials prefix from module-catalogue.ts;
+      removed the siteMaterials i18n key from messages/en.json + hi.json; flipped
+      nav-routes.test.ts's R52 regression guard to assert /site-materials stays
+      gone (was asserting it stays in nav) so it can't be silently reintroduced.
+
+      Verified: tsc --noEmit clean, eslint clean (2 pre-existing unrelated
+      warnings only), full `bun test --isolate` 4289/4289 pass, `bun run build`
+      succeeds with /site-materials confirmed absent from the route manifest. PR:
+      FChecklist/projexa#304. Left OPEN/UNMERGED per the owner's ground rules for
+      this work order (never merge to main) -- explicitly flagged in the PR
+      description as needing the owner's own sign-off since this is a
+      product-scope decision (remove vs. build a distinct screen), not a pure
+      correctness fix. Did not touch compliance-tracker (no backend change
+      needed -- /materials' own Cost Report tab already owns the one real
+      backend endpoint this domain uses).
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
     completed_at: "2026-07-19T (this session)"
