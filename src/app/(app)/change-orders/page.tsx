@@ -28,16 +28,41 @@ async function resolveVariationsListColumns(organizationId: string | null): Prom
 export default async function ChangeOrdersPage({ searchParams }: { searchParams: Promise<{ projectId?: string }> }) {
   const { projectId } = await searchParams;
   const organizationId = await getServerOrganizationId();
-  const { project, errorMessage } = await resolveSelectedProject(projectId, organizationId);
+  const { project, errorMessage, fellBack } = await resolveSelectedProject(projectId, organizationId);
   const registryColumns = await resolveVariationsListColumns(organizationId);
+
+  // Owner-reported defect (work order PROJEXA-E2E-001, section 5 item 1):
+  // "No change orders yet" showed for a project that genuinely has real
+  // change orders, because this page previously named no project at all --
+  // resolveSelectedProject()'s documented, deliberate first-project fallback
+  // (project-selection.ts) silently picks the org's alphabetically-first
+  // project when nothing was asked for, and for at least one real org that
+  // project (Business Bay Corporate HQ) has zero seeded change orders while
+  // a different project in the same org (Villa 21 - Whitefield) has two --
+  // confirmed directly via compliance-tracker's listChangeOrders() service
+  // call. The data and the query were never wrong; this screen just never
+  // admitted it had guessed. Same fix already shipped for Documents/Labour/
+  // Drawings/MoMs (R67 D-13/D-20/D-32) -- naming the resolved project and
+  // marking a guess as a guess, via PageHeading's own `project`/`contextNote`
+  // slots, so "no change orders on THIS project" and "PROJEXA has no change
+  // orders" can no longer be confused for each other.
+  const projectNameForHeading = project?.name ?? null;
+  const contextNote = fellBack ? "(auto-selected)" : null;
 
   return (
     <>
       <div className="flex-1 space-y-6 p-6">
-        <PageHeading title="Change Orders" />
+        <PageHeading title="Change Orders" project={projectNameForHeading} contextNote={contextNote} />
         {errorMessage && <ProjectLoadError message={errorMessage} />}
         {!errorMessage && !project && <Card><CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent></Card>}
-        {project && <ChangeOrdersClient projectId={project.id} registryColumns={registryColumns} />}
+        {project && (
+          <ChangeOrdersClient
+            projectId={project.id}
+            projectName={project.name}
+            resolvedByFallback={fellBack}
+            registryColumns={registryColumns}
+          />
+        )}
       </div>
     </>
   );
