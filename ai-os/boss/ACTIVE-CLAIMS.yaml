@@ -276,10 +276,10 @@ active:
       public routes), src/middleware.test.ts (new), playwright.config.ts.
       Still PROJEXA only, still nothing authenticated.
 recently_completed:
-  - session_label: "claude-code (interactive, sub-agent) -- PROJEXA-E2E-001 section 5 item 7: Site Engineer project lock decision (last of the work order's 8 named broken screens), sibling of /change-orders #299 and /site-diary #301 [DONE, PR #306 open/unmerged pending owner review -- this is a decision point, same posture as /site-materials #304]"
+  - session_label: "claude-code (interactive, sub-agent) -- PROJEXA-E2E-001 section 5 item 7: Site Engineer project lock decision (last of the work order's 8 named broken screens), sibling of /change-orders #299 and /site-diary #301 [DONE, PR #308 open/unmerged pending owner review -- this is a decision point, same posture as /site-materials #304]"
     claimed_at: "2026-09-20T (this session)"
     completed_at: "2026-09-20T (this session)"
-    merged_as: "NOT merged -- PR #306 (FChecklist/projexa) left open per the ground rules, pending the owner's explicit sign-off on the recommendation below."
+    merged_as: "NOT merged -- PR #308 (FChecklist/projexa) left open per the ground rules, pending the owner's explicit sign-off on the recommendation below."
     claim: |
       Owner's exact words: "Site Engineer project lock -- Auto-locks to
       'Business Bay Corporate HQ' instead of the seeded project. Tell me
