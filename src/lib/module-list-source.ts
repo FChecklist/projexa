@@ -294,6 +294,8 @@ export const MODULE_TAGS = {
   materials: "module:materials",
   workProgress: "module:work-progress",
   scope: "module:scope",
+  meetings: "module:meetings",
+  moodBoards: "module:mood-boards",
 } as const;
 
 export type ModuleTag = (typeof MODULE_TAGS)[keyof typeof MODULE_TAGS];
@@ -365,6 +367,26 @@ export const fetchDrawingsList = createModuleList(
   MODULE_TAGS.drawings,
   (projectId) => `/drawings?projectId=${q(projectId)}`,
   (p) => p.drawings as unknown[] | undefined
+);
+
+// Cold-load fix (owner-flagged "single biggest risk to a live demo", 10-20s
+// on /meetings and /mood-boards among 8 named routes): these two pages were
+// the last project-scoped module list screens still doing the TWO-SEQUENTIAL-
+// HOP anti-pattern the rest of this pattern already exists to remove -- an
+// uncached, un-streamed SSR project resolution, THEN a client fetch after
+// hydration. Same pattern as fetchMomsList/fetchDrawingsList above: the URL
+// MUST stay byte-identical to MeetingsClient's/MoodBoardsClient's own fetch,
+// or the server-seeded `initial` silently stops matching.
+export const fetchMeetingsList = createModuleList(
+  MODULE_TAGS.meetings,
+  (projectId) => `/meetings?projectId=${q(projectId)}`,
+  (p) => p.meetings as unknown[] | undefined
+);
+
+export const fetchMoodBoardsList = createModuleList(
+  MODULE_TAGS.moodBoards,
+  (projectId) => `/mood-boards?projectId=${q(projectId)}`,
+  (p) => p.boards as unknown[] | undefined
 );
 
 // /api/v1/documents was never re-exported under /api/v1/projexa/*, hence root.

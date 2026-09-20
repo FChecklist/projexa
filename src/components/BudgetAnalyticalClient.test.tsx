@@ -111,6 +111,22 @@ async function renderLoaded() {
 }
 
 describe("BudgetAnalyticalClient (R67 D-62)", () => {
+  // PROJEXA-E2E-001 section 4: R67 E-32 flipped GET /reports/{name}'s DEFAULT
+  // body to the generic { columns, rows, totals, currency } table -- this
+  // screen reads the handler's own REPORT shape (lines/totalBudget/...)
+  // directly, so the fetch it makes must ask for format=legacy or every
+  // figure above would silently read undefined against the real endpoint.
+  // budgetResponse() above always answers the handler shape regardless of
+  // the URL (the same blind spot report-destinations.test.ts's own R67 E-32
+  // test names), so this checks the REQUEST, not just that rendering works.
+  test("PROJEXA-E2E-001 section 4: the budget-variance fetch asks for format=legacy", async () => {
+    render(<BudgetAnalyticalClient projectId="proj-1" />);
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/api/reports/budget-variance"))).toBe(true));
+    expect(
+      calls.filter((c) => c.url.includes("/api/reports/budget-variance")).every((c) => c.url.includes("format=legacy"))
+    ).toBe(true);
+  });
+
   test("a failed read shows the backend's own words with a Retry, and never stays on 'Loading…'", async () => {
     budgetResponse = () =>
       new Response(JSON.stringify({ error: "Construction module is not enabled for this organisation" }), {

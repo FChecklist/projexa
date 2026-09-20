@@ -59,6 +59,19 @@
 // for both /meetings and /punch-list, that (a) a timeout never reaches the
 // screen as the raw internal string, (b) missing credentials never renders
 // blank, and (c) neither failure ever takes out the page's own heading.
+//
+// UPDATED for the cold-load fix (PROJEXA-E2E-001, owner-flagged "single
+// biggest risk to a live demo"): meetings/page.tsx now streams -- the
+// heading renders synchronously and resolveSelectedProject() runs inside a
+// nested async Server Component behind <Suspense>, the same shape
+// documents/page.tsx and labour/page.tsx already use. `await Page(...)`
+// therefore returns a tree whose Suspense-guarded content has not resolved
+// yet; the content-area assertions below (findByRole/findByText) wait for
+// it, exactly like every other async-appearing assertion in this codebase.
+// /punch-list is UNCONVERTED (still awaits resolveSelectedProject directly,
+// no Suspense) -- these same async queries pass for it too, since a
+// find-by-role that is already satisfied on the first check behaves
+// identically to a get-by-role.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // bun test runs every file in one process; registering Happy DOM twice
 // throws. Guard exactly like src/components/ui/form-field.test.tsx,
@@ -66,7 +79,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 
 // Same process-wide mock.module() hazard as next/navigation below: this
 // module also backs src/lib/supabase/auth-guard.test.ts and several
@@ -183,17 +196,27 @@ describe("F_030 / F_033 / R48_BLANK_CONTENT_NO_CREDENTIALS_01 -- shared resolveS
       test("a VERIDIAN timeout never fills the content area with the raw internal string (F_030/F_033)", async () => {
         behavior = "timeout";
         const jsx = await Page({ searchParams: noParams() });
-        const { getByText, getByRole, queryByText } = render(jsx);
+        // meetings/page.tsx's content sits behind <Suspense> now (the
+        // cold-load fix); react-dom's async-component resolution must be
+        // flushed inside act() or React warns "a suspended resource
+        // finished loading... not wrapped in act(...)".
+        let view!: ReturnType<typeof render>;
+        await act(async () => {
+          view = render(jsx);
+        });
+        const { getByText, findByRole, findByText, queryByText } = view;
 
         // The heading survives -- this failure is scoped to the body, not
-        // the whole page.
+        // the whole page. It renders synchronously (outside the Suspense
+        // boundary) on every converted page.
         expect(getByText(heading)).toBeDefined();
         // A real, scoped error card is shown (ProjectLoadError: role="alert"
-        // plus a Retry control) ...
-        expect(getByRole("alert").textContent).toContain(
-          "The construction data service did not respond in time"
-        );
-        expect(getByText("Retry")).toBeDefined();
+        // plus a Retry control) ... findByRole waits for the Suspense-guarded
+        // content to resolve; it behaves exactly like getByRole for a page
+        // (like /punch-list) whose content is already resolved by this point.
+        const alert = await findByRole("alert");
+        expect(alert.textContent).toContain("The construction data service did not respond in time");
+        expect(await findByText("Retry")).toBeDefined();
         // ...and it is never the pre-fix raw string: no internal hostname, no
         // internal path, no millisecond budget reaches this screen.
         expect(queryByText(/veridian-compliance-ai\.vercel\.app/)).toBeNull();
@@ -204,13 +227,18 @@ describe("F_030 / F_033 / R48_BLANK_CONTENT_NO_CREDENTIALS_01 -- shared resolveS
       test("missing VERIDIAN credentials never renders blank (R48_BLANK_CONTENT_NO_CREDENTIALS_01)", async () => {
         behavior = "no-credentials";
         const jsx = await Page({ searchParams: noParams() });
-        const { container, getByText, getByRole } = render(jsx);
+        let view!: ReturnType<typeof render>;
+        await act(async () => {
+          view = render(jsx);
+        });
+        const { container, getByText, findByRole } = view;
 
         // Not the "only the assistant panel renders" symptom: the page's own
         // heading and a real, honest error are both present.
         expect(getByText(heading)).toBeDefined();
-        expect(getByRole("alert").textContent).toContain("No VERIDIAN credentials configured");
-        expect(getByRole("alert").textContent).toContain("AR-04");
+        const alert = await findByRole("alert");
+        expect(alert.textContent).toContain("No VERIDIAN credentials configured");
+        expect(alert.textContent).toContain("AR-04");
         // Genuinely not blank -- more than just the heading is on screen.
         expect(container.textContent?.length ?? 0).toBeGreaterThan(heading.length + 20);
       });
@@ -218,11 +246,17 @@ describe("F_030 / F_033 / R48_BLANK_CONTENT_NO_CREDENTIALS_01 -- shared resolveS
       test("a healthy read renders neither error branch (control case)", async () => {
         behavior = "ok";
         const jsx = await Page({ searchParams: noParams() });
-        const { getByText, queryByRole } = render(jsx);
+        let view!: ReturnType<typeof render>;
+        await act(async () => {
+          view = render(jsx);
+        });
+        const { getByText, findByText, queryByRole } = view;
         expect(getByText(heading)).toBeDefined();
-        expect(queryByRole("alert")).toBeNull();
         // No project in the org yet -- the honest empty state, not an error.
-        expect(getByText("No active projects yet.")).toBeDefined();
+        // Waited for the same way as the error branches above: this is the
+        // Suspense-guarded content resolving, not a claim that it is slow.
+        expect(await findByText("No active projects yet.")).toBeDefined();
+        expect(queryByRole("alert")).toBeNull();
       });
     });
   }
