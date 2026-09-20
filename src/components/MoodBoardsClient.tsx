@@ -6,42 +6,57 @@
 // conversion -- getMoodBoard()/updateMoodBoard() and a PROJEXA proxy for
 // removeMoodBoardItem() didn't exist before) instead of the old "Add Item"
 // Dialog popup and inline status buttons.
-import { useEffect, useState } from "react";
+//
+// Cold-load fix (owner-flagged "single biggest risk to a live demo", 10-20s
+// on /mood-boards among 8 named routes) -- same defect and same fix as
+// MeetingsClient.tsx: page.tsx used to block entirely on an uncached,
+// un-streamed resolveSelectedProject() and this component then fired a
+// second client fetch after hydration. Measured cold vs warm on this route:
+// 40.8s cold, 11.2s warm. See module-list-source.ts's fetchMoodBoardsList
+// and mood-boards/page.tsx for the other half.
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Plus, Image as ImageIcon } from "lucide-react";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import DataLoadError from "@/components/DataLoadError";
+import { useListRead } from "@/lib/use-list-read";
+import type { ModuleListInitial } from "@/lib/module-list-state";
 
 type MoodBoardItem = { id: string; label: string | null; notes: string | null };
-type MoodBoard = { id: string; title: string; roomOrArea: string | null; status: string; items: MoodBoardItem[] };
+export type MoodBoard = { id: string; title: string; roomOrArea: string | null; status: string; items: MoodBoardItem[] };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", shared: "secondary", approved: "default",
 };
 
-export default function MoodBoardsClient({ projectId }: { projectId: string }) {
+export default function MoodBoardsClient({
+  projectId,
+  initial = null,
+}: {
+  projectId: string;
+  /**
+   * What mood-boards/page.tsx already fetched on the server for this project
+   * (via fetchMoodBoardsList). Present, the hook starts ANSWERED and makes
+   * no round trip on first paint.
+   */
+  initial?: ModuleListInitial<MoodBoard>;
+}) {
   const router = useRouter();
-  const [boards, setBoards] = useState<MoodBoard[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  async function load() {
-    setLoading(true);
-    try {
-      const data = await fetchJson<{ boards?: MoodBoard[] }>(`/api/mood-boards?projectId=${encodeURIComponent(projectId)}`);
-      setBoards(data.boards ?? []);
-    } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load mood boards"));
-    } finally {
-      setLoading(false);
-    }
+  const read = useListRead<MoodBoard>({
+    url: `/api/mood-boards?projectId=${encodeURIComponent(projectId)}`,
+    select: (body) => (body as { boards?: MoodBoard[] })?.boards,
+    initial,
+  });
+  const boards = read.rows;
+  const loading = read.status === "loading" || read.status === "idle";
+
+  if (loading) return <div className="grid h-64 place-items-center" aria-busy="true"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
+
+  if (read.status === "error") {
+    return <DataLoadError messages={[read.error?.message ?? "Couldn't load mood boards"]} onRetry={read.reload} />;
   }
-
-  useEffect(() => { load(); }, [projectId]);
-
-  if (loading) return <div className="grid h-64 place-items-center"><Loader2 className="size-6 animate-spin text-px-muted" /></div>;
 
   return (
     <div className="space-y-4">
