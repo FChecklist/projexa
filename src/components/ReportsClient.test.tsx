@@ -550,6 +550,34 @@ describe("ReportsClient: the report document (R67 E-12)", () => {
     expect(calls.filter((u) => u.includes("/api/reports/budget-variance")).every((u) => u.includes("format=legacy"))).toBe(true);
   });
 
+  test("PROJEXA-E2E-001 section 4: Project Status's BOQ-derived figures link to the real BOQ the budget-variance breakup fetch names", async () => {
+    const calls: string[] = [];
+    // The default breakup stub (module scope, above) already answers boqId: "b-1".
+    stubFetch(calls, async () =>
+      jsonRes({
+        projectId: "p-1", projectName: "Cedar Heights Villa - Phase 1", contractValue: 475000, budget: 462500, revenue: 210000,
+        expenses: 180500, earnedValue: 231000, percentByValue: 49, progressPercent: 52,
+        taskCount: 40, delayedTaskCount: 3, photoCount: 12,
+      })
+    );
+    const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+
+    // Both the BOQ-derived money figures and the pure-activity progress
+    // figure land on a REAL screen -- not the same one, and not a fabricated
+    // href built from a guess: percentByValue is BOQ-value-weighted (-> the
+    // BOQ), progressPercent is the activity log (-> Work Progress).
+    expect((await findByTestId("project-status-contractValue")).getAttribute("href")).toBe("/scope/b-1");
+    expect((await findByTestId("project-status-budget")).getAttribute("href")).toBe("/scope/b-1");
+    expect((await findByTestId("project-status-earnedValue")).getAttribute("href")).toBe("/scope/b-1");
+    expect((await findByTestId("project-status-percentByValue")).getAttribute("href")).toBe("/scope/b-1");
+    expect((await findByTestId("project-status-progressPercent")).getAttribute("href")).toBe("/work-progress?tab=report&projectId=p-1");
+    expect((await findByTestId("project-status-expenses")).getAttribute("href")).toBe("/expenses?projectId=p-1");
+    // revenue has no real per-project destination anywhere in PROJEXA today
+    // (the Invoices list has no project filter) -- left a plain figure, not a
+    // link to a page that would not actually show what produced it.
+    expect((await findByTestId("project-status-revenue")).hasAttribute("href")).toBe(false);
+  });
+
   test("Share mints a REAL public link and WhatsApp carries the title and that link", async () => {
     const calls: string[] = [];
     const written: string[] = [];
@@ -770,5 +798,47 @@ describe("ReportsClient: the Full Catalog and the picker are one screen (R67 E-1
     expect(badges.length).toBeGreaterThan(1);
     for (const badge of badges) expect(badge.textContent).toBe("Runs here");
     expect((await findByTestId("catalog-run-report")).textContent).toContain("Run Report");
+  });
+});
+
+// PROJEXA-E2E-001 work order section 4 (2026-09-21): "a number on a dashboard
+// must be provably derived, and clicking it should reach what produced it."
+// End to end (real fetch stub -> ReportsClient -> ReportOutput -> a real
+// <a href>) for two of the ~12 reports ReportOutput's generic renderer covers
+// -- report-row-links.test.ts already covers every report's own resolver in
+// isolation; this proves the wiring between them is real, not just each half.
+describe("ReportsClient: the generic renderer's real drill-down (PROJEXA-E2E-001 section 4)", () => {
+  test("attendance: a worker row links to its own Labour Roster entry", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () =>
+      jsonRes({
+        rows: [],
+        workers: [{ rosterId: "wrk_1", employeeCode: "W-01", name: "Ali Khan", company: null, trade: "Mason", daysPresent: 5, daysHalf: 0, daysAbsent: 0, salary: 2500 }],
+        tradeSubtotals: [{ trade: "Mason", workers: 1, daysPresent: 5, salary: 2500 }],
+      })
+    );
+    searchParams = new URLSearchParams({ report: "attendance", projectId: "p-1" });
+
+    const { findByText } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    const cell = await findByText("Ali Khan");
+    expect(cell.closest("a")?.getAttribute("href")).toBe("/labour/wrk_1");
+  });
+
+  test("vendor-cost: a vendor row links to its own Object Page; a removed vendor (null) stays plain text", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () =>
+      jsonRes({
+        labourVendorCosts: [
+          { vendorId: "ven_2", vendorName: "Acme Labour Co", total: 1000 },
+          { vendorId: null, vendorName: null, total: 250 },
+        ],
+        note: "Purchase-invoice-based vendor cost not included -- erp_purchase_invoices has no project_id yet.",
+      })
+    );
+    searchParams = new URLSearchParams({ report: "vendor-cost", projectId: "p-1" });
+
+    const { findByText } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    const cell = await findByText("Acme Labour Co");
+    expect(cell.closest("a")?.getAttribute("href")).toBe("/vendors/ven_2");
   });
 });

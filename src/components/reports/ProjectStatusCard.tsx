@@ -8,6 +8,7 @@
 // grouping and two figures that need a sentence, and none of that survives
 // Object.entries.
 
+import Link from "next/link";
 import { MONEY_CELL_CLASS, type MoneyFormat } from "@/lib/format-money";
 import { EMPTY_VALUE } from "@/lib/format-number";
 import {
@@ -18,6 +19,7 @@ import {
   fieldsInGroup,
   reportValueFormatter,
 } from "@/components/report-format";
+import { buildProjectStatusLinks } from "@/lib/report-row-links";
 
 export type ProjectStatusPayload = Record<string, unknown>;
 
@@ -33,6 +35,13 @@ export function ProjectStatusCard({
 }) {
   const value = reportValueFormatter(format);
   const ledgerBudget = data.ledgerBudget;
+  // PROJEXA-E2E-001 work order section 4 (2026-09-21): "fix ProjectStatusCard
+  // .tsx specifically -- its key figures should link to whatever real screen
+  // shows the detail behind them". See report-row-links.ts's own comment for
+  // exactly what each field links to and why the two that don't (revenue,
+  // projectValue) are left unlinked rather than pointed at a page that would
+  // not actually show what produced them.
+  const links = buildProjectStatusLinks(data);
 
   return (
     <div className="space-y-4" data-testid="project-status-card">
@@ -47,20 +56,33 @@ export function ProjectStatusCard({
                 const absent = raw === null || raw === undefined || raw === "";
                 const text = value(field.key, raw);
                 const numeric = field.type !== "text";
+                // A figure links to its source only when it has one AND is not
+                // absent -- an en dash has nothing behind it to click through to.
+                const href = !absent ? links[field.key] : null;
                 return (
                   // A figure is right-aligned with tabular numerals, and so is
                   // its label -- otherwise the pair reads as two columns rather
                   // than one, which is worse than either alignment alone.
                   <div key={field.key} className={numeric ? "text-right" : undefined}>
                     <div className="text-xs text-px-muted">{field.label}</div>
-                    <div
-                      className={`font-medium text-px-ink ${numeric ? MONEY_CELL_CLASS : ""}`}
-                      // An en dash a reader can hover and be told what it means.
-                      title={absent ? NOT_RECORDED_TITLE : undefined}
-                      data-testid={`project-status-${field.key}`}
-                    >
-                      {text}
-                    </div>
+                    {href ? (
+                      <Link
+                        href={href}
+                        className={`font-medium text-px-ink underline underline-offset-2 ${numeric ? MONEY_CELL_CLASS : ""}`}
+                        data-testid={`project-status-${field.key}`}
+                      >
+                        {text}
+                      </Link>
+                    ) : (
+                      <div
+                        className={`font-medium text-px-ink ${numeric ? MONEY_CELL_CLASS : ""}`}
+                        // An en dash a reader can hover and be told what it means.
+                        title={absent ? NOT_RECORDED_TITLE : undefined}
+                        data-testid={`project-status-${field.key}`}
+                      >
+                        {text}
+                      </div>
+                    )}
                     {/* R-138: the reason the two percentages disagree, under
                         them, replacing the code comment that acknowledged the
                         confusion without ever showing it to anyone. */}
