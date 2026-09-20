@@ -30,7 +30,7 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
     // 30s cache (module-list-source.ts, tag "knowledge-base") would
     // otherwise leave a just-created page invisible on /knowledge-base for
     // up to 30s -- same convention as meetings/mood-boards' own POST routes.
-    revalidateTag("knowledge-base");
+    revalidateTag("knowledge-base", "max");
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to create knowledge base page");
