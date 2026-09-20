@@ -43,36 +43,6 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
-  - session_label: "claude-code (sub-agent, isolated worktree C:\ct\projexa-schedule-fix, branch fix/schedule-project-switcher) -- PROJEXA-E2E-001 section 5 item 6: /schedule ignores the global project switcher, reads only ?projectId="
-    claimed_at: "2026-09-20T (this session)"
-    claim: |
-      Root cause confirmed by reading the code (not assumed from the owner's
-      description): /schedule/page.tsx is the ONLY project-scoped screen that
-      calls resolveRouteProject() (src/lib/project-selection.ts -- the A-13
-      "strict URL-only, no cookie fallback" resolver), while every other
-      project-scoped page calls resolveSelectedProject()/resolveProjectForModule(),
-      both of which also honour the rail's own veri.rail.project cookie.
-      M24Shell.tsx's chooseProject() (the global switcher's handler) only
-      pushes the new id into the URL when the CURRENT url already carries a
-      ?projectId= (routeProjectId truthy); otherwise it writes the cookie and
-      calls router.refresh() -- which works for the ~50 cookie-aware pages but
-      is a no-op for /schedule, which never reads that cookie. So landing on
-      /schedule with no ?projectId= (fresh nav, bookmark, typed URL) and then
-      using the top-rail switcher visibly does nothing.
-
-      Fix (in progress): pickRouteProject() (src/lib/project-preference.ts)
-      gains a `preferred` fallback tier -- the rail's own remembered cookie
-      choice, exactly what pickProject() already grants the other ~50 pages --
-      inserted between "nothing named" and "ask", and resolveRouteProject()
-      threads readPreferredProjectId() into it. The first-project GUESS A-13
-      exists to forbid stays forbidden (pickRouteProject still never reaches
-      projects[0]); only the "did the user already tell us, via the switcher"
-      tier is added. Explicit ?projectId= deep links are unaffected (URL still
-      wins outright). File scope: src/lib/project-preference.ts (+.test.ts),
-      src/lib/project-selection.ts, src/app/(app)/schedule/page.tsx (comment
-      only), regression test (unit + e2e TBD). Does not touch
-      change-orders/site-diary/reports/scope (siblings already fixed/claimed
-      elsewhere in this same work order).
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
@@ -306,6 +276,58 @@ active:
       public routes), src/middleware.test.ts (new), playwright.config.ts.
       Still PROJEXA only, still nothing authenticated.
 recently_completed:
+  - session_label: "claude-code (sub-agent, isolated worktree C:\ct\projexa-schedule-fix, branch fix/schedule-project-switcher) -- PROJEXA-E2E-001 section 5 item 6: /schedule ignores the global project switcher, reads only ?projectId= [DONE. PR FChecklist/projexa#305 open, not yet merged -- left open/unmerged per the owner's ground rules for this work order]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Root cause confirmed by reading the code (not assumed from the owner's
+      description): /schedule/page.tsx was the ONLY project-scoped screen
+      that called resolveRouteProject() (src/lib/project-selection.ts -- the
+      A-13 "strict URL-only, no cookie fallback" resolver), while every other
+      project-scoped page calls resolveSelectedProject()/resolveProjectForModule(),
+      both of which also honour the rail's own veri.rail.project cookie.
+      M24Shell.tsx's chooseProject() (the global switcher's handler) only
+      pushes the new id into the URL when the CURRENT url already carries a
+      ?projectId= (routeProjectId truthy); otherwise it writes the cookie and
+      calls router.refresh() -- which works for the ~50 cookie-aware pages but
+      was a no-op for /schedule, which never read that cookie. So landing on
+      /schedule with no ?projectId= (fresh nav, bookmark, typed URL) and then
+      using the top-rail switcher visibly did nothing.
+
+      FIX: pickRouteProject() (src/lib/project-preference.ts) gains a
+      `preferred` fallback tier -- the rail's own remembered cookie choice,
+      exactly what pickProject() already grants the other ~50 pages --
+      inserted between "nothing named" and "ask", and resolveRouteProject()
+      threads readPreferredProjectId() into it. The first-project GUESS A-13
+      exists to forbid stays forbidden (pickRouteProject still never reaches
+      projects[0]); only the "did the user already tell us, via the switcher"
+      tier is added. Explicit ?projectId= deep links still outrank the
+      cookie outright, so shared/deep links are unaffected.
+
+      VERIFIED LIVE: both dev servers (ct :3000, projexa :3100) against live
+      Supabase pcrjmlpuqsbocqfwoxod, logged in as the committed `ceo` e2e
+      test account -- clicked the switcher between two real projects and
+      confirmed /schedule's content updated both while ?projectId= was
+      already in the URL and on a bare re-navigation to /schedule
+      afterward. FALSIFIABILITY CHECKED: reverted just the fix files,
+      re-ran the new e2e spec, confirmed the regression assertion fails
+      exactly as expected ("Pick a project" reappears); restored the fix
+      and it passed again.
+
+      Tests: project-preference.test.ts (+9 cases), project-selection.test.ts
+      (+5 cases, resolveRouteProject end-to-end with a mocked next/headers
+      cookie), e2e/schedule-project-switcher.spec.ts (new). Full suite:
+      4298/4299 (the 1 failure, dashboard-hierarchy-no-ffe-redirect.test.ts,
+      is pre-existing/unrelated -- passes clean in isolation, touches none of
+      these files). typecheck + lint clean. File scope: src/lib/project-
+      preference.ts(+.test.ts), src/lib/project-selection.ts(+.test.ts),
+      src/app/(app)/schedule/page.tsx (comment only), e2e/schedule-project-
+      switcher.spec.ts (new). Does not touch change-orders/site-diary/
+      reports/scope (siblings already fixed/claimed elsewhere in this same
+      work order). Checked platform.sumeet_requirements for schedule/timeline
+      rows (R-C10, R-94) -- both already CLOSED on unrelated evidence
+      (schedule/milestone CRUD persistence, not project resolution); left
+      untouched per this task's own "don't touch unrelated rows" instruction.
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
     completed_at: "2026-07-19T (this session)"
