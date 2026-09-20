@@ -17,9 +17,28 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 const PROJECT_ID = DEFAULT_PROJECT.id;
 
 test("Sumeet #29-31: the 28-item exceptions report renders all real checks with their real formulas", async ({ page }) => {
+  // e2e-env1 CI fix (2026-09-20), NOT FULLY RESOLVED -- recorded honestly.
+  // getProjectExceptions() (construction-exceptions-service.ts) computes
+  // all 28 checks in one call, joining 14+ tables -- genuinely heavier
+  // than a typical single-resource GET. Two rounds of widening this
+  // test's own timeouts (waitForResponse, page.goto, test.setTimeout) are
+  // real improvements but did NOT fully fix this test: the underlying
+  // /api/exceptions route's own upstream budget (route.ts, PROJEXA side)
+  // has independently been raised 8s -> 20s -> 35s -> 60s across this same
+  // investigation, and STILL lost the race in the most recent real CI
+  // verification (ct-server.log: `"route":"/api/exceptions",...,
+  // "status":503,"upstreamMs":60001`) -- meaning this call's real
+  // duration under CI load is still unmeasured (it has never been allowed
+  // to actually finish), not merely "a bit more than 60s". Test-side
+  // timeouts here are set generously (120s test, 90s goto/response) so
+  // THIS test is not the bottleneck if/when the upstream budget is raised
+  // again or the real fix (parallelizing a subset of the 24 sequential
+  // detectors, see route.ts's own comment) lands -- but this test should
+  // be expected to still fail intermittently until one of those happens.
+  test.setTimeout(120_000);
   const [response] = await Promise.all([
-    page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET"),
-    page.goto(`/analysis/exceptions?projectId=${PROJECT_ID}`, { waitUntil: "networkidle" }),
+    page.waitForResponse((r) => r.url().includes("/api/exceptions") && r.request().method() === "GET", { timeout: 90_000 }),
+    page.goto(`/analysis/exceptions?projectId=${PROJECT_ID}`, { waitUntil: "networkidle", timeout: 90_000 }),
   ]);
   expect(response.ok(), "the real exceptions API must respond successfully, not be mocked or skipped").toBe(true);
   const body = await response.json();

@@ -229,6 +229,30 @@ test("R-81 every visible pill is wired, and the module-chain population is hidde
   }
   console.log(`R81_D603_R81_CLICKS ${JSON.stringify(results, null, 1)}`);
 
+  // e2e-env1 CI investigation (2026-09-20), NOT FIXED -- recorded honestly
+  // rather than silently left unexplained for whoever picks this up next.
+  // A real CI run (compliance-tracker e2e-env1) showed 8 of 24 SHORT, and
+  // the raw per-pill log revealed something this comment block's prior
+  // three rounds never captured: the SHORTs are not scattered, they are a
+  // CONTIGUOUS TAIL -- every pill from index 16 onward, starting
+  // immediately after the "Minutes of Meeting (Alt+I)" pill (a
+  // NON-project-scoped nav, `nav:/moms` with no `?projectId=`) at index 15.
+  // Everything before that pill (including 3 other state-change/nav pills,
+  // e.g. "Projects — pick one in the top rail" at index 14) recovers fine.
+  // Tried the obvious next step given the SECOND finding above (tab shows
+  // selected but content can be stale): retrying via the same "Reset the
+  // chain" click the loop already uses elsewhere before giving up on a
+  // SHORT pill. Verified via a real before/after CI run pair -- IT DID NOT
+  // HELP (identical 8/24, identical tail starting at the same index), so
+  // that hypothesis is now disproven, not just untried. The tail-shaped,
+  // index-16-onward, non-project-route-triggered pattern (not present in
+  // earlier investigation rounds' own numbers) is the strongest new lead:
+  // whoever picks this up next should look at whether `total` (captured
+  // ONCE before any clicks, line ~115) can legitimately exceed the
+  // catalogue's real size once the page has navigated to a route with no
+  // project context, rather than assuming this is still the same
+  // "present-but-stale" bug the SECOND finding above already fixed.
+  //
   // SHORT is deliberately NOT in `dead`: it says the strip re-rendered short,
   // which is a statement about the run, not about a pill. Asserted separately
   // below so it cannot silently hide half the sweep either.
