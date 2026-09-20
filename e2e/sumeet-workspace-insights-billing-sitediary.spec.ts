@@ -1,6 +1,17 @@
 import { test, expect, request as pwRequest } from "@playwright/test";
 import { DEFAULT_PROJECT } from "./helpers";
 
+// TIMEOUT SWEEP (2026-09-20, PROJEXA-E2E-001 sub-task, raw-grep hit list off
+// R-95/PR #297): every `{ timeout: 1[0-5]_000 }` below is a real workflow
+// status transition (drafted/submitted/rejected/redrafted/approved/invoiced)
+// through the VERIDIAN-proxy billing-claims path -- same real network round
+// trip class the R-95 boq-analysis-poll fix (PR #297) and the sibling
+// e2e/sumeet-project-workspace-env1.spec.ts's billing-milestones create test
+// already raised to 30_000ms for. Matches playwright.config.ts's
+// actionTimeout/navigationTimeout (both already 30_000 for this reason).
+// Assertions themselves are unchanged -- only the headroom given to a
+// slow-but-correct upstream.
+//
 // Owner directive "Merge 6" gap-closure. Fills in THREE of the workspace
 // page's 11 embedded sections that sumeet-project-workspace-env1.spec.ts
 // deliberately left for a follow-up spec (its own Billing Milestones test
@@ -178,7 +189,7 @@ test.describe("Billing Milestones (#billing-milestones): owner/pm write authorit
     await page.goto(`/workspace/${PROJECT_ID}`, { waitUntil: "networkidle" });
     const section = page.locator("#billing-milestones");
     await section.scrollIntoViewIfNeeded();
-    await expect(section.getByRole("button", { name: /new billing milestone/i })).toBeEnabled({ timeout: 15_000 });
+    await expect(section.getByRole("button", { name: /new billing milestone/i })).toBeEnabled({ timeout: 30_000 });
 
     await section.getByRole("button", { name: /new billing milestone/i }).click();
     const description = `Workspace reject/redraft spec ${Date.now()}`;
@@ -188,13 +199,13 @@ test.describe("Billing Milestones (#billing-milestones): owner/pm write authorit
     await section.getByRole("button", { name: /^save$/i }).click();
 
     const row = section.locator("li", { hasText: description });
-    await expect(row, "the created milestone must persist and re-render through the embedded card, same as the standalone /billing-milestones screen").toBeVisible({ timeout: 15_000 });
+    await expect(row, "the created milestone must persist and re-render through the embedded card, same as the standalone /billing-milestones screen").toBeVisible({ timeout: 30_000 });
 
     await row.getByRole("button", { name: /^draft$/i }).click();
-    await expect(row.getByText(/^drafted$/i)).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^drafted$/i)).toBeVisible({ timeout: 30_000 });
 
     await row.getByRole("button", { name: /^submit$/i }).click();
-    await expect(row.getByText(/^submitted$/i)).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^submitted$/i)).toBeVisible({ timeout: 30_000 });
 
     // NEW coverage beyond sumeet-billing-milestones-env1.spec.ts, which stops
     // at approve: reject -> redraft -> resubmit -> approve, the two branches
@@ -204,17 +215,17 @@ test.describe("Billing Milestones (#billing-milestones): owner/pm write authorit
     const reason = "Sumeet workspace spec: client disputes quantities";
     await row.getByLabel("Reason").fill(reason);
     await row.getByRole("button", { name: /confirm reject/i }).click();
-    await expect(row.getByText(/^rejected$/i), "status badge must read Rejected after the real Reject+Confirm click").toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^rejected$/i), "status badge must read Rejected after the real Reject+Confirm click").toBeVisible({ timeout: 30_000 });
     await expect(row.getByText(reason, { exact: false }), "the real rejection reason must render inline, not be silently dropped").toBeVisible();
 
     await row.getByRole("button", { name: /^redraft$/i }).click();
-    await expect(row.getByText(/^drafted$/i), "Redraft must move a rejected claim back to Drafted -- the append-only 'rejected -> drafted' path this component's own header comment documents").toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^drafted$/i), "Redraft must move a rejected claim back to Drafted -- the append-only 'rejected -> drafted' path this component's own header comment documents").toBeVisible({ timeout: 30_000 });
 
     await row.getByRole("button", { name: /^submit$/i }).click();
-    await expect(row.getByText(/^submitted$/i)).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^submitted$/i)).toBeVisible({ timeout: 30_000 });
 
     await row.getByRole("button", { name: /^approve$/i }).click();
-    await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real (re-)Approve click").toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real (re-)Approve click").toBeVisible({ timeout: 30_000 });
 
     const taxRes = await page.request.get("/api/tax-templates");
     const taxTemplates = taxRes.ok() ? ((await taxRes.json()).taxTemplates ?? []) : [];
@@ -229,7 +240,7 @@ test.describe("Billing Milestones (#billing-milestones): owner/pm write authorit
     await row.getByLabel("Bill date").fill("2026-11-20");
     await row.getByLabel("Tax template").selectOption({ index: 1 });
     await row.getByRole("button", { name: /confirm invoice/i }).click();
-    await expect(row.getByText(/^invoiced$/i), "status badge must read Invoiced after the real Invoice+Confirm click").toBeVisible({ timeout: 15_000 });
+    await expect(row.getByText(/^invoiced$/i), "status badge must read Invoiced after the real Invoice+Confirm click").toBeVisible({ timeout: 30_000 });
     await expect(row.getByRole("button", { name: /view invoice/i }), "an invoiced claim must expose a real link to the created invoice, not just a terminal status label").toBeVisible();
   });
 
@@ -254,11 +265,11 @@ test.describe("Billing Milestones (#billing-milestones): owner/pm write authorit
     await section.getByRole("button", { name: /^save$/i }).click();
 
     const row = section.locator("li", { hasText: description });
-    await expect(row).toBeVisible({ timeout: 15_000 });
+    await expect(row).toBeVisible({ timeout: 30_000 });
     await row.getByRole("button", { name: /^draft$/i }).click();
-    await expect(row.getByText(/^drafted$/i)).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^drafted$/i)).toBeVisible({ timeout: 30_000 });
     await row.getByRole("button", { name: /^submit$/i }).click();
-    await expect(row.getByText(/^submitted$/i)).toBeVisible({ timeout: 10_000 });
+    await expect(row.getByText(/^submitted$/i)).toBeVisible({ timeout: 30_000 });
 
     submittedMilestoneDescription = description;
   });
@@ -284,7 +295,7 @@ test.describe("Billing Milestones (#billing-milestones): member (Sneha Reddy, 'F
     await section.scrollIntoViewIfNeeded();
 
     const newButton = section.getByRole("button", { name: /new billing milestone/i });
-    await expect(newButton, "member sees the same enabled create control an owner/pm does").toBeEnabled({ timeout: 15_000 });
+    await expect(newButton, "member sees the same enabled create control an owner/pm does").toBeEnabled({ timeout: 30_000 });
 
     await newButton.click();
     const description = `Workspace member-authz-fix spec ${Date.now()}`;
@@ -293,7 +304,7 @@ test.describe("Billing Milestones (#billing-milestones): member (Sneha Reddy, 'F
     await section.getByLabel("Scheduled date").fill("2026-11-19");
     await section.getByRole("button", { name: /^save$/i }).click();
 
-    await expect(section.locator("li", { hasText: description }), "member's real create must persist and re-render, same as it would for owner/pm").toBeVisible({ timeout: 15_000 });
+    await expect(section.locator("li", { hasText: description }), "member's real create must persist and re-render, same as it would for owner/pm").toBeVisible({ timeout: 30_000 });
 
     // Direct, timing-independent confirmation of the fix (same style as the
     // 403 checks elsewhere in this suite): a fresh POST as member succeeds.
@@ -326,14 +337,14 @@ test.describe("Billing Milestones (#billing-milestones): client_viewer (Karan Ma
     await section.scrollIntoViewIfNeeded();
 
     const row = section.locator("li", { hasText: submittedMilestoneDescription });
-    await expect(row, "the milestone the owner just submitted must be visible to client_viewer too -- GET /api/billing-claims carries no role filter").toBeVisible({ timeout: 15_000 });
+    await expect(row, "the milestone the owner just submitted must be visible to client_viewer too -- GET /api/billing-claims carries no role filter").toBeVisible({ timeout: 30_000 });
     await expect(row.getByText(/^submitted$/i)).toBeVisible();
 
     const approveButton = row.getByRole("button", { name: /^approve$/i });
     await expect(approveButton, "BillingMilestonesClient.tsx renders Approve for any caller who can see a Submitted claim").toBeVisible();
 
     await approveButton.click();
-    await expect(row.getByText(/^client_approved$/i), "the real transition must persist and re-render for client_viewer, same as it would for owner/pm").toBeVisible({ timeout: 15_000 });
+    await expect(row.getByText(/^client_approved$/i), "the real transition must persist and re-render for client_viewer, same as it would for owner/pm").toBeVisible({ timeout: 30_000 });
 
     // Direct, timing-independent confirmation: client_viewer still cannot
     // draft/submit/invoice (they only ever decide at Submitted) -- create a

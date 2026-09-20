@@ -259,7 +259,15 @@ test.describe("R-B2: real click-through BOQ creation and the Daily Entry BOQ-lin
       // loading placeholder to clear before trusting the text -- the real,
       // falsifiable claim under test (which BOQ's lines are offered) is
       // unchanged; this only stops reading the list mid-fetch.
-      await expect(listbox.getByText("Searching…"), "the listbox's own loading placeholder must clear before its real options are trusted").toHaveCount(0, { timeout: 10_000 });
+      //
+      // TIMEOUT RAISED 10_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+      // sweep): unlike `listbox.waitFor({ state: "visible" })` a few lines up
+      // (the listbox itself renders instantly, client-side, per the comment
+      // above -- left untouched), THIS wait is for the real /api/scope/lines
+      // fetch behind it to resolve through the VERIDIAN-proxy path -- the
+      // same documented CI-latency class playwright.config.ts's
+      // actionTimeout/navigationTimeout were raised to 30_000 for.
+      await expect(listbox.getByText("Searching…"), "the listbox's own loading placeholder must clear before its real options are trusted").toHaveCount(0, { timeout: 30_000 });
       const text = await listbox.innerText();
       await page.keyboard.press("Escape");
       return text.split("\n");
