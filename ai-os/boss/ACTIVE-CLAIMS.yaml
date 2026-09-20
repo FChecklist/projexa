@@ -333,6 +333,47 @@ recently_completed:
       not touched. platform.sumeet_requirements row R-96 updated with an
       addendum (real, verified new information; its own naming-caveat closure
       is unrelated and untouched).
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- R-95 billing-milestones closure re-audit (platform.sumeet_requirements, id='R-95') [DONE, closed with a real green CI run; PR left open/unmerged: #297]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Root cause: NOT a backend defect (compliance-tracker's boq-analysis-
+      service.ts/construction-boq-service.ts verified correct via code
+      review + a real local create->submit->approve->poll run against the
+      live pcrjmlpuqsbocqfwoxod Supabase project). This spec's own timeouts
+      (15s/10s waits, 75s whole-test budget) were tighter than this
+      program's own established CI-latency standard (playwright.config.ts's
+      30s actionTimeout/navigationTimeout), compounded by compliance-
+      tracker's extensively-documented "E2E Tests (Env-1, cross-repo)" job
+      latency history.
+
+      Fixed across 3 commits on branch wo/r95-billing-milestones-boq-
+      analysis-poll (ba5c900, 2b77541, e39f543): raised the boq-analysis
+      poll (15s->30s), 5 other network-dependent step timeouts in the same
+      spec (10-15s->30s), and the test-level budget (75s->120s,
+      proportionate to its own 6-step chain). No assertion logic loosened.
+      Each fix verified against a REAL, isolated GitHub Actions dispatch
+      (compliance-tracker's ci.yml workflow_dispatch, projexa_ref +
+      projexa_spec_grep inputs targeted at this branch/spec) before the
+      next -- 3 real CI failures hit and fixed one at a time (Drafted-badge
+      timeout, a transient BOQ-creation failure, then the cumulative
+      whole-test-timeout) before a genuine green run: compliance-tracker
+      run 35499299260, "E2E Tests (Env-1, cross-repo)" job, "Run projexa
+      Env-1 spec(s)" step: 6 passed including the real target test.
+
+      platform.sumeet_requirements R-95: closure_state=CLOSED,
+      closure_commit_sha=e39f5437673554c1010338b86b369690a6e2d163,
+      closure_repo=projexa, closure_ci_run_id=35499299260 -- full
+      root-cause/fix history recorded in that row's own status field.
+
+      PR: FChecklist/projexa#297, left open/unmerged per the owner's
+      PROJEXA-E2E-001 ground rules (owner does one batch merge later,
+      backend-first then frontend). Worked in an isolated worktree
+      (C:\ct\projexa-worktrees\wo-r95-billing-milestones) rather than the
+      shared C:\ct\projexa checkout, which another PROJEXA-E2E-001 sub-task
+      (R-B2) had checked out to its own branch at the time -- avoided
+      disrupting it. Local dev servers stopped, worktree left in place for
+      any follow-up.
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
     completed_at: "2026-07-19T (this session)"
