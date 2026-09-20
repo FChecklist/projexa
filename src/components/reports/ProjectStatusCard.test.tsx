@@ -131,3 +131,64 @@ describe("the ERP annual ledger sum rides under its own name (E-06)", () => {
     expect(container.querySelector('[data-testid="project-status-ledger-budget"]')?.textContent).toBe("Needs manager role");
   });
 });
+
+// PROJEXA-E2E-001 work order section 4, item 4 (2026-09-21): "fix
+// ProjectStatusCard.tsx specifically -- its key figures should link to
+// whatever real screen shows the detail behind them."
+describe("real drill-down links (PROJEXA-E2E-001 section 4)", () => {
+  const WITH_BOQ = { ...PAYLOAD, boqId: "boq_77" };
+
+  test("BOQ-derived money figures link to the source BOQ's Object Page", () => {
+    const { container } = renderCard(WITH_BOQ);
+    expect(container.querySelector('[data-testid="project-status-contractValue"]')?.getAttribute("href")).toBe("/scope/boq_77");
+    expect(container.querySelector('[data-testid="project-status-earnedValue"]')?.getAttribute("href")).toBe("/scope/boq_77");
+    expect(container.querySelector('[data-testid="project-status-percentByValue"]')?.getAttribute("href")).toBe("/scope/boq_77");
+  });
+
+  test("progress/expenses/tasks/photos link to their own real project-scoped screens", () => {
+    const { container } = renderCard(WITH_BOQ);
+    expect(container.querySelector('[data-testid="project-status-progressPercent"]')?.getAttribute("href"))
+      .toBe(`/work-progress?tab=report&projectId=${PAYLOAD.projectId}`);
+    expect(container.querySelector('[data-testid="project-status-expenses"]')?.getAttribute("href"))
+      .toBe(`/expenses?projectId=${PAYLOAD.projectId}`);
+    expect(container.querySelector('[data-testid="project-status-taskCount"]')?.getAttribute("href"))
+      .toBe(`/schedule?projectId=${PAYLOAD.projectId}`);
+    expect(container.querySelector('[data-testid="project-status-delayedTaskCount"]')?.getAttribute("href"))
+      .toBe(`/schedule?projectId=${PAYLOAD.projectId}`);
+    expect(container.querySelector('[data-testid="project-status-photoCount"]')?.getAttribute("href"))
+      .toBe(`/reports?report=site-picture&projectId=${PAYLOAD.projectId}`);
+  });
+
+  test("revenue and projectValue have no real per-project destination and stay plain text, not a fake link", () => {
+    const { container } = renderCard(WITH_BOQ);
+    const revenue = container.querySelector('[data-testid="project-status-revenue"]');
+    const projectValue = container.querySelector('[data-testid="project-status-projectValue"]');
+    expect(revenue?.tagName).toBe("DIV");
+    expect(projectValue?.tagName).toBe("DIV");
+    expect(revenue?.hasAttribute("href")).toBe(false);
+    expect(projectValue?.hasAttribute("href")).toBe(false);
+  });
+
+  test("without a boqId (project has no BOQ), the BOQ-derived fields stay plain text -- never a fabricated /scope/undefined", () => {
+    const { container } = renderCard(PAYLOAD); // PAYLOAD has no boqId key at all
+    const contractValue = container.querySelector('[data-testid="project-status-contractValue"]');
+    expect(contractValue?.tagName).toBe("DIV");
+    expect(contractValue?.textContent).toBe("AED 475,000");
+  });
+
+  test("an absent (en-dash) figure is never linked even when a destination would otherwise exist", () => {
+    // budget is null in PAYLOAD -- E-06's real "no BOQ" state -- so even with
+    // a boqId present elsewhere on the payload, THIS field must stay unlinked:
+    // there is nothing behind the dash to click through to.
+    const { container } = renderCard(WITH_BOQ);
+    const budget = container.querySelector('[data-testid="project-status-budget"]');
+    expect(budget?.tagName).toBe("DIV");
+    expect(budget?.textContent).toBe("–");
+  });
+
+  test("a linked figure keeps its exact same title-less en-dash contract untouched -- only absent figures explain themselves", () => {
+    const { container } = renderCard(WITH_BOQ);
+    const contractValue = container.querySelector('[data-testid="project-status-contractValue"]');
+    expect(contractValue?.getAttribute("title")).toBeNull();
+  });
+});
