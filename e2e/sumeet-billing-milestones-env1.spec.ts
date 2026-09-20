@@ -26,11 +26,16 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // 75000ms exceeded" while legitimately waiting on the LAST of those six
   // steps -- the sum of several individually-justified 30s waits can
   // exceed a 75s whole-test budget even when no single step is actually
-  // broken. 120_000ms gives real headroom for that sum without the
-  // 300_000ms this suite's own heaviest test uses
-  // (r80-r81-r82-copilot-pill-chain-env1.spec.ts) -- proportionate to this
-  // test's own six-step shape, not copied wholesale.
-  test.setTimeout(120_000);
+  // broken.
+  //
+  // MERGE NOTE (PROJEXA-E2E-001, 2026-09-20): two independent sessions
+  // raised this same budget concurrently -- this PR's own branch proposed
+  // 120_000ms, while `main` had already landed 150_000ms via the identical
+  // "e2e-env1 CI fix" pattern applied to the sibling /api/exceptions specs.
+  // Kept the larger, already-CI-proven value rather than shrinking it back
+  // down; both figures were derived from the same six/seven-step chain, so
+  // there is no functional disagreement, only a difference in headroom.
+  test.setTimeout(150_000);
 
   // Setup: the create form is disabled until the project has an APPROVED
   // BOQ (BillingMilestonesClient.tsx's own NO_APPROVED_BOQ_REASON gate) --
@@ -168,7 +173,13 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // network-dependent step in the same spec (click -> server mutation ->
   // UI re-fetch), not a one-off. Each of these four checks now matches this
   // suite's own established 30_000ms standard (playwright.config.ts's
-  // actionTimeout/navigationTimeout), same reasoning as the poll fix.
+  // actionTimeout/navigationTimeout), same reasoning as the poll fix --
+  // independently corroborated by a second session's "e2e-env1 CI fix"
+  // pass that landed the identical 30_000ms value on `main` for the same
+  // reason (a genuine, cross-repo call through PROJEXA's proxy into
+  // compliance-tracker's live Supabase project hitting real latency, not a
+  // local mock), matching the convention this suite already uses elsewhere
+  // (e.g. r81-d603-scope.spec.ts, r90-real-backend-error-in-toast-env1.spec.ts).
   await row.getByRole("button", { name: /^draft$/i }).click();
   await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 30_000 });
 
