@@ -43,17 +43,6 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
-  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- re-investigate /change-orders 'No change orders yet' (work order section 5 item 1); see compliance-tracker's own ACTIVE-CLAIMS.yaml for the full claim, same session"
-    claimed_at: "2026-09-20T (this session)"
-    claim: |
-      File scope this repo: src/app/(app)/change-orders/page.tsx,
-      src/components/ChangeOrdersClient.tsx, src/lib/project-selection.ts
-      (read/trace), plus a real local `bun run dev` (port 3100) check
-      against live Supabase. Reconciling R-97's 2026-09-18 close (claimed
-      zero seeded change orders for the fallback project) against the
-      Owner's fresh 2026-09-20 screenshot (claims 2 real change orders exist
-      and aren't rendering). Sub-task of the WORK ORDER PROJEXA-E2E-001
-      claim immediately below -- not a duplicate of it.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
@@ -287,6 +276,39 @@ active:
       public routes), src/middleware.test.ts (new), playwright.config.ts.
       Still PROJEXA only, still nothing authenticated.
 recently_completed:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- re-investigate /change-orders 'No change orders yet' (work order section 5 item 1) [DONE, work complete -- PR left OPEN/UNMERGED per owner's ground rules, pending the owner's batch merge]"
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Reconciled R-97's 2026-09-18 close (claimed zero seeded change orders
+      for the fallback project) against the Owner's fresh 2026-09-20
+      screenshot (claims 2 real change orders exist and aren't rendering) --
+      NOT a contradiction, both are the same underlying mechanism. Verified
+      via compliance-tracker's listChangeOrders() service called directly
+      (bypassing HTTP/auth) against org=projexa_demo_org/
+      project=projexa_demo_project: the query genuinely returns both real
+      rows, so the data/service/route layers were never at fault. Real root
+      cause: change-orders/page.tsx never named which project it was
+      showing, so resolveSelectedProject()'s documented first-project
+      (alphabetically-first) fallback could silently land any fresh visitor
+      on "Business Bay Corporate HQ" (0 seeded change orders) instead of
+      "Villa 21 - Whitefield" (2 real ones), with the empty state giving no
+      indication a different project even existed. Fixed by adopting the
+      already-shipped Documents/Labour/Drawings/MoMs convention (R67
+      D-13/D-20/D-32): name the resolved project + admit "(auto-selected)".
+      File scope: src/app/(app)/change-orders/page.tsx,
+      src/components/ChangeOrdersClient.tsx, new
+      src/components/ChangeOrdersClient.test.tsx (4 cases,
+      falsifiability-checked). PR: FChecklist/projexa#299, commit
+      a9fa2aeb2cbab93503be3229a7aa7e8bcf3058ac. CI green (Lint/Type
+      Check/Test 193 pass/Build/Migration guard/Secret Scanning); Vercel
+      check shows "blocked" by design (ignoreCommand gate on a non-main
+      branch), not touched. platform.sumeet_requirements row R-97 updated
+      with this finding (real, verified new information; not touched
+      blindly). Did NOT touch ProjectWorkspaceClient.tsx's own
+      ChangeOrdersClient call site (the "Merge 6" workspace page a
+      different active session owns per this file's `active:` section) --
+      the new props are optional so it compiles unchanged.
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
     completed_at: "2026-07-19T (this session)"
