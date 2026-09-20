@@ -43,27 +43,6 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
-  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- e2e timeout sweep: 22 files with 10-15s explicit timeouts on individual expect/poll calls, found via a raw grep during the R-95 billing-milestones closure (PR #297)."
-    claimed_at: "2026-09-20T (this session)"
-    claim: |
-      Scope: e2e/*.spec.ts ONLY (no source files) -- reading each of the 22
-      grep hits (`grep -rl "timeout: (1[0-5])_000" e2e/`) in context and
-      deciding per-file whether the short timeout guards a real network
-      round-trip through the same VERIDIAN-proxy path documented as flaky
-      in compliance-tracker's .github/workflows/ci.yml "E2E Tests (Env-1,
-      cross-repo)" job (raise to 30_000ms to match playwright.config.ts's
-      own actionTimeout/navigationTimeout precedent, with a comment) or
-      whether it's intentionally testing fast-fail/non-network behavior
-      (leave alone, note why). Working in an isolated worktree at
-      C:\ct\projexa-worktrees\wo-r95-e2e-timeout-audit, branch
-      wo/r95-e2e-timeout-audit, off origin/main -- NOT touching the
-      fix/rb2-demo-gate-six-tcs-real-ui branch's in-progress work sitting
-      in the main C:\ct\projexa checkout, NOT touching the still-active
-      wo-r95-billing-milestones worktree (PR #297, already merged scope:
-      sumeet-billing-milestones-env1.spec.ts only, no overlap), and NOT
-      touching the PM session's broader PROJEXA-E2E-001 work above. Per the
-      owner's PROJEXA-E2E-001 ground rules: local dev + GitHub CI + live
-      Supabase only, no Vercel, PR left open/unmerged.
   - session_label: "claude-code (interactive, Claude Desktop, PM session) -- WORK ORDER PROJEXA-E2E-001: verify all 111 requirements/4 surfaces/every role, local+GitHub+Supabase only, no Vercel deploy until owner approves"
     claimed_at: "2026-09-20T (this session)"
     claim: |
@@ -297,6 +276,36 @@ active:
       public routes), src/middleware.test.ts (new), playwright.config.ts.
       Still PROJEXA only, still nothing authenticated.
 recently_completed:
+  - session_label: "claude-code (sub-agent, PROJEXA-E2E-001 sub-task) -- e2e timeout sweep: 22 files with 10-15s explicit timeouts on individual expect/poll calls, found via a raw grep during the R-95 billing-milestones closure (PR #297)."
+    claimed_at: "2026-09-20T (this session)"
+    completed_at: "2026-09-20T (this session)"
+    claim: |
+      Read each of the 22 grep hits (`grep -rl "timeout: (1[0-5])_000" e2e/`)
+      in context (not a blanket find-and-replace) and raised 79 call sites
+      across 16 files to 30_000ms where the timeout guarded a real
+      GET/POST/PATCH round trip through the VERIDIAN-proxy path, each with
+      its own comment citing the specific round trip covered -- matching
+      playwright.config.ts's own actionTimeout/navigationTimeout (already
+      30_000ms) and the precedent PR #297 established for the sibling
+      sumeet-billing-milestones-env1.spec.ts. Left 6 files/10 call sites
+      unchanged with reasoning recorded at each site: 12-member-access.spec.ts
+      (auth redirect, not a data round trip), pivot-chart-reports.spec.ts
+      (client-side tab-switch re-render, no new fetch),
+      r80-r81-r82-copilot-pill-chain-env1.spec.ts (deliberately tolerant
+      `.catch(() => {})` sweep-loop probe), r81-d603-scope.spec.ts
+      (pure client-side computed state), r91-cold-start-failed-fetch-env1.spec.ts
+      (deliberately-aborted, instantaneous synthetic network failure),
+      rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts's own
+      listbox-visible line (renders synchronously on focus, confirmed via
+      source), and sumeet-exceptions-env1.spec.ts (local React state toggle
+      over already-fetched data, confirmed via ExceptionsClient.tsx).
+      sumeet-billing-milestones-env1.spec.ts itself untouched -- that fix is
+      the separate, already-open PR #297. Worked in an isolated worktree at
+      C:\ct\projexa-worktrees\wo-r95-e2e-timeout-audit, branch
+      wo/r95-e2e-timeout-audit, off origin/main. PR opened:
+      https://github.com/FChecklist/projexa/pull/298 -- left OPEN/UNMERGED
+      per the owner's PROJEXA-E2E-001 ground rules (local dev + GitHub CI +
+      live Supabase only, no Vercel; merges are the owner's own call).
   - session_label: "claude-code -- PROJEXA real search + notifications (owner-directed gap closure of the searchSlot/notificationSlot honestly-disclosed-omission from PR #42/#43)"
     claimed_at: "2026-07-19T (this session)"
     completed_at: "2026-07-19T (this session)"
