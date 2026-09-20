@@ -50,9 +50,12 @@ describe("pickProject", () => {
 });
 
 // R67 WS-A (A-13). The strict rule for a project's own screen: the URL wins,
-// and there is no last resort. Every branch matters because each one produces a
-// different sentence on the page, and the defect being removed is a screen that
-// silently rendered another project's data under the same heading.
+// then the rail's own remembered choice (PROJEXA-E2E-001 section 5 item 6 --
+// see project-preference.ts's own comment for why this is not the
+// first-project GUESS A-13 forbids), and only then does the screen ask.
+// Every branch matters because each one produces a different sentence on the
+// page, and the defect being removed is a screen that silently rendered
+// another project's data under the same heading.
 describe("pickRouteProject", () => {
   test("the URL's project is used, and the source says where it came from", () => {
     expect(pickRouteProject({ requested: "p2", projects })).toEqual({
@@ -71,7 +74,7 @@ describe("pickRouteProject", () => {
     expect(pickRouteProject({ requested: "p2", objectProjectId: "p1", projects }).project).toEqual(projects[1]);
   });
 
-  test("NOTHING named means the screen asks -- it never picks the first project", () => {
+  test("NOTHING named or remembered means the screen asks -- it never picks the first project", () => {
     expect(pickRouteProject({ projects })).toEqual({
       project: null,
       source: null,
@@ -97,5 +100,39 @@ describe("pickRouteProject", () => {
     for (let i = 0; i < 10; i += 1) {
       expect(pickRouteProject({ requested: "p1", projects }).project).toEqual(projects[0]);
     }
+  });
+
+  // ─── PROJEXA-E2E-001 section 5 item 6: the switcher's cookie, as a real tier ──
+  test("the rail's remembered choice is used when the URL and the object say nothing", () => {
+    expect(pickRouteProject({ preferred: "p2", projects })).toEqual({
+      project: projects[1],
+      source: "preference",
+      missing: false,
+      unreachable: false,
+    });
+  });
+
+  test("the URL still outranks the remembered choice", () => {
+    expect(pickRouteProject({ requested: "p1", preferred: "p2", projects }).project).toEqual(projects[0]);
+  });
+
+  test("the object still outranks the remembered choice", () => {
+    expect(pickRouteProject({ objectProjectId: "p1", preferred: "p2", projects }).project).toEqual(projects[0]);
+  });
+
+  test("a remembered project the user can no longer reach is ignored, not obeyed -- and the screen still asks, not 'unreachable'", () => {
+    expect(pickRouteProject({ preferred: "gone", projects })).toEqual({
+      project: null,
+      source: null,
+      missing: true,
+      unreachable: false,
+    });
+  });
+
+  test("the remembered choice is STILL never the first-project guess -- an org with two projects and no preference asks", () => {
+    // This is the one assertion that would fail if a future edit widened the
+    // fallback back into A-13's forbidden territory.
+    expect(pickRouteProject({ projects }).project).not.toEqual(projects[0]);
+    expect(pickRouteProject({ preferred: undefined, projects }).missing).toBe(true);
   });
 });
