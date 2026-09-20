@@ -137,26 +137,36 @@ test("Sumeet #3: a billing milestone can be created, drafted, submitted and appr
   // Real, specific assertion: the new milestone renders in the list by its
   // own real, unique description text -- not just "a row appeared".
   const row = page.locator("li", { hasText: description });
-  await expect(row, "the created milestone must appear in the real list, not just a toast").toBeVisible({ timeout: 15_000 });
+  await expect(row, "the created milestone must appear in the real list, not just a toast").toBeVisible({ timeout: 30_000 });
   await expect(row.getByText(/milestone achieved/i), "a freshly created claim must start in milestone_achieved status").toBeVisible();
 
   // Draft -> Submit -> Approve, each a real click, each asserted by the
   // status badge actually changing -- not by the button disappearing alone
   // (a stale list would also make the old button vanish).
+  //
+  // TIMEOUTS RAISED 10_000 -> 30_000 (R-95 re-audit, 2026-09-20, same pass
+  // as the boq-analysis poll fix above). A real CI run on the fixed poll
+  // got past it cleanly and then failed HERE instead ("status badge must
+  // read Drafted after the real Draft click", Timeout: 10000ms) -- proving
+  // this is the same documented CI-latency class hitting a DIFFERENT
+  // network-dependent step in the same spec (click -> server mutation ->
+  // UI re-fetch), not a one-off. Each of these four checks now matches this
+  // suite's own established 30_000ms standard (playwright.config.ts's
+  // actionTimeout/navigationTimeout), same reasoning as the poll fix.
   await row.getByRole("button", { name: /^draft$/i }).click();
-  await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/^drafted$/i), "status badge must read Drafted after the real Draft click").toBeVisible({ timeout: 30_000 });
 
   await row.getByRole("button", { name: /^submit$/i }).click();
-  await expect(row.getByText(/^submitted$/i), "status badge must read Submitted after the real Submit click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/^submitted$/i), "status badge must read Submitted after the real Submit click").toBeVisible({ timeout: 30_000 });
 
   await row.getByRole("button", { name: /^approve$/i }).click();
-  await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real Approve click").toBeVisible({ timeout: 10_000 });
+  await expect(row.getByText(/client approved/i), "status badge must read Client Approved after the real Approve click").toBeVisible({ timeout: 30_000 });
 
   // Timeline expansion: the row's own toggle button, then the real timeline
   // steps fetched from GET /api/billing-claims/[id].
   await row.getByRole("button", { name: description }).click();
   const timelineList = row.locator("ul.space-y-1");
-  await expect(timelineList, "the real timeline must render after expanding, not stay a spinner").toBeVisible({ timeout: 10_000 });
+  await expect(timelineList, "the real timeline must render after expanding, not stay a spinner").toBeVisible({ timeout: 30_000 });
   await expect(timelineList, "the timeline must name the real stages this spec actually drove the claim through").toContainText(/drafted/i);
   await expect(timelineList).toContainText(/submitted/i);
 });
