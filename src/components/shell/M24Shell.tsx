@@ -202,7 +202,7 @@ import {
 import { deriveMode } from "@/lib/chain-mode";
 import { isStripPainted, rankingArrival } from "@/lib/pill-ranking";
 import { navigationOutcome } from "@/lib/chain-navigation";
-import { pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
+import { persistLastProjectId, pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
 import { objectPromptLabel, objectSegmentFor, railDestinationForObject } from "@/lib/object-screens";
 import { useScreenModule } from "./use-screen-module";
 import {
@@ -1967,6 +1967,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // the rail now names. Without the refresh the rail and the pane would
       // disagree for as long as the user stayed on the page.
       writeStoredProjectId(nextId);
+      // PROJEXA-NEXT-001: also remember it for this PERSON, not just this
+      // browser -- see project-preference.ts's persistLastProjectId().
+      persistLastProjectId(nextId);
       // R67 A-13 -- ON A SCREEN WHOSE URL NAMES THE PROJECT, THE CHOICE CHANGES
       // THE URL. The URL is the single source of truth, so a control that only
       // wrote local state would appear to do nothing at all here: the next

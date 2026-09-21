@@ -181,6 +181,29 @@ export function readStoredProjectId(): string | null {
 }
 
 /**
+ * PROJEXA-NEXT-001 (2026-09-21): remembers the choice for this PERSON,
+ * server-side, so their next login on a different browser or device (or
+ * this same browser with site data cleared) still starts there instead of
+ * falling to listProjectsForSelection()'s alphabetical-by-name order --
+ * see project-selection.ts's readPreferredProjectId() for the read side.
+ *
+ * Fire-and-forget on purpose, same posture as writeStoredProjectId() below:
+ * this is a convenience, never authority, and a network hiccup here must
+ * never block the switch the user is already seeing happen locally.
+ */
+export function persistLastProjectId(projectId: string | null): void {
+  if (typeof window === "undefined") return;
+  fetch("/api/user-preference/last-project", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  }).catch(() => {
+    // Non-fatal: the next explicit choice will try again, and until then
+    // the cookie/localStorage pair above still answer for THIS browser.
+  });
+}
+
+/**
  * Remembers the rail's choice for this browser -- in localStorage for the
  * shell and in a cookie so the SERVER resolves the same project on the next
  * render. Clearing (null) removes both.

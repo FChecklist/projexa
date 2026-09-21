@@ -468,6 +468,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/tasks": "ANY_MEMBER",
   "/todos": "ANY_MEMBER",
   "/todos/[id]": "ANY_MEMBER",
+  // PROJEXA-NEXT-001: remembering YOUR OWN last-picked project, server-side
+  // -- same self-service-on-own-record shape as /notifications/[id]/read,
+  // open to every role including client_viewer.
+  "/user-preference/last-project": "ANY_ROLE",
   "/vendor-risk": "ORG_ADMIN",
   "/vendors": "PM_OR_ABOVE",
   // Real-screen conversion (2026-08-30): the Vendor Master facets

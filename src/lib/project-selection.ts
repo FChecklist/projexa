@@ -1,6 +1,8 @@
 import { unstable_cache } from "next/cache";
 import { cookies } from "next/headers";
 import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
+import { requireAuth } from "@/lib/supabase/auth-guard";
+import { getLastProjectId } from "@/lib/services/project-preference-service";
 import {
   PROJECT_PREFERENCE_KEY,
   pickProject,
@@ -286,7 +288,7 @@ export async function resolveSelectedProject(
     // D-04 screen budget rides inside listProjects().
     const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
     // A-05: and ONE selection rule, shared with the shell's own rail.
-    const preferred = await readPreferredProjectId();
+    const preferred = await readPreferredProjectId(organizationId ?? null);
     return {
       projects,
       errorMessage: null,
@@ -373,7 +375,7 @@ export async function resolveRouteProject(
     const projects = await listProjects(organizationId ?? null, options?.cacheSeconds);
     // A-05/A-13 FIX: the same cookie resolveSelectedProject() reads, so the
     // rail's remembered choice means the same thing on every screen.
-    const preferred = await readPreferredProjectId();
+    const preferred = await readPreferredProjectId(organizationId ?? null);
     const picked = pickRouteProject({
       requested: searchParams?.projectId ?? null,
       objectProjectId: objectProjectId ?? null,
@@ -425,13 +427,34 @@ export async function resolveRouteProject(
  * Never fatal -- a request with no cookie store (or a cookie for a project the
  * user can no longer reach, which pickProject() then ignores) simply means no
  * preference.
+ *
+ * PROJEXA-NEXT-001 (2026-09-21): the cookie is per-BROWSER, not per-PERSON --
+ * a brand-new browser, a new device, or cleared site data has none to read,
+ * so every caller used to fall straight through to pickProject()'s "auto"
+ * tier (projects[0], alphabetical by name -- see e2e/
+ * site-engineer-project-switcher.spec.ts's PR #308 finding). When the cookie
+ * is absent, this now asks for this person's own last-picked project,
+ * written server-side by PATCH /api/user-preference/last-project whenever
+ * they explicitly choose one (M24Shell.tsx's chooseProject()). Only queried
+ * on the cookie-miss path -- once the cookie is set, every later request
+ * stays on the cheap, no-DB-query path this function always was.
  */
-async function readPreferredProjectId(): Promise<string | null> {
+async function readPreferredProjectId(organizationId?: string | null): Promise<string | null> {
   try {
     const store = await cookies();
     const raw = store.get(PROJECT_PREFERENCE_KEY)?.value;
-    return raw && raw.trim() ? decodeURIComponent(raw) : null;
+    if (raw && raw.trim()) return decodeURIComponent(raw);
   } catch {
+    return null;
+  }
+  if (!organizationId) return null;
+  try {
+    const ctx = await requireAuth();
+    if (!ctx.user) return null;
+    return await getLastProjectId(organizationId, ctx.user.id);
+  } catch {
+    // Same "never fatal" contract as the cookie read above -- a person's
+    // remembered project is a convenience, never a requirement to render.
     return null;
   }
 }
