@@ -43,6 +43,17 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (interactive, worktree C:/ct/projexa-lastproject-fix, branch fix/last-used-project-server-side) -- PROJEXA-NEXT-001 follow-up: server-side last-used-project fallback (memberships.last_project_id), closing the gap PR #308 correctly left open. [DONE -- PR #318 open, tests/typecheck/lint/authz-drift-test all green locally, awaiting CI. Owner has now given standing authority for this project: 'complete all 111 requirements, merge your own green PRs, take your own call, don't ask' -- continuing directly into the next priority items (the 7 daily-use screens/surfaces) rather than pausing for per-task approval.]"
+    claimed_at: "2026-09-21T (this session)"
+    completed_at: "2026-09-21T (this session)"
+    claim: |
+      See PR #318 description for full detail. File scope: drizzle/0028_memberships_last_project_id.sql (new),
+      src/lib/db/schema.ts, src/lib/services/project-preference-service.ts (new),
+      src/app/api/user-preference/last-project/route.ts (new) + .test.ts (new),
+      src/lib/authz/api-write-policy.ts, src/lib/project-preference.ts, src/lib/project-selection.ts,
+      src/lib/project-selection.test.ts, src/components/shell/M24Shell.tsx, this claims file.
+      Migration already applied live via the Supabase MCP against evpckeuxgvahguwsaeul (verified via
+      information_schema.columns before/after). Did not touch any other active session's files.
   - session_label: "claude-code (interactive, Claude Desktop) -- HIGHER-SEVERITY: fix live wildcard-before-static pattern-shadowing bugs in src/lib/authz/api-write-policy.ts's resolveWriteTier() (2 real routes currently under-gated: /api/scope/cost-visibility and /api/timesheets/review-day), plus a general drift-guard test for the whole class"
     claimed_at: "2026-09-21T (this session)"
     claim: |

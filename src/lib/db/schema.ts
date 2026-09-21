@@ -39,6 +39,16 @@ export const memberships = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("member"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // PROJEXA-NEXT-001 (2026-09-21): the server-side half of "last-used
+    // project", so a fresh browser/device (no veri.rail.project cookie yet)
+    // still lands on this person's own last project instead of
+    // listProjectsForSelection()'s alphabetical-by-name order. No FK: project
+    // ids live in VERIDIAN's own `projects` table, not here (see the header
+    // comment above) -- every read of this column is re-validated against the
+    // caller's live project list in pickProject()/pickRouteProject(), so a
+    // stale id (deleted project, revoked access) is silently ignored rather
+    // than trusted. Nullable: unset until the person picks a project once.
+    lastProjectId: uuid("last_project_id"),
   },
   (t) => [unique().on(t.userId, t.organizationId)]
 );

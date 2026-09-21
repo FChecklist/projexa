@@ -22,6 +22,24 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 const realClient = await import("./veridian-client");
 
+// PROJEXA-NEXT-001 (2026-09-21): readPreferredProjectId()'s new DB fallback
+// (used when the veri.rail.project cookie is absent) calls requireAuth() and
+// getLastProjectId() -- mocked here, module-wide, so every OTHER test in this
+// file that never sets these keeps its pre-existing behaviour (no user, no
+// stored id -- the exact same "falls straight through" outcome the real
+// try/catch already produced before this fallback existed) without a real
+// network/DB call. Individual tests below opt in by setting these.
+let mockAuthUser: { id: string; email: string | null } | null = null;
+let mockLastProjectId: string | null = null;
+
+mock.module("@/lib/supabase/auth-guard", () => ({
+  requireAuth: async () => ({ user: mockAuthUser, organizationId: null, role: null, response: null }),
+}));
+mock.module("@/lib/services/project-preference-service", () => ({
+  getLastProjectId: async () => mockLastProjectId,
+  setLastProjectId: async () => {},
+}));
+
 async function loadWith(impl: () => Promise<unknown>) {
   await mock.module("./veridian-client", () => ({ ...realClient, callVeridian: mock(impl) }));
   return import("./project-selection");
@@ -30,6 +48,8 @@ async function loadWith(impl: () => Promise<unknown>) {
 afterEach(async () => {
   mock.restore();
   await mock.module("./veridian-client", () => realClient);
+  mockAuthUser = null;
+  mockLastProjectId = null;
 });
 
 const PROJECTS = [
@@ -157,6 +177,56 @@ describe("resolveRouteProject", () => {
     const result = await resolveRouteProject(undefined, "p1", "org-1");
     expect(result.project).toEqual(PROJECTS[0]);
     expect(result.source).toBe("route");
+  });
+
+  // ─── PROJEXA-NEXT-001 (2026-09-21) ────────────────────────────────────
+  //
+  // No cookie at all -- a brand-new browser/device, or cleared site data --
+  // used to mean "nothing said which" outright. It now means "ask this
+  // person's own server-side memory (memberships.last_project_id) first".
+  test("no cookie, but this person has a server-side last-used project: it answers, source 'preference'", async () => {
+    routeCookieValue = null;
+    installRouteCookieMock();
+    mockAuthUser = { id: "u1", email: "u1@example.com" };
+    mockLastProjectId = "p2";
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toEqual(PROJECTS[1]);
+    expect(result.source).toBe("preference");
+    expect(result.missing).toBe(false);
+    expect(result.fellBack).toBe(false);
+  });
+
+  test("the cookie still outranks the server-side memory when both are present", async () => {
+    routeCookieValue = "p1";
+    installRouteCookieMock();
+    mockAuthUser = { id: "u1", email: "u1@example.com" };
+    mockLastProjectId = "p2";
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toEqual(PROJECTS[0]);
+  });
+
+  test("a server-side last-used project this org can no longer reach (deleted, revoked) is ignored, not obeyed", async () => {
+    routeCookieValue = null;
+    installRouteCookieMock();
+    mockAuthUser = { id: "u1", email: "u1@example.com" };
+    mockLastProjectId = "not-this-orgs-project";
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toBeNull();
+    expect(result.missing).toBe(true);
+  });
+
+  test("no cookie and no authenticated user resolvable: falls through exactly as it did before this fallback existed", async () => {
+    routeCookieValue = null;
+    installRouteCookieMock();
+    mockAuthUser = null;
+    mockLastProjectId = "p2"; // must never be reached with no user to look it up for
+    const { resolveRouteProject } = await loadWith(async () => ({ projects: PROJECTS }));
+    const result = await resolveRouteProject(undefined, null, "org-1");
+    expect(result.project).toBeNull();
+    expect(result.missing).toBe(true);
   });
 });
 
