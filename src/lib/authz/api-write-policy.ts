@@ -387,7 +387,6 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/schedule/tasks/[id]/completion": "PM_OR_ABOVE",
   "/schedule/workload": "PM_OR_ABOVE",
   "/scope": "PM_OR_ABOVE",
-  "/scope/[id]": "PM_OR_ABOVE",
   "/scope/[id]/approve": "PM_OR_ABOVE",
   "/scope/[id]/revisions": "PM_OR_ABOVE",
   "/scope/[id]/submit": "PM_OR_ABOVE",
@@ -408,6 +407,16 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // deciding WHO can see the money is a different, more sensitive act than
   // entering it.
   "/scope/cost-visibility": "ORG_ADMIN",
+  // MUST stay listed after /scope/cost-visibility above and before /scope/
+  // import below (see api-write-policy.test.ts's "wildcard route ordering"
+  // regression test): resolveWriteTier() walks API_WRITE_POLICY in object
+  // key order and returns the first same-arity pattern match, so this
+  // single-segment wildcard would otherwise shadow /scope/cost-visibility --
+  // confirmed live: a PM (not ORG_ADMIN) could POST /api/scope/cost-
+  // visibility and be incorrectly allowed, because /scope/[id] used to be
+  // declared first and PM_OR_ABOVE > ORG_ADMIN in reachable roles. Fixed
+  // 2026-09-21 (PROJEXA-E2E-001, fix/api-write-policy-ordering-shadow).
+  "/scope/[id]": "PM_OR_ABOVE",
   // The NOTE that stood here -- "zero callers anywhere in src, BOQ import
   // exists only as a direct API surface with no click-reachable UI" -- was
   // true when it was written and is no longer: R67 lane D22 (item D-52, and
@@ -426,7 +435,6 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // Logging and submitting your OWN time is self-service (the route supports
   // ?mine=true); approving or rejecting somebody else's is PM authority.
   "/timesheets": "ANY_MEMBER",
-  "/timesheets/[id]": "ANY_MEMBER",
   "/timesheets/[id]/approve": "PM_OR_ABOVE",
   "/timesheets/[id]/reject": "PM_OR_ABOVE",
   "/timesheets/[id]/submit": "ANY_MEMBER",
@@ -439,6 +447,18 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // deciding one entry -- PM and above -- so it matches /timesheets/[id]/approve
   // rather than the designer-side submit-day beside it.
   "/timesheets/review-day": "PM_OR_ABOVE",
+  // MUST stay listed after /timesheets/submit-day and /timesheets/review-day
+  // above (see api-write-policy.test.ts's "wildcard route ordering"
+  // regression test): resolveWriteTier() walks API_WRITE_POLICY in object
+  // key order and returns the first same-arity pattern match, so this
+  // single-segment wildcard would otherwise shadow /timesheets/review-day --
+  // confirmed live: any member (site_engineer included, not just PM_OR_ABOVE)
+  // could POST /api/timesheets/review-day and be incorrectly allowed, because
+  // /timesheets/[id] used to be declared first with the looser ANY_MEMBER
+  // tier. /timesheets/submit-day shares this tier already so it was never
+  // observably broken, but the same shadow applied to it too. Fixed
+  // 2026-09-21 (PROJEXA-E2E-001, fix/api-write-policy-ordering-shadow).
+  "/timesheets/[id]": "ANY_MEMBER",
   // R52: the composer's submit target. Same class as /discuss and /todos --
   // any member may ask the assistant to do something, and what they are
   // ALLOWED to do is re-checked server-side at execution, per R53's rule that

@@ -120,6 +120,71 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
   });
 });
 
+// Added 2026-09-21 (PROJEXA-E2E-001, fix/api-write-policy-ordering-shadow),
+// after a REAL, LIVE instance of this bug was found and fixed: /scope/[id]
+// (PM_OR_ABOVE) was declared before its same-depth static sibling
+// /scope/cost-visibility (ORG_ADMIN), and /timesheets/[id] (ANY_MEMBER) was
+// declared before /timesheets/review-day (PM_OR_ABOVE). resolveWriteTier()
+// walks API_WRITE_POLICY in object key (insertion) order and returns the
+// FIRST pattern whose segment count and per-segment match succeed -- so a
+// single-segment wildcard entry declared before a same-arity static sibling
+// silently shadows it, and the static entry's own tier is never reached.
+// Both live instances above were confirmed by directly calling
+// checkApiWriteAccess() before the fix: a PM (not ORG_ADMIN) was allowed to
+// POST /api/scope/cost-visibility, and a site_engineer (not PM_OR_ABOVE) was
+// allowed to POST /api/timesheets/review-day.
+//
+// This test re-derives every such collision from the table itself on every
+// run, the same "regenerate from source, don't hand-maintain a list"
+// principle as mutatingRoutes above -- but only FAILS when the shadowed
+// tier actually differs from the shadowing wildcard's tier, which is the
+// only case that is an actual authorization bug. A same-tier collision
+// (e.g. /materials/[id] declared before /materials/issues, both FIELD) is
+// provably harmless today -- whichever pattern the walk matches first, the
+// caller gets the same answer -- so it is deliberately NOT flagged here;
+// forcing every one of those into a specific order would be unrelated
+// churn with no live behavior change. It is still fragile (a future tier
+// change to either side could silently reopen a real gap), so a same-tier
+// collision is logged, not ignored -- see the console.warn below.
+describe("wildcard route ordering (shadowing regression guard)", () => {
+  function segmentsOf(pattern: string): string[] {
+    return pattern.split("/").filter(Boolean);
+  }
+  function isWildcardSegment(seg: string): boolean {
+    return seg.startsWith("[") && seg.endsWith("]");
+  }
+  // Mirrors api-write-policy.ts's own (unexported) matchesPattern(): a
+  // wildcard segment matches any literal segment in the same position.
+  function patternCovers(generalPattern: string, specificPattern: string): boolean {
+    const general = segmentsOf(generalPattern);
+    const specific = segmentsOf(specificPattern);
+    if (general.length !== specific.length) return false;
+    return general.every((seg, i) => isWildcardSegment(seg) || seg === specific[i]);
+  }
+
+  test("no wildcard pattern is declared before a same-arity static (or less-wildcarded) sibling with a DIFFERENT tier", () => {
+    const patterns = Object.keys(API_WRITE_POLICY);
+    const realBugs: string[] = [];
+    const harmlessSameTier: string[] = [];
+    for (let i = 0; i < patterns.length; i++) {
+      const earlier = patterns[i];
+      if (!segmentsOf(earlier).some(isWildcardSegment)) continue; // only a wildcard pattern can shadow anything
+      for (let j = i + 1; j < patterns.length; j++) {
+        const later = patterns[j];
+        if (earlier === later) continue;
+        if (!patternCovers(earlier, later)) continue;
+        const msg = `"${earlier}" (declared first, tier ${API_WRITE_POLICY[earlier]}) shadows "${later}" (tier ${API_WRITE_POLICY[later]})`;
+        if (API_WRITE_POLICY[earlier] === API_WRITE_POLICY[later]) harmlessSameTier.push(msg);
+        else realBugs.push(msg);
+      }
+    }
+    if (harmlessSameTier.length > 0) {
+      console.warn(`${harmlessSameTier.length} harmless same-tier route-ordering collision(s) exist (fragile, not a live bug):\n  ${harmlessSameTier.join("\n  ")}`);
+    }
+    expect(realBugs).toEqual([]);
+  });
+});
+
 describe("resolveWriteTier", () => {
   test("matches a static route exactly", () => {
     expect(resolveWriteTier("/api/payroll/runs")).toBe("ORG_ADMIN");
