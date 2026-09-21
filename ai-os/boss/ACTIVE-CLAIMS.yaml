@@ -531,6 +531,24 @@ recently_completed:
            storageState-vs-RAM constraint this file's own R75 Part 2
            history already named. Disclosed honestly rather than silently
            skipped or faked.
+
+      FINAL CI STATUS (both PRs, re-checked after pushing every fix):
+      projexa#315 -- fully green (Build/Lint/Migration guard/Secret
+      Scanning/Test/Type Check all pass; "Vercel" shows "Deployment was
+      blocked", the R87 ignoreCommand gate working as designed on a
+      non-main branch, not a real failure; "Perf budget" shows "skipping",
+      not a failure). compliance-tracker#1781 -- every job green except
+      the same expected Vercel block and a 6-spec "E2E Tests (Env-1,
+      cross-repo)" failure confirmed unrelated to this diff (grepped the
+      full job log: zero reference to pipeline_tasks/tasks[id]/ai-link/
+      ai-apply in any of the 6 failures -- all 6 are BOQ/billing/
+      dashboard/copilot-pill specs this PR's diff never touches, the same
+      pre-existing concurrent-load E2E flakiness class this repo's own
+      history already documents repeatedly). Two real, in-diff CI issues
+      WERE found and fixed along the way on the compliance-tracker side
+      (a check-route-auth-guard.mjs exemption for the new PATCH, and the
+      authz-gap-inventory.test.ts drift guard's headline counts) -- see
+      that repo's own copy of this file for the detail.
   - session_label: "claude-code (interactive, sub-agent) -- PROJEXA-E2E-001 section 5 item 7: Site Engineer project lock decision (last of the work order's 8 named broken screens), sibling of /change-orders #299 and /site-diary #301 [DONE, PR #308 open/unmerged pending owner review -- this is a decision point, same posture as /site-materials #304]"
     claimed_at: "2026-09-20T (this session)"
     completed_at: "2026-09-20T (this session)"
