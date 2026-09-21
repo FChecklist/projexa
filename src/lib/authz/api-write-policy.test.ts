@@ -117,6 +117,57 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
   });
 });
 
+// Added 2026-09-21 (PROJEXA-E2E-001, fix/api-write-policy-ordering-shadow),
+// after a REAL, LIVE instance of this bug was found and fixed: /scope/[id]
+// (PM_OR_ABOVE) was declared before its same-depth static sibling
+// /scope/cost-visibility (ORG_ADMIN), and /timesheets/[id] (ANY_MEMBER) was
+// declared before /timesheets/review-day (PM_OR_ABOVE). resolveWriteTier()
+// walks API_WRITE_POLICY in object key (insertion) order and returns the
+// FIRST pattern whose segment count and per-segment match succeed -- so a
+// single-segment wildcard entry declared before a same-arity static sibling
+// silently shadows it, and the static entry's own tier is never reached.
+// Both live instances above were confirmed by directly calling
+// checkApiWriteAccess() before the fix: a PM (not ORG_ADMIN) was allowed to
+// POST /api/scope/cost-visibility, and a site_engineer (not PM_OR_ABOVE) was
+// allowed to POST /api/timesheets/review-day. This test re-derives every
+// such collision from the table itself on every run, the same "regenerate
+// from source, don't hand-maintain a list" principle as mutatingRoutes
+// above, so a NEW route added in the wrong order fails here immediately
+// instead of silently reopening this exact bug.
+describe("wildcard route ordering (shadowing regression guard)", () => {
+  function segmentsOf(pattern: string): string[] {
+    return pattern.split("/").filter(Boolean);
+  }
+  function isWildcardSegment(seg: string): boolean {
+    return seg.startsWith("[") && seg.endsWith("]");
+  }
+  // Mirrors api-write-policy.ts's own (unexported) matchesPattern(): a
+  // wildcard segment matches any literal segment in the same position.
+  function patternCovers(generalPattern: string, specificPattern: string): boolean {
+    const general = segmentsOf(generalPattern);
+    const specific = segmentsOf(specificPattern);
+    if (general.length !== specific.length) return false;
+    return general.every((seg, i) => isWildcardSegment(seg) || seg === specific[i]);
+  }
+
+  test("no wildcard pattern is declared before a same-arity static (or less-wildcarded) sibling it would shadow", () => {
+    const patterns = Object.keys(API_WRITE_POLICY);
+    const shadows: string[] = [];
+    for (let i = 0; i < patterns.length; i++) {
+      const earlier = patterns[i];
+      if (!segmentsOf(earlier).some(isWildcardSegment)) continue; // only a wildcard pattern can shadow anything
+      for (let j = i + 1; j < patterns.length; j++) {
+        const later = patterns[j];
+        if (earlier === later) continue;
+        if (patternCovers(earlier, later)) {
+          shadows.push(`"${earlier}" (declared first) would shadow "${later}" (declared later, tier ${API_WRITE_POLICY[later]} vs ${API_WRITE_POLICY[earlier]})`);
+        }
+      }
+    }
+    expect(shadows).toEqual([]);
+  });
+});
+
 describe("resolveWriteTier", () => {
   test("matches a static route exactly", () => {
     expect(resolveWriteTier("/api/payroll/runs")).toBe("ORG_ADMIN");
