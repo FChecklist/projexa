@@ -104,11 +104,14 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
     // session, authenticated by its own per-org bearer-token hash check --
     // the same "bespoke secret, not a session role" shape as both routes
     // beside it.
-    expect(publicRoutes).toEqual(["/contact", "/email/inbound", "/integrations/google-sheets/webhook", "/internal/email-digest-cadence/run", "/org/provision"]);
+    // /email/[token] (added 2026-09-21, fix/email-token-get-mutation) is the
+    // one-click email action link -- gated by its own URL token, not a role;
+    // same shape as the two routes above it.
+    expect(publicRoutes).toEqual(["/contact", "/email/[token]", "/email/inbound", "/integrations/google-sheets/webhook", "/internal/email-digest-cadence/run", "/org/provision"]);
   });
 
   test("no mutating route outside the PUBLIC set is left ungated", () => {
-    const PUBLIC_BY_DESIGN = new Set(["/contact", "/email/inbound", "/integrations/google-sheets/webhook", "/internal/email-digest-cadence/run", "/org/provision"]);
+    const PUBLIC_BY_DESIGN = new Set(["/contact", "/email/[token]", "/email/inbound", "/integrations/google-sheets/webhook", "/internal/email-digest-cadence/run", "/org/provision"]);
     const ungated = mutatingRoutes.filter((r) => {
       const tier = API_WRITE_POLICY[r];
       return tier === "PUBLIC" && !PUBLIC_BY_DESIGN.has(r);
