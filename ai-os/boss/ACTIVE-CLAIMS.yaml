@@ -500,6 +500,58 @@ active:
       public routes), src/middleware.test.ts (new), playwright.config.ts.
       Still PROJEXA only, still nothing authenticated.
 recently_completed:
+  - session_label: "claude-code (interactive, Claude Desktop) -- harden PROJEXA's one-click email action route against GET-prefetch mutation (email scanners/corporate gateways burning the token silently), same bug class as compliance-tracker's DPDP task-link fix [DONE]"
+    claimed_at: "2026-09-21T (this session)"
+    completed_at: "2026-09-21T (this session)"
+    claim: |
+      Owner-flagged (relayed via the reviewing session, same shape as
+      compliance-tracker's 2026-09-18 DPDP task-link HIGH-severity fix,
+      fix/dpdp-task-link-get-confirmation): src/app/api/email/[token]/
+      route.ts's GET handler called consumeEmailActionToken(token) (marks
+      the token used) and then applyOneClickAction(todoId, action) in the
+      same GET request -- an email scanner or corporate security gateway
+      prefetching the link could silently burn the token and apply the
+      action (mark_done/reassign_ping/note_ack) before a human ever opened
+      the email.
+
+      FIX, mirroring the DPDP precedent exactly: email-token-service.ts
+      gains previewEmailActionToken() (read-only -- same not_found/
+      already_used/expired validity checks, factored into a shared
+      checkTokenValidity() helper so preview and consume can never diverge,
+      but never writes usedAt). route.ts's GET now only calls preview and
+      renders a confirmation page with a POST form naming the action in
+      plain language (mark_done -> "mark this to-do as done", etc.); only
+      POST calls consumeEmailActionToken + applyOneClickAction + the
+      existing securityAuditLog writes (both the _applied and _refused
+      audit events moved from GET to POST, since GET no longer has
+      anything worth auditing -- it never mutates).
+
+      Tests: extended src/app/api/email/[token]/route.test.ts (route-level,
+      mocks the service -- proves 3 consecutive GETs on a valid token never
+      call consumeEmailActionToken/applyOneClickAction/db.insert, across
+      all 4 preview outcomes; POST is the only path that mutates, across
+      all 4 consume outcomes) and added new src/lib/services/email-token-
+      service.test.ts (service-level, mocks the drizzle chain directly --
+      proves previewEmailActionToken never calls UPDATE across 5 scenarios
+      including 5 repeated calls, consumeEmailActionToken calls UPDATE
+      exactly once on success including the lost-the-race case). 18/18
+      pass. Falsifiability-checked per this program's own R74-RULING-03
+      standard: temporarily reverted GET to the old buggy
+      consumeEmailActionToken+applyOneClickAction call, confirmed exactly
+      the 4 new GET tests failed (POST tests unaffected), restored the fix
+      (git diff clean against the real fix), reran -- 18/18 green again.
+      ESLint clean and full `tsc --noEmit` clean on the changed files.
+
+      File scope: src/app/api/email/[token]/route.ts,
+      src/app/api/email/[token]/route.test.ts,
+      src/lib/services/email-token-service.ts,
+      src/lib/services/email-token-service.test.ts (new), this claims
+      file. Did not touch compliance-tracker (no backend change needed --
+      this route and its token table are PROJEXA-local, unlike the
+      AI-Link/VERIDIAN-proxied surfaces). Worked in an isolated worktree
+      (C:\projexa-worktrees\fix-email-token-get-mutation, branch
+      fix/email-token-get-mutation, off origin/main), not the shared
+      C:\projexa checkout several parallel sessions are using.
   - session_label: "claude-code (interactive, sub-agent) -- PROJEXA-E2E-001 section 5 item 7: Site Engineer project lock decision (last of the work order's 8 named broken screens), sibling of /change-orders #299 and /site-diary #301 [DONE, PR #308 open/unmerged pending owner review -- this is a decision point, same posture as /site-materials #304]"
     claimed_at: "2026-09-20T (this session)"
     completed_at: "2026-09-20T (this session)"

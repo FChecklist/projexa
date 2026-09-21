@@ -150,6 +150,26 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // check inside the route (src/app/api/email/inbound/route.ts's own
   // isAuthorized()), not a role.
   "/email/inbound": "PUBLIC",
+  // Added 2026-09-21 (fix/email-token-get-mutation): the one-click action
+  // link's own token in the URL is the real gate (previewEmailActionToken /
+  // consumeEmailActionToken inside the route), not a session role -- the
+  // caller clicking this link from an email has no PROJEXA session at all,
+  // same "bespoke secret, not a session role" shape as /email/inbound above
+  // and /integrations/google-sheets/webhook below.
+  //
+  // MUST stay listed after /email/send-digest and /email/inbound above:
+  // resolveWriteTier() walks API_WRITE_POLICY in object key order and
+  // returns the first pattern whose arity+segments match, so a single-
+  // segment wildcard like this one placed BEFORE a same-depth static
+  // sibling silently shadows it (confirmed the hard way in this branch --
+  // placing this entry first made /email/send-digest resolve to PUBLIC
+  // instead of its own ANY_MEMBER entry, letting a client_viewer through
+  // undetected by every OTHER test in this file, only caught by the
+  // "blocks a client_viewer from every mutating route" one). No other
+  // same-depth static/wildcard collision exists in this table today (only
+  // /email/* currently mixes a wildcard with static siblings at the same
+  // depth) -- if a future route adds one, put the wildcard last there too.
+  "/email/[token]": "PUBLIC",
   "/employees": "ORG_ADMIN",
   "/employees/[id]": "ORG_ADMIN",
   "/expenses": "PM_OR_ABOVE",
