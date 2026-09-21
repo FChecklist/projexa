@@ -43,6 +43,44 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (sub-agent, isolated worktrees C:/ct/ct-worktrees/fix-ai-link-pipeline-tasks + C:/ct/projexa-worktrees/fix-ai-link-pipeline-tasks, branch fix/ai-link-pipeline-tasks-repoint in both repos) -- PROJEXA-E2E-001 work order section 2 item 3 ('AI link'): fix (not just verify) the 2 real, confirmed bugs a sibling verification session found -- Bug 1: ai_link_projection()/apply route operate on the orphaned, UI-dead `todos` table instead of the real, live compliance.pipeline_tasks system (M24 Task Master); Bug 2: the snapshot never gives the reading AI a usable id (only the free-text label) [IN PROGRESS]"
+    claimed_at: "2026-09-21T (this session)"
+    claim: |
+      File scope, PROJEXA repo (C:\ct\projexa): src/app/api/ai/[token]/route.ts,
+      src/app/api/ai/[token]/route.test.ts, src/app/api/ai/apply/route.ts,
+      src/app/api/ai/apply/route.test.ts, src/lib/services/ai-link-service.ts,
+      a new drizzle/0027_*.sql (create-or-replace ai_link_projection() only --
+      drops the todos section, keeps org name + notifications, both still
+      genuinely PROJEXA-local concepts). Does NOT touch public.todos,
+      public.email_action_token, or the email digest/reply-parser surface --
+      those are live, in-flight, actively used by the sibling 'Email' claim
+      in compliance-tracker's copy of this file; todos stays exactly as-is
+      for that surface.
+
+      File scope, compliance-tracker repo (C:\ct\ct), ONLY IF the schema read
+      confirms it's needed (see below): src/app/api/v1/projexa/tasks/[id]/
+      route.ts (+ .test.ts) -- adding a PATCH handler is the only way
+      MARK_STATUS can have a REAL write target, since pipeline_tasks lives in
+      a different Supabase project than org_ai_link/todos and no cross-
+      database query is possible; the read side (snapshot) reuses the
+      already-existing GET /api/v1/projexa/tasks, no compliance-tracker
+      change needed for that half.
+
+      Real finding already confirmed by direct schema read (src/lib/db/
+      schema.ts's pipelineTasks table, C:\ct\ct): NO assignee_id, NO
+      due_date, NO note/description column exists on pipeline_tasks -- only
+      `status` (closed 5-value enum, currently written ONLY by run-
+      submission.ts's own executor, zero external write path anywhere in
+      the codebase today). Per the work order's own instruction to "say so
+      honestly rather than force a mapping that doesn't make sense": ASSIGN
+      and SET_DUE and NOTE will be honestly refused for pipeline_tasks
+      targets (no real field), MARK_STATUS will get a real, narrowly-scoped
+      PATCH (status in {'to_do','done'} only -- 'in_progress'/'waiting'/
+      'blocked' stay executor-exclusive, matching this codebase's own
+      existing carefulness around not letting external input claim internal
+      execution states), DRAFT is unaffected either way (already a no-op,
+      audit-log only). Will update this claim with the final verified
+      verb-by-verb outcome once live-tested.
   - session_label: "claude-code (interactive, isolated worktrees C:/ct/ct-worktrees/wo-exceptions-fix + C:/ct/projexa-worktrees/wo-exceptions-fix, branch wo/exceptions-drilldown-navigation + wo/exceptions-item24-and-navigation) -- PROJEXA-E2E-001: direct fix (not deferred) for the 2 real bugs found by the R-92..R-100/31-vs-28 exceptions reconciliation session (2026-09-20/21) -- Bug 1 (compliance-tracker, read-only here): construction-exceptions-service.ts getProjectExceptions() 29-vs-28 array-length bug; Bug 2 (this repo): ExceptionsClient.tsx had zero drill-down navigation from a flagged exception to the real record it names [DONE -- both fixed, unit/component tests green locally, PRs open/unmerged pending real CI e2e verification]"
     claimed_at: "2026-09-21T (this session)"
     completed_at: "2026-09-21T (this session)"
