@@ -43,6 +43,41 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (interactive, Claude Desktop) -- HIGHER-SEVERITY: fix live wildcard-before-static pattern-shadowing bugs in src/lib/authz/api-write-policy.ts's resolveWriteTier() (2 real routes currently under-gated: /api/scope/cost-visibility and /api/timesheets/review-day), plus a general drift-guard test for the whole class"
+    claimed_at: "2026-09-21T (this session)"
+    claim: |
+      Assigned by the PROJEXA-E2E-001 PM session, found while that session
+      fixed PR #314's (this session's own email-token-get-mutation fix) CI
+      failure by registering /email/[token] in API_WRITE_POLICY.
+
+      REAL, LIVE BUG, independently re-verified by reading the code (not
+      just trusting the PM's report): resolveWriteTier() iterates
+      Object.keys(API_WRITE_POLICY) in insertion order and returns on the
+      FIRST pattern of matching arity (matchesPattern treats "[id]"-style
+      segments as single-segment wildcards) -- so a same-depth wildcard
+      pattern listed BEFORE a more specific static sibling silently
+      shadows it, regardless of what tier either one declares.
+      "/scope/[id]": PM_OR_ABOVE is listed before "/scope/cost-visibility":
+      ORG_ADMIN, so resolveWriteTier("/api/scope/cost-visibility") returns
+      PM_OR_ABOVE, not ORG_ADMIN -- a PM (not ORG_ADMIN) can currently POST
+      to that route. Same mechanism: "/timesheets/[id]": ANY_MEMBER before
+      "/timesheets/review-day": PM_OR_ABOVE lets any member (e.g.
+      site_engineer) POST to review-day.
+
+      Scope: (a) reorder those two entries after their static siblings
+      (same fix shape as the PM's own e609c13 on the email-token branch);
+      (b) add a general, programmatic drift-guard test to
+      api-write-policy.test.ts that detects ANY same-depth
+      wildcard-before-static shadowing across the whole table, not just
+      these two, so this class of bug can't be silently reintroduced one
+      route at a time.
+
+      File scope: src/lib/authz/api-write-policy.ts,
+      src/lib/authz/api-write-policy.test.ts, this claims file. Fresh
+      branch off origin/main (fix/api-write-policy-ordering-shadow,
+      worktree C:\projexa-worktrees\fix-api-write-policy-ordering-shadow),
+      separate from the email-token branch (about to merge). Not touching
+      compliance-tracker.
   - session_label: "claude-code (interactive, isolated worktrees C:/ct/ct-worktrees/wo-exceptions-fix + C:/ct/projexa-worktrees/wo-exceptions-fix, branch wo/exceptions-drilldown-navigation + wo/exceptions-item24-and-navigation) -- PROJEXA-E2E-001: direct fix (not deferred) for the 2 real bugs found by the R-92..R-100/31-vs-28 exceptions reconciliation session (2026-09-20/21) -- Bug 1 (compliance-tracker, read-only here): construction-exceptions-service.ts getProjectExceptions() 29-vs-28 array-length bug; Bug 2 (this repo): ExceptionsClient.tsx had zero drill-down navigation from a flagged exception to the real record it names [DONE -- both fixed, unit/component tests green locally, PRs open/unmerged pending real CI e2e verification]"
     claimed_at: "2026-09-21T (this session)"
     completed_at: "2026-09-21T (this session)"
