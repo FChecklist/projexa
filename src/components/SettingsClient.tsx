@@ -61,11 +61,27 @@ const CAN_ASSIGN_ROLES = new Set(["owner", "admin"]);
 // middleware actually enforces on these writes.
 const CAN_EDIT_BOQ_CATEGORIES: ReadonlySet<string> = new Set<string>(ROLE_GROUPS.PM_OR_ABOVE);
 
-export default function SettingsClient() {
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): `initialOrgInfo`/
+// `initialMembers` are the server-fetched values settings/page.tsx now
+// resolves inside a <Suspense> boundary before this component ever mounts
+// (see that file's own comment). When they're present, the client-side
+// Promise.all fetch below is skipped entirely -- the page no longer shows
+// its "loading" spinner over real content that was already available at
+// render time. Both stay optional so a direct/edge-case mount with no
+// server-resolved org (or a page.tsx that hasn't been updated, e.g. in a
+// future refactor) still falls back to the original client-fetch behavior
+// rather than breaking.
+export default function SettingsClient({
+  initialOrgInfo,
+  initialMembers,
+}: {
+  initialOrgInfo?: OrgInfo;
+  initialMembers?: Member[];
+} = {}) {
   const router = useRouter();
-  const [info, setInfo] = useState<OrgInfo | null>(null);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [info, setInfo] = useState<OrgInfo | null>(initialOrgInfo ?? null);
+  const [members, setMembers] = useState<Member[]>(initialMembers ?? []);
+  const [loading, setLoading] = useState(!initialOrgInfo);
   const [signingOut, setSigningOut] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [currency, setCurrency] = useState<OrgCurrency | null>(null);
@@ -73,6 +89,7 @@ export default function SettingsClient() {
   const [savingCurrency, setSavingCurrency] = useState(false);
 
   useEffect(() => {
+    if (initialOrgInfo) return; // already server-seeded -- no client round trip needed
     Promise.all([
       fetch("/api/organization").then((r) => r.json()),
       fetch("/api/org-members").then((r) => r.json()),
@@ -84,6 +101,7 @@ export default function SettingsClient() {
       })
       .catch(() => toast.error("Couldn't load settings"))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialOrgInfo is a mount-time seed, not a reactive dependency; re-fetching if it changed later would fight the user's own edits.
   }, []);
 
   // R48_NO_CURRENCY_UI_01: independent of the load above -- a currency-fetch

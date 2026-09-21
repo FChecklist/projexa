@@ -405,6 +405,68 @@ export const fetchDocumentsList = createModuleList(
   { root: true }
 );
 
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): Knowledge Base is org-wide
+// (no projectId), so it doesn't fit createModuleList()'s project-scoped
+// buildPath signature -- a small, dedicated cached fetcher instead, same
+// shape as cachedProjects above (GET /projects, also org-only). Before this,
+// knowledge-base/page.tsx had NO server-side data fetch at all: the shell
+// rendered instantly but KnowledgeBaseClient always started `loading=true`
+// and fired its own client-side fetch("/api/knowledge-base") after
+// hydration, with zero SSR prefetch or cross-request cache -- the same
+// defect class R67 F-18 closed on documents/labour/meetings/mood-boards,
+// just without that one's extra "blocks the WHOLE page" symptom (this
+// shell painted fine; only the list itself was always cold).
+const cachedKnowledgeBasePages = unstable_cache(
+  (organizationId: string | null) =>
+    callVeridian<{ pages: Record<string, unknown>[] }>("/knowledge-base", {
+      organizationId: organizationId ?? undefined,
+    }),
+  ["veridian-knowledge-base-pages"],
+  { revalidate: 30, tags: ["knowledge-base"] }
+);
+
+export async function fetchKnowledgeBasePages<T>(organizationId: string | null): Promise<ModuleListOutcome<T>> {
+  try {
+    const payload = await cachedKnowledgeBasePages(organizationId);
+    return { rows: (payload.pages ?? []) as T[], errorMessage: null };
+  } catch (err) {
+    const message = err instanceof VeridianApiError ? err.message : "Couldn't load knowledge base pages.";
+    console.error("[module-list-source] knowledge-base failed:", err instanceof Error ? err.message : err);
+    return { rows: [], errorMessage: message };
+  }
+}
+
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): GRC's default "Dashboard" tab
+// -- the tab every /grc navigation lands on -- had no server-side fetch at
+// all; GrcClient's DashboardPanel always started `loading=true` and fired
+// its own fetch("/api/grc-dashboard") after hydration. Org-wide, same shape
+// as cachedProjects/cachedKnowledgeBasePages above. A short TTL (10s, not
+// the usual 30s) on purpose: unlike a document/permit list, this is a
+// COUNTS rollup across risks/audits/policies/vendor-risk that a user
+// editing any one of those expects to look current soon after, and none of
+// those mutation routes revalidateTag this (that would mean tagging four
+// unrelated route families for one dashboard's sake) -- a short TTL bounds
+// the staleness instead.
+const cachedGrcDashboard = unstable_cache(
+  (organizationId: string | null) =>
+    callVeridian<Record<string, unknown>>("/grc-dashboard", {
+      organizationId: organizationId ?? undefined,
+    }),
+  ["veridian-grc-dashboard"],
+  { revalidate: 10, tags: ["grc-dashboard"] }
+);
+
+export async function fetchGrcDashboard<T>(organizationId: string | null): Promise<{ data: T | null; errorMessage: string | null }> {
+  try {
+    const payload = await cachedGrcDashboard(organizationId);
+    return { data: payload as T, errorMessage: null };
+  } catch (err) {
+    const message = err instanceof VeridianApiError ? err.message : "Couldn't load GRC dashboard.";
+    console.error("[module-list-source] grc-dashboard failed:", err instanceof Error ? err.message : err);
+    return { data: null, errorMessage: message };
+  }
+}
+
 export const fetchRosterList = createModuleList(
   MODULE_TAGS.manpower,
   (projectId) => `/construction/labour-roster?projectId=${q(projectId)}`,

@@ -29,7 +29,7 @@ import { formatDate } from "@/lib/format-date";
 // Shared types
 // ---------------------------------------------------------------------------
 type Risk = { id: string; title: string; category: string; likelihood: number; impact: number; severity: string; status: string; ownerDept: string | null };
-type GrcDashboard = {
+export type GrcDashboard = {
   risks: { openCount: number; totalCount: number; byCategory: Record<string, number>; bySeverity: Record<string, number>; heatmap: { likelihood: number; impact: number; count: number }[] };
   audit: { engagementCount: number; openFindingsCount: number; overdueFindingsCount: number };
   policies: { totalCount: number; draftCount: number; underReviewCount: number; publishedCount: number };
@@ -52,12 +52,23 @@ const RISK_STATUS_FLOW: Record<string, string> = { open: "mitigating", mitigatin
 // ---------------------------------------------------------------------------
 // Dashboard tab
 // ---------------------------------------------------------------------------
-function DashboardPanel() {
-  const [data, setData] = useState<GrcDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): `initial` is what grc/page.tsx
+// now resolves server-side (SSR'd, no client round trip) for the default
+// "Dashboard" tab -- the tab every /grc navigation actually lands on. The
+// other 7 tabs (Risk Register/Audits/Policies/Vendor Risk/Fraud/
+// Access Review/Compliance Register) each still fire their own independent
+// client-side fetch when the user switches to them, deliberately left
+// untouched: they're each their own separate, smaller cost (Radix Tabs only
+// mounts the active TabsContent, so switching tabs was never the "whole page
+// blocked" symptom this fix targets), and converting all 7 is a materially
+// larger, separate change.
+function DashboardPanel({ initial }: { initial?: { data: GrcDashboard | null; errorMessage: string | null } } = {}) {
+  const [data, setData] = useState<GrcDashboard | null>(initial?.data ?? null);
+  const [loading, setLoading] = useState(!initial);
+  const [loadError, setLoadError] = useState<string | null>(initial?.errorMessage ?? null);
 
   useEffect(() => {
+    if (initial) return; // already server-seeded -- no client round trip needed
     (async () => {
       try {
         // This used to be setData(await res.json()), which stored the ERROR
@@ -71,6 +82,7 @@ function DashboardPanel() {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` is a mount-time seed, not a reactive dependency.
   }, []);
 
   if (loading) return <div className="grid h-40 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
@@ -709,7 +721,13 @@ function ComplianceRegisterPanel() {
 // ---------------------------------------------------------------------------
 const GRC_VALID_TABS = new Set(["dashboard", "risks", "audits", "policies", "vendor-risk", "fraud", "access-review", "compliance"]);
 
-export default function GrcClient({ initialTab }: { initialTab?: string }) {
+export default function GrcClient({
+  initialTab,
+  initialDashboard,
+}: {
+  initialTab?: string;
+  initialDashboard?: { data: GrcDashboard | null; errorMessage: string | null };
+}) {
   // Real-screen conversion (2026-08-30): the tab used to be internal-only
   // state (Tabs' own uncontrolled `defaultValue`) -- the new Risk/Policy/
   // Case/Vendor/Audit/AccessReview create screens redirect back here with
@@ -740,7 +758,7 @@ export default function GrcClient({ initialTab }: { initialTab?: string }) {
           <TabsTrigger value="access-review">Access Review</TabsTrigger>
           <TabsTrigger value="compliance">Compliance Register</TabsTrigger>
         </TabsList>
-        <TabsContent value="dashboard"><DashboardPanel /></TabsContent>
+        <TabsContent value="dashboard"><DashboardPanel initial={initialDashboard} /></TabsContent>
         <TabsContent value="risks"><RiskRegisterPanel /></TabsContent>
         <TabsContent value="audits"><AuditsPanel /></TabsContent>
         <TabsContent value="policies"><PoliciesPanel /></TabsContent>

@@ -26,13 +26,26 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Plus, FileText, Search } from "lucide-react";
 import { errorMessage } from "@/lib/fetch-json";
 
-type KbPage = { id: string; slug: string; title: string; content: string | null; version: number };
+export type KbPage = { id: string; slug: string; title: string; content: string | null; version: number };
 
-export default function KnowledgeBaseClient() {
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): `initial` is what
+// knowledge-base/page.tsx now resolves server-side (SSR'd + cached 30s,
+// same as the other module-list screens -- see module-list-source.ts's
+// fetchKnowledgeBasePages) before this component ever mounts. When it's
+// present, the client-side fetch("/api/knowledge-base") on mount is
+// skipped entirely, matching MeetingsClient/DocumentsClient's own
+// `initial` convention exactly (same shape: { rows, errorMessage }).
+// Optional so a caller that doesn't pass it (or a future refactor) falls
+// back to the original always-fetch-on-mount behavior.
+export default function KnowledgeBaseClient({
+  initial,
+}: {
+  initial?: { rows: KbPage[]; errorMessage: string | null };
+} = {}) {
   const router = useRouter();
-  const [pages, setPages] = useState<KbPage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [pages, setPages] = useState<KbPage[]>(initial?.rows ?? []);
+  const [loading, setLoading] = useState(!initial);
+  const [error, setError] = useState<string | null>(initial?.errorMessage ?? null);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
@@ -51,7 +64,11 @@ export default function KnowledgeBaseClient() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (initial) return; // already server-seeded -- no client round trip needed
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` is a mount-time seed, not a reactive dependency.
+  }, [load]);
 
   async function runSearch(q: string) {
     setQuery(q);

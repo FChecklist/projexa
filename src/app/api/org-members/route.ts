@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { createClient } from "@/lib/supabase/server";
+import { getSettingsMembers } from "@/lib/settings-source";
 import { withTiming } from "@/lib/with-timing";
 
+// PROJEXA-E2E-001 cold-load fix (2026-09-21): query moved into
+// settings-source.ts's getSettingsMembers() -- see /api/organization's own
+// comment for why (one implementation, this route AND /settings's server
+// component both call it). Behavior unchanged, including A4S14_settings_01
+// below.
 export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("memberships")
-    .select("user_id, role, profiles(email, display_name)")
-    .eq("organization_id", ctx.organizationId!);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const result = await getSettingsMembers(ctx.organizationId!);
+  if ("error" in result) return NextResponse.json({ error: result.error }, { status: 500 });
   // A4S14_settings_01: this previously filtered out `ctx.user!.id`, so the
   // Settings Team table never included the currently authenticated member
   // (owner or otherwise) -- even though GET /api/organization (which powers
@@ -21,5 +21,5 @@ export const GET = withTiming("GET", async function GET() {
   // role/email straight off ctx with no such filter. The roster is the full
   // membership list for the org; every member, including the caller, is a
   // real teammate and belongs in it.
-  return NextResponse.json({ members: data ?? [] });
+  return NextResponse.json(result);
 });
