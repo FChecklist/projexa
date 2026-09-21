@@ -54,6 +54,35 @@ export type ConsumeResult =
   | { ok: true; todoId: string; action: OneClickAction }
   | { ok: false; reason: "not_found" | "already_used" | "expired" };
 
+type TokenRow = { todoId: string; action: string; usedAt: Date | string | null; expiresAt: Date | string };
+
+/** Shared by previewEmailActionToken and consumeEmailActionToken so the two can never validate a token differently -- null means "valid, caller decides what to do next." */
+function checkTokenValidity(existing: TokenRow | undefined): ConsumeResult | null {
+  if (!existing) return { ok: false, reason: "not_found" };
+  if (existing.usedAt) return { ok: false, reason: "already_used" };
+  if (new Date(existing.expiresAt) < new Date()) return { ok: false, reason: "expired" };
+  return null;
+}
+
+/**
+ * Read-only preview for the confirmation page (GET). Runs the exact same
+ * validity checks as consumeEmailActionToken but never writes usedAt -- an
+ * email scanner or corporate security gateway that prefetches this link
+ * before a human opens the message therefore cannot burn the token or apply
+ * the action. Only a real POST (the confirmation button's form submit)
+ * calls consumeEmailActionToken below. Same shape as the DPDP task-link
+ * route's previewTaskEmailToken (compliance-tracker).
+ */
+export async function previewEmailActionToken(rawToken: string): Promise<ConsumeResult> {
+  const tokenHash = hashToken(rawToken);
+  const [existing] = await db.select().from(emailActionToken).where(eq(emailActionToken.tokenHash, tokenHash)).limit(1);
+
+  const invalid = checkTokenValidity(existing);
+  if (invalid) return invalid;
+
+  return { ok: true, todoId: existing!.todoId, action: existing!.action as OneClickAction };
+}
+
 /**
  * One-time use, verified by re-reading the row after the UPDATE: this is
  * the "clicking the same link a second time is refused, and that refusal
@@ -65,9 +94,8 @@ export async function consumeEmailActionToken(rawToken: string): Promise<Consume
   const tokenHash = hashToken(rawToken);
 
   const [existing] = await db.select().from(emailActionToken).where(eq(emailActionToken.tokenHash, tokenHash)).limit(1);
-  if (!existing) return { ok: false, reason: "not_found" };
-  if (existing.usedAt) return { ok: false, reason: "already_used" };
-  if (new Date(existing.expiresAt) < new Date()) return { ok: false, reason: "expired" };
+  const invalid = checkTokenValidity(existing);
+  if (invalid) return invalid;
 
   const [updated] = await db
     .update(emailActionToken)
