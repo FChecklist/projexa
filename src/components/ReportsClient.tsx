@@ -53,6 +53,7 @@ import {
 import { ReportDocument } from "@/components/reports/ReportDocument";
 import { ProjectStatusCard } from "@/components/reports/ProjectStatusCard";
 import { isPlainObject, noRowsMessage, reportSchema } from "@/lib/report-schema";
+import { buildReportLinks } from "@/lib/report-row-links";
 
 import {
   BREAKUP_SOURCE_REPORT,
@@ -279,6 +280,13 @@ function ProjectReportsPanel({
   // schema keeps the generic grid -- inventing a document for a payload nobody
   // described would be a worse lie than the raw keys.
   const schema = reportSchema(run.report);
+  // PROJEXA-E2E-001 section 4 (2026-09-21): the generic renderer's real
+  // drill-down links -- built from THIS run's own payload, since a few
+  // reports (scope, category-progress, project-completion) carry the id a
+  // row needs at the top of the payload rather than on the row itself. See
+  // report-row-links.ts for the full per-report map and the reports it
+  // deliberately does NOT link (no id survives the aggregation).
+  const reportLinks = buildReportLinks(run.report, shownResult);
 
   // R67 E-10 (R-133): the failure lives in the shell's message area, which
   // does not vanish on a timer the way the toast this replaces did.
@@ -456,20 +464,28 @@ function ProjectReportsPanel({
       // Anything else leaves the figures above the table exactly as the report
       // stated them, and the table shows its own empty state.
       const breakup = breakupBody && Array.isArray(breakupBody.lines) ? breakupBody : null;
-      setResult(
-        breakup
-          ? {
-              ...data,
-              // ROOT lines only, the same rule every BOQ money roll-up in this
-              // product follows: a weighted sub-task's amount is derived from
-              // its parent, so printing both would show a table that does not
-              // add up to its own last row.
-              lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false),
-              totalBudget: breakup.totalBudget,
-            }
-          : data
-      );
-      writeCachedReport(cacheKey, breakup ? { ...data, lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false), totalBudget: breakup.totalBudget } : data);
+      // PROJEXA-E2E-001 section 4 (2026-09-21): `boqId` rides along with the
+      // same breakup fetch -- boqBudgetVarianceReport's own payload already
+      // carries it (BudgetAnalyticalClient reads the identical field off the
+      // identical report). Project Status's Money-band figures (Contract
+      // Value/Budget/Earned Value/% complete by BOQ value) are computed from
+      // this SAME BOQ, so ProjectStatusCard can link them to it -- see that
+      // component's own fieldLinks. Never fabricated: absent whenever the
+      // project has no BOQ, same as `lines`/`totalBudget` above.
+      const mergedResult = breakup
+        ? {
+            ...data,
+            // ROOT lines only, the same rule every BOQ money roll-up in this
+            // product follows: a weighted sub-task's amount is derived from
+            // its parent, so printing both would show a table that does not
+            // add up to its own last row.
+            lines: (breakup.lines as { isRootLine?: boolean }[]).filter((l) => l.isRootLine !== false),
+            totalBudget: breakup.totalBudget,
+            boqId: typeof breakup.boqId === "string" ? breakup.boqId : null,
+          }
+        : data;
+      setResult(mergedResult);
+      writeCachedReport(cacheKey, mergedResult);
       setFromCache(false);
       setRanAt(new Date());
       setStale(false);
@@ -825,7 +841,13 @@ function ProjectReportsPanel({
                   {run.report === "project-status" && isPlainObject(shownResult) ? (
                     <ProjectStatusCard data={shownResult} format={orgMoney.format} financialsRedacted={shownResult.financialsRedacted === true} />
                   ) : (
-                    <ReportOutput data={shownResult} fieldLabels={REPORT_FIELD_LABELS[run.report]} omitKeys={schema ? [schema.rowsKey] : undefined} />
+                    <ReportOutput
+                      data={shownResult}
+                      fieldLabels={REPORT_FIELD_LABELS[run.report]}
+                      omitKeys={schema ? [schema.rowsKey] : undefined}
+                      rowLinks={reportLinks.rowLinks}
+                      fieldLinks={reportLinks.fieldLinks}
+                    />
                   )}
                 </div>
               )}
@@ -874,6 +896,8 @@ function ProjectReportsPanel({
                   data={shownResult}
                   fieldLabels={REPORT_FIELD_LABELS[run.report]}
                   omitKeys={schema ? [schema.rowsKey] : undefined}
+                  rowLinks={reportLinks.rowLinks}
+                  fieldLinks={reportLinks.fieldLinks}
                 />
               )}
               {/* R67 E-12 (R-136): the report's own document, rendered from the

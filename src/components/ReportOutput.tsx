@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PivotTable } from "@/components/reports/PivotTable";
@@ -79,16 +80,56 @@ export function cellValue(v: unknown): string {
  * it the same rows would appear twice -- once as a real document and once as
  * the generic key-named table this component falls back to. Anything NOT named
  * here is still rendered, so a key can never disappear silently. */
+/**
+ * PROJEXA-E2E-001 work order section 4 (2026-09-21): "a number on a dashboard
+ * must be provably derived, and clicking it should reach what produced it". A
+ * prior sweep (PR #306) found real drill-down (a click-through from a figure
+ * to the record that produced it) on only 2 of ~22 reports
+ * (BudgetActualClient/BudgetAnalyticalClient -> /scope/{boqId}); this
+ * renderer -- the one behind ~12 of the others -- had zero Link/href
+ * anywhere. `rowLinks`/`fieldLinks` are the same opt-in-per-key shape as
+ * `fieldLabels`/`fieldFormatters` above, for exactly the same reason: this
+ * component is generic over reports and Copilot tool results with no shared
+ * schema, so it cannot know on its own which id links where -- only a caller
+ * that knows the report's real shape can say that, and one that says nothing
+ * keeps today's exact unlinked display (CopilotClient's arbitrary tool
+ * results, which genuinely have no declared shape, pass neither and are
+ * unaffected).
+ *
+ * `rowLinks` (array-of-objects branch): keyed by COLUMN name, the resolver
+ * receives the row being rendered and returns an href, or null/undefined for
+ * "this particular row has nothing to link to" (e.g. a LEFT-joined vendor
+ * name that came back null) -- never a fabricated link. See
+ * src/lib/report-row-links.ts for the per-report id -> href map built from
+ * each report's real payload shape.
+ *
+ * `fieldLinks` (scalar key/value grid branch): keyed by FIELD name, the
+ * resolver receives the WHOLE object being rendered at that level (so a
+ * "version" field can link using that same object's own "id"), same
+ * null/undefined-means-no-link contract.
+ *
+ * Both are threaded through the recursive nested-object/array calls
+ * unchanged, same as fieldLabels/fieldFormatters/omitKeys already are.
+ */
+export type RowLinkResolver = (row: Record<string, unknown>) => string | null | undefined;
+export type FieldLinkResolver = (data: Record<string, unknown>) => string | null | undefined;
+
+const LINK_CLASS = "underline underline-offset-2";
+
 export function ReportOutput({
   data,
   fieldLabels,
   fieldFormatters,
   omitKeys,
+  rowLinks,
+  fieldLinks,
 }: {
   data: unknown;
   fieldLabels?: Record<string, string>;
   fieldFormatters?: Record<string, (v: unknown) => string>;
   omitKeys?: string[];
+  rowLinks?: Record<string, RowLinkResolver>;
+  fieldLinks?: Record<string, FieldLinkResolver>;
 }) {
   if (Array.isArray(data)) {
     if (data.length === 0) return <p className="py-6 text-center text-sm text-px-muted">No rows returned.</p>;
@@ -109,7 +150,15 @@ export function ReportOutput({
             <TableBody>
               {data.map((row, i) => (
                 <TableRow key={i}>
-                  {columns.map((c) => <TableCell key={c}>{cellValue(isPlainObject(row) ? row[c] : row)}</TableCell>)}
+                  {columns.map((c) => {
+                    const cell = isPlainObject(row) ? row[c] : row;
+                    const href = isPlainObject(row) ? rowLinks?.[c]?.(row) : null;
+                    return (
+                      <TableCell key={c}>
+                        {href ? <Link href={href} className={LINK_CLASS}>{cellValue(cell)}</Link> : cellValue(cell)}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))}
             </TableBody>
@@ -133,20 +182,28 @@ export function ReportOutput({
       <div className="space-y-4">
         {scalarEntries.length > 0 && (
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
-            {scalarEntries.map(([k, v]) => (
-              <div key={k}>
-                <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? k}</div>
-                {/* R67 D-61: tabular figures, so two stacked values in this
-                    grid have digits of the same width and can be compared. */}
-                <div className="font-medium text-px-ink tabular-nums">{fieldFormatters?.[k] ? fieldFormatters[k](v) : cellValue(v)}</div>
-              </div>
-            ))}
+            {scalarEntries.map(([k, v]) => {
+              const text = fieldFormatters?.[k] ? fieldFormatters[k](v) : cellValue(v);
+              const href = fieldLinks?.[k]?.(data);
+              return (
+                <div key={k}>
+                  <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? k}</div>
+                  {/* R67 D-61: tabular figures, so two stacked values in this
+                      grid have digits of the same width and can be compared. */}
+                  {href ? (
+                    <Link href={href} className={`font-medium text-px-ink tabular-nums ${LINK_CLASS}`}>{text}</Link>
+                  ) : (
+                    <div className="font-medium text-px-ink tabular-nums">{text}</div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
         {nestedEntries.map(([k, v]) => (
           <div key={k} className="space-y-2">
             <div className="text-sm font-semibold text-px-ink">{fieldLabels?.[k] ?? k}</div>
-            <ReportOutput data={v} fieldLabels={fieldLabels} fieldFormatters={fieldFormatters} omitKeys={omitKeys} />
+            <ReportOutput data={v} fieldLabels={fieldLabels} fieldFormatters={fieldFormatters} omitKeys={omitKeys} rowLinks={rowLinks} fieldLinks={fieldLinks} />
           </div>
         ))}
       </div>
