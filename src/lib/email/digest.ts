@@ -25,19 +25,56 @@ type CollectedItem = {
 };
 
 const MAX_TODOS = 10;
-const MAX_PROJECTS = 3; // caps how many of the org's projects this digest scans -- keeps the email and the VERIDIAN fan-out bounded. Phase 2: prefer active/non-archived projects once project status filtering is reliable end to end.
+const MAX_PROJECTS = 3; // caps how many of the org's projects actually feed the digest -- keeps the email itself bounded. Which MAX_PROJECTS is decided by real open-item count (see rankProjectsByOpenItems below), not by /projects' own name-sorted order: a genuinely active project must not be skipped just because a near-empty one alphabetically sorts first.
 const MAX_ITEMS_PER_ENTITY_PER_PROJECT = 5;
+
+type ProjectRef = { id: string; name: string; status?: string };
+type ProjectItemBundle = {
+  project: ProjectRef;
+  rfis: Array<{ id: string; number: number; subject: string; status: string }>;
+  submittals: Array<{ id: string; number: number; title: string; status: string }>;
+  punch: Array<{ id: string; number: number; description: string; status: string }>;
+  claims: Array<{ id: string; status: string }>;
+};
+
+/** Every VERIDIAN read uses callVeridianResult (non-throwing) so one slow/failed
+ *  project's data never takes down the whole digest -- it's just an empty bundle. */
+async function fetchProjectItemBundle(organizationId: string, project: ProjectRef): Promise<ProjectItemBundle> {
+  const [rfisRes, submittalsRes, punchRes, claimsRes] = await Promise.all([
+    callVeridianResult<{ rfis?: Array<{ id: string; number: number; subject: string; status: string }> }>(`/rfis?projectId=${encodeURIComponent(project.id)}`, { organizationId }),
+    callVeridianResult<{ submittals?: Array<{ id: string; number: number; title: string; status: string }> }>(`/submittals?projectId=${encodeURIComponent(project.id)}`, { organizationId }),
+    callVeridianResult<{ items?: Array<{ id: string; number: number; description: string; status: string }> }>(`/punch-list?projectId=${encodeURIComponent(project.id)}`, { organizationId }),
+    callVeridianResult<{ claims?: Array<{ id: string; status: string }> }>(`/billing-claims?projectId=${encodeURIComponent(project.id)}&all=true`, { organizationId }),
+  ]);
+
+  return {
+    project,
+    rfis: rfisRes.ok ? (rfisRes.data?.rfis ?? []).filter((r) => r.status === "open" || r.status === "answered") : [],
+    submittals: submittalsRes.ok ? (submittalsRes.data?.submittals ?? []).filter((s) => s.status === "pending") : [],
+    punch: punchRes.ok ? (punchRes.data?.items ?? []).filter((p) => p.status === "open" || p.status === "ready_for_review") : [],
+    claims: claimsRes.ok ? (claimsRes.data?.claims ?? []).filter((c) => ["milestone_achieved", "drafted", "rejected"].includes(c.status)) : [],
+  };
+}
+
+function openItemCount(bundle: ProjectItemBundle): number {
+  return bundle.rfis.length + bundle.submittals.length + bundle.punch.length + bundle.claims.length;
+}
 
 /**
  * Everything currently open across this org that a Phase 1 digest can show
  * and act on: PROJEXA's own `todos` (org-wide, matching the pre-existing
- * digest's own scope -- not a regression) plus, for up to MAX_PROJECTS of
- * the org's real construction projects, open RFIs/pending submittals/open
- * punch-list items/actionable billing milestones. Every VERIDIAN read uses
- * callVeridianResult (non-throwing) so one slow/failed project's data never
- * takes down the whole digest -- it's just missing from this one run,
- * exactly the same degrade-gracefully posture the AI Link route already
- * uses for its own construction-dashboard call.
+ * digest's own scope -- not a regression) plus, for the MAX_PROJECTS
+ * busiest of the org's real construction projects, open RFIs/pending
+ * submittals/open punch-list items/actionable billing milestones.
+ *
+ * Ranking, not raw order: /projects returns every active project sorted by
+ * name, which is not activity order -- an org's near-empty fixture/test
+ * projects (e.g. "E2E-BatchA-...") can easily sort before its one genuinely
+ * busy project. Naively taking the first MAX_PROJECTS produced real, empty
+ * digests for real orgs. So every active project's item bundle is fetched
+ * up front (a larger VERIDIAN fan-out than before, traded deliberately for
+ * correctness -- see the PROJEXA-E2E digest gap this closes) and only the
+ * MAX_PROJECTS with the most real open items are ever rendered into items.
  */
 async function collectDigestItems(organizationId: string): Promise<CollectedItem[]> {
   const items: CollectedItem[] = [];
@@ -56,59 +93,49 @@ async function collectDigestItems(organizationId: string): Promise<CollectedItem
     });
   }
 
-  const projectsResult = await callVeridianResult<{ projects: Array<{ id: string; name: string; status?: string }> }>("/projects", { organizationId });
-  const projects = (projectsResult.ok ? projectsResult.data?.projects ?? [] : []).slice(0, MAX_PROJECTS);
+  const projectsResult = await callVeridianResult<{ projects: ProjectRef[] }>("/projects", { organizationId });
+  const allProjects = projectsResult.ok ? projectsResult.data?.projects ?? [] : [];
 
-  for (const project of projects) {
-    const [rfisRes, submittalsRes, punchRes, claimsRes] = await Promise.all([
-      callVeridianResult<{ rfis?: Array<{ id: string; number: number; subject: string; status: string }> }>(`/rfis?projectId=${encodeURIComponent(project.id)}`, { organizationId }),
-      callVeridianResult<{ submittals?: Array<{ id: string; number: number; title: string; status: string }> }>(`/submittals?projectId=${encodeURIComponent(project.id)}`, { organizationId }),
-      callVeridianResult<{ items?: Array<{ id: string; number: number; description: string; status: string }> }>(`/punch-list?projectId=${encodeURIComponent(project.id)}`, { organizationId }),
-      callVeridianResult<{ claims?: Array<{ id: string; status: string }> }>(`/billing-claims?projectId=${encodeURIComponent(project.id)}&all=true`, { organizationId }),
-    ]);
+  const bundles = await Promise.all(allProjects.map((project) => fetchProjectItemBundle(organizationId, project)));
+  // Array.prototype.sort is stable, so projects tied on open-item count keep
+  // /projects' own (name-sorted) relative order as the tiebreak.
+  const rankedBundles = [...bundles].sort((a, b) => openItemCount(b) - openItemCount(a)).slice(0, MAX_PROJECTS);
 
-    if (rfisRes.ok) {
-      for (const rfi of (rfisRes.data?.rfis ?? []).filter((r) => r.status === "open" || r.status === "answered").slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
-        items.push({
-          entityType: "rfi",
-          entityId: rfi.id,
-          displayText: `RFI #${rfi.number} — ${rfi.subject} (${project.name})`,
-          allowedVerbs: rfi.status === "open" ? ["answer"] : ["close"],
-        });
-      }
+  for (const { project, rfis, submittals, punch, claims } of rankedBundles) {
+    for (const rfi of rfis.slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
+      items.push({
+        entityType: "rfi",
+        entityId: rfi.id,
+        displayText: `RFI #${rfi.number} — ${rfi.subject} (${project.name})`,
+        allowedVerbs: rfi.status === "open" ? ["answer"] : ["close"],
+      });
     }
 
-    if (submittalsRes.ok) {
-      for (const s of (submittalsRes.data?.submittals ?? []).filter((s) => s.status === "pending").slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
-        items.push({
-          entityType: "submittal",
-          entityId: s.id,
-          displayText: `Submittal #${s.number} — ${s.title} (${project.name})`,
-          allowedVerbs: ["approved", "approved_as_noted", "revise_resubmit", "rejected"],
-        });
-      }
+    for (const s of submittals.slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
+      items.push({
+        entityType: "submittal",
+        entityId: s.id,
+        displayText: `Submittal #${s.number} — ${s.title} (${project.name})`,
+        allowedVerbs: ["approved", "approved_as_noted", "revise_resubmit", "rejected"],
+      });
     }
 
-    if (punchRes.ok) {
-      for (const p of (punchRes.data?.items ?? []).filter((p) => p.status === "open" || p.status === "ready_for_review").slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
-        items.push({
-          entityType: "punch_list",
-          entityId: p.id,
-          displayText: `Punch list #${p.number} — ${p.description} (${project.name})`,
-          allowedVerbs: p.status === "open" ? ["ready"] : ["verify"],
-        });
-      }
+    for (const p of punch.slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
+      items.push({
+        entityType: "punch_list",
+        entityId: p.id,
+        displayText: `Punch list #${p.number} — ${p.description} (${project.name})`,
+        allowedVerbs: p.status === "open" ? ["ready"] : ["verify"],
+      });
     }
 
-    if (claimsRes.ok) {
-      for (const c of (claimsRes.data?.claims ?? []).filter((c) => ["milestone_achieved", "drafted", "rejected"].includes(c.status)).slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
-        items.push({
-          entityType: "billing_milestone",
-          entityId: c.id,
-          displayText: `Billing milestone (${c.status.replace(/_/g, " ")}) — ${project.name}`,
-          allowedVerbs: c.status === "drafted" ? ["submit"] : ["draft"],
-        });
-      }
+    for (const c of claims.slice(0, MAX_ITEMS_PER_ENTITY_PER_PROJECT)) {
+      items.push({
+        entityType: "billing_milestone",
+        entityId: c.id,
+        displayText: `Billing milestone (${c.status.replace(/_/g, " ")}) — ${project.name}`,
+        allowedVerbs: c.status === "drafted" ? ["submit"] : ["draft"],
+      });
     }
   }
 
