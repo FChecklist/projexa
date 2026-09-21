@@ -4,36 +4,18 @@ import { NextResponse } from "next/server";
 import type { AuthContext } from "@/lib/supabase/auth-guard";
 
 let mockCtx: AuthContext;
-let selectResult: unknown[] = [];
-let selectCallCount = 0;
-let updateCalls: { set: unknown }[] = [];
 let insertCalls: { values: unknown }[] = [];
+// Keyed by "METHOD path" (e.g. "GET /tasks/t1") so each test can script
+// exactly the VERIDIAN responses its scenario needs.
+let veridianResponses: Map<string, unknown>;
+let veridianCalls: { path: string; options: Record<string, unknown> }[] = [];
 
 mock.module("@/lib/supabase/auth-guard", () => ({
   requireAuth: async () => mockCtx,
 }));
 
-// drizzle-orm itself is NOT mocked -- eq()/and() are pure AST builders that
-// never inspect the opaque `todos`/`securityAuditLog` stand-ins below until a
-// real connection sends the query to Postgres, which never happens here.
 mock.module("@/lib/db", () => ({
   db: {
-    select: () => {
-      selectCallCount++;
-      return {
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve(selectResult),
-          }),
-        }),
-      };
-    },
-    update: () => ({
-      set: (arg: unknown) => {
-        updateCalls.push({ set: arg });
-        return { where: () => Promise.resolve() };
-      },
-    }),
     insert: () => ({
       values: (arg: unknown) => {
         insertCalls.push({ values: arg });
@@ -41,8 +23,20 @@ mock.module("@/lib/db", () => ({
       },
     }),
   },
-  todos: {},
   securityAuditLog: {},
+}));
+
+mock.module("@/lib/veridian-client", () => ({
+  callVeridianResult: async (path: string, options: Record<string, unknown>) => {
+    veridianCalls.push({ path, options });
+    const method = (options.method as string) ?? "GET";
+    const key = `${method} ${path}`;
+    const scripted = veridianResponses.get(key);
+    if (scripted) return scripted;
+    // An unscripted call is a real test-authoring bug, not a legitimate
+    // "not found" -- fail loud rather than silently returning ok:false.
+    throw new Error(`unscripted VERIDIAN call in test: ${key}`);
+  },
 }));
 
 const { POST } = await import("./route");
@@ -62,10 +56,16 @@ function post(body: unknown) {
 }
 
 function reset() {
-  selectResult = [];
-  selectCallCount = 0;
-  updateCalls = [];
   insertCalls = [];
+  veridianCalls = [];
+  veridianResponses = new Map();
+}
+
+function okResult<T>(data: T) {
+  return { ok: true, status: 200, code: null, message: null, durationMs: 5, data };
+}
+function notFoundResult() {
+  return { ok: false, status: 404, code: null, message: "Task not found", durationMs: 5, data: null };
 }
 
 describe("POST /api/ai/apply", () => {
@@ -79,6 +79,7 @@ describe("POST /api/ai/apply", () => {
     expect(res.status).toBe(200);
     expect(body.results).toEqual([{ targetKey: "t1", verb: "MARK_STATUS", ok: false, reason: "Not approved" }]);
     expect(insertCalls.length).toBe(0);
+    expect(veridianCalls.length).toBe(0);
   });
 
   test("a verb outside the allowlist is refused and logged with reason verb_not_allowed", async () => {
@@ -96,6 +97,7 @@ describe("POST /api/ai/apply", () => {
     expect(logged.event).toBe("ai_link_proposal_refused");
     expect(logged.actor).toBe("u1");
     expect(logged.metadata).toEqual({ targetKey: "t1", verb: "DELETE_EVERYTHING", reason: "verb_not_allowed" });
+    expect(veridianCalls.length).toBe(0);
   });
 
   test("an approved, allowed verb with no targetKey is refused and logged with reason missing_target", async () => {
@@ -111,11 +113,11 @@ describe("POST /api/ai/apply", () => {
     expect(logged.metadata).toEqual({ targetKey: null, verb: "SET_DUE", reason: "missing_target" });
   });
 
-  test("an unfindable target gives the IDENTICAL message for a nonexistent id and a real id in another org (deliberately not distinguished)", async () => {
+  test("an unfindable target (id doesn't exist, or belongs to another org) gives the IDENTICAL message either way -- resolved now against the real pipeline_tasks table via VERIDIAN", async () => {
     mockCtx = ctx();
 
     reset();
-    selectResult = []; // stands in for "id doesn't exist at all"
+    veridianResponses.set("GET /tasks/nonexistent-id", notFoundResult());
     const resMissing = await POST(
       post({ proposals: [{ verb: "NOTE", targetKey: "nonexistent-id", approved: true, payload: { note: "x" } }] })
     );
@@ -123,8 +125,10 @@ describe("POST /api/ai/apply", () => {
     const loggedMissing = insertCalls[0].values as { metadata: Record<string, unknown> };
 
     reset();
-    selectResult = []; // the org filter lives in the real WHERE clause sent to Postgres, never reached here --
-    // an empty array is exactly what a real id belonging to a different org would also produce
+    // VERIDIAN's own GET /tasks/[id] already scopes id+orgId together, so a
+    // real id belonging to a different org 404s there too -- same response
+    // shape as a nonexistent id, nothing new to fake here.
+    veridianResponses.set("GET /tasks/real-id-other-org", notFoundResult());
     const resForeign = await POST(
       post({ proposals: [{ verb: "NOTE", targetKey: "real-id-other-org", approved: true, payload: { note: "x" } }] })
     );
@@ -148,10 +152,30 @@ describe("POST /api/ai/apply", () => {
     expect(loggedForeign.metadata.reason).toBe("target_not_found_or_foreign_org");
   });
 
-  test("a real approved MARK_STATUS applies the update and logs the applied event", async () => {
+  test("the upstream target-lookup failing (not a 404) is a distinct, non-security refusal -- and logs nothing, since nothing about the proposal was judged", async () => {
     reset();
     mockCtx = ctx();
-    selectResult = [{ id: "t1", organizationId: "org-1", done: false }];
+    veridianResponses.set("GET /tasks/t1", { ok: false, status: 504, code: "UPSTREAM_TIMEOUT", message: "slow", durationMs: 5000, data: null });
+
+    const res = await POST(post({ proposals: [{ verb: "MARK_STATUS", targetKey: "t1", approved: true, payload: { done: true } }] }));
+    const body = (await res.json()) as { results: { reason?: string }[] };
+
+    expect(body.results[0]).toEqual({ targetKey: "t1", verb: "MARK_STATUS", ok: false, reason: "Could not verify the target right now. Try again." });
+    expect(insertCalls.length).toBe(0);
+  });
+
+  // -----------------------------------------------------------------------
+  // Bug 1 fix -- the target is the REAL, live pipeline_tasks record (via
+  // VERIDIAN), not the orphaned local todos table. ASSIGN/SET_DUE/NOTE are
+  // honestly refused (pipeline_tasks has no such field); MARK_STATUS and
+  // DRAFT keep working for real.
+  // -----------------------------------------------------------------------
+
+  test("a real approved MARK_STATUS calls VERIDIAN's PATCH with status:'done' for {done:true}, and logs the applied event", async () => {
+    reset();
+    mockCtx = ctx();
+    veridianResponses.set("GET /tasks/t1", okResult({ task: { id: "t1", status: "to_do" } }));
+    veridianResponses.set("PATCH /tasks/t1", okResult({ task: { id: "t1", status: "done" } }));
 
     const res = await POST(
       post({ proposals: [{ verb: "MARK_STATUS", targetKey: "t1", approved: true, payload: { done: true } }] })
@@ -159,8 +183,8 @@ describe("POST /api/ai/apply", () => {
     const body = (await res.json()) as { results: unknown[] };
 
     expect(body.results).toEqual([{ targetKey: "t1", verb: "MARK_STATUS", ok: true }]);
-    expect(updateCalls.length).toBe(1);
-    expect(updateCalls[0].set).toEqual({ done: true });
+    const patchCall = veridianCalls.find((c) => c.path === "/tasks/t1" && c.options.method === "PATCH");
+    expect(patchCall?.options.body).toEqual({ status: "done" });
     expect(insertCalls.length).toBe(1);
     const logged = insertCalls[0].values as { event: string; actor: string; metadata: Record<string, unknown> };
     expect(logged.event).toBe("ai_link_mark_status_applied");
@@ -168,10 +192,82 @@ describe("POST /api/ai/apply", () => {
     expect(logged.metadata).toEqual({ organizationId: "org-1", targetKey: "t1", payload: { done: true } });
   });
 
+  test("MARK_STATUS with {done:false} reopens the task (status:'to_do')", async () => {
+    reset();
+    mockCtx = ctx();
+    veridianResponses.set("GET /tasks/t1", okResult({ task: { id: "t1", status: "done" } }));
+    veridianResponses.set("PATCH /tasks/t1", okResult({ task: { id: "t1", status: "to_do" } }));
+
+    const res = await POST(
+      post({ proposals: [{ verb: "MARK_STATUS", targetKey: "t1", approved: true, payload: { done: false } }] })
+    );
+    const body = (await res.json()) as { results: unknown[] };
+
+    expect(body.results).toEqual([{ targetKey: "t1", verb: "MARK_STATUS", ok: true }]);
+    const patchCall = veridianCalls.find((c) => c.path === "/tasks/t1" && c.options.method === "PATCH");
+    expect(patchCall?.options.body).toEqual({ status: "to_do" });
+  });
+
+  test("MARK_STATUS whose PATCH fails upstream is refused, not silently marked ok", async () => {
+    reset();
+    mockCtx = ctx();
+    veridianResponses.set("GET /tasks/t1", okResult({ task: { id: "t1", status: "to_do" } }));
+    veridianResponses.set("PATCH /tasks/t1", { ok: false, status: 400, code: null, message: "bad", durationMs: 5, data: null });
+
+    const res = await POST(
+      post({ proposals: [{ verb: "MARK_STATUS", targetKey: "t1", approved: true, payload: { done: true } }] })
+    );
+    const body = (await res.json()) as { results: { ok: boolean; reason?: string }[] };
+
+    expect(body.results[0].ok).toBe(false);
+    expect(body.results[0].reason).toBe("Could not update the task right now. Try again.");
+    // No "applied" event for a write that never actually happened.
+    expect(insertCalls.length).toBe(0);
+  });
+
+  test.each(["ASSIGN", "SET_DUE", "NOTE"] as const)(
+    "%s is honestly refused for a pipeline_tasks target -- no such field exists, so nothing is forced onto one that does",
+    async (verb) => {
+      reset();
+      mockCtx = ctx();
+      veridianResponses.set("GET /tasks/t1", okResult({ task: { id: "t1", status: "to_do" } }));
+
+      const res = await POST(post({ proposals: [{ verb, targetKey: "t1", approved: true, payload: {} }] }));
+      const body = (await res.json()) as { results: { ok: boolean; reason?: string }[] };
+
+      expect(body.results[0].ok).toBe(false);
+      expect(body.results[0].reason).toContain("Not supported yet");
+      // Never reaches a PATCH -- there is nothing to write.
+      const patchCall = veridianCalls.find((c) => c.options.method === "PATCH");
+      expect(patchCall).toBeUndefined();
+      expect(insertCalls.length).toBe(1);
+      const logged = insertCalls[0].values as { event: string; metadata: Record<string, unknown> };
+      expect(logged.event).toBe("ai_link_proposal_refused");
+      expect(logged.metadata.reason).toContain("field_not_supported_on_pipeline_tasks");
+    }
+  );
+
+  test("DRAFT still applies as a no-op (audit-log only) against a real pipeline_tasks target", async () => {
+    reset();
+    mockCtx = ctx();
+    veridianResponses.set("GET /tasks/t1", okResult({ task: { id: "t1", status: "to_do" } }));
+
+    const res = await POST(post({ proposals: [{ verb: "DRAFT", targetKey: "t1", approved: true, payload: { kind: "RFI response" } }] }));
+    const body = (await res.json()) as { results: unknown[] };
+
+    expect(body.results).toEqual([{ targetKey: "t1", verb: "DRAFT", ok: true }]);
+    const patchCall = veridianCalls.find((c) => c.options.method === "PATCH");
+    expect(patchCall).toBeUndefined();
+    expect(insertCalls.length).toBe(1);
+    const logged = insertCalls[0].values as { event: string };
+    expect(logged.event).toBe("ai_link_draft_applied");
+  });
+
   test("multiple proposals in one request each get their own independent result, in order", async () => {
     reset();
     mockCtx = ctx();
-    selectResult = [{ id: "t1", organizationId: "org-1", done: false }];
+    veridianResponses.set("GET /tasks/t1", okResult({ task: { id: "t1", status: "to_do" } }));
+    veridianResponses.set("PATCH /tasks/t1", okResult({ task: { id: "t1", status: "done" } }));
 
     const res = await POST(
       post({
@@ -189,12 +285,13 @@ describe("POST /api/ai/apply", () => {
       { targetKey: "t1", verb: "DELETE_EVERYTHING", ok: false, reason: "That action is not one this link is allowed to propose" },
       { targetKey: "t1", verb: "MARK_STATUS", ok: true },
     ]);
-    // Only the one real, approved proposal should have touched the db.
-    expect(updateCalls.length).toBe(1);
+    // Only the one real, approved, supported proposal should have PATCHed.
+    const patchCalls = veridianCalls.filter((c) => c.options.method === "PATCH");
+    expect(patchCalls.length).toBe(1);
     expect(insertCalls.length).toBe(2); // the DELETE_EVERYTHING refusal + the MARK_STATUS applied event
   });
 
-  test("requireAuth's own refusal short-circuits before the db is touched at all", async () => {
+  test("requireAuth's own refusal short-circuits before VERIDIAN or the db is touched at all", async () => {
     reset();
     mockCtx = {
       user: null,
@@ -206,12 +303,11 @@ describe("POST /api/ai/apply", () => {
     const res = await POST(post({ proposals: [{ verb: "MARK_STATUS", targetKey: "t1", approved: true }] }));
 
     expect(res.status).toBe(401);
-    expect(selectCallCount).toBe(0);
-    expect(updateCalls.length).toBe(0);
+    expect(veridianCalls.length).toBe(0);
     expect(insertCalls.length).toBe(0);
   });
 
-  test("an authenticated context with no organizationId is rejected before the db is touched", async () => {
+  test("an authenticated context with no organizationId is rejected before VERIDIAN or the db is touched", async () => {
     reset();
     mockCtx = { user: { id: "u1", email: "u1@example.com" }, organizationId: null, role: "member", response: null };
 
@@ -220,8 +316,7 @@ describe("POST /api/ai/apply", () => {
 
     expect(res.status).toBe(400);
     expect(body.error).toBe("No organization");
-    expect(selectCallCount).toBe(0);
-    expect(updateCalls.length).toBe(0);
+    expect(veridianCalls.length).toBe(0);
     expect(insertCalls.length).toBe(0);
   });
 });
