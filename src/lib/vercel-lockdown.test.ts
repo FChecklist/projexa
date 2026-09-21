@@ -1,27 +1,25 @@
 // R76 (2026-09-06) established this drift guard for the original all-branches-
 // blocked lockdown. R87 (2026-09-13, D158) revised the policy to a branch-name
-// + docs-path ignoreCommand after finding git.deploymentEnabled's "*" glob
-// never matched this repo's own branch-naming convention (feat/..., fix/...,
-// r87/..., etc.). Same test, same policy, as compliance-tracker's own
+// + docs-path ignoreCommand, then PROJEXA-E2E-001 (2026-09-20) revised it
+// again to a simpler VERCEL_ENV-based script that proceeded on
+// VERCEL_ENV=production so a Phase-B batch merge could go live in one build.
+// Same test, same policy, as compliance-tracker's own
 // src/lib/vercel-lockdown.test.ts (a separate repo, a separate vercel.json,
 // needs its own copy of this guard).
 //
-// PROJEXA-E2E-001 (2026-09-20, owner directive, quoted verbatim): "Confirm
-// the Ignored Build Step is live on both projects so only production can
-// build: `if [ "$VERCEL_ENV" = "production" ]; then exit 1; else exit 0; fi`.
-// Report the commit. Every branch and PR should then cost zero." This session
-// prepared the change on this branch per AGENTS.md Rule 9 (guardrail change,
-// owner instruction quoted in the PR) -- it is NOT merged to main yet. The
-// owner's own PROJEXA-E2E-001 methodology ("Phase A: nothing goes to main,
-// because main is what triggers a build... Phase B: one merge to main, one
-// build") means this repo's actual ignoreCommand stays on the R87 script
-// until Phase B's batch merge, at which point this branch's change lands
-// alongside it. Both scripts already achieve the load-bearing property (zero
-// preview builds on any non-main/non-production ref) -- this is a strictly
-// simpler, VERCEL_ENV-based mechanism replacing the git-diff-based one, not a
-// weakening: Vercel sets VERCEL_ENV=production only for the deployment
-// targeting the project's production branch, so this reads Vercel's own
-// classification instead of re-deriving it from a branch-name string compare.
+// PROJEXA-E2E-001, continued (2026-09-21, owner directive, quoted verbatim):
+// "WE NEED TO SPEND MINIMUM VERCEL CREDITS ... THAN WE GO LIVE BY RECHARGING
+// VERCEL." Investigated first, not just applied blind: both projects'
+// `live` flag was already `false` and every deployment PROJEXA-E2E-001's own
+// merges to main had triggered (dpl_HbGeekZ7.../dpl_EwyTrQAQ...) showed
+// readyState=BLOCKED with target=null -- the project-pause/spend-cap
+// backstop documented in R87's own findings was in fact catching every one
+// of them, so no real build/compute was spent by those merges. Tightening
+// anyway, on the owner's explicit instruction, rather than relying on that
+// backstop as the only line of defense: ignoreCommand is now unconditional
+// -- `exit 0` on every ref, VERCEL_ENV included -- so nothing here can ever
+// reach a real build again until the owner recharges and says go live,
+// at which point THIS is the one line that changes back.
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -42,23 +40,23 @@ function runIgnoreCommand(cmd: string, vercelEnv: string | undefined): number | 
   return proc.exitCode
 }
 
-describe("Vercel deploy lockdown (PROJEXA-E2E-001) -- ignoreCommand gates on VERCEL_ENV alone", () => {
+describe("Vercel deploy lockdown (PROJEXA-E2E-001, 2026-09-21) -- ignoreCommand skips unconditionally", () => {
   test("git.deploymentEnabled is not relied upon (still gone since R87)", () => {
     const v = readVercelJson()
     expect(v.git).toBeUndefined()
   })
 
-  test("ignoreCommand exists and references VERCEL_ENV, not branch name or git diff", () => {
+  test("ignoreCommand exists and does not branch on VERCEL_ENV, branch name, or git diff", () => {
     const v = readVercelJson()
     expect(typeof v.ignoreCommand).toBe("string")
-    expect(v.ignoreCommand).toContain("VERCEL_ENV")
+    expect(v.ignoreCommand).not.toContain("VERCEL_ENV")
     expect(v.ignoreCommand).not.toContain("VERCEL_GIT_COMMIT_REF")
     expect(v.ignoreCommand).not.toContain("git diff")
   })
 
-  test("VERCEL_ENV=production proceeds to build (exit 1)", () => {
+  test("VERCEL_ENV=production is skipped (exit 0) -- no build proceeds until the owner reverts this", () => {
     const v = readVercelJson()
-    expect(runIgnoreCommand(v.ignoreCommand, "production")).toBe(1)
+    expect(runIgnoreCommand(v.ignoreCommand, "production")).toBe(0)
   })
 
   test("VERCEL_ENV=preview is skipped (exit 0) -- every branch/PR build", () => {
