@@ -6,6 +6,12 @@
 // the same cookie without any request. A change to @supabase/ssr that stops accepting the cookie fails this test, not a CI browser job.
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register({ url: "http://localhost:3117/" })
+// A cookie is kept only for the page's own host, so when another test file registered the DOM first with no address, give it one.
+try {
+  ;(globalThis as { happyDOM?: { setURL: (url: string) => void } }).happyDOM?.setURL("http://localhost:3117/")
+} catch {
+  // the address is already the right one
+}
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { spawn, type ChildProcess } from "node:child_process"
