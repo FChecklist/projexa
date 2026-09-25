@@ -19,6 +19,11 @@ test("the BOQ screen renders its line items with the network offline after one o
   const session = await signInLocally(context);
   const gateway = await stubGateway(page, fixture, session.accessToken);
   const app = await stubAppApis(page, fixture, session);
+  // A request the browser refuses while offline never reaches the stub's `served` list, so failed gateway requests are counted here.
+  const gatewayFailures: string[] = [];
+  page.on("requestfailed", (request) => {
+    if (request.url().startsWith(GATEWAY_URL)) gatewayFailures.push(request.url());
+  });
 
   const legacyGrid = page.getByTestId("boq-legacy-detail-grid");
   // A description cell also holds the item code, so a line is found by the start of its text, not by the whole of it.
@@ -76,6 +81,7 @@ test("the BOQ screen renders its line items with the network offline after one o
 
   await test.step("offline: Refresh lines shows this BOQ's lines from the device copy", async () => {
     const before = gateway.served.length;
+    const failedBefore = gatewayFailures.length;
     await page.getByRole("button", { name: "Refresh lines" }).click();
     await expect(page.getByText(new RegExp(`Offline: showing the ${fixture.expected.own} lines of this BOQ saved on this device`))).toBeVisible();
     await expect(ownLine(1)).toBeVisible();
@@ -86,6 +92,7 @@ test("the BOQ screen renders its line items with the network offline after one o
     await expect(page.getByTestId("boq-explorer-row")).toHaveCount(Math.min(100, fixture.expected.own));
     // The screen did not ask the gateway while offline, and no error is shown.
     expect(gateway.served.length).toBe(before);
+    expect(gatewayFailures.length, "the screen tried the gateway while offline").toBe(failedBefore);
     expect(gateway.served.length).toBe(gatewayCallsOnline);
     await expect(page.getByRole("alert").filter({ hasText: /Couldn't load/ })).toHaveCount(0);
   });

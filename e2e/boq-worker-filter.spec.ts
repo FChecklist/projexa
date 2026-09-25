@@ -75,7 +75,9 @@ test("filtering a 10,907-line project runs in a Web Worker and no main-thread ta
     await expect(page.getByTestId("boq-explorer-row")).toHaveCount(Math.min(100, fixture.expected.formworkInProject));
     await page.waitForTimeout(500); // a long task is reported after it ends, so give the observer time to deliver
     const durations = await page.evaluate(() => (window as unknown as Measured).__boqLongTasks ?? []);
-    expect(Math.max(0, ...durations)).toBeLessThan(50);
+    // Printed on a pass too, so a run that is close to the limit can be seen and not only a run that crossed it.
+    console.log(`long tasks (50 ms or more) while typing "formwork", in ms: ${JSON.stringify(durations.map((d) => Math.round(d)))}; limit 50`);
+    expect(Math.max(0, ...durations), `main-thread tasks of 50 ms or more while typing, in ms: ${JSON.stringify(durations.map((d) => Math.round(d)))}`).toBeLessThan(50);
     await expect(panel).toHaveAttribute("data-filter-engine", "worker");
   });
 });
