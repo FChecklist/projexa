@@ -282,7 +282,8 @@ describe("a load that a newer one replaces", () => {
     net.release(); // the first load's page arrives late
     await sleep(150);
 
-    expect(view.queryByText("Villa 21 - Interior Fit-out")).toBeNull();
+    // Counts, not queryBy...().toBeNull(): a failed toBeNull() makes bun print the whole DOM element, which takes minutes.
+    expect(view.queryAllByText("Villa 21 - Interior Fit-out").length).toBe(0);
     expect(view.getByText("Villa 22")).toBeDefined();
     fireEvent.click(within(panel).getByRole("button", { name: "All BOQs in project" }));
     await waitFor(() => expect(view.getAllByTestId("boq-explorer-row").length).toBe(5));
@@ -297,7 +298,7 @@ describe("a load that a newer one replaces", () => {
     await view.findByText("Villa 22");
     net.release();
     await sleep(150);
-    expect(view.queryByText("Villa 21 - Interior Fit-out")).toBeNull();
+    expect(view.queryAllByText("Villa 21 - Interior Fit-out").length).toBe(0);
     expect(view.getByText("Villa 22")).toBeDefined();
   });
 
@@ -326,13 +327,13 @@ describe("a load that a newer one replaces", () => {
     await view.findByText("Villa 21 - Interior Fit-out");
     fireEvent.click(await view.findByRole("button", { name: "Refresh lines" }));
     await waitFor(() => expect(gatewayCalls).toBe(2)); // the Refresh is downloading, and the screen is in its loading state
-    expect(view.queryByRole("button", { name: "Refresh lines" })).toBeNull();
+    expect(view.queryAllByRole("button", { name: "Refresh lines" }).length).toBe(0);
     view.rerender(<ScopeObjectClient boqId="boq-2" readFlags={flags} />);
     await waitFor(() => expect(gatewayCalls).toBe(3)); // the newer load is downloading
 
     releases[2](); // the older load ends first
     await sleep(150);
-    expect(view.queryByRole("button", { name: "Refresh lines" })).toBeNull(); // still loading: the newer load is not done
+    expect(view.queryAllByRole("button", { name: "Refresh lines" }).length).toBe(0); // still loading: the newer load is not done
 
     releases[3]();
     await view.findByText("Villa 22");
