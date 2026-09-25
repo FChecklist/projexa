@@ -1,0 +1,217 @@
+/// <reference types="bun-types" />
+// PROJEXA-BUILD-001 U-33 (BR-419, BR-420 at unit level). The BOQ Object Page with the browser-first switches: off, it reads the usual way
+// and shows no search panel; with the gateway switch on it reads the line items from the gateway with the signed-in person's token; with
+// browser-first on it keeps a copy on the device and shows those lines again with no network. The end-to-end proof in a real browser is
+// e2e/boq-offline.spec.ts and e2e/boq-worker-filter.spec.ts.
+import "fake-indexeddb/auto";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+// Registering twice in one process throws, and `bun test` runs every file in ONE process.
+if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: mock(() => {}) }),
+  usePathname: () => "/scope/boq-1",
+}));
+mock.module("sonner", () => ({ toast: { success: mock(() => {}), error: mock(() => {}) } }));
+// The signed-in browser: a session with a token. The real module exports only createClient, so nothing else is lost by replacing it.
+mock.module("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: { getSession: async () => ({ data: { session: { access_token: "tok-user-1", user: { id: "user-1" } } } }) },
+  }),
+}));
+
+const ScopeObjectClient = (await import("./ScopeObjectClient")).default;
+const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
+const { clearBoqDeviceCopy } = await import("@/lib/boq-line-cache");
+const { BOQ_READ_GATEWAY_URL } = await import("@/lib/boq-gateway-client");
+
+const realFetch = globalThis.fetch;
+const onlineDescriptor = Object.getOwnPropertyDescriptor(globalThis.navigator, "onLine");
+
+function setOnline(value: boolean) {
+  Object.defineProperty(globalThis.navigator, "onLine", { value, configurable: true });
+}
+
+beforeEach(async () => {
+  await clearBoqDeviceCopy("user-1");
+});
+afterEach(async () => {
+  cleanup();
+  __resetCurrenciesCacheForTests();
+  globalThis.fetch = realFetch;
+  if (onlineDescriptor) Object.defineProperty(globalThis.navigator, "onLine", onlineDescriptor);
+  else setOnline(true);
+  await clearBoqDeviceCopy("user-1");
+});
+
+function jsonRes(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+const header = {
+  id: "boq-1", projectId: "proj-1", version: 1, title: "Villa 21 - Interior Fit-out", status: "approved", parentBoqId: null, createdAt: "2026-08-28T00:00:00.000Z",
+};
+
+function gline(n: number, boqId: string, description: string) {
+  return {
+    id: `line-${String(n).padStart(4, "0")}`, boqId, boqTitle: boqId === "boq-1" ? "Villa 21 - Interior Fit-out" : "Villa 22", boqVersion: 1,
+    boqStatus: boqId === "boq-1" ? "approved" : "draft", parentLineItemId: null, activityId: null, itemCode: `IC-${n}`, category: "Civil",
+    description, unit: "m3", quantity: "10", rate: "5", amount: "50", createdAt: "2026-09-01T00:00:00Z",
+  };
+}
+
+// 2 lines in this BOQ and 3 in another one of the same project.
+const PROJECT_LINES = [
+  gline(1, "boq-1", "Gateway slab"), gline(2, "boq-2", "Other BOQ steel"), gline(3, "boq-1", "Gateway column"),
+  gline(4, "boq-2", "Other BOQ paint"), gline(5, "boq-2", "Other BOQ tiles"),
+];
+
+type Seen = { gateway: Array<{ url: URL; headers: Record<string, string>; credentials?: RequestCredentials }>; scopeGets: string[] };
+
+/** Routes the fake global fetch. `gatewayUp` false makes the gateway unreachable, like a dropped connection. */
+function network(seen: Seen, gatewayUp: () => boolean) {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "http://localhost");
+    if (String(input).startsWith(BOQ_READ_GATEWAY_URL)) {
+      if (!gatewayUp()) throw new TypeError("Failed to fetch");
+      seen.gateway.push({ url, headers: (init?.headers ?? {}) as Record<string, string>, credentials: init?.credentials });
+      return jsonRes({ fn: "boq_lines", projectId: "proj-1", rows: PROJECT_LINES, nextAfter: null });
+    }
+    if (url.pathname === "/api/scope/boq-1") {
+      seen.scopeGets.push(url.pathname);
+      // The proxy's own line: must not be what the screen shows when the gateway switch is on.
+      return jsonRes({
+        ...header,
+        lineItems: [{ id: "proxy-1", itemCode: null, description: "Proxy line", unit: "m3", quantity: "1", rate: "1", amount: "1", activityId: null }],
+      });
+    }
+    if (url.pathname === "/api/vendors") return jsonRes({ vendors: [] });
+    if (url.pathname === "/api/currencies") return jsonRes({ currencies: [{ code: "AED", isBaseCurrency: true }] });
+    throw new Error(`unexpected fetch in test: ${url}`);
+  }) as typeof fetch;
+}
+
+function legacyTable(container: HTMLElement) {
+  return within(container.querySelector('[data-testid="boq-legacy-detail-grid"]') as HTMLElement);
+}
+
+describe("switches off", () => {
+  test("the page reads the usual way: no gateway request, no search panel, the proxy's line is shown", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [] };
+    network(seen, () => true);
+    const { container, findByText, queryByTestId } = render(<ScopeObjectClient boqId="boq-1" />);
+    await findByText("Villa 21 - Interior Fit-out");
+    expect(seen.gateway.length).toBe(0);
+    expect(queryByTestId("boq-line-explorer")).toBeNull();
+    expect(legacyTable(container).getByText("Proxy line")).toBeDefined();
+  });
+});
+
+describe("gateway switch on", () => {
+  const flags = { viaGateway: true, browserFirst: false };
+
+  test("the screen's lines come from the gateway, filtered to this BOQ, and the request carries the token as Bearer and no cookie", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [] };
+    network(seen, () => true);
+    const { container, findByText, queryByText, queryByTestId } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await findByText("Villa 21 - Interior Fit-out");
+    await waitFor(() => expect(legacyTable(container).getByText("Gateway slab")).toBeDefined());
+    expect(legacyTable(container).getByText("Gateway column")).toBeDefined();
+    expect(legacyTable(container).queryByText("Proxy line")).toBeNull();
+    expect(queryByText("Other BOQ steel")).toBeNull();
+    expect(queryByTestId("boq-line-explorer")).toBeNull();
+
+    expect(seen.gateway.length).toBe(1);
+    expect(seen.gateway[0].headers).toEqual({ Authorization: "Bearer tok-user-1" });
+    expect(seen.gateway[0].credentials).toBe("omit");
+    expect(seen.gateway[0].url.searchParams.get("projectId")).toBe("proj-1");
+  });
+
+  test("a gateway that answers 503 (its switch is off) leaves the screen readable through the proxy", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (String(input).startsWith(BOQ_READ_GATEWAY_URL)) return jsonRes({ error: "off" }, 503);
+      if (url.pathname === "/api/scope/boq-1") {
+        return jsonRes({ ...header, lineItems: [{ id: "proxy-1", itemCode: null, description: "Proxy line", unit: "m3", quantity: "1", rate: "1", amount: "1", activityId: null }] });
+      }
+      if (url.pathname === "/api/vendors") return jsonRes({ vendors: [] });
+      if (url.pathname === "/api/currencies") return jsonRes({ currencies: [] });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+    const { container, findByText } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await findByText("Villa 21 - Interior Fit-out");
+    await waitFor(() => expect(legacyTable(container).getByText("Proxy line")).toBeDefined());
+    expect(await findByText(/switched off, so this BOQ was read the usual way/)).toBeDefined();
+  });
+});
+
+describe("browser-first on", () => {
+  const flags = { viaGateway: true, browserFirst: true };
+
+  test("the search panel appears with the project's lines, the engine is named, and the scope switch reaches the other BOQs of the project", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [] };
+    network(seen, () => true);
+    const { findByTestId, findByText, getAllByTestId } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await findByText("Villa 21 - Interior Fit-out");
+    const panel = await findByTestId("boq-line-explorer");
+    expect(panel.getAttribute("data-indexed-lines")).toBe("5");
+    expect(["worker", "main"]).toContain(panel.getAttribute("data-filter-engine") ?? "");
+    await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(2));
+
+    fireEvent.click(within(panel).getByRole("button", { name: "All BOQs in project" }));
+    await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(5));
+    fireEvent.click(within(panel).getByRole("button", { name: "This BOQ" }));
+    await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(2));
+  });
+
+  test("after one online load the lines show again with no network: from the device copy, with the gateway never asked", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [] };
+    let up = true;
+    network(seen, () => up);
+    const first = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await first.findByText("Villa 21 - Interior Fit-out");
+    await waitFor(() => expect(legacyTable(first.container).getByText("Gateway slab")).toBeDefined());
+    expect(seen.gateway.length).toBe(1);
+    cleanup();
+
+    // The network goes away. The person opens the screen again (a fresh mount) and it must render from the device.
+    up = false;
+    setOnline(false);
+    const second = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await second.findByText("Villa 21 - Interior Fit-out");
+    await waitFor(() => expect(legacyTable(second.container).getByText("Gateway slab")).toBeDefined());
+    expect(legacyTable(second.container).getByText("Gateway column")).toBeDefined();
+    expect(seen.gateway.length).toBe(1);
+    expect(await second.findByText(/Offline: showing the 2 lines of this BOQ saved on this device/)).toBeDefined();
+    // the search panel works from the device copy too
+    await waitFor(() => expect(second.getAllByTestId("boq-explorer-row").length).toBe(2));
+  });
+
+  test("Refresh lines while offline shows the device copy instead of an error", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [] };
+    let up = true;
+    network(seen, () => up);
+    const view = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await view.findByText("Villa 21 - Interior Fit-out");
+    await waitFor(() => expect(legacyTable(view.container).getByText("Gateway slab")).toBeDefined());
+
+    up = false;
+    setOnline(false);
+    fireEvent.click(view.getByRole("button", { name: "Refresh lines" }));
+    expect(await view.findByText(/Offline: showing the 2 lines/)).toBeDefined();
+    await waitFor(() => expect(legacyTable(view.container).getByText("Gateway column")).toBeDefined());
+    expect(view.queryByRole("alert")).toBeNull();
+  });
+
+  test("offline with no copy saved says so", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [] };
+    network(seen, () => false);
+    setOnline(false);
+    const view = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    expect((await view.findByRole("alert")).textContent).toContain("has not been opened online on this device yet");
+    expect(seen.gateway.length).toBe(0);
+  });
+});

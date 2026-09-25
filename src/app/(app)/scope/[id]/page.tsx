@@ -1,4 +1,6 @@
 import ScopeObjectClient from "@/components/ScopeObjectClient";
+// PROJEXA-BUILD-001 U-33: the two browser-first switches are server environment values (default off); the client cannot read them.
+import { readBoqReadFlags } from "@/lib/boq-read-flags";
 
 // Real-screen conversion (2026-08-30): SCOPE/BOQ's first real Object Page
 // route, replacing ScopeClient.tsx's old "View" Dialog popup. Same thin
@@ -22,7 +24,7 @@ export default async function ScopeDetailPage({
   const { imported, attached } = await searchParams;
   return (
     <div className="flex-1">
-      <ScopeObjectClient boqId={id} importedNotice={imported ?? null} attachedFileName={attached ?? null} />
+      <ScopeObjectClient boqId={id} importedNotice={imported ?? null} attachedFileName={attached ?? null} readFlags={readBoqReadFlags()} />
     </div>
   );
 }
