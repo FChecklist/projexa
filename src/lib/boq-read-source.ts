@@ -77,6 +77,21 @@ export type BoqScreenLoad = {
   indexedLines: number
 }
 
+/** What the screen keeps about its last load, next to the BOQ and its lines. */
+export type BoqScreenState = Pick<BoqScreenLoad, "source" | "copySavedAt" | "copyStatus" | "indexedLines">
+
+/**
+ * The screen state after a load. A reload right after a write (afterWrite) reads through the proxy and does not touch the project search
+ * index or the device copy, so what the previous load left in them still stands: indexedLines and copyStatus carry over, and the search
+ * panel (shown while indexedLines is above 0) does not vanish until the person presses Refresh lines. The lines did come from the proxy,
+ * so source and copySavedAt describe this load.
+ */
+export function screenStateAfter(previous: BoqScreenState | null, loaded: BoqScreenLoad, afterWrite: boolean): BoqScreenState {
+  const own = { source: loaded.source, copySavedAt: loaded.copySavedAt }
+  if (afterWrite && previous) return { ...own, copyStatus: previous.copyStatus, indexedLines: previous.indexedLines }
+  return { ...own, copyStatus: loaded.copyStatus, indexedLines: loaded.indexedLines }
+}
+
 export type BoqSession = { accessToken: string; userId: string }
 
 export type BoqScreenDeps = {

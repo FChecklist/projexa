@@ -242,6 +242,63 @@ describe("browser-first on", () => {
   });
 });
 
+// Submit and Approve reload the BOQ through the proxy (afterWrite in src/lib/boq-read-source.ts). That reload does not refill the search
+// index, so the screen must keep showing the search panel over the index it still holds.
+describe("a reload after a write", () => {
+  const flags = { viaGateway: true, browserFirst: true };
+
+  test("Approve reloads through the proxy and the search panel stays, over the same index, without another project download", async () => {
+    let status = "submitted";
+    let gatewayCalls = 0;
+    let approvePosts = 0;
+    // The index is filled while this BOQ is submitted, so its rows carry that status.
+    const lines = PROJECT_LINES.map((l) => (l.boqId === "boq-1" ? { ...l, boqStatus: "submitted" } : l));
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (String(input).startsWith(BOQ_READ_GATEWAY_URL)) {
+        gatewayCalls += 1;
+        return jsonRes({ fn: "boq_lines", projectId: "proj-1", rows: lines, nextAfter: null });
+      }
+      if (url.pathname === "/api/scope/boq-1/approve" && init?.method === "POST") {
+        approvePosts += 1;
+        status = "approved";
+        return jsonRes({ ok: true });
+      }
+      if (url.pathname === "/api/scope/boq-1") return jsonRes({ ...header, status, lineItems: [] });
+      if (url.pathname === "/api/vendors") return jsonRes({ vendors: [] });
+      if (url.pathname === "/api/currencies") return jsonRes({ currencies: [{ code: "AED", isBaseCurrency: true }] });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+
+    const view = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    expect((await view.findByTestId("boq-line-explorer")).getAttribute("data-indexed-lines")).toBe("5");
+    expect(gatewayCalls).toBe(1);
+
+    fireEvent.click(await view.findByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(approvePosts).toBe(1));
+    // The reload has ended when the Approve button is gone (the BOQ reads approved now) and the toolbar is back.
+    await waitFor(() => {
+      expect(view.queryAllByRole("button", { name: "Approve" }).length).toBe(0);
+      expect(view.queryAllByRole("button", { name: "Refresh lines" }).length).toBe(1);
+    });
+
+    const panels = view.queryAllByTestId("boq-line-explorer");
+    expect(panels.length).toBe(1);
+    expect(panels[0].getAttribute("data-indexed-lines")).toBe("5");
+    expect(gatewayCalls).toBe(1); // the project was not downloaded again
+
+    // The index still holds the status this BOQ had when it was filled; the panel labels this BOQ from the screen instead.
+    fireEvent.click(within(panels[0]).getByRole("button", { name: "All BOQs in project" }));
+    await waitFor(() => expect(view.getAllByTestId("boq-explorer-row").length).toBe(5));
+    const own = view.getAllByTestId("boq-explorer-row").map((r) => r.textContent ?? "").filter((t) => t.includes("Gateway "));
+    expect(own.length).toBe(2);
+    for (const text of own) {
+      expect(text).toContain("(approved)");
+      expect(text.includes("(submitted)")).toBe(false);
+    }
+  });
+});
+
 // The screen's load() can run again while an earlier run is still going, and both share one search index. Only the newest run may change
 // the screen or the index (isCurrent in src/lib/boq-read-source.ts, the load counter in ScopeObjectClient.tsx).
 describe("a load that a newer one replaces", () => {

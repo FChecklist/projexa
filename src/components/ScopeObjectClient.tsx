@@ -39,7 +39,7 @@ import { formatDateTime } from "@/lib/format-date";
 // same ones as before.
 import { BOQ_READ_FLAGS_OFF, type BoqReadFlags } from "@/lib/boq-read-flags";
 import { createBoqFilterClient, type BoqFilterClient } from "@/lib/boq-filter-client";
-import { BoqLoadSuperseded, loadBoqForScreen, readBoqCompare, readProjectBoqs, type BoqScreenLoad } from "@/lib/boq-read-source";
+import { BoqLoadSuperseded, loadBoqForScreen, readBoqCompare, readProjectBoqs, screenStateAfter, type BoqScreenState } from "@/lib/boq-read-source";
 import BoqLineExplorer from "@/components/BoqLineExplorer";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
@@ -92,7 +92,7 @@ export default function ScopeObjectClient({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // U-33: where the last load came from, and the project search index it filled (browser-first only).
-  const [screenLoad, setScreenLoad] = useState<Pick<BoqScreenLoad, "source" | "copySavedAt" | "copyStatus" | "indexedLines"> | null>(null);
+  const [screenLoad, setScreenLoad] = useState<BoqScreenState | null>(null);
   const filterRef = useRef<BoqFilterClient | null>(null);
   // Which load is the newest. load() can run again while an earlier run is still going (the route moved to another BOQ, a submit or
   // approve reloaded the page, React's development double-mount), and every run shares the one search index above. Only the newest
@@ -149,7 +149,8 @@ export default function ScopeObjectClient({
       setRows(loaded.lines);
       setVendors(vendorsData.vendors ?? []);
       setFilterClient(filter);
-      setScreenLoad({ source: loaded.source, copySavedAt: loaded.copySavedAt, copyStatus: loaded.copyStatus, indexedLines: loaded.indexedLines });
+      // A reload after a write does not refill the search index, so the index and the device copy keep what the last load left in them.
+      setScreenLoad((prev) => screenStateAfter(prev, loaded, opts.afterWrite === true));
       setLoadError(null);
       // The revision banners are network reads and none of them is needed to read the scope: skipped when the lines came from the device.
       if (loaded.source !== "device-copy") void loadRevisionContext(loaded.boq);
@@ -582,7 +583,10 @@ export default function ScopeObjectClient({
 
       {/* U-33 (E-10): the project line search. Its index lives in a Web Worker and is filled by load() above. */}
       {filterClient && screenLoad && screenLoad.indexedLines > 0 && (
-        <BoqLineExplorer client={filterClient} boqId={boqId} indexedLines={screenLoad.indexedLines} />
+        <BoqLineExplorer
+          client={filterClient} boqId={boqId} indexedLines={screenLoad.indexedLines}
+          current={{ boqTitle: boq.title, boqVersion: boq.version, boqStatus: boq.status }}
+        />
       )}
 
       {rows.length === 0 ? (

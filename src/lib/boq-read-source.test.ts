@@ -14,6 +14,7 @@ import {
   headerOf,
   loadBoqForScreen,
   orderLinesForBoq,
+  screenStateAfter,
   toBoqLineItemRow,
   type BoqScreenDeps,
   type BoqWithLines,
@@ -457,6 +458,39 @@ describe("two loads that overlap on one search index", () => {
     const out = await loadBoqForScreen({ boqId: BOQ, flags, filter }, deps({ fetchAllBoqLines: twoPages() }, { lines: [] }).d)
     expect(out).toMatchObject({ source: "gateway", copyStatus: "saved", indexedLines: 6 })
     expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
+  })
+})
+
+// After a submit or an approve the screen reloads through the proxy. That load returns indexedLines 0 because it did not touch the search
+// index, but the index is still filled, and the screen shows its search panel only while indexedLines is above 0.
+describe("screenStateAfter", () => {
+  const flags = { viaGateway: true, browserFirst: true }
+
+  test("a reload after a write keeps the index count and the copy status the previous load left, and takes the source from this load", async () => {
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const { d } = deps()
+    const first = await loadBoqForScreen({ boqId: BOQ, flags, filter }, d)
+    expect(first).toMatchObject({ source: "gateway", copyStatus: "saved", indexedLines: 10_907 })
+    const second = await loadBoqForScreen({ boqId: BOQ, flags, filter, afterWrite: true }, d)
+    expect(second).toMatchObject({ source: "rest", copyStatus: "off", indexedLines: 0 }) // what the proxy load itself reports
+
+    const state = screenStateAfter(first, second, true)
+    expect(state).toEqual({ source: "rest", copySavedAt: null, copyStatus: "saved", indexedLines: 10_907 })
+    // and the index really is still full, so the carried count is true
+    expect((await filter.filter({ query: "", boqId: null, limit: 1 })).total).toBe(10_907)
+  })
+
+  test("a copy that could not be saved stays reported as not saved after a write", () => {
+    const previous = { source: "gateway" as const, copySavedAt: null, copyStatus: "failed" as const, indexedLines: 12 }
+    const loaded = { boq: headerOf(restHeader), lines: [], source: "rest" as const, copySavedAt: null, copyStatus: "off" as const, indexedLines: 0 }
+    expect(screenStateAfter(previous, loaded, true)).toEqual({ source: "rest", copySavedAt: null, copyStatus: "failed", indexedLines: 12 })
+  })
+
+  test("an ordinary load, and a reload after a write when there was no earlier load, report what that load says", () => {
+    const previous = { source: "gateway" as const, copySavedAt: null, copyStatus: "saved" as const, indexedLines: 12 }
+    const loaded = { boq: headerOf(restHeader), lines: [], source: "gateway" as const, copySavedAt: null, copyStatus: "saved" as const, indexedLines: 3 }
+    expect(screenStateAfter(previous, loaded, false).indexedLines).toBe(3)
+    expect(screenStateAfter(null, loaded, true).indexedLines).toBe(3)
   })
 })
 

@@ -16,8 +16,17 @@ import { EMPTY_VALUE, formatDecimal } from "@/lib/format-number";
 import { useOrgMoney } from "@/lib/use-org-money";
 import type { BoqFilterClient } from "@/lib/boq-filter-client";
 import type { BoqFilterResult } from "@/lib/boq-filter-engine";
+import type { GatewayBoqLine } from "@/lib/boq-gateway-client";
 
 const WINDOW_ROWS = 100;
+
+type BoqLabel = Pick<GatewayBoqLine, "boqTitle" | "boqVersion" | "boqStatus">;
+
+/** The "Title · Rev1 (status)" text of a row in the project scope. A row of the screen's own BOQ is labelled from `current` when given. */
+function boqCaption(line: GatewayBoqLine, boqId: string, current: BoqLabel | undefined): string {
+  const label: BoqLabel = line.boqId === boqId && current ? current : line;
+  return `${label.boqTitle} · ${revisionLabel(label.boqVersion)} (${label.boqStatus})`;
+}
 
 type Scope = "boq" | "project";
 
@@ -25,12 +34,18 @@ export default function BoqLineExplorer({
   client,
   boqId,
   indexedLines,
+  current,
 }: {
   client: BoqFilterClient;
   /** The BOQ this page was opened for: the "This BOQ" scope. */
   boqId: string;
   /** Lines in the index. A new value means the index was refilled, so the last answer is stale. */
   indexedLines: number;
+  /**
+   * This BOQ as the screen has it now. The index is not refilled after a submit or an approve, so its rows of this BOQ still carry the
+   * old status; in the project scope they are labelled from this instead.
+   */
+  current?: BoqLabel;
 }) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<Scope>("boq");
@@ -131,7 +146,7 @@ export default function BoqLineExplorer({
                     <td className="px-3 py-1.5 text-right tabular-nums">{orgMoney.money(line.amount)}</td>
                     {scope === "project" && (
                       <td className="px-3 py-1.5 text-ct-muted">
-                        {line.boqTitle} · {revisionLabel(line.boqVersion)} ({line.boqStatus})
+                        {boqCaption(line, boqId, current)}
                       </td>
                     )}
                   </tr>

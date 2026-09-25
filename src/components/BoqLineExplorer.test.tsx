@@ -93,6 +93,27 @@ describe("BoqLineExplorer", () => {
     expect(getAllByTestId("boq-explorer-row")[1].textContent).toContain("Villa 21 · Rev0 (superseded)");
   });
 
+  test("in the project scope this BOQ's own rows are labelled from `current`, because the index still holds the status they had when it was filled", async () => {
+    stubCurrencies();
+    // The index was filled while boq-a was submitted; the person has approved it since and the index was not refilled.
+    const client = await filled([
+      line(1, { boqId: "boq-a", boqTitle: "Villa 21", boqVersion: 1, boqStatus: "submitted", description: "Slab" }),
+      line(2, { boqId: "boq-b", boqTitle: "Villa 22", boqVersion: 1, boqStatus: "draft", description: "Steel" }),
+    ]);
+    const current = { boqTitle: "Villa 21", boqVersion: 1, boqStatus: "approved" };
+    const { getAllByTestId, getByRole } = render(<BoqLineExplorer client={client} boqId="boq-a" indexedLines={2} current={current} />);
+    await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(1));
+    fireEvent.click(getByRole("button", { name: "All BOQs in project" }));
+    await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(2));
+    const rows = getAllByTestId("boq-explorer-row").map((r) => r.textContent ?? "");
+    const own = rows.find((t) => t.includes("Slab")) ?? "";
+    const other = rows.find((t) => t.includes("Steel")) ?? "";
+    expect(own).toContain("Villa 21 · Rev0 (approved)");
+    expect(own.includes("(submitted)")).toBe(false);
+    // another BOQ of the project keeps the label the index holds for it
+    expect(other).toContain("Villa 22 · Rev0 (draft)");
+  });
+
   test("names the engine: a worker client says background worker, a main-thread client says main thread", async () => {
     stubCurrencies();
     const worker = await filled([line(1)]);
