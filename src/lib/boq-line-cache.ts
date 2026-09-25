@@ -12,13 +12,22 @@
 // `project:<id>` record flip to the new generation. A download that stops halfway therefore leaves the previous complete copy readable
 // and the half-written chunks unreachable, never a mixed list. Reading checks that every chunk the record names is present and that the
 // line count matches before it calls the copy complete.
+//
+// TWO WRITERS FOR ONE PROJECT (two tabs, or two loads of one screen). Each commit swaps the record in one IndexedDB transaction that also
+// tells it which copy it replaced, and removes exactly that copy's chunks. It never removes another generation's chunks just because
+// they are not its own: those may belong to a download that is still running, and taking them would let that download commit a record
+// whose chunks are gone. Chunks left by a download that stopped (a closed tab) carry the time their writer started in their generation
+// id and are removed by a later commit once they are older than BOQ_CACHE_ORPHAN_AFTER_MS.
 
-import { clear, createStore, del, get, keys, set, type UseStore } from "idb-keyval"
+import { clear, createStore, del, get, keys, set, update, type UseStore } from "idb-keyval"
 import type { Boq } from "./boq-helpers"
 import type { GatewayBoqLine } from "./boq-gateway-client"
 
 /** Rows per stored chunk. A chunk is one structured clone, so this bounds the work of a single read or write. */
 export const BOQ_CACHE_CHUNK_ROWS = 500
+
+/** Chunks whose writer started longer ago than this, and that no record names, were left by a download that stopped. */
+export const BOQ_CACHE_ORPHAN_AFTER_MS = 24 * 60 * 60 * 1000
 
 const storesByScope = new Map<string, UseStore>()
 
@@ -39,6 +48,24 @@ const headerKey = (boqId: string) => `boq:${boqId}`
 const projectKey = (projectId: string) => `project:${projectId}`
 const chunkKey = (projectId: string, generation: string, n: number) => `lines:${projectId}:${generation}:${n}`
 const chunkPrefix = (projectId: string) => `lines:${projectId}:`
+
+/** "<start time in ms>-<random>". The start time is what lets a later save tell a stopped download's chunks from a running one's. */
+const newGeneration = (now: () => Date) => `${now().getTime()}-${Math.random().toString(36).slice(2, 8)}`
+
+/** When the writer of this generation started, or null for an id that does not carry a time (those are never removed by age). */
+function generationStartedAt(generation: string): number | null {
+  const m = /^(\d{10,})-/.exec(generation)
+  return m ? Number(m[1]) : null
+}
+
+/** The generation part of one of this project's chunk keys, or null for any other key. */
+function generationOfChunkKey(projectId: string, key: string): string | null {
+  const prefix = chunkPrefix(projectId)
+  if (!key.startsWith(prefix)) return null
+  const rest = key.slice(prefix.length)
+  const cut = rest.lastIndexOf(":")
+  return cut > 0 ? rest.slice(0, cut) : null
+}
 
 function isProjectRecord(v: unknown): v is ProjectRecord {
   const r = v as ProjectRecord | null
@@ -70,7 +97,7 @@ export async function readBoqHeader(scope: string, boqId: string): Promise<{ hea
 export type ProjectLineWriter = {
   /** Buffers a page and writes every full chunk. */
   addPage: (rows: readonly GatewayBoqLine[]) => Promise<void>
-  /** Writes the last partial chunk, then makes this copy the readable one and removes the older copy's chunks. */
+  /** Writes the last partial chunk, then makes this copy the readable one and removes the chunks of the copy it replaced. */
   commit: () => Promise<{ total: number; savedAt: string }>
   /** Removes what this writer has written so far. The previous complete copy is untouched. */
   abort: () => Promise<void>
@@ -84,7 +111,7 @@ export function openProjectLineWriter(
   const store = storeFor(scope)
   const chunkRows = options.chunkRows ?? BOQ_CACHE_CHUNK_ROWS
   const now = options.now ?? (() => new Date())
-  const generation = options.generation ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  const generation = options.generation ?? newGeneration(now)
   let buffer: GatewayBoqLine[] = []
   let chunks = 0
   let total = 0
@@ -116,13 +143,32 @@ export function openProjectLineWriter(
       await flush()
       finished = true
       const savedAt = now().toISOString()
-      await set(projectKey(projectId), { generation, chunks, total, savedAt } satisfies ProjectRecord, store)
-      // Older generations are unreachable now. Removing them is tidying, so a failure here must not fail the save.
+      // One transaction swaps the record and reports which copy it replaced (an object, so the assignment inside the callback is seen).
+      const swap: { replaced: ProjectRecord | null } = { replaced: null }
+      await update<unknown>(
+        projectKey(projectId),
+        (old) => {
+          swap.replaced = isProjectRecord(old) ? old : null
+          return { generation, chunks, total, savedAt } satisfies ProjectRecord
+        },
+        store
+      )
+      // The replaced copy is unreachable now, and so are chunks a stopped download left behind. Removing them is tidying, so a failure
+      // here must not fail the save; it is left for the next one.
       try {
-        const stale = (await keys(store)).filter(
-          (k): k is string => typeof k === "string" && k.startsWith(chunkPrefix(projectId)) && !k.startsWith(`${chunkPrefix(projectId)}${generation}:`)
-        )
-        for (const k of stale) await del(k, store)
+        const replaced = swap.replaced
+        if (replaced && replaced.generation !== generation) {
+          for (let n = 0; n < replaced.chunks; n++) await del(chunkKey(projectId, replaced.generation, n), store)
+        }
+        const cutoff = now().getTime() - BOQ_CACHE_ORPHAN_AFTER_MS
+        const orphans = (await keys(store)).filter((k): k is string => {
+          if (typeof k !== "string") return false
+          const other = generationOfChunkKey(projectId, k)
+          if (other === null || other === generation) return false
+          const startedAt = generationStartedAt(other)
+          return startedAt !== null && startedAt < cutoff
+        })
+        for (const k of orphans) await del(k, store)
       } catch {
         // left for the next successful save
       }

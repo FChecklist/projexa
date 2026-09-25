@@ -98,6 +98,64 @@ describe("the project line copy", () => {
     expect(chunkKeys.length).toBe(2)
   })
 
+  test("two writers for one project: a commit removes only the copy it replaced, never the chunks of a download that is still running", async () => {
+    // Writer A is mid-download: two full chunks are stored, the rest is buffered, and no record names its generation yet.
+    const a = openProjectLineWriter(USER_A, "proj-1", { chunkRows: 100, generation: "gen-a" })
+    await a.addPage(Array.from({ length: 250 }, (_, i) => line(i + 1)))
+    // Writer B (a second tab, or a second load of the screen) downloads the same project and saves first.
+    const b = openProjectLineWriter(USER_A, "proj-1", { chunkRows: 100, generation: "gen-b" })
+    await b.addPage(Array.from({ length: 120 }, (_, i) => line(1000 + i)))
+    await b.commit()
+    expect((await load(USER_A, "proj-1")).info?.total).toBe(120)
+    // A finishes afterwards: its chunks must still be there, so the record it writes names a copy that can be read whole.
+    await a.addPage(Array.from({ length: 50 }, (_, i) => line(300 + i)))
+    expect((await a.commit()).total).toBe(300)
+    const { info, got } = await load(USER_A, "proj-1")
+    expect(info?.total).toBe(300)
+    expect(new Set(got.map((r) => r.id)).size).toBe(300)
+    // The copy A replaced was B's, and B's chunks are gone; only A's remain.
+    const store = createStore(`projexa-boq-cache::${USER_A}`, "cache")
+    const chunkKeys = (await keys(store)).map(String).filter((k) => k.startsWith("lines:proj-1:"))
+    expect(chunkKeys.length).toBe(3)
+    expect(chunkKeys.every((k) => k.startsWith("lines:proj-1:gen-a:"))).toBe(true)
+  })
+
+  test("two writers for one project, the other way round: the later commit is the readable copy and the earlier copy's chunks are removed", async () => {
+    const a = openProjectLineWriter(USER_A, "proj-1", { chunkRows: 100, generation: "gen-a" })
+    await a.addPage(Array.from({ length: 250 }, (_, i) => line(i + 1)))
+    const b = openProjectLineWriter(USER_A, "proj-1", { chunkRows: 100, generation: "gen-b" })
+    await b.addPage(Array.from({ length: 120 }, (_, i) => line(1000 + i)))
+    await a.commit()
+    expect((await load(USER_A, "proj-1")).info?.total).toBe(250)
+    await b.commit()
+    const { info, got } = await load(USER_A, "proj-1")
+    expect(info?.total).toBe(120)
+    expect(got.length).toBe(120)
+    const store = createStore(`projexa-boq-cache::${USER_A}`, "cache")
+    const chunkKeys = (await keys(store)).map(String).filter((k) => k.startsWith("lines:proj-1:"))
+    expect(chunkKeys.every((k) => k.startsWith("lines:proj-1:gen-b:"))).toBe(true)
+  })
+
+  test("chunks left by a download that stopped are removed by a later save once a day old; a younger download's chunks and other projects' stay", async () => {
+    const now = new Date("2026-09-25T10:00:00Z")
+    const t = now.getTime()
+    const day = 24 * 60 * 60 * 1000
+    const store = createStore(`projexa-boq-cache::${USER_A}`, "cache")
+    await set(`lines:proj-1:${t - 2 * day}-stale1:0`, [line(1)], store) // a stopped download from two days ago
+    await set(`lines:proj-1:${t - 60_000}-live01:0`, [line(2)], store) // a download that started a minute ago and may still be running
+    await set("lines:proj-1:hand-made:0", [line(3)], store) // an id that carries no start time is never removed by age
+    await set(`lines:proj-2:${t - 2 * day}-other1:0`, [line(4)], store) // another project's chunks are not this save's business
+    await save(USER_A, "proj-1", 20, { now: () => now })
+    const remaining = (await keys(store)).map(String).filter((k) => k.startsWith("lines:"))
+    expect(remaining.some((k) => k.includes("-stale1:"))).toBe(false)
+    expect(remaining.some((k) => k.includes("-live01:"))).toBe(true)
+    expect(remaining).toContain("lines:proj-1:hand-made:0")
+    expect(remaining.some((k) => k.startsWith("lines:proj-2:"))).toBe(true)
+    // its own copy is there, under a generation id that starts with the time the writer started
+    expect(remaining.filter((k) => k.startsWith(`lines:proj-1:${t}-`)).length).toBe(1)
+    expect((await load(USER_A, "proj-1")).info?.total).toBe(20)
+  })
+
   test("a copy with a missing chunk is reported as absent before any line is streamed", async () => {
     await save(USER_A, "proj-1", 300, { chunkRows: 100, generation: "g1" })
     const store = createStore(`projexa-boq-cache::${USER_A}`, "cache")
