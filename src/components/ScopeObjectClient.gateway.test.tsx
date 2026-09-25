@@ -301,6 +301,44 @@ describe("a load that a newer one replaces", () => {
     expect(view.getByText("Villa 22")).toBeDefined();
   });
 
+  test("the screen stays in its loading state until the newest load ends: an older load that ends first does not bring the Refresh button back", async () => {
+    const flags = { viaGateway: true, browserFirst: true };
+    // Gateway request 1 answers at once (the first load, which finishes). Requests 2 (a Refresh) and 3 (the load after the route moved
+    // to another BOQ) are held until the test opens them.
+    const releases: Array<() => void> = [];
+    let gatewayCalls = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (String(input).startsWith(BOQ_READ_GATEWAY_URL)) {
+        gatewayCalls += 1;
+        const n = gatewayCalls;
+        if (n >= 2) await new Promise<void>((resolve) => { releases[n] = resolve; });
+        return jsonRes({ fn: "boq_lines", projectId: "proj-1", rows: PROJECT_LINES, nextAfter: null });
+      }
+      if (url.pathname === "/api/scope/boq-1") return jsonRes({ ...header, lineItems: [] });
+      if (url.pathname === "/api/scope/boq-2") return jsonRes({ ...header2, lineItems: [] });
+      if (url.pathname === "/api/vendors") return jsonRes({ vendors: [] });
+      if (url.pathname === "/api/currencies") return jsonRes({ currencies: [{ code: "AED", isBaseCurrency: true }] });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+
+    const view = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await view.findByText("Villa 21 - Interior Fit-out");
+    fireEvent.click(await view.findByRole("button", { name: "Refresh lines" }));
+    await waitFor(() => expect(gatewayCalls).toBe(2)); // the Refresh is downloading, and the screen is in its loading state
+    expect(view.queryByRole("button", { name: "Refresh lines" })).toBeNull();
+    view.rerender(<ScopeObjectClient boqId="boq-2" readFlags={flags} />);
+    await waitFor(() => expect(gatewayCalls).toBe(3)); // the newer load is downloading
+
+    releases[2](); // the older load ends first
+    await sleep(150);
+    expect(view.queryByRole("button", { name: "Refresh lines" })).toBeNull(); // still loading: the newer load is not done
+
+    releases[3]();
+    await view.findByText("Villa 22");
+    expect(view.getByRole("button", { name: "Refresh lines" })).toBeDefined();
+  });
+
   test("leaving the screen while it is downloading drops the load: no device copy is saved afterwards", async () => {
     const net = twoBoqNetwork("gateway");
     const view = render(<ScopeObjectClient boqId="boq-1" readFlags={{ viaGateway: true, browserFirst: true }} />);

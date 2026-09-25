@@ -378,6 +378,27 @@ describe("two loads that overlap on one search index", () => {
     expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
   })
 
+  test("an older load that wakes up offline, after a newer offline load filled the index from the device copy, does not empty it", async () => {
+    await loadBoqForScreen({ boqId: BOQ, flags, filter: null }, deps({ fetchAllBoqLines: twoPages(), cache: smallChunks }, { lines: [] }).d)
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const hold = gate()
+    let current = 1
+    const slowSession = deps({
+      getSession: async () => {
+        hold.reached()
+        await hold.opened
+        return { accessToken: "tok-1", userId: USER }
+      },
+    }, { lines: [], online: false })
+    const first = outcome(loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 1 }, slowSession.d))
+    await hold.arrived
+    current = 2
+    await loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 2 }, deps({}, { lines: [], online: false }).d)
+    hold.open()
+    expect(await first).toBeInstanceOf(BoqLoadSuperseded)
+    expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
+  })
+
   test("the same rule holds when the lines come from the device copy: an older load stops adding chunks once a newer one started", async () => {
     // First an online load saves a six-line copy in three chunks of two.
     await loadBoqForScreen({ boqId: BOQ, flags, filter: null }, deps({ fetchAllBoqLines: twoPages(), cache: smallChunks }, { lines: [] }).d)
