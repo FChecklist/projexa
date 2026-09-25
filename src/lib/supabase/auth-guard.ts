@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "./server";
 import { getClaimsWithRetry } from "./get-claims-with-retry";
 import { recordRequestOrg } from "@/lib/request-timing";
+import { recordVerifiedActingPerson } from "@/lib/acting-person-context";
 
 export type AuthUser = { id: string; email: string | null };
 
@@ -177,6 +178,15 @@ export async function requireAuth(): Promise<AuthContext> {
   // route added tomorrow gets it for free. A pure record: it reads nothing and
   // changes no behaviour, and outside a withTiming() scope it is a no-op.
   recordRequestOrg(membership.organization_id);
+
+  // PROJEXA-BUILD-001 U-20b: this request's acting person, for every VERIDIAN
+  // call it makes from here on (veridian-client turns it into X-Acting-User /
+  // X-Acting-User-Email; see acting-person-context.ts). Recorded HERE and only
+  // here: `user` is the verified JWT's own `sub` and `email`, never anything the
+  // request carried, and only once the caller is known to belong to an org --
+  // every failure branch above returns a response and makes no VERIDIAN call.
+  // Outside a withTiming() scope (a server component) this is a no-op.
+  recordVerifiedActingPerson(user);
 
   return { user, organizationId: membership.organization_id, role: membership.role, response: null };
 }

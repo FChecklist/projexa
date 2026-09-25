@@ -1,6 +1,10 @@
 import { db, veridianCredentials } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { unstable_cache } from "next/cache";
+// U-20b: the cross-request cache every VERIDIAN read in this repo goes
+// through -- Next's unstable_cache with the fill run as nobody, so the acting
+// person attached below can never end up in a value served to someone else.
+import { personFreeCache } from "@/lib/person-free-cache";
+import { currentActingPerson, type ActingPerson } from "@/lib/acting-person-context";
 // R67 F-28: every settled upstream call adds its wall time to the current
 // request's ledger, which is how withTiming() can report `upstream` and `app`
 // separately without any route handler threading a timer through its calls.
@@ -580,14 +584,64 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
 // first cut put the email in the query string (`?actorEmail=`) so that a GET
 // could identify its caller -- which contradicts the sentence above, and an
 // email address is MORE identifying than an opaque Supabase id, not less.
+//
+// PROJEXA-BUILD-001 U-20b -- SENT ON EVERY CALL, NOT JUST THE ONES THAT ASK.
+// compliance-tracker now answers an API-key write that names nobody with 400
+// ACTING_USER_REQUIRED, and ~140 route files call this client. Rather than
+// each one threading ctx.user through, a call that passes NEITHER option picks
+// up the request's verified session user from acting-person-context.ts
+// (requireAuth() records it inside the scope withTiming() opens). Rules:
+//   - An explicit actingUserId / actingUserEmail always wins, and wins AS A
+//     PAIR: if a call site names anyone, nothing is filled in from the
+//     session, because VERIDIAN resolves the id before the email and a mixed
+//     pair (session id + someone else's email) would silently attribute the
+//     write to the session user.
+//   - No scope, no session (webhooks, inbound email, scripts, server
+//     components, provisioning) means no headers, exactly as before.
+//   - Nothing here ever reads the inbound request: the outbound headers are
+//     built from scratch below, so an X-Acting-User sent by a browser is never
+//     forwarded.
+//   - Cross-request caches fill as nobody (person-free-cache.ts), so a cached
+//     value never carries the person who happened to fill it.
 export const ACTING_USER_HEADER = "X-Acting-User";
 export const ACTING_USER_EMAIL_HEADER = "X-Acting-User-Email";
 
-function actingUserHeaders(actingUserId?: string, actingUserEmail?: string): Record<string, string> {
+type ActingIdentity = { actingUserId?: string; actingUserEmail?: string; fromSession: ActingPerson | null };
+
+function resolveActingIdentity(actingUserId?: string, actingUserEmail?: string): ActingIdentity {
+  if (actingUserId || actingUserEmail) return { actingUserId, actingUserEmail, fromSession: null };
+  const person = currentActingPerson();
+  if (!person) return { fromSession: null };
+  return { actingUserId: person.userId, actingUserEmail: person.email ?? undefined, fromSession: person };
+}
+
+function actingUserHeaders(identity: ActingIdentity): Record<string, string> {
   return {
-    ...(actingUserId ? { [ACTING_USER_HEADER]: actingUserId } : {}),
-    ...(actingUserEmail ? { [ACTING_USER_EMAIL_HEADER]: actingUserEmail } : {}),
+    ...(identity.actingUserId ? { [ACTING_USER_HEADER]: identity.actingUserId } : {}),
+    ...(identity.actingUserEmail ? { [ACTING_USER_EMAIL_HEADER]: identity.actingUserEmail } : {}),
   };
+}
+
+// compliance-tracker also accepts a JSON body `actorEmail` as an acting-user
+// signal, and reads it BEFORE the X-Acting-User-Email header
+// (requireActingPerson: `bodyActorEmail(body) ?? readActingUserEmail(request)`;
+// the email is consulted whenever the id does not map, which is the case for
+// every PROJEXA account not yet linked to a VERIDIAN user). Many routes here
+// forward the browser's JSON body as-is, so a browser could otherwise name
+// someone else in it. On a call whose identity came from the session, a
+// top-level `actorEmail` is therefore always the session's own email -- the
+// same `{ ...body, actorEmail: ctx.user?.email ?? null }` several routes
+// already write by hand. A body without the key is left untouched (adding a
+// field could trip a strict upstream schema), and a call with an explicit
+// identity is left alone. Query strings and multipart fields are not
+// rewritten: compliance-tracker reads actorEmail from neither.
+function withSessionActorEmail(body: unknown, identity: ActingIdentity): unknown {
+  const person = identity.fromSession;
+  if (!person || !body || typeof body !== "object") return body;
+  const proto = Object.getPrototypeOf(body);
+  if (proto !== Object.prototype && proto !== null) return body;
+  if (!Object.prototype.hasOwnProperty.call(body, "actorEmail")) return body;
+  return { ...(body as Record<string, unknown>), actorEmail: person.email };
 }
 
 // R67 F-20: `signal` lets a caller cancel a call it no longer needs -- a client
@@ -646,6 +700,8 @@ async function throwForResponse(res: Response, durationMs: number): Promise<neve
 // caller's behavior is unchanged.
 export async function callVeridianRaw(path: string, options: CallVeridianOptions = {}): Promise<Response> {
   const apiKey = await resolveApiKey(options);
+  const identity = resolveActingIdentity(options.actingUserId, options.actingUserEmail);
+  const body = withSessionActorEmail(options.body, identity);
 
   const base = options.root ? VERIDIAN_API_ROOT : VERIDIAN_API_BASE;
   const { res, durationMs } = await fetchWithTimeout(
@@ -654,10 +710,10 @@ export async function callVeridianRaw(path: string, options: CallVeridianOptions
       method: options.method ?? "GET",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
-        ...actingUserHeaders(options.actingUserId, options.actingUserEmail),
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...actingUserHeaders(identity),
+        ...(body ? { "Content-Type": "application/json" } : {}),
       },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      body: body ? JSON.stringify(body) : undefined,
       cache: "no-store",
     },
     options.signal,
@@ -753,7 +809,7 @@ export async function callVeridianBinary(
     `${base}${path}`,
     {
       method: "GET",
-      headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(options.actingUserId, options.actingUserEmail) },
+      headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(resolveActingIdentity(options.actingUserId, options.actingUserEmail)) },
       cache: "no-store",
     },
     options.signal,
@@ -784,7 +840,7 @@ export async function callVeridianUpload<T = unknown>(
     `${base}${path}`,
     {
       method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(options.actingUserId, options.actingUserEmail) },
+      headers: { "Authorization": `Bearer ${apiKey}`, ...actingUserHeaders(resolveActingIdentity(options.actingUserId, options.actingUserEmail)) },
       body: formData,
       cache: "no-store",
     },
@@ -837,6 +893,9 @@ export async function provisionVeridianOrg(params: ProvisionVeridianOrgParams): 
     throw new VeridianApiError("customerOrgName is required to provision a VERIDIAN org", 400);
   }
 
+  // U-20b: deliberately NO acting-user headers, even when this runs inside a
+  // signed-in request. This is the platform key creating a tenant, not a
+  // person acting inside one -- the person does not exist in the new org yet.
   const { res, durationMs } = await fetchWithTimeout(`${VERIDIAN_API_ROOT}/platform/provision-org`, {
     method: "POST",
     headers: {
@@ -895,12 +954,24 @@ export async function provisionVeridianOrg(params: ProvisionVeridianOrgParams): 
 // the request is authorized BEFORE calling the returned fetcher -- this
 // only caches the downstream data for an already-authorized org, it never
 // substitutes for the authorization check itself.
+//
+// U-20b -- THE ACTING PERSON AND THIS CACHE. callVeridian now attaches the
+// request's acting person when a signed-in route calls it. unstable_cache runs
+// its callback in the triggering request's async context, so a fill would have
+// fetched AS that person and then served the answer to every other person of
+// the org -- the person is not in [cacheKey, path, organizationId], and
+// VERIDIAN shapes some answers by the acting person's role. personFreeCache()
+// runs the fill as nobody instead, so the stored value is the same person-free,
+// org-level answer this cache held before the headers existed, and the key
+// still covers everything the value depends on. The key itself is unchanged
+// (same keyParts, same callback source text; see person-free-cache.ts).
+// Pinned by person-free-cache.test.ts.
 export function createCachedVeridianGet<T = unknown>(
   cacheKey: string,
   path: string,
   revalidateSeconds: number
 ): (organizationId: string) => Promise<T> {
-  return unstable_cache(
+  return personFreeCache(
     (organizationId: string) => callVeridian<T>(path, { organizationId }),
     [cacheKey, path],
     { revalidate: revalidateSeconds, tags: [cacheKey] }

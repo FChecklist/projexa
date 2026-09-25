@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-40: material ISSUES -- what left the store. The module tracked what
 // arrived and never what was consumed, so the master could not carry a
@@ -15,7 +16,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // The on-hand cap is enforced on the VERIDIAN side, not here: two storekeepers
 // on two phones would otherwise both pass a client-side check. Its refusal
 // ("Only 120 bag on hand") is a 400 and reaches the form verbatim.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -32,9 +33,9 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -52,4 +53,4 @@ export async function POST(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

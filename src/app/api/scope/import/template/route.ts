@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-25: byte-for-byte relay of the BOQ import template spreadsheet, which
 // VERIDIAN builds (src/app/api/v1/projexa/scope/import/template/route.ts).
 // Same pattern as the Work Progress Report PDF relay in
 // src/app/api/work-progress/report/pdf/route.ts: PROJEXA has no XLSX library
 // of its own and must not gain one.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -27,4 +28,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

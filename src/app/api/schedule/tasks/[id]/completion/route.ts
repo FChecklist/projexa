@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 lane D22 (item D-49, rec R-125): one activity's completion provenance
 // (GET) and the explicit manual override (PATCH).
@@ -9,7 +10,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // VERIDIAN keeps them separate for a real reason (the override REQUIRES a
 // note, enforced server-side), and collapsing them here would put the one
 // endpoint that enforces that rule behind one that does not.
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -22,9 +23,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -42,4 +43,4 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

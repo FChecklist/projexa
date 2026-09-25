@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-15 (audit R-040). "Replace file" on the document object page: a new
 // VERSION of the same logical document, not a second document.
@@ -10,7 +11,7 @@ import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
 // compliance-tracker's createDocumentVersion() does the real work (flip the
 // previous row's isLatestVersion and insert the new one inside ONE tenant
 // transaction), so this route adds nothing but the org's own Bearer key.
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -26,4 +27,4 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

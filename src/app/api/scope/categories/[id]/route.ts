@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 lane I (WS-I item I-05, R-177): rename or retire one BOQ category.
 //
@@ -8,7 +9,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // lines", HTTP 409) is produced by VERIDIAN and passed through UNCHANGED --
 // re-deriving that count here would mean a second source of truth for whether
 // a category is in use, and the two would eventually disagree.
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -31,9 +32,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const DELETE = withTiming("DELETE", async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -49,4 +50,4 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

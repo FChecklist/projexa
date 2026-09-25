@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-34 (R-085): the trade picklist. Trade was a free-text input, so the
 // same job arrived as "Mason", "mason" and "Masonry" and every trade-wise total
 // downstream split. VERIDIAN returns the seed vocabulary merged with whatever
 // this org has actually used, so turning the input into a Select never hides a
 // trade someone already typed.
-export async function GET(_request: NextRequest) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -19,4 +20,4 @@ export async function GET(_request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

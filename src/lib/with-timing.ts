@@ -22,8 +22,19 @@
 // handler that throws still throws (Next renders its own 500) -- the failure
 // is logged with its duration first, because a request that took 9 s and then
 // crashed is the most interesting row in any latency table.
+//
+// PROJEXA-BUILD-001 U-20b: it is also where each request's ACTING-PERSON scope
+// opens and closes (runWithActingPersonScope, acting-person-context.ts).
+// requireAuth() fills that scope with the verified session user and
+// veridian-client reads it, which is how every VERIDIAN call a signed-in route
+// makes carries X-Acting-User / X-Acting-User-Email without each route
+// threading them. This wrapper is the only place that can open it: it is the
+// one thing that runs AROUND the whole handler (see that file's header for why
+// requireAuth() itself cannot). acting-person-coverage.test.ts fails if a route
+// that reaches VERIDIAN stops wearing this wrapper.
 
 import { beginRequestTiming, runWithRequestTiming, type RequestTiming } from "@/lib/request-timing";
+import { runWithActingPersonScope } from "@/lib/acting-person-context";
 import { serverTimingHeader } from "@/lib/veridian-response";
 
 /** Marks an already-wrapped handler, so a re-export chain cannot double-count. */
@@ -104,7 +115,7 @@ export function withTiming<A extends unknown[]>(method: string, handler: AnyHand
     const startedAt = Date.now();
     const route = routeOf(args);
     try {
-      const res = await runWithRequestTiming(timing, () => handler(...args));
+      const res = await runWithRequestTiming(timing, () => runWithActingPersonScope(() => handler(...args)));
       const appMs = emit(route, method, res.status, timing, Date.now() - startedAt);
       // Headers on a NextResponse are mutable; on a plain Response built by
       // some other means they may not be. A timing header is never worth

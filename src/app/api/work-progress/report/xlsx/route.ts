@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 E-28 (R-244 / R-254): byte-for-byte XLSX relay for the Work Progress
 // Report, the twin of the PDF relay beside it.
@@ -16,7 +17,7 @@ import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
 // Query params mirror ../route.ts and ../pdf/route.ts exactly, including point
 // 11's ?mode=total|balance toggle, so the three cannot disagree about which
 // reading of the third column they are showing.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -56,4 +57,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

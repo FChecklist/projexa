@@ -3,13 +3,14 @@ import { eq, and } from "drizzle-orm";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { db, memberships } from "@/lib/db";
 import { sendDigestForMembership } from "@/lib/email/digest";
+import { withTiming } from "@/lib/with-timing";
 
 // Manual trigger for the digest, standing in for the cadence engine the
 // work order deliberately defers (see digest.ts's own header). Sends the
 // caller's OWN digest -- proves the vertical slice on demand without a
 // cron this repo doesn't have yet. Not the mandatory "there is no off"
 // cadence; a real scheduled trigger is separate follow-up work.
-export async function POST() {
+export const POST = withTiming("POST", async function POST() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   if (!ctx.user || !ctx.organizationId) return NextResponse.json({ error: "No organization" }, { status: 400 });
@@ -24,4 +25,4 @@ export async function POST() {
 
   const result = await sendDigestForMembership(membership.id);
   return NextResponse.json(result);
-}
+});

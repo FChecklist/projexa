@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 lane D22 (item D-48, rec R-123): the programme (schedule) importer's
 // proxy, replacing the dead src/app/api/schedule-tracker/import/route.ts --
@@ -14,7 +15,7 @@ import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
 // the same reasoning /api/scope/import and /api/reports/[reportName] already
 // document. Parsing stays in compliance-tracker: PROJEXA must not gain an XLSX
 // library.
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -30,4 +31,4 @@ export async function POST(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

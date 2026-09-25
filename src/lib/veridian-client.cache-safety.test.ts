@@ -125,9 +125,14 @@ describe("veridian-client: tenant data must never enter a shared HTTP cache", ()
 
     const helper = lines.slice(idx, idx + 25).join("\n");
     expect(helper).toContain("organizationId");
+    // U-20b: personFreeCache IS unstable_cache (same key, same keyParts) with
+    // the fill run as nobody. A raw unstable_cache here would now be a leak of
+    // its own: callVeridian attaches the acting person, and the fill would
+    // store the view of whoever happened to trigger it for the whole org.
     expect(
-      helper.includes("unstable_cache"),
-      "createCachedVeridianGet no longer uses unstable_cache -- the org-scoped cache key may be gone",
+      helper.includes("personFreeCache("),
+      "createCachedVeridianGet no longer goes through personFreeCache -- either the org-scoped key or the person-free fill may be gone (see person-free-cache.ts)",
     ).toBe(true);
+    expect(helper.includes("unstable_cache("), "a raw unstable_cache would fill with the triggering person's identity").toBe(false);
   });
 });

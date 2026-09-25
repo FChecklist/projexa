@@ -1,4 +1,4 @@
-import { unstable_cache } from "next/cache";
+import { personFreeCache } from "@/lib/person-free-cache";
 import { cookies } from "next/headers";
 import { callVeridian, VeridianApiError, VERIDIAN_SCREEN_BUDGET_MS } from "@/lib/veridian-client";
 import { requireAuth } from "@/lib/supabase/auth-guard";
@@ -171,7 +171,9 @@ async function listProjects(organizationId: string | null, cacheSeconds?: number
   // argument, so the entry is org-scoped two independent ways -- callVeridian
   // attaches a PER-ORG bearer token and Next keys its fetch cache on URL only
   // (see createCachedVeridianGet's comment on that cross-tenant leak).
-  const cached = unstable_cache(read, ["projects", organizationId ?? "shared"], {
+  // personFreeCache (U-20b): the list is shared by the whole org, so it is
+  // filled as nobody -- see person-free-cache.ts.
+  const cached = personFreeCache(read, ["projects", organizationId ?? "shared"], {
     revalidate: cacheSeconds,
     tags: [projectsCacheTag(organizationId)],
   });

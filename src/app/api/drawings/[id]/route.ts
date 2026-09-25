@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-11: the Bearer-key-reachable twin of VERIDIAN's
 // /api/v1/projexa/drawings/[id]. The drawing object page used to read the
@@ -10,7 +11,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // was no Edit or hard Remove behind it at all.
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -23,9 +24,9 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function PATCH(request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -43,9 +44,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function DELETE(request: NextRequest, { params }: RouteContext) {
+export const DELETE = withTiming("DELETE", async function DELETE(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -61,4 +62,4 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

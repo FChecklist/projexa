@@ -37,6 +37,9 @@ mock.module("@/lib/veridian-client", () => ({
     // "not found" -- fail loud rather than silently returning ok:false.
     throw new Error(`unscripted VERIDIAN call in test: ${key}`);
   },
+  // The route now wears withTiming() (U-20b: that is where the acting-person
+  // scope opens), and withTiming's veridian-response import needs this export.
+  VeridianApiError: class VeridianApiError extends Error {},
 }));
 
 const { POST } = await import("./route");
