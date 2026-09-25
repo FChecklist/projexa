@@ -264,8 +264,10 @@ export type DigestCadenceResult = {
 };
 
 /**
- * Called by the cron-triggered route on every poll (every 15 minutes, per
- * the GitHub Actions workflow -- see .github/workflows/email-digest-poll.yml).
+ * Meant to be called by a scheduler on every poll (every 15 minutes). No scheduler is wired since
+ * 2026-09-25 (BUILD-001 U-21): the Vercel cron, the GitHub poll workflow and the
+ * /api/internal/email-digest-cadence/run route were removed, and the digest is re-scheduled on
+ * pg_cron by U-40. The claim logic below is unchanged.
  * For each enabled org_email_schedule row that's due right now (per
  * schedule-service.ts's isDue()), atomically claims that (schedule, local
  * calendar day) via INSERT ... ON CONFLICT DO NOTHING into email_digest_run

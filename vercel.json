@@ -3,8 +3,5 @@
   "regions": [
     "bom1"
   ],
-  "ignoreCommand": "sh -c 'exit 0'",
-  "crons": [
-    { "path": "/api/internal/email-digest-cadence/run", "schedule": "0 8 * * *" }
-  ]
+  "ignoreCommand": "sh -c 'exit 0'"
 }
