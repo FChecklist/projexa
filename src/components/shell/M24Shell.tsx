@@ -226,6 +226,7 @@ import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
 import { invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
+import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import {
   LEGACY_FALLBACK_MESSAGE,
   describeReadError,
@@ -1114,6 +1115,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         // one's own: the cookie is shared by every tab, so whichever tab sees
         // the event first must clear it.
         rememberSelectedProject(null);
+        // The device copy of a project's BOQ goes too; the event carries no session, so every stored copy on this browser is cleared.
+        void clearBoqDeviceCopiesOnSignOut();
       }
     });
     return () => sub.subscription.unsubscribe();

@@ -220,12 +220,28 @@ describe("every sign-out clears the selected-project cookie", () => {
       // Order matters: after signOut() the redirect may already have run.
       expect(clearAt).toBeLessThan(signOutAt);
     });
+
+    // BUILD-001 U-33: the BOQ device copy is a project's whole line list; it must not outlive the session on a shared browser.
+    test(`${rel} empties the BOQ device copy BEFORE signOut()`, () => {
+      const source = readFileSync(join(ROOT, rel), "utf8");
+      expect(source).toContain('from "@/lib/boq-line-cache"');
+      const clearAt = source.indexOf("await clearBoqDeviceCopiesOnSignOut()");
+      const signOutAt = source.indexOf("await supabase.auth.signOut()");
+      expect(clearAt).toBeGreaterThan(-1);
+      expect(clearAt).toBeLessThan(signOutAt);
+    });
   }
 
   test("M24Shell clears it on a SIGNED_OUT event, so another tab's sign-out counts too", () => {
     const source = readFileSync(join(ROOT, "src/components/shell/M24Shell.tsx"), "utf8");
     const branch = source.slice(source.indexOf('event === "SIGNED_OUT"'));
     expect(branch.slice(0, 400)).toContain("rememberSelectedProject(null)");
+  });
+
+  test("M24Shell empties the BOQ device copy on a SIGNED_OUT event too", () => {
+    const source = readFileSync(join(ROOT, "src/components/shell/M24Shell.tsx"), "utf8");
+    const branch = source.slice(source.indexOf('event === "SIGNED_OUT"'));
+    expect(branch.slice(0, 700)).toContain("clearBoqDeviceCopiesOnSignOut()");
   });
 
   test("no sign-out path was missed -- these four are every signOut() in the app", () => {

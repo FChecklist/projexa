@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createStore, del, keys, set } from "idb-keyval"
 import {
   BOQ_CACHE_CHUNK_ROWS,
+  clearBoqDeviceCopiesOnSignOut,
   clearBoqDeviceCopy,
   openProjectLineWriter,
   readBoqHeader,
@@ -209,6 +210,40 @@ describe("the project line copy", () => {
     await clearBoqDeviceCopy(USER_A)
     expect((await load(USER_A, "proj-1")).info).toBeNull()
     expect(await readBoqHeader(USER_A, "boq-1")).toBeNull()
+  })
+})
+
+describe("clearBoqDeviceCopiesOnSignOut -- what a sign-out leaves on the device", () => {
+  test("empties the copy and header of every user the browser holds one for, not only one id", async () => {
+    await save(USER_A, "proj-1", 20)
+    await save(USER_B, "proj-1", 30)
+    await saveBoqHeader(USER_B, { id: "boq-1", projectId: "proj-1", version: 1, title: "T", status: "draft", parentBoqId: null, createdAt: "2026-09-01T00:00:00Z" })
+    await clearBoqDeviceCopiesOnSignOut()
+    expect((await load(USER_A, "proj-1")).info).toBeNull()
+    expect((await load(USER_B, "proj-1")).info).toBeNull()
+    expect(await readBoqHeader(USER_B, "boq-1")).toBeNull()
+  })
+
+  test("leaves a store that is not a BOQ device copy alone", async () => {
+    const other = createStore("projexa-work-progress-queue-test", "queue")
+    await set("pending-1", { id: 1 }, other)
+    await save(USER_A, "proj-1", 5)
+    await clearBoqDeviceCopiesOnSignOut()
+    expect(await keys(other)).toEqual(["pending-1"])
+    await del("pending-1", other)
+  })
+
+  test("never throws: a browser that cannot list its databases still signs out", async () => {
+    const real = indexedDB.databases
+    ;(indexedDB as unknown as { databases: unknown }).databases = () => Promise.reject(new Error("no listing"))
+    const warn = console.warn
+    console.warn = () => {}
+    try {
+      await clearBoqDeviceCopiesOnSignOut()
+    } finally {
+      console.warn = warn
+      ;(indexedDB as unknown as { databases: unknown }).databases = real
+    }
   })
 })
 

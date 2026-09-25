@@ -216,3 +216,22 @@ export async function readProjectLines(
 export async function clearBoqDeviceCopy(scope: string): Promise<void> {
   await clear(storeFor(scope))
 }
+
+const STORE_NAME_PREFIX = "projexa-boq-cache::"
+
+/**
+ * Empties the device copy of EVERY user this browser holds one for. Sign-out calls it: the copy is a project's whole BOQ, and it must
+ * not stay on a shared device once the session is gone. It goes by the store names the browser lists, not by the signed-in user id,
+ * so it also works on the sign-out another tab did (the event then carries no session). It never throws: signing out must not depend
+ * on it, and a browser that cannot list its databases has no copy this code could have found either.
+ */
+export async function clearBoqDeviceCopiesOnSignOut(): Promise<void> {
+  try {
+    if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return
+    for (const db of await indexedDB.databases()) {
+      if (db.name?.startsWith(STORE_NAME_PREFIX)) await clear(createStore(db.name, "cache"))
+    }
+  } catch (err) {
+    console.warn("The BOQ copy on this device could not be cleared at sign-out", err)
+  }
+}
