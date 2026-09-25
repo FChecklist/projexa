@@ -42,7 +42,8 @@ test("the BOQ screen renders its line items with the network offline after one o
     for (const call of gateway.served) {
       expect(call.authorization).toBe(`Bearer ${session.accessToken}`);
       expect(call.cookie).toBeUndefined();
-      expect(call.keys).toEqual(["fn", "limit", "projectId"]);
+      // The first page has no cursor; every later page names the previous page's last line id in `after`. Nothing else is sent.
+      expect(call.keys).toEqual(call.after === null ? ["fn", "limit", "projectId"] : ["after", "fn", "limit", "projectId"]);
       expect(call.limit).toBe(500);
     }
     expect(GATEWAY_URL).toContain("/functions/v1/projexa-read");
