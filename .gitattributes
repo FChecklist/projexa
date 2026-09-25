@@ -1,0 +1,5 @@
+# BUILD-001 U-26: the browser-bundle scan scripts are run by bash, on Linux CI and by hand. This repository had no attribute
+# rules, and core.autocrlf=true on the Windows dev machine would check them out with CRLF line endings, which bash cannot run
+# (every line then ends in a carriage return). These two rules keep exactly that folder on LF; nothing else is affected.
+scripts/verify/*.sh text eol=lf
+scripts/verify/*.txt text eol=lf
