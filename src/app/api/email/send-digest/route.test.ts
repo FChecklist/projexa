@@ -23,6 +23,9 @@ mock.module("@/lib/db", () => ({
     }),
   },
   memberships: {},
+  // The route now wears withTiming() (U-20b: that is where the acting-person
+  // scope opens), which loads the real veridian-client, which imports this.
+  veridianCredentials: {},
 }));
 
 mock.module("@/lib/email/digest", () => ({

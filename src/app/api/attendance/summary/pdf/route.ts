@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-31: byte-for-byte PDF relay for the attendance summary. Same pattern as
 // src/app/api/work-progress/report/pdf/route.ts -- PROJEXA has no PDF library
 // of its own and must not gain one; VERIDIAN renders it
 // (src/lib/pdf/attendance-summary-pdf.ts) and these bytes are passed through.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -36,4 +37,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

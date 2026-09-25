@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 lane D22 (item D-64, rec R-230): the searchable BOQ line lookup behind
 // the Daily Entry picker and every "which line is this?" question in this app.
@@ -9,7 +10,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // recorded against each line, and decides which revision "the current BOQ"
 // means. Reproducing any of that here would be a second answer to the same
 // question, which is exactly the drift item D-64 exists to end.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -32,4 +33,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

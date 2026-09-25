@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 E-33 (R-265). Relay for Sumeet 5.png's first graph -- revenue, budget
 // and progress per project, across the portfolio.
@@ -9,7 +10,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // segment forwards to VERIDIAN's per-project dispatcher and requires a
 // projectId; this report has none, because it IS the comparison between
 // projects. Two segments deep on both sides, so neither can shadow the other.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   // Forwarded unexamined (departmentId, from, to): VERIDIAN's own route is the
@@ -26,4 +27,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

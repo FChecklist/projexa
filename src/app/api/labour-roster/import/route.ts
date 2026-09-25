@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-34 (R-091): bulk roster load. Thin multipart relay to VERIDIAN's
 // /labour-roster/import -- callVeridian JSON-encodes its body and cannot carry
@@ -14,7 +15,7 @@ import { callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
 // browser -- PROJEXA must not gain an XLSX library, and a second parser would
 // be a second set of rules that can disagree with the one that imports. A dry
 // run is a read, so it answers 200; only a real import answers 201.
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const dryRun = request.nextUrl.searchParams.get("dryRun") === "1";
@@ -28,4 +29,4 @@ export async function POST(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

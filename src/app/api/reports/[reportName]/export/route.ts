@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 E-12 (R-136): byte-for-byte relay for the schema-driven report document's
 // server-rendered exports, for every report that has a schema.
@@ -23,7 +24,7 @@ const CONTENT_TYPE: Record<string, string> = {
   csv: "text/csv; charset=utf-8",
 };
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ reportName: string }> }) {
+export const GET = withTiming("GET", async function GET(request: NextRequest, { params }: { params: Promise<{ reportName: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -80,4 +81,4 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

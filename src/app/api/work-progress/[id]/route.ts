@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-28 (R-069) x R67 lane D22 (item D-77, rec R-289): one work-progress
 // entry. The Work Progress list has always been a dead end -- a row you could
@@ -14,7 +15,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // not "Failed to save".
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: NextRequest, { params }: RouteContext) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -27,9 +28,9 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function PATCH(request: NextRequest, { params }: RouteContext) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   // Kept from lane D22: an unparseable body is a 400 that says so, not an
@@ -49,9 +50,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function DELETE(_request: NextRequest, { params }: RouteContext) {
+export const DELETE = withTiming("DELETE", async function DELETE(_request: NextRequest, { params }: RouteContext) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -64,4 +65,4 @@ export async function DELETE(_request: NextRequest, { params }: RouteContext) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-30: the Daily Attendance Sheet saves the whole roster for one date in
 // ONE call. VERIDIAN's /attendance/bulk runs the upsert inside a single
@@ -10,7 +11,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 //
 // 200, not 201: re-saving a sheet corrects rows that already exist, so this is
 // not always a creation.
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -23,4 +24,4 @@ export async function POST(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

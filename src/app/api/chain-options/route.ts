@@ -10,6 +10,7 @@ import {
   type BoqRow,
   type RosterEntry,
 } from "@/lib/chain-options";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 WS-C (C-04) -- WHAT BAND 2 ASKS NEXT.
 //
@@ -36,7 +37,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export const GET = withTiming("GET", async function GET(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -106,4 +107,4 @@ export async function GET(req: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

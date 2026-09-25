@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-10: byte-for-byte XLSX relay for the drawings register. Same pattern
 // as src/app/api/work-progress/report/pdf/route.ts -- PROJEXA has no XLSX
@@ -11,7 +12,7 @@ import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
 // The filters are forwarded unchanged so the exported register is exactly the
 // register on screen -- an Export that quietly exported something else would be
 // worse than no Export at all.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -50,4 +51,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

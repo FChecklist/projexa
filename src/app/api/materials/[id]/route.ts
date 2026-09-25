@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-36: one inbound receipt. GET backs the receipt object page; PATCH
 // carries the SOFT void ({ action: "void", voidReason }) -- there is
@@ -12,7 +13,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // segment is the receipt, and Next's own matching gives the static "master"
 // segment precedence, so the two cannot collide. Same root:true path as the
 // rest of the construction materials surface (see ../route.ts).
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   try {
@@ -28,9 +29,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export const PATCH = withTiming("PATCH", async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const body = await request.json();
@@ -49,4 +50,4 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

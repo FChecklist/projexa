@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { db, securityAuditLog } from "@/lib/db";
 import { callVeridianResult } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // AUTHENTICATED. This is the only place a proposal from the AI Link snapshot
 // (GET /api/ai/[token]) can actually take effect -- the public route above
@@ -43,7 +44,7 @@ type Proposal = { verb?: string; targetKey?: string; payload?: Record<string, un
 type ApplyResult = { targetKey: string | null; verb: string | null; ok: boolean; reason?: string };
 type PipelineTask = { id: string; status: string };
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   if (!ctx.user || !ctx.organizationId) return NextResponse.json({ error: "No organization" }, { status: 400 });
@@ -124,7 +125,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ results });
-}
+});
 
 async function applyVerb(
   verb: Verb,

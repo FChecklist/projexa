@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 WS-C (C-03/C-05) -- THE PREVIEW. PROJEXA's proxy to VERIDIAN's
 // /api/v1/projexa/classify.
@@ -26,7 +27,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = withTiming("POST", async function POST(req: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -57,4 +58,4 @@ export async function POST(req: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

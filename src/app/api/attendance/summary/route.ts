@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 D-31 (R-090): the trade-wise attendance summary the Manpower screen
 // shows. Thin relay -- every number is computed in VERIDIAN by
@@ -35,7 +36,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // sends one -- and every other report consumer in this app already relies on
 // VERIDIAN to reject an incomplete report request.
 // ---------------------------------------------------------------------------
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -58,4 +59,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

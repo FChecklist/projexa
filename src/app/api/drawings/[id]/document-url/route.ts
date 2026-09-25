@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 F-02 (R-018/R-021/R-030/R-035). The drawings register used to receive a
 // Supabase Storage signed URL for EVERY row, minted inside the list request:
@@ -11,7 +12,7 @@ import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 // Thin proxy, same shape as every other route in this directory: the VERIDIAN
 // API key stays server-side, and the backend's own words are what the user
 // reads on failure.
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -28,4 +29,4 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

@@ -6,6 +6,7 @@ import {
   type CategoryBoqAmounts,
   type CategoryProgress,
 } from "@/lib/category-distribution";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 E-29 (R-255). The project-scoped twin of
 // /api/dashboard-hierarchy/companies/[companyId]/projects/[projectId]/category-distribution.
@@ -21,7 +22,7 @@ import {
 // The combination stays on the SERVER, on both routes, for the reason every
 // other report on this product does: the browser is not where a figure gets
 // derived, and a second derivation is a second thing to keep in step.
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export const GET = withTiming("GET", async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const { id } = await params;
@@ -59,4 +60,4 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

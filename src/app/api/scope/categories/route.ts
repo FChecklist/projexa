@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 lane I (WS-I item I-05, R-177): the org's editable BOQ category list.
 // A thin relay to VERIDIAN's /scope/categories -- PROJEXA stores no
 // construction domain data of its own, and the list, its uniqueness rule and
 // the "Used by N BOQ lines" delete refusal all live in
 // construction-boq-category-service.ts on that side.
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   const includeInactive = request.nextUrl.searchParams.get("includeInactive") === "1";
@@ -22,9 +23,9 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   let body: unknown;
@@ -42,4 +43,4 @@ export async function POST(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

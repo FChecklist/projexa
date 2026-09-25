@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridianRaw, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 E-05 (R-103): byte-for-byte relay for the Material Cost Report's
 // server-rendered exports. Same pattern as src/app/api/work-progress/report/
@@ -20,7 +21,7 @@ const CONTENT_TYPE: Record<string, string> = {
   csv: "text/csv; charset=utf-8",
 };
 
-export async function GET(request: NextRequest) {
+export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -58,4 +59,4 @@ export async function GET(request: NextRequest) {
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});

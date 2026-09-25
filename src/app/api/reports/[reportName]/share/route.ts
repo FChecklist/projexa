@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 E-12 (R-136): a real, tokenised, expiring share link for a report that
 // has a public renderer -- the half item E-09 could not ship.
@@ -19,7 +20,7 @@ const SHAREABLE: Record<string, string> = {
   "project-status": "project_status",
 };
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ reportName: string }> }) {
+export const POST = withTiming("POST", async function POST(request: NextRequest, { params }: { params: Promise<{ reportName: string }> }) {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
 
@@ -59,4 +60,4 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );
   }
-}
+});
