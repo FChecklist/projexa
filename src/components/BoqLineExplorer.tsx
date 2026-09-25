@@ -8,12 +8,12 @@
 //
 // Which engine answered is printed on the panel (data-filter-engine, and the sentence under the box), so a browser that could not
 // start a worker and searched on the main thread says so instead of just being slower.
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { revisionLabel } from "@/lib/boq-lineage";
 import { EMPTY_VALUE, formatDecimal } from "@/lib/format-number";
-import { useOrgMoney } from "@/lib/use-org-money";
+import { useOrgMoney, type OrgMoney } from "@/lib/use-org-money";
 import type { BoqFilterClient } from "@/lib/boq-filter-client";
 import type { BoqFilterResult } from "@/lib/boq-filter-engine";
 import type { GatewayBoqLine } from "@/lib/boq-gateway-client";
@@ -21,11 +21,33 @@ import type { GatewayBoqLine } from "@/lib/boq-gateway-client";
 const WINDOW_ROWS = 100;
 
 type BoqLabel = Pick<GatewayBoqLine, "boqTitle" | "boqVersion" | "boqStatus">;
+type OrgMoneyFormatter = OrgMoney["money"];
 
 /** The "Title · Rev1 (status)" text of a row in the project scope. A row of the screen's own BOQ is labelled from `current` when given. */
 function boqCaption(line: GatewayBoqLine, boqId: string, current: BoqLabel | undefined): string {
   const label: BoqLabel = line.boqId === boqId && current ? current : line;
   return `${label.boqTitle} · ${revisionLabel(label.boqVersion)} (${label.boqStatus})`;
+}
+
+/**
+ * One result row. It is its own component on purpose: React can pause between components but not inside one, so with 100 rows in a
+ * single render function the whole table is drawn in one main-thread task, and in a development build that task passes 50 ms.
+ * As separate components the rows are drawn in short slices (see the transition below).
+ */
+function ExplorerRow({ line, caption, money }: { line: GatewayBoqLine; caption: string | null; money: OrgMoneyFormatter }) {
+  const qty = Number(line.quantity);
+  return (
+    <tr className="border-b border-ct-border" data-testid="boq-explorer-row">
+      <td className="px-3 py-1.5 font-mono text-[11px] text-ct-muted">{line.itemCode ?? EMPTY_VALUE}</td>
+      <td className={line.parentLineItemId ? "px-3 py-1.5 pl-6 text-ct-muted" : "px-3 py-1.5 font-medium text-ct-navy"}>{line.description}</td>
+      <td className="px-3 py-1.5 text-ct-muted">{line.category ?? EMPTY_VALUE}</td>
+      <td className="px-3 py-1.5 text-ct-muted">{line.unit}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums">{Number.isFinite(qty) ? formatDecimal(qty) : line.quantity}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums">{money(line.rate)}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums">{money(line.amount)}</td>
+      {caption !== null && <td className="px-3 py-1.5 text-ct-muted">{caption}</td>}
+    </tr>
+  );
 }
 
 type Scope = "boq" | "project";
@@ -61,8 +83,12 @@ export default function BoqLineExplorer({
     client.filter({ query, boqId: scope === "boq" ? boqId : null, limit }).then(
       (answer) => {
         if (ticket !== latest.current) return;
-        setResult(answer);
-        setError(null);
+        // Drawing up to WINDOW_ROWS rows is the one main-thread cost left after the worker did the matching. As a transition, React
+        // draws them in short slices and lets the next keystroke in between, instead of holding the thread for the whole table.
+        startTransition(() => {
+          setResult(answer);
+          setError(null);
+        });
       },
       (err) => {
         if (ticket !== latest.current) return;
@@ -72,6 +98,22 @@ export default function BoqLineExplorer({
   }, [client, query, scope, limit, boqId, indexedLines]);
 
   const inScope = scope === "boq" ? "this BOQ" : "the project";
+
+  // The row elements are built once per answer. Typing changes `query` and re-runs this component on every keystroke; the same array
+  // comes back until the answer, the scope, the money format or this BOQ's own label changes, so React skips the rows that did not
+  // change instead of rebuilding 100 of them (with their formatted numbers) for every letter typed.
+  const currentTitle = current?.boqTitle;
+  const currentVersion = current?.boqVersion;
+  const currentStatus = current?.boqStatus;
+  const rowElements = useMemo(() => {
+    const own: BoqLabel | undefined =
+      currentTitle !== undefined && currentVersion !== undefined && currentStatus !== undefined
+        ? { boqTitle: currentTitle, boqVersion: currentVersion, boqStatus: currentStatus }
+        : undefined;
+    return (result?.rows ?? []).map((line) => (
+      <ExplorerRow key={line.id} line={line} caption={scope === "project" ? boqCaption(line, boqId, own) : null} money={orgMoney.money} />
+    ));
+  }, [result, scope, boqId, orgMoney, currentTitle, currentVersion, currentStatus]);
 
   return (
     <section
@@ -133,25 +175,7 @@ export default function BoqLineExplorer({
               </tr>
             </thead>
             <tbody>
-              {result.rows.map((line) => {
-                const qty = Number(line.quantity);
-                return (
-                  <tr key={line.id} className="border-b border-ct-border" data-testid="boq-explorer-row">
-                    <td className="px-3 py-1.5 font-mono text-[11px] text-ct-muted">{line.itemCode ?? EMPTY_VALUE}</td>
-                    <td className={line.parentLineItemId ? "px-3 py-1.5 pl-6 text-ct-muted" : "px-3 py-1.5 font-medium text-ct-navy"}>{line.description}</td>
-                    <td className="px-3 py-1.5 text-ct-muted">{line.category ?? EMPTY_VALUE}</td>
-                    <td className="px-3 py-1.5 text-ct-muted">{line.unit}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{Number.isFinite(qty) ? formatDecimal(qty) : line.quantity}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{orgMoney.money(line.rate)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{orgMoney.money(line.amount)}</td>
-                    {scope === "project" && (
-                      <td className="px-3 py-1.5 text-ct-muted">
-                        {boqCaption(line, boqId, current)}
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
+              {rowElements}
             </tbody>
           </table>
         </div>

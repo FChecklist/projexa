@@ -129,6 +129,37 @@ describe("BoqLineExplorer", () => {
     expect(second.getByTestId("boq-line-explorer").getAttribute("data-filter-engine")).toBe("main");
   });
 
+  test("a re-render of the panel does not rebuild the rows on the page; a change to what the rows show does (E-10, the 50 ms main-thread limit)", async () => {
+    stubCurrencies();
+    // Every render of a row reads its `rate` once, so the reads count how many times the rows were rebuilt.
+    let rateReads = 0;
+    const rows = Array.from({ length: 20 }, (_, i) => {
+      const row = line(i + 1);
+      Object.defineProperty(row, "rate", { get: () => { rateReads += 1; return "5"; }, enumerable: true });
+      return row;
+    });
+    let asked = 0;
+    const client: BoqFilterClient = {
+      kind: "worker", reset: async () => {}, append: async () => 0, dispose: () => {},
+      filter: async () => { asked += 1; return { total: 20, matched: 20, indexed: 20, rows }; },
+    };
+    // The screen passes `current` as a new object literal on every one of its own renders, and a keystroke re-renders the panel itself.
+    const panel = (status: string) => (
+      <BoqLineExplorer client={client} boqId="boq-a" indexedLines={20} current={{ boqTitle: "Villa 21", boqVersion: 1, boqStatus: status }} />
+    );
+    const { getAllByTestId, rerender } = render(panel("submitted"));
+    await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(20));
+    const afterFirstAnswer = rateReads;
+    expect(afterFirstAnswer).toBeGreaterThanOrEqual(20);
+
+    rerender(panel("submitted")); // same values in a new object
+    expect(rateReads).toBe(afterFirstAnswer);
+    expect(asked).toBe(1); // and nothing asked the worker again
+
+    rerender(panel("approved")); // the label of this BOQ changed, so the rows are drawn again
+    expect(rateReads).toBeGreaterThan(afterFirstAnswer);
+  });
+
   test("a failed search shows its reason instead of an empty table", async () => {
     stubCurrencies();
     const broken: BoqFilterClient = {
