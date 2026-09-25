@@ -11,8 +11,8 @@ import { sendEmail, emailTemplate } from "@/lib/email/send";
 // Inbound (see HANDOFF_DNS_POSTMARK_INBOUND.md) POSTs here for any mail
 // landing on reply.projexa-ai.com. Auth is HTTP Basic on the webhook URL
 // itself (POSTMARK_INBOUND_USERNAME/PASSWORD), checked against the
-// Authorization header, fail-closed exactly like CRON_SECRET in
-// email-digest-cadence/run/route.ts -- an unset credential always refuses.
+// Authorization header, fail-closed exactly like a CRON_SECRET bearer
+// check -- an unset credential always refuses.
 //
 // Safety posture, deliberately layered (see the plan/HANDOFF doc for the
 // full reasoning): (1) the reply address itself only resolves to one

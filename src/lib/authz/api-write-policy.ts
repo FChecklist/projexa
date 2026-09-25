@@ -144,7 +144,7 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/email/send-digest": "ANY_MEMBER",
   // Owner directive 2026-09-19 (org email-digest schedule): Postmark's
   // inbound webhook. Public by design, same posture as
-  // /internal/email-digest-cadence/run below -- it has no user session and
+  // /contact and /org/provision -- it has no user session and
   // no org context at request time (a reply's org/membership are resolved
   // FROM the request body itself), so its real gate is the HTTP Basic Auth
   // check inside the route (src/app/api/email/inbound/route.ts's own
@@ -197,18 +197,12 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // excludes the read-only client_viewer the same way /timesheets does for
   // a comparable self-service action.
   "/integrations/google-sheets/refresh": "ANY_MEMBER",
-  // PUBLIC, matching /internal/email-digest-cadence/run immediately below:
+  // PUBLIC, like /email/inbound above:
   // this is Google's Apps Script calling in with NO PROJEXA session at all,
   // authenticated instead by a per-org bearer token verified inside the
   // route itself (see its own header comment) -- there is no role to check
   // at the middleware layer for a caller who was never a PROJEXA user.
   "/integrations/google-sheets/webhook": "PUBLIC",
-  // Public by design, same posture as /contact and /org/provision, but for a
-  // different reason: this is Vercel Cron's own entry point (see vercel.json's
-  // "crons"), triggered with no user session and no org context at all -- its
-  // real gate is the CRON_SECRET bearer check inside the route itself
-  // (email-digest-cadence/run/route.ts's own isAuthorized()), not a role.
-  "/internal/email-digest-cadence/run": "PUBLIC",
   "/inventory/items": "PM_OR_ABOVE",
   "/inventory/stock-entries": "FIELD",
   "/inventory/warehouses": "PM_OR_ABOVE",

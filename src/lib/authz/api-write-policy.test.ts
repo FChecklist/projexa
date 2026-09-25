@@ -94,24 +94,23 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
       .map(([route]) => route)
       .sort();
     // /org/invites/preview is GET-only, so it has no write policy entry at all.
-    // /internal/email-digest-cadence/run is Vercel Cron's entry point -- see
-    // its own CRON_SECRET-bearer comment in api-write-policy.ts.
     // /email/inbound (added 2026-09-19, org email-digest schedule) is
     // Postmark's inbound webhook -- same reasoning, its own HTTP Basic Auth
     // check inside the route is the real gate, not a role.
     // /integrations/google-sheets/webhook (added 2026-09-19, Google Sheets
     // integration) is Google's Apps Script calling in with no PROJEXA
     // session, authenticated by its own per-org bearer-token hash check --
-    // the same "bespoke secret, not a session role" shape as both routes
-    // beside it.
+    // the same "bespoke secret, not a session role" shape as the route
+    // beside it. (/internal/email-digest-cadence/run, the Vercel Cron entry
+    // point, was removed 2026-09-25 -- BUILD-001 U-21.)
     // /email/[token] (added 2026-09-21, fix/email-token-get-mutation) is the
     // one-click email action link -- gated by its own URL token, not a role;
     // same shape as the two routes above it.
-    expect(publicRoutes).toEqual(["/contact", "/email/[token]", "/email/inbound", "/integrations/google-sheets/webhook", "/internal/email-digest-cadence/run", "/org/provision"]);
+    expect(publicRoutes).toEqual(["/contact", "/email/[token]", "/email/inbound", "/integrations/google-sheets/webhook", "/org/provision"]);
   });
 
   test("no mutating route outside the PUBLIC set is left ungated", () => {
-    const PUBLIC_BY_DESIGN = new Set(["/contact", "/email/[token]", "/email/inbound", "/integrations/google-sheets/webhook", "/internal/email-digest-cadence/run", "/org/provision"]);
+    const PUBLIC_BY_DESIGN = new Set(["/contact", "/email/[token]", "/email/inbound", "/integrations/google-sheets/webhook", "/org/provision"]);
     const ungated = mutatingRoutes.filter((r) => {
       const tier = API_WRITE_POLICY[r];
       return tier === "PUBLIC" && !PUBLIC_BY_DESIGN.has(r);
