@@ -1,0 +1,11 @@
+# Allowlist for scripts/verify/bundle-service-role-scan.sh (PROJEXA-BUILD-001, item U-26 / E-08).
+#
+# One entry per line:  <substring><TAB><reason>
+#   - The substring is matched (as plain text, not a pattern) against a hit line, which is:  [category] path:line:context
+#     so it can name a file path (for example a vendored chunk), a piece of context, or a category.
+#   - The reason is required. An entry without a TAB, or with an empty reason, makes the scan exit 2.
+#   - Blank lines and lines starting with # are ignored.
+#
+# EMPTY ON PURPOSE. The first CI run of the Browser Bundle Service-Role Scan job shows whether any library legitimately puts the
+# word service_role into a browser bundle. Add an entry only for a string you have looked at and know to be harmless, and say
+# in the reason what it is and where it comes from. Never allowlist a whole category or a wildcard-wide substring.

@@ -89,6 +89,48 @@ jobs:
           DATABASE_URL: postgresql://postgres:placeholder@localhost:5432/postgres
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+  browser-bundle-scan:
+    # PROJEXA-BUILD-001 item U-26 / E-08 (register row BR-327): no service_role
+    # secret may reach a built browser bundle, and that is checked here on every
+    # push and pull request, not once by hand. It builds the app exactly as the
+    # Build job does, then scans .next/static -- the directory `next build`
+    # serves to every visitor -- with scripts/verify/bundle-service-role-scan.sh
+    # (service_role text, the SUPABASE_SERVICE_ROLE_KEY / SERVICE_ROLE env-var
+    # names, JWTs whose decoded payload says role service_role, sb_secret_ keys)
+    # and then runs the scanner's own self-test, which plants each leak and
+    # proves the scan can fail. The same job exists in compliance-tracker's
+    # ci.yml (register row BR-326); the script is the same file in both repos.
+    #
+    # Deliberately no `needs`: this job's result is its own, independent of
+    # lint/typecheck/test/build, so it can be made a required status check by
+    # its exact name, "Browser Bundle Service-Role Scan". Do not rename the job
+    # or its name. It builds a second time rather than reusing the Build job's
+    # output because GitHub Actions jobs do not share a filesystem, and it
+    # uploads nothing (a bundle that may hold a secret must not become an
+    # artifact). Build steps and env are copied from the Build job above; keep
+    # them in step with it. timeout-minutes is the only addition: the Build job
+    # sets none, and a hung build should not hold a runner for six hours.
+    #
+    # Allowlist: scripts/verify/bundle-service-role-allow.txt starts empty. If
+    # the first run flags a library string that is harmless, add a
+    # `substring<TAB>reason` line there -- do not loosen the scanner.
+    name: Browser Bundle Service-Role Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run db:generate || true
+      - run: bun run build
+        env:
+          DATABASE_URL: postgresql://postgres:placeholder@localhost:5432/postgres
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      - name: Scan the built browser bundle (.next/static) for service_role secrets
+        run: bash scripts/verify/bundle-service-role-scan.sh
+      - name: Self-test the bundle scanner
+        run: bash scripts/verify/bundle-service-role-scan.selftest.sh
   perf:
     # R67 F-28 (audit recommendation R-249) -- the per-screen latency budget.
     #
