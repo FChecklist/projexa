@@ -14,6 +14,15 @@ import { withTiming } from "@/lib/with-timing";
 // veridian_credentials instead of the shared demo VERIDIAN_API_KEY. Orgs
 // with no credentials row yet (pre-existing/demo orgs) still fall back to
 // the shared key automatically -- see resolveApiKey() in veridian-client.ts.
+//
+// BUILD-001 U-01c: both VERIDIAN calls below (the rawInput pipeline and the
+// codeReference dispatch) send the signed-in person as actingUserId /
+// actingUserEmail, the same way /api/dashboard/project/[projectId] and the
+// timesheet routes do. VERIDIAN shows construction budget, margin and cost
+// figures only when the acting person's role is known and manager rank or
+// above; a shared org API key alone names no person, so without these two
+// fields every assistant user was treated as unknown-role and got redacted
+// figures.
 export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
@@ -42,6 +51,8 @@ async function postPipeline(ctx: Awaited<ReturnType<typeof requireAuth>>, body: 
   try {
     const data = await callVeridian("/assistant", {
       organizationId: ctx.organizationId!,
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
       method: "POST",
       body: { rawInput: body.rawInput, mode: body.mode, projectId: body.projectId, selectedChain: body.selectedChain },
     });
@@ -82,6 +93,8 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
   try {
     const result = await callVeridian<{ codeReference: string; result: unknown }>("/assistant", {
       organizationId: ctx.organizationId!,
+      actingUserId: ctx.user?.id,
+      actingUserEmail: ctx.user?.email ?? undefined,
       method: "POST",
       body: { codeReference, inputs },
     });
