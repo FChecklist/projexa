@@ -19,7 +19,7 @@ test("filtering a 10,907-line project runs in a Web Worker and no main-thread ta
   const fixture = buildProjectFixture();
   const session = await signInLocally(context);
   await stubGateway(page, fixture, session.accessToken);
-  await stubAppApis(page, fixture);
+  await stubAppApis(page, fixture, session);
 
   await page.goto(`/scope/${fixture.boqId}`);
   const panel = page.getByTestId("boq-line-explorer");

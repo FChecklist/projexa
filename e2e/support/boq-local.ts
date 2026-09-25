@@ -91,7 +91,7 @@ export type AppStub = {
  * Answers every /api call of the page. The BOQ proxy read carries one line ("REST proxy line") that must never appear on a screen that
  * reads through the gateway. Anything not listed gets an empty JSON object, which the shell reads as "nothing to show".
  */
-export async function stubAppApis(page: Page, fixture: ProjectFixture): Promise<AppStub> {
+export async function stubAppApis(page: Page, fixture: ProjectFixture, who: { userId: string; email: string }): Promise<AppStub> {
   const state = { offline: false }
   const app: AppStub = { requests: [], setOffline: (offline) => { state.offline = offline } }
   const json = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
@@ -108,6 +108,17 @@ export async function stubAppApis(page: Page, fixture: ProjectFixture): Promise<
         lineItems: [{ id: "rest-proxy-line", itemCode: null, description: "REST proxy line", unit: "m2", quantity: "1", rate: "1", amount: "1", activityId: null }],
       })
     }
+    if (url.pathname === "/api/shell") {
+      // The shell's one bootstrap read (src/app/api/shell/route.ts ShellBootstrapPayload), with every list present and empty.
+      return json(route, {
+        organization: { id: "fixture-org", name: "Fixture Builders", slug: "fixture-builders", country: "AE" },
+        role: "owner", email: who.email, userId: who.userId,
+        projects: [{ id: fixture.projectId, name: "Fixture Tower" }],
+        notifications: [], unreadCount: 0, pillUsage: [], recentChains: [], history: [], isNewUser: false, capabilityTree: [],
+        currencies: [{ code: "AED", isBaseCurrency: true }], vendors: [], fetchedAt: Date.now(), errors: {},
+      })
+    }
+    if (url.pathname === "/api/scope/categories") return json(route, { categories: [] })
     if (url.pathname === "/api/scope") return json(route, { boqs: [fixture.header] })
     if (url.pathname === "/api/vendors") return json(route, { vendors: [] })
     if (url.pathname === "/api/currencies") return json(route, { currencies: [{ code: "AED", isBaseCurrency: true }] })

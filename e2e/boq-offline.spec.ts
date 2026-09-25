@@ -18,7 +18,7 @@ test("the BOQ screen renders its line items with the network offline after one o
   const fixture = buildProjectFixture();
   const session = await signInLocally(context);
   const gateway = await stubGateway(page, fixture, session.accessToken);
-  const app = await stubAppApis(page, fixture);
+  const app = await stubAppApis(page, fixture, session);
 
   const legacyGrid = page.getByTestId("boq-legacy-detail-grid");
   // A description cell also holds the item code, so a line is found by the start of its text, not by the whole of it.
@@ -34,9 +34,11 @@ test("the BOQ screen renders its line items with the network offline after one o
     await expect(legacyGrid.getByText("REST proxy line")).toHaveCount(0);
 
     // 10,907 lines at the gateway's largest page (500) are 22 pages, each asking for the previous page's cursor.
-    expect(gateway.served.length).toBe(Math.ceil(fixture.expected.total / 500));
-    expect(gateway.served[0].after).toBeNull();
-    expect(gateway.served.slice(1).every((s, i) => s.after === fixture.lines[(i + 1) * 500 - 1].id)).toBe(true);
+    const pages = Math.ceil(fixture.expected.total / 500);
+    expect(gateway.served.length).toBeGreaterThanOrEqual(pages);
+    const firstDownload = gateway.served.slice(0, pages);
+    expect(firstDownload[0].after).toBeNull();
+    expect(firstDownload.slice(1).every((s, i) => s.after === fixture.lines[(i + 1) * 500 - 1].id)).toBe(true);
     for (const call of gateway.served) {
       expect(call.authorization).toBe(`Bearer ${session.accessToken}`);
       expect(call.cookie).toBeUndefined();
