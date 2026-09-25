@@ -208,6 +208,11 @@ async function processProjectUpdates(spreadsheetId: string, organizationId: stri
           entryBasis: row[col("Entry Basis")] || undefined,
           actorEmail: member.email,
         },
+        // U-20b: named explicitly, like the other writes in this file, so the
+        // row's author is sent even if a pull ever runs inside a signed-in
+        // request -- an explicit identity always beats the session's
+        // (veridian-client.ts), and the session user is not this row's author.
+        actingUserEmail: member.email,
       });
       await writeRow(spreadsheetId, SHEET_TITLES.PROJECT_UPDATES, i, PROJECT_UPDATES_COLUMNS.length, patch(row, col, { Status: STATUS_DONE, Result: "Logged" }));
       bump(counters, true);

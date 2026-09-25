@@ -15,7 +15,7 @@
 // through veridian-client, which holds the org's Bearer key and must never reach
 // the browser.
 import { callVeridian } from "@/lib/veridian-client";
-import { unstable_cache } from "next/cache";
+import { personFreeCache } from "@/lib/person-free-cache";
 
 // The two sentences the upload screens show live in src/lib/file-limits.ts,
 // which is import-safe from a client component (this module is not: it reaches
@@ -30,8 +30,9 @@ export type StorageStatus = { storageConfigured: boolean; reason?: string };
 // veridian-client's createCachedVeridianGet (see its SECURITY note: Next's own
 // fetch cache keys on URL and method only, NOT on the Bearer header, so a naive
 // cache would serve one org's answer to another). Defined once at module scope,
-// never re-wrapped per request.
-const readStorageStatus = unstable_cache(
+// never re-wrapped per request. personFreeCache (U-20b) is unstable_cache with
+// the fill run as nobody, so no acting person shapes the shared answer.
+const readStorageStatus = personFreeCache(
   (organizationId: string) => callVeridian<StorageStatus>("/storage-status", { organizationId }),
   ["storage-status", "/storage-status"],
   { revalidate: 60, tags: ["storage-status"] }

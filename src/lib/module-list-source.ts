@@ -31,7 +31,10 @@
 
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { unstable_cache } from "next/cache";
+// Next's unstable_cache with every fill run as nobody (U-20b): these lists are
+// shared by everyone in an org, so the acting person veridian-client would
+// otherwise attach must never shape a stored value. See person-free-cache.ts.
+import { personFreeCache } from "@/lib/person-free-cache";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { PROJECT_COOKIE } from "@/lib/project-cookie";
@@ -196,7 +199,7 @@ export async function resolveProjectForModule(
 // part and the wrapped function's own argument -- org-scoped two independent
 // ways -- rather than putting `next: { revalidate }` on the shared fetch inside
 // veridian-client, which would serve org A's columns to org B.
-const cachedScreenDefinition = unstable_cache(
+const cachedScreenDefinition = personFreeCache(
   (screen: string, organizationId: string | null) =>
     callVeridian<{ columns: ScreenColumn[] }>(`/screen-definitions/${screen}`, {
       organizationId: organizationId ?? undefined,
@@ -246,7 +249,7 @@ export async function getScreenColumns(
 // first hit, on every revalidation, and on the cookie path below, which calls
 // this to check an id still belongs to the caller. Same reasoning as
 // listProjects() in project-selection.ts, and the same endpoint.
-const cachedProjects = unstable_cache(
+const cachedProjects = personFreeCache(
   (organizationId: string | null) =>
     callVeridian<{ projects: { id: string; name: string }[] }>("/projects", {
       organizationId: organizationId ?? undefined,
@@ -317,7 +320,7 @@ function createModuleList(
   pick: (payload: Record<string, unknown>) => unknown[] | undefined,
   options: { root?: boolean } = {}
 ) {
-  const cached = unstable_cache(
+  const cached = personFreeCache(
     (organizationId: string | null, projectId: string) =>
       callVeridian<Record<string, unknown>>(buildPath(projectId), {
         organizationId: organizationId ?? undefined,
@@ -416,7 +419,7 @@ export const fetchDocumentsList = createModuleList(
 // defect class R67 F-18 closed on documents/labour/meetings/mood-boards,
 // just without that one's extra "blocks the WHOLE page" symptom (this
 // shell painted fine; only the list itself was always cold).
-const cachedKnowledgeBasePages = unstable_cache(
+const cachedKnowledgeBasePages = personFreeCache(
   (organizationId: string | null) =>
     callVeridian<{ pages: Record<string, unknown>[] }>("/knowledge-base", {
       organizationId: organizationId ?? undefined,
@@ -447,7 +450,7 @@ export async function fetchKnowledgeBasePages<T>(organizationId: string | null):
 // those mutation routes revalidateTag this (that would mean tagging four
 // unrelated route families for one dashboard's sake) -- a short TTL bounds
 // the staleness instead.
-const cachedGrcDashboard = unstable_cache(
+const cachedGrcDashboard = personFreeCache(
   (organizationId: string | null) =>
     callVeridian<Record<string, unknown>>("/grc-dashboard", {
       organizationId: organizationId ?? undefined,
@@ -509,7 +512,7 @@ export type LabourLanding<T> = {
   errorMessage: string | null;
 };
 
-const cachedLabourLanding = unstable_cache(
+const cachedLabourLanding = personFreeCache(
   (organizationId: string | null, projectId: string, date: string) =>
     callVeridian<Record<string, unknown>>(
       `/construction/labour-roster?projectId=${q(projectId)}&includeAttendanceSummary=1&date=${q(date)}`,

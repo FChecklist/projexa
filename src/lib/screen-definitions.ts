@@ -1,5 +1,5 @@
-import { unstable_cache } from "next/cache";
 import type { ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
+import { personFreeCache } from "@/lib/person-free-cache";
 import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 
 export type RegistryColumn = ScreenColumn;
@@ -45,7 +45,10 @@ export async function resolveRegistryColumns(
   organizationId: string | null,
   revalidateSeconds: number
 ): Promise<RegistryColumn[] | null> {
-  const read = unstable_cache(
+  // personFreeCache (U-20b): Next's unstable_cache with the fill run as
+  // nobody, so the acting person of whichever request fills it never shapes
+  // what every other person of the org is served.
+  const read = personFreeCache(
     async (orgId: string | null) => {
       try {
         const definition = await callVeridian<{ columns: RegistryColumn[] }>(`/screen-definitions/${functionId}`, {
