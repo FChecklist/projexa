@@ -15,12 +15,30 @@ try {
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { spawn, type ChildProcess } from "node:child_process"
-import { createServer } from "node:net"
+import { createServer, connect } from "node:net"
+import { networkInterfaces } from "node:os"
 import { createBrowserClient, createServerClient } from "@supabase/ssr"
 
 let child: ChildProcess
 let port = 0
 let origin = ""
+let childOutput = ""
+
+/** True when a TCP connection to host:port is accepted, false when it is refused, unreachable or silent for 1.5 s. */
+function canConnect(host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host, port, timeout: 1500 })
+    socket.once("connect", () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once("timeout", () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once("error", () => resolve(false))
+  })
+}
 
 type Session = { userId: string; email: string; accessToken: string; cookieName: string; cookieValue: string }
 
@@ -64,9 +82,14 @@ beforeAll(async () => {
   origin = `http://localhost:${port}`
   child = spawn("node", ["e2e/support/fake-supabase-server.mjs"], {
     env: { ...process.env, FAKE_SUPABASE_PORT: String(port) },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "ignore"],
+  })
+  child.stdout?.on("data", (chunk) => {
+    childOutput += String(chunk)
   })
   await waitForHealth()
+  // The listening line is written before the first request can be answered, but it reaches this process through a pipe.
+  for (let i = 0; i < 50 && !childOutput.includes("listening"); i++) await new Promise((r) => setTimeout(r, 20))
 })
 
 afterAll(() => {
@@ -74,6 +97,20 @@ afterAll(() => {
 })
 
 describe("the local Auth stand-in", () => {
+  test("it listens on the loopback address only: /__session signs a session for anyone who asks, so no other machine may reach it", async () => {
+    // What the server itself reports it bound to, read from its own address after listening.
+    expect(childOutput).toMatch(/\(bound to (127\.0\.0\.1|::1)\)/)
+    // And the fact, not the report: a real connection to each of this machine's own non-loopback addresses is not accepted.
+    // Link-local IPv6 addresses need an interface suffix to be dialled at all, so they are left out.
+    const others = Object.values(networkInterfaces())
+      .flat()
+      .filter((i): i is NonNullable<typeof i> => !!i && !i.internal && !i.address.toLowerCase().startsWith("fe80"))
+      .map((i) => i.address)
+    for (const host of others) expect(await canConnect(host)).toBe(false)
+    // The address the local specs use still reaches it.
+    expect((await fetch(`${origin}/health`)).ok).toBe(true)
+  })
+
   test("its session cookie is named the way @supabase/ssr names it for a localhost URL", async () => {
     const s = await session()
     expect(s.cookieName).toBe("sb-localhost-auth-token")

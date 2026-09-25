@@ -94,6 +94,9 @@ const server = createServer((req, res) => {
   return json(req, res, 404, { message: "not part of the local stub" })
 })
 
-server.listen(PORT, () => {
-  console.log(`local Supabase Auth stand-in listening on ${ORIGIN}`)
+// "localhost", not every interface: /__session signs a session for anyone who asks, so only this machine may reach it. The bound address is
+// printed so a test can check it (src/lib/boq-local-e2e-auth.test.ts).
+server.listen(PORT, "localhost", () => {
+  const bound = server.address()
+  console.log(`local Supabase Auth stand-in listening on ${ORIGIN} (bound to ${typeof bound === "object" && bound ? bound.address : String(bound)})`)
 })

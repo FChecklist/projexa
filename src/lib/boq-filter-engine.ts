@@ -1,7 +1,7 @@
 // PROJEXA-BUILD-001 U-33 (E-10). The project line search of the browser-first BOQ screen: an in-memory index of every line the gateway
 // returned, and the message protocol the Web Worker speaks. This module is plain TypeScript with no browser API, so bun runs the very
 // same code that boq-filter.worker.ts runs in the browser thread (src/lib/boq-filter-engine.test.ts, and a real worker in
-// src/lib/boq-filter-worker.test.ts).
+// src/lib/boq-filter-client.test.ts).
 //
 // WHY A WORKER. A project can hold 10,907 lines. Matching them on the main thread on every keystroke, and structured-cloning the
 // matches into React state, is exactly what freezes a screen on a phone. The worker owns the whole index; the main thread sends a query
