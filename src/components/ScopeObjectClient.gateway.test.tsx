@@ -105,10 +105,11 @@ describe("switches off", () => {
   test("the page reads the usual way: no gateway request, no search panel, the proxy's line is shown", async () => {
     const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     network(seen, () => true);
-    const { container, findByText, queryByTestId } = render(<ScopeObjectClient boqId="boq-1" />);
+    const { container, findByText, queryAllByTestId } = render(<ScopeObjectClient boqId="boq-1" />);
     await findByText("Villa 21 - Interior Fit-out");
     expect(seen.gateway.length).toBe(0);
-    expect(queryByTestId("boq-line-explorer")).toBeNull();
+    // Counts, not queryBy...().toBeNull(): a failed toBeNull() makes bun print the whole DOM element, which takes minutes.
+    expect(queryAllByTestId("boq-line-explorer").length).toBe(0);
     expect(legacyTable(container).getByText("Proxy line")).toBeDefined();
   });
 });
@@ -119,13 +120,13 @@ describe("gateway switch on", () => {
   test("the screen's lines come from the gateway, filtered to this BOQ, and the request carries the token as Bearer and no cookie", async () => {
     const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     network(seen, () => true);
-    const { container, findByText, queryByText, queryByTestId } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    const { container, findByText, queryAllByText, queryAllByTestId } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
     await findByText("Villa 21 - Interior Fit-out");
     await waitFor(() => expect(legacyTable(container).getByText("Gateway slab")).toBeDefined());
     expect(legacyTable(container).getByText("Gateway column")).toBeDefined();
-    expect(legacyTable(container).queryByText("Proxy line")).toBeNull();
-    expect(queryByText("Other BOQ steel")).toBeNull();
-    expect(queryByTestId("boq-line-explorer")).toBeNull();
+    expect(legacyTable(container).queryAllByText("Proxy line").length).toBe(0);
+    expect(queryAllByText("Other BOQ steel").length).toBe(0);
+    expect(queryAllByTestId("boq-line-explorer").length).toBe(0);
 
     expect(seen.gateway.length).toBe(1);
     expect(seen.gateway[0].headers).toEqual({ Authorization: "Bearer tok-user-1" });
@@ -206,7 +207,7 @@ describe("browser-first on", () => {
     fireEvent.click(view.getByRole("button", { name: "Refresh lines" }));
     expect(await view.findByText(/Offline: showing the 2 lines/)).toBeDefined();
     await waitFor(() => expect(legacyTable(view.container).getByText("Gateway column")).toBeDefined());
-    expect(view.queryByRole("alert")).toBeNull();
+    expect(view.queryAllByRole("alert").length).toBe(0);
   });
 
   test("offline with no copy saved says so", async () => {

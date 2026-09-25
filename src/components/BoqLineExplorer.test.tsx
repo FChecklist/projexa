@@ -83,9 +83,10 @@ describe("BoqLineExplorer", () => {
       line(1, { boqId: "boq-a", description: "Slab" }),
       line(2, { boqId: "boq-b", boqTitle: "Villa 21", boqVersion: 1, boqStatus: "superseded", description: "Slab (old)" }),
     ]);
-    const { getAllByTestId, getByRole, queryByText } = render(<BoqLineExplorer client={client} boqId="boq-a" indexedLines={2} />);
+    const { getAllByTestId, getByRole, queryAllByText } = render(<BoqLineExplorer client={client} boqId="boq-a" indexedLines={2} />);
     await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(1));
-    expect(queryByText(/superseded/)).toBeNull();
+    // A count, not queryByText().toBeNull(): a failed toBeNull() makes bun print the whole DOM element, which takes minutes.
+    expect(queryAllByText(/superseded/).length).toBe(0);
 
     fireEvent.click(getByRole("button", { name: "All BOQs in project" }));
     await waitFor(() => expect(getAllByTestId("boq-explorer-row").length).toBe(2));
