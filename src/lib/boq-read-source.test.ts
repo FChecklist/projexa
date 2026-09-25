@@ -5,10 +5,12 @@
 // stand-in.
 import "fake-indexeddb/auto"
 import { afterEach, describe, expect, test } from "bun:test"
+import { createStore, keys } from "idb-keyval"
 import { createBoqFilterClient } from "./boq-filter-client"
 import { BoqGatewayError, fetchAllBoqLines, type GatewayBoqLine } from "./boq-gateway-client"
 import { clearBoqDeviceCopy, openProjectLineWriter, readBoqHeader, readProjectLines, saveBoqHeader } from "./boq-line-cache"
 import {
+  BoqLoadSuperseded,
   headerOf,
   loadBoqForScreen,
   orderLinesForBoq,
@@ -269,6 +271,171 @@ describe("with browser-first on", () => {
     await expect(loadBoqForScreen({ boqId: BOQ, flags, filter: null }, broken.d)).rejects.toThrow("boom")
     const info = await readProjectLines(USER, PROJECT, () => {})
     expect(info?.total).toBe(10_907)
+  })
+})
+
+// The screen runs loadBoqForScreen again while an earlier run is still going (the route moved to another BOQ, a submit reloaded the page),
+// and every run of a screen shares ONE search index that each run empties and then fills page by page. Without a rule for who owns the
+// index, the two runs interleave and every line is listed twice. `current` below is the screen's own load counter, and `isCurrent` is
+// what the screen passes in.
+describe("two loads that overlap on one search index", () => {
+  const flags = { viaGateway: true, browserFirst: true }
+  const six = (): GatewayBoqLine[] => Array.from({ length: 6 }, (_, i) => gline(i + 1))
+
+  function gate() {
+    let open!: () => void
+    let reached!: () => void
+    const opened = new Promise<void>((resolve) => { open = resolve })
+    const arrived = new Promise<void>((resolve) => { reached = resolve })
+    return { open, opened, reached, arrived }
+  }
+
+  /** A gateway stand-in that sends the six lines as two pages of three and, given a gate, stops after the first page until it opens. */
+  function twoPages(hold?: ReturnType<typeof gate>, then?: "fail"): BoqScreenDeps["fetchAllBoqLines"] {
+    return async (o) => {
+      const lines = six()
+      await o.onPage({ rows: lines.slice(0, 3), page: 1, received: 3 })
+      if (hold) {
+        hold.reached()
+        await hold.opened
+      }
+      if (then === "fail") throw new BoqGatewayError("Failed to fetch", 0)
+      await o.onPage({ rows: lines.slice(3), page: 2, received: 6 })
+      return { lines: 6, pages: 2 }
+    }
+  }
+
+  /** Two lines per stored chunk, so a three- or six-line copy really is several chunks. */
+  const smallChunks: BoqScreenDeps["cache"] = {
+    readBoqHeader, saveBoqHeader, readProjectLines,
+    openProjectLineWriter: (scope, projectId) => openProjectLineWriter(scope, projectId, { chunkRows: 2 }),
+  }
+
+  const outcome = (p: Promise<unknown>) => p.then(() => "resolved" as const, (err: unknown) => err)
+
+  async function indexed(filter: ReturnType<typeof createBoqFilterClient>) {
+    const all = await filter.filter({ query: "", boqId: null, limit: 1000 })
+    return { total: all.total, distinct: new Set(all.rows.map((r) => r.id)).size }
+  }
+
+  async function chunkGenerations(): Promise<Set<string>> {
+    const store = createStore(`projexa-boq-cache::${USER}`, "cache")
+    return new Set((await keys(store)).map(String).filter((k) => k.startsWith(`lines:${PROJECT}:`)).map((k) => k.split(":")[2]))
+  }
+
+  test("a load started while another is downloading replaces it: the index holds each line once, the older load rejects, and only the newer one saves a copy", async () => {
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const hold = gate()
+    let current = 1
+    const first = outcome(loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 1 }, deps({ fetchAllBoqLines: twoPages(hold), cache: smallChunks }, { lines: [] }).d))
+    await hold.arrived // the older load has put its first three lines in the index
+    current = 2
+    const second = await loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 2 }, deps({ fetchAllBoqLines: twoPages(), cache: smallChunks }, { lines: [] }).d)
+    hold.open() // the older load's second page arrives late
+    expect(await first).toBeInstanceOf(BoqLoadSuperseded)
+
+    expect(second).toMatchObject({ source: "gateway", copyStatus: "saved", indexedLines: 6 })
+    expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
+    const saved: string[] = []
+    const info = await readProjectLines(USER, PROJECT, (rows) => { saved.push(...rows.map((r) => r.id)) })
+    expect(info?.total).toBe(6)
+    expect(new Set(saved).size).toBe(6)
+    // the older load's stored chunk was removed: one generation of chunks is left, the newer load's three
+    expect((await chunkGenerations()).size).toBe(1)
+  })
+
+  test("an older load that fails after a newer one started does not empty the newer load's index, and reports itself as replaced", async () => {
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const hold = gate()
+    let current = 1
+    const first = outcome(loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 1 }, deps({ fetchAllBoqLines: twoPages(hold, "fail") }, { lines: [] }).d))
+    await hold.arrived
+    current = 2
+    await loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 2 }, deps({ fetchAllBoqLines: twoPages() }, { lines: [] }).d)
+    hold.open() // the older load's network drops now
+    expect(await first).toBeInstanceOf(BoqLoadSuperseded)
+    expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
+  })
+
+  test("an older load that was still waiting for its session when a newer one ran does not empty the newer load's index when it wakes", async () => {
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const hold = gate()
+    let current = 1
+    const slowSession = deps({
+      fetchAllBoqLines: twoPages(),
+      getSession: async () => {
+        hold.reached()
+        await hold.opened
+        return { accessToken: "tok-1", userId: USER }
+      },
+    }, { lines: [] })
+    const first = outcome(loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 1 }, slowSession.d))
+    await hold.arrived
+    current = 2
+    await loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 2 }, deps({ fetchAllBoqLines: twoPages() }, { lines: [] }).d)
+    hold.open()
+    expect(await first).toBeInstanceOf(BoqLoadSuperseded)
+    expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
+  })
+
+  test("the same rule holds when the lines come from the device copy: an older load stops adding chunks once a newer one started", async () => {
+    // First an online load saves a six-line copy in three chunks of two.
+    await loadBoqForScreen({ boqId: BOQ, flags, filter: null }, deps({ fetchAllBoqLines: twoPages(), cache: smallChunks }, { lines: [] }).d)
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const hold = gate()
+    let current = 1
+    const slowRead: typeof readProjectLines = async (scope, projectId, onChunk) => {
+      let firstChunk = true
+      return readProjectLines(scope, projectId, async (rows) => {
+        await onChunk(rows)
+        if (firstChunk) {
+          firstChunk = false
+          hold.reached()
+          await hold.opened
+        }
+      })
+    }
+    const older = deps({ cache: { readBoqHeader, saveBoqHeader, openProjectLineWriter, readProjectLines: slowRead } }, { lines: [], online: false })
+    const first = outcome(loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 1 }, older.d))
+    await hold.arrived // two lines of the copy are in the index
+    current = 2
+    const second = await loadBoqForScreen({ boqId: BOQ, flags, filter, isCurrent: () => current === 2 }, deps({}, { lines: [], online: false }).d)
+    hold.open()
+    expect(await first).toBeInstanceOf(BoqLoadSuperseded)
+    expect(second).toMatchObject({ source: "device-copy", indexedLines: 6 })
+    expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
+  })
+
+  test("an older load that finished downloading but was replaced before it saved does not replace the saved copy", async () => {
+    // A complete six-line copy is saved first.
+    await loadBoqForScreen({ boqId: BOQ, flags, filter: null }, deps({ fetchAllBoqLines: twoPages(), cache: smallChunks }, { lines: [] }).d)
+    // The older load's answer holds none of this BOQ's lines, so it asks the proxy whether the BOQ is empty or gone, and waits there.
+    const hold = gate()
+    let current = 1
+    const older = deps({
+      fetchAllBoqLines: async (o) => {
+        await o.onPage({ rows: [gline(1, { boqId: "boq-9" }), gline(2, { boqId: "boq-9" })], page: 1, received: 2 })
+        return { lines: 2, pages: 1 }
+      },
+      readBoqWithLines: async () => {
+        hold.reached()
+        await hold.opened
+        return restHeader
+      },
+    }, { lines: [] })
+    const first = outcome(loadBoqForScreen({ boqId: BOQ, flags, filter: null, isCurrent: () => current === 1 }, older.d))
+    await hold.arrived
+    current = 2 // a newer load starts while the older one waits for the proxy
+    hold.open()
+    expect(await first).toBeInstanceOf(BoqLoadSuperseded)
+    expect((await readProjectLines(USER, PROJECT, () => {}))?.total).toBe(6)
+  })
+
+  test("a load that is never replaced (no isCurrent) is unchanged", async () => {
+    const filter = createBoqFilterClient({ createWorker: () => null })
+    const out = await loadBoqForScreen({ boqId: BOQ, flags, filter }, deps({ fetchAllBoqLines: twoPages() }, { lines: [] }).d)
+    expect(out).toMatchObject({ source: "gateway", copyStatus: "saved", indexedLines: 6 })
+    expect(await indexed(filter)).toEqual({ total: 6, distinct: 6 })
   })
 })
 

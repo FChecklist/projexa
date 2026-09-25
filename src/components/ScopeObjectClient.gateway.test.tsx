@@ -25,7 +25,7 @@ mock.module("@/lib/supabase/client", () => ({
 
 const ScopeObjectClient = (await import("./ScopeObjectClient")).default;
 const { __resetCurrenciesCacheForTests } = await import("@/lib/currency");
-const { clearBoqDeviceCopy } = await import("@/lib/boq-line-cache");
+const { clearBoqDeviceCopy, readProjectLines } = await import("@/lib/boq-line-cache");
 const { BOQ_READ_GATEWAY_URL } = await import("@/lib/boq-gateway-client");
 
 const realFetch = globalThis.fetch;
@@ -69,12 +69,15 @@ const PROJECT_LINES = [
   gline(4, "boq-2", "Other BOQ paint"), gline(5, "boq-2", "Other BOQ tiles"),
 ];
 
-type Seen = { gateway: Array<{ url: URL; headers: Record<string, string>; credentials?: RequestCredentials }>; scopeGets: string[] };
+// `requests` is every request that is not a gateway request (path and query), recorded before it is answered, so a test can say which
+// requests a screen did NOT send.
+type Seen = { gateway: Array<{ url: URL; headers: Record<string, string>; credentials?: RequestCredentials }>; scopeGets: string[]; requests: string[] };
 
 /** Routes the fake global fetch. `gatewayUp` false makes the gateway unreachable, like a dropped connection. */
 function network(seen: Seen, gatewayUp: () => boolean) {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
+    if (!String(input).startsWith(BOQ_READ_GATEWAY_URL)) seen.requests.push(url.pathname + url.search);
     if (String(input).startsWith(BOQ_READ_GATEWAY_URL)) {
       if (!gatewayUp()) throw new TypeError("Failed to fetch");
       seen.gateway.push({ url, headers: (init?.headers ?? {}) as Record<string, string>, credentials: init?.credentials });
@@ -100,7 +103,7 @@ function legacyTable(container: HTMLElement) {
 
 describe("switches off", () => {
   test("the page reads the usual way: no gateway request, no search panel, the proxy's line is shown", async () => {
-    const seen: Seen = { gateway: [], scopeGets: [] };
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     network(seen, () => true);
     const { container, findByText, queryByTestId } = render(<ScopeObjectClient boqId="boq-1" />);
     await findByText("Villa 21 - Interior Fit-out");
@@ -114,7 +117,7 @@ describe("gateway switch on", () => {
   const flags = { viaGateway: true, browserFirst: false };
 
   test("the screen's lines come from the gateway, filtered to this BOQ, and the request carries the token as Bearer and no cookie", async () => {
-    const seen: Seen = { gateway: [], scopeGets: [] };
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     network(seen, () => true);
     const { container, findByText, queryByText, queryByTestId } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
     await findByText("Villa 21 - Interior Fit-out");
@@ -152,7 +155,7 @@ describe("browser-first on", () => {
   const flags = { viaGateway: true, browserFirst: true };
 
   test("the search panel appears with the project's lines, the engine is named, and the scope switch reaches the other BOQs of the project", async () => {
-    const seen: Seen = { gateway: [], scopeGets: [] };
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     network(seen, () => true);
     const { findByTestId, findByText, getAllByTestId } = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
     await findByText("Villa 21 - Interior Fit-out");
@@ -168,7 +171,7 @@ describe("browser-first on", () => {
   });
 
   test("after one online load the lines show again with no network: from the device copy, with the gateway never asked", async () => {
-    const seen: Seen = { gateway: [], scopeGets: [] };
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     let up = true;
     network(seen, () => up);
     const first = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
@@ -191,7 +194,7 @@ describe("browser-first on", () => {
   });
 
   test("Refresh lines while offline shows the device copy instead of an error", async () => {
-    const seen: Seen = { gateway: [], scopeGets: [] };
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     let up = true;
     network(seen, () => up);
     const view = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
@@ -207,11 +210,104 @@ describe("browser-first on", () => {
   });
 
   test("offline with no copy saved says so", async () => {
-    const seen: Seen = { gateway: [], scopeGets: [] };
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
     network(seen, () => false);
     setOnline(false);
     const view = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
     expect((await view.findByRole("alert")).textContent).toContain("has not been opened online on this device yet");
     expect(seen.gateway.length).toBe(0);
+  });
+
+  test("a load from the device copy sends none of the revision-banner requests (predecessor list, variation, site instruction)", async () => {
+    const seen: Seen = { gateway: [], scopeGets: [], requests: [] };
+    let up = true;
+    network(seen, () => up);
+    const first = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    await first.findByText("Villa 21 - Interior Fit-out");
+    await waitFor(() => expect(legacyTable(first.container).getByText("Gateway slab")).toBeDefined());
+    // The same reads ARE sent when the lines come from the gateway, which shows this recorder can see them.
+    await waitFor(() => expect(seen.requests.some((r) => r.startsWith("/api/scope?projectId=proj-1"))).toBe(true));
+    expect(seen.requests.some((r) => r.startsWith("/api/site-instructions?projectId=proj-1"))).toBe(true);
+    cleanup();
+
+    seen.requests.length = 0;
+    up = false;
+    setOnline(false);
+    const second = render(<ScopeObjectClient boqId="boq-1" readFlags={flags} />);
+    expect(await second.findByText(/Offline: showing the 2 lines of this BOQ saved on this device/)).toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const bannerReads = seen.requests.filter((r) => r.startsWith("/api/scope?") || r.includes("/compare") || r.startsWith("/api/site-instructions"));
+    expect(bannerReads).toEqual([]);
+  });
+});
+
+// The screen's load() can run again while an earlier run is still going, and both share one search index. Only the newest run may change
+// the screen or the index (isCurrent in src/lib/boq-read-source.ts, the load counter in ScopeObjectClient.tsx).
+describe("a load that a newer one replaces", () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const header2 = { ...header, id: "boq-2", title: "Villa 22", status: "draft" };
+
+  /** A network for two BOQs of one project. The first request of the named kind is held until release() is called. */
+  function twoBoqNetwork(holdFirst: "gateway" | "boq-1") {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const calls = { gateway: 0, boq1: 0 };
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (String(input).startsWith(BOQ_READ_GATEWAY_URL)) {
+        calls.gateway += 1;
+        if (holdFirst === "gateway" && calls.gateway === 1) await held;
+        return jsonRes({ fn: "boq_lines", projectId: "proj-1", rows: PROJECT_LINES, nextAfter: null });
+      }
+      if (url.pathname === "/api/scope/boq-1") {
+        calls.boq1 += 1;
+        if (holdFirst === "boq-1" && calls.boq1 === 1) await held;
+        return jsonRes({ ...header, lineItems: [] });
+      }
+      if (url.pathname === "/api/scope/boq-2") return jsonRes({ ...header2, lineItems: [] });
+      if (url.pathname === "/api/vendors") return jsonRes({ vendors: [] });
+      if (url.pathname === "/api/currencies") return jsonRes({ currencies: [{ code: "AED", isBaseCurrency: true }] });
+      throw new Error(`unexpected fetch in test: ${url}`);
+    }) as typeof fetch;
+    return { release, calls };
+  }
+
+  test("the route moves to another BOQ of the project while the first load is downloading: the second BOQ stays on screen and the project search lists each line once", async () => {
+    const net = twoBoqNetwork("gateway");
+    const view = render(<ScopeObjectClient boqId="boq-1" readFlags={{ viaGateway: true, browserFirst: true }} />);
+    await waitFor(() => expect(net.calls.gateway).toBe(1)); // the first load waits on the gateway
+    view.rerender(<ScopeObjectClient boqId="boq-2" readFlags={{ viaGateway: true, browserFirst: true }} />);
+    await view.findByText("Villa 22");
+    const panel = await view.findByTestId("boq-line-explorer");
+    net.release(); // the first load's page arrives late
+    await sleep(150);
+
+    expect(view.queryByText("Villa 21 - Interior Fit-out")).toBeNull();
+    expect(view.getByText("Villa 22")).toBeDefined();
+    fireEvent.click(within(panel).getByRole("button", { name: "All BOQs in project" }));
+    await waitFor(() => expect(view.getAllByTestId("boq-explorer-row").length).toBe(5));
+    expect(view.getByTestId("boq-explorer-count").textContent).toMatch(/Showing 5 of 5 matching lines \(5 in /);
+  });
+
+  test("switches off: an answer for the first BOQ that arrives after the screen moved on does not replace the second BOQ", async () => {
+    const net = twoBoqNetwork("boq-1");
+    const view = render(<ScopeObjectClient boqId="boq-1" />);
+    await waitFor(() => expect(net.calls.boq1).toBe(1));
+    view.rerender(<ScopeObjectClient boqId="boq-2" />);
+    await view.findByText("Villa 22");
+    net.release();
+    await sleep(150);
+    expect(view.queryByText("Villa 21 - Interior Fit-out")).toBeNull();
+    expect(view.getByText("Villa 22")).toBeDefined();
+  });
+
+  test("leaving the screen while it is downloading drops the load: no device copy is saved afterwards", async () => {
+    const net = twoBoqNetwork("gateway");
+    const view = render(<ScopeObjectClient boqId="boq-1" readFlags={{ viaGateway: true, browserFirst: true }} />);
+    await waitFor(() => expect(net.calls.gateway).toBe(1));
+    view.unmount();
+    net.release();
+    await sleep(200);
+    expect(await readProjectLines("user-1", "proj-1", () => {})).toBeNull();
   });
 });

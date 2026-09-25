@@ -39,7 +39,7 @@ import { formatDateTime } from "@/lib/format-date";
 // same ones as before.
 import { BOQ_READ_FLAGS_OFF, type BoqReadFlags } from "@/lib/boq-read-flags";
 import { createBoqFilterClient, type BoqFilterClient } from "@/lib/boq-filter-client";
-import { loadBoqForScreen, readBoqCompare, readProjectBoqs, type BoqScreenLoad } from "@/lib/boq-read-source";
+import { BoqLoadSuperseded, loadBoqForScreen, readBoqCompare, readProjectBoqs, type BoqScreenLoad } from "@/lib/boq-read-source";
 import BoqLineExplorer from "@/components/BoqLineExplorer";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
@@ -94,6 +94,10 @@ export default function ScopeObjectClient({
   // U-33: where the last load came from, and the project search index it filled (browser-first only).
   const [screenLoad, setScreenLoad] = useState<Pick<BoqScreenLoad, "source" | "copySavedAt" | "copyStatus" | "indexedLines"> | null>(null);
   const filterRef = useRef<BoqFilterClient | null>(null);
+  // Which load is the newest. load() can run again while an earlier run is still going (the route moved to another BOQ, a submit or
+  // approve reloaded the page, React's development double-mount), and every run shares the one search index above. Only the newest
+  // run may change the screen or the index; an older one stops (see isCurrent in boq-read-source.ts).
+  const loadSeq = useRef(0);
   const [filterClient, setFilterClient] = useState<BoqFilterClient | null>(null);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -121,6 +125,8 @@ export default function ScopeObjectClient({
   const orgMoney = useOrgMoney();
 
   async function load(opts: { afterWrite?: boolean } = {}) {
+    const seq = ++loadSeq.current;
+    const isCurrent = () => seq === loadSeq.current;
     setLoading(true);
     try {
       // The real backend response for GET /api/scope/{id} is the BOQ's own
@@ -134,9 +140,11 @@ export default function ScopeObjectClient({
       // reads the BOQ back through the proxy right after a submit or approve.
       const filter = readFlags.browserFirst ? (filterRef.current ??= createBoqFilterClient()) : null;
       const [loaded, vendorsData] = await Promise.all([
-        loadBoqForScreen({ boqId, flags: readFlags, filter, afterWrite: opts.afterWrite }),
+        loadBoqForScreen({ boqId, flags: readFlags, filter, afterWrite: opts.afterWrite, isCurrent }),
         fetchJson<{ vendors: Vendor[] }>(`/api/vendors`).catch(() => ({ vendors: [] })),
       ]);
+      // A newer load started while this one was running: its answer is the one the screen shows.
+      if (!isCurrent()) return;
       setBoq(loaded.boq);
       setRows(loaded.lines);
       setVendors(vendorsData.vendors ?? []);
@@ -146,10 +154,12 @@ export default function ScopeObjectClient({
       // The revision banners are network reads and none of them is needed to read the scope: skipped when the lines came from the device.
       if (loaded.source !== "device-copy") void loadRevisionContext(loaded.boq);
     } catch (err) {
+      if (err instanceof BoqLoadSuperseded || !isCurrent()) return;
       setBoq(null);
       setLoadError(errorMessage(err, "Couldn't load this BOQ"));
     } finally {
-      setLoading(false);
+      // Loading ends when the newest load ends, so the screen never looks finished while a newer load is still running.
+      if (isCurrent()) setLoading(false);
     }
   }
 
@@ -185,8 +195,8 @@ export default function ScopeObjectClient({
   }
 
   useEffect(() => { load(); }, [boqId]);
-  // U-33: the worker belongs to this screen; stop it when the screen goes.
-  useEffect(() => () => { filterRef.current?.dispose(); filterRef.current = null; }, []);
+  // U-33: the worker belongs to this screen; stop it when the screen goes, and drop a load that is still running.
+  useEffect(() => () => { loadSeq.current += 1; filterRef.current?.dispose(); filterRef.current = null; }, []);
 
   /**
    * R67 D-26: the inline budget cells confirm IN PLACE -- a "Saved" tick beside

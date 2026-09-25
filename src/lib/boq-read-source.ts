@@ -170,6 +170,17 @@ function ownRows(mine: GatewayBoqLine[]): BoqLineItemRow[] {
   return orderLinesForBoq(mine).map(toBoqLineItemRow)
 }
 
+/**
+ * What loadBoqForScreen rejects with when a newer load of the same screen started while this one was running. The older load stopped
+ * touching the search index and the device copy at that moment, so the caller drops the rejection and shows the newer load's answer.
+ */
+export class BoqLoadSuperseded extends Error {
+  constructor() {
+    super("A newer load of this BOQ started, so this one was dropped")
+    this.name = "BoqLoadSuperseded"
+  }
+}
+
 export type LoadBoqForScreenInput = {
   boqId: string
   flags: BoqReadFlags
@@ -180,10 +191,21 @@ export type LoadBoqForScreenInput = {
    * it is read back through the proxy that wrote it, and the project download is not repeated.
    */
   afterWrite?: boolean
+  /**
+   * False once a newer load of the same screen has started. The search index is one object shared by every load of a screen, and each
+   * load empties it and then adds its pages, so two loads running together would add every line twice. Each step below that reaches
+   * the index or the device copy checks this first, in the same synchronous run as the step itself, and a replaced load stops with
+   * BoqLoadSuperseded. Left out, the load is never replaced.
+   */
+  isCurrent?: () => boolean
 }
 
 export async function loadBoqForScreen(input: LoadBoqForScreenInput, deps: BoqScreenDeps = defaultDeps): Promise<BoqScreenLoad> {
   const { boqId, flags, filter } = input
+  const isCurrent = input.isCurrent ?? (() => true)
+  const assertCurrent = () => {
+    if (!isCurrent()) throw new BoqLoadSuperseded()
+  }
 
   const viaProxy = async (source: "rest" | "rest-fallback", known: BoqWithLines | null): Promise<BoqScreenLoad> => {
     const data = known ?? (await deps.readBoqWithLines(boqId))
@@ -204,9 +226,11 @@ export async function loadBoqForScreen(input: LoadBoqForScreenInput, deps: BoqSc
     if (!cachedHeader) throw new Error("This BOQ has not been opened online on this device yet, so there is no copy to show")
     const projectId = cachedHeader.header.projectId
     const mine: GatewayBoqLine[] = []
+    assertCurrent()
     if (filter) await filter.reset()
     let indexedLines = 0
     const info = await deps.cache.readProjectLines(scope, projectId, async (rows) => {
+      assertCurrent()
       for (const row of rows) if (row.boqId === boqId) mine.push(row)
       if (filter) indexedLines = await filter.append(rows)
     })
@@ -237,11 +261,13 @@ export async function loadBoqForScreen(input: LoadBoqForScreenInput, deps: BoqSc
   let copyOk = writer !== null
 
   try {
+    assertCurrent()
     if (filter) await filter.reset().catch(() => { indexOk = false })
     await deps.fetchAllBoqLines({
       projectId,
       getAccessToken: async () => session.accessToken,
       onPage: async ({ rows }) => {
+        assertCurrent()
         for (const row of rows) if (row.boqId === boqId) mine.push(row)
         if (filter && indexOk) {
           try { indexedLines = await filter.append(rows) } catch { indexOk = false }
@@ -253,6 +279,8 @@ export async function loadBoqForScreen(input: LoadBoqForScreenInput, deps: BoqSc
     })
   } catch (err) {
     if (writer) await writer.abort().catch(() => {})
+    // A replaced load must not empty the index the newer load is filling, and its own failure no longer matters.
+    assertCurrent()
     if (filter) await filter.reset().catch(() => {})
     if (err instanceof BoqGatewayError && err.isUnavailable) return viaProxy("rest-fallback", restData)
     if (err instanceof BoqGatewayError && err.isNetworkFailure && keepCopy && cachedHeader) return fromDeviceCopy()
@@ -276,6 +304,11 @@ export async function loadBoqForScreen(input: LoadBoqForScreenInput, deps: BoqSc
 
   let copyStatus: BoqScreenLoad["copyStatus"] = "off"
   if (writer) {
+    // A replaced load does not save its copy: the newer load is downloading the same project and saves its own.
+    if (!isCurrent()) {
+      await writer.abort().catch(() => {})
+      throw new BoqLoadSuperseded()
+    }
     try {
       if (!copyOk) throw new Error("copy not written")
       // The header goes first and the commit last: the commit is what makes the new lines the readable copy, and it is the one step
