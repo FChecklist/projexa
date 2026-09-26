@@ -325,7 +325,14 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/project-budgets/[id]/cancel": "PM_OR_ABOVE",
   "/project-budgets/[id]/submit": "PM_OR_ABOVE",
   "/projects": "PM_OR_ABOVE",
+  // PROJEXA-BUILD-002 WP-10: sending a file to be made into a project. Declared BEFORE /projects/[id], which would otherwise shadow it
+  // (same depth, different tier). Any member may send: VERIDIAN needs the member role and a named acting person, and holds the
+  // project to a confirm before a money baseline is written (D-5 of the BUILD-002 plan: rank 2 makes a project).
+  "/projects/from-document": "ANY_MEMBER",
   "/projects/[id]": "PM_OR_ABOVE",
+  // PROJEXA-BUILD-002 WP-10: approving an AI-prepared proposal writes BOQ line items under the acting person, so it is commercial
+  // authority, the same tier as /scope/[id]/approve.
+  "/projects/[id]/approvals": "PM_OR_ABOVE",
   "/punch-list": "FIELD",
   "/punch-list/[id]": "FIELD",
   "/purchase-orders": "PM_OR_ABOVE",

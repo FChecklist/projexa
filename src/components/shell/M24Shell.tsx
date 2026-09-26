@@ -221,6 +221,9 @@ import { SearchTrigger } from "@/components/search-command";
 import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
 import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
+import { ChatDocumentAttach, loadChatProducts } from "@/components/shell/ChatDocumentAttach";
+import { canSendProjectDocument } from "@/lib/project-document-access";
+import { getFromDocumentClient } from "@/lib/project-from-document-client";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
@@ -4085,6 +4088,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                   </p>
                 )}
               </div>
+            ) : canSendProjectDocument(shell.role) ? (
+              // PROJEXA-BUILD-002 WP-10, way 2: on a screen with no attach policy of its own the chat takes a project file and
+              // sends it to the same "make a project from a file" flow as /projects/from-file.
+              <ChatDocumentAttach role={shell.role} client={getFromDocumentClient()} loadProducts={loadChatProducts} disabled={submitting} />
             ) : undefined
           }
           // A-10: one resting placeholder that shows all three things this box
