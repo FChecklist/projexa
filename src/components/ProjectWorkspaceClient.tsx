@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Printer, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WorkspaceProjectSwitcher } from "@/components/workspace/WorkspaceProjectSwitcher";
 import { LazyMount } from "@/components/workspace/LazyMount";
@@ -82,6 +83,7 @@ export default function ProjectWorkspaceClient({
           </div>
           <div className="flex items-center gap-2">
             <WorkspaceProjectSwitcher projectId={project.id} initialProjects={projects} />
+            <AiWorkLinkButtons role={role} project={{ id: project.id, name: project.name }} />
             <Button variant="outline" size="sm" onClick={() => window.print()} data-testid="workspace-print">
               <Printer className="size-3.5" /> Print
             </Button>

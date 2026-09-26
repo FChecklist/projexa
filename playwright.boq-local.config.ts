@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// PROJEXA-BUILD-002 WP-08 added e2e/ai-link-mint.spec.ts to this config (its screen run, with the Edge function answered in the browser).
 // PROJEXA-BUILD-001 U-33 (BR-420, BR-421). The config for the two browser-first BOQ specs, e2e/boq-offline.spec.ts and
 // e2e/boq-worker-filter.spec.ts. It is NOT playwright.config.ts: that one logs in four seeded users against the real projexa-ai.com
 // (its "setup" project) and targets production by default, and these specs must never do either.
@@ -21,7 +22,7 @@ const bundlerFlag = process.env.BOQ_LOCAL_BUNDLER === "webpack" ? " --webpack" :
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: [/boq-offline\.spec\.ts/, /boq-worker-filter\.spec\.ts/],
+  testMatch: [/boq-offline\.spec\.ts/, /boq-worker-filter\.spec\.ts/, /ai-link-mint\.spec\.ts/],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

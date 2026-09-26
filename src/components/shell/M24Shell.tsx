@@ -220,6 +220,7 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
+import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
@@ -3889,10 +3890,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             search={<SearchTrigger />}
             // BUILD-001 U-44 (BR-587): the "Connect your AI" button handed out
             // links to the retired /api/ai/[token] route (M4) and is removed
-            // with it. The universal AI work link replaces it once its mint
-            // screen exists (spec C-8).
+            // with it. The universal AI work link replaced it (spec C-8):
+            // AiWorkLinkButtons opens the mint dialog (BUILD-002 WP-08, AW-405).
             alerts={
               <div className="flex items-center gap-1">
+                <AiWorkLinkButtons role={shell.role} project={project ? { id: project.id, name: project.name } : null} showNewProject compact onProjectCreated={() => invalidateShell("projects")} />
                 <NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />
               </div>
             }
