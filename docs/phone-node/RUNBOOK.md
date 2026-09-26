@@ -9,6 +9,13 @@ Termux (32-bit build) with Node 24 LTS, `sshd` (key-only, port 8022), the PROJEX
 standalone bundle on port 3100, a watchdog, and optionally `cloudflared`. All
 started by Termux:Boot at power-on. The phone holds no state: data is in Supabase.
 
+**Flaky internet:** `netwatch.sh` checks the internet every 60 s (every 20 s once it
+thinks it is down, so a blip of a few seconds is noticed fast and a 15-minute outage
+is followed until it ends). The web node keeps answering on the LAN during an outage.
+When the internet returns it restarts cloudflared (fresh tunnel connections), and
+restarts the web node only if `/api/health` fails. History: `~/logs/net.log`,
+current state: `~/logs/net.state`.
+
 ## Steps
 1. **Wi-Fi** (owner, manual): join `JioFiber-W72xs`, forget other networks
    (`OWNER_STEPS.md` 1). USB debugging on, accept the RSA prompt.
@@ -53,6 +60,7 @@ started by Termux:Boot at power-on. The phone holds no state: data is in Supabas
 
 ## Verify
 ```
+cat ~/logs/net.log                              # INTERNET DOWN / BACK after Ns
 curl http://<phone-ip>:3100/api/health          # {"ok":true,...}
 ssh -i <key> -p 8022 <phone-ip> 'uptime; free -m'
 adb reboot   # node answers again about 50 s later, no touch

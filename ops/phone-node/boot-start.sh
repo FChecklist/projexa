@@ -21,3 +21,7 @@ fi
 
 # watchdog
 pgrep -f "sh .*health\.sh" >/dev/null || nohup sh "$HOME/.termux/health.sh" >/dev/null 2>&1 &
+
+# internet watcher: notices outages (checks every 20 s while down, 60 s while up)
+# and recovers the tunnel and web node the moment the internet returns
+pgrep -f "sh .*netwatch\.sh" >/dev/null || nohup sh "$HOME/.termux/netwatch.sh" >/dev/null 2>&1 &

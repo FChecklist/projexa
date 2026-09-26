@@ -39,6 +39,7 @@ required" because the phone has no `~/.projexa.env`. So authenticated routes
 | Failover with one phone unplugged under 10 s | **NOT YET** (needs phone 2 and the tunnel) | |
 | Cloudflare caches `/_next/static/*` | **NOT YET** (needs the tunnel and DNS: owner step) | |
 | Auto-recovery after power loss | **PASS** | reboot test, about 50 s |
+| Survives internet outages (flaky Wi-Fi) | **PASS for a 46 s outage**; a 15-minute outage not yet run | Wi-Fi cycled off/on via adb: `net.log` shows `INTERNET DOWN` then `INTERNET BACK after 46s`; web node uptime unbroken (2177 s), no restart |
 | Deploy is atomic, verified, rollback-able | **PASS** (checksum verified, spare-port health check, symlink flip); rollback command exists but was not exercised with two releases | `deploy.sh` log |
 
 ## Honest limits

@@ -9,8 +9,11 @@ export DEBIAN_FRONTEND=noninteractive
 HERE=$(cd "$(dirname "$0")" && pwd)
 PUBKEY_FILE="${1:-}"
 
-apt-get update -y
-apt-get -o Dpkg::Options::=--force-confnew -y install nodejs-lts cloudflared openssh curl procps iproute2 termux-api termux-services
+# Package install needs the internet. On flaky Wi-Fi it can fail: do not abort
+# (the files below are what matter), just require that node ends up installed.
+apt-get update -y || echo "WARN: apt update failed (offline or mirror down); using what is installed"
+apt-get -o Dpkg::Options::=--force-confnew -y install nodejs-lts cloudflared openssh curl procps iproute2 termux-api termux-services   || echo "WARN: apt install failed; checking what is already installed"
+for c in node cloudflared sshd curl; do command -v "$c" >/dev/null || { echo "MISSING: $c. Re-run when the internet is up."; exit 1; }; done
 
 mkdir -p "$HOME/.termux/boot" "$HOME/logs" "$HOME/node" "$HOME/projexa/releases" "$HOME/.ssh"
 printf 'allow-external-apps = true\nwake-lock = true\n' > "$HOME/.termux/termux.properties"
@@ -22,8 +25,8 @@ grep -q '^PasswordAuthentication no' "$PREFIX/etc/ssh/sshd_config" || \
   printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPort 8022\n' >> "$PREFIX/etc/ssh/sshd_config"
 
 cp "$HERE/hello.js" "$HOME/node/hello.js"
-cp "$HERE/start-web.sh" "$HERE/health.sh" "$HOME/.termux/"
+cp "$HERE/start-web.sh" "$HERE/health.sh" "$HERE/netwatch.sh" "$HOME/.termux/"
 cp "$HERE/boot-start.sh" "$HOME/.termux/boot/00-start.sh"
 cp "$HERE/deploy.sh" "$HOME/deploy.sh"
-chmod 700 "$HOME/.termux/start-web.sh" "$HOME/.termux/health.sh" "$HOME/.termux/boot/00-start.sh" "$HOME/deploy.sh"
+chmod 700 "$HOME/.termux/start-web.sh" "$HOME/.termux/health.sh" "$HOME/.termux/netwatch.sh" "$HOME/.termux/boot/00-start.sh" "$HOME/deploy.sh"
 echo "bootstrap done. Open the Termux:Boot app once, then reboot to test."
