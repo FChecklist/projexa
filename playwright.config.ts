@@ -65,7 +65,7 @@ export default defineConfig({
       dependencies: ["setup"],
       // PROJEXA-BUILD-001 U-33: the two browser-first BOQ specs run only through playwright.boq-local.config.ts (a local server, a
       // synthetic signed-in browser, stubbed network). Here they would sit behind this project's real logins against production.
-      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/, /landing\.spec\.ts/, /boq-offline\.spec\.ts/, /boq-worker-filter\.spec\.ts/, /ai-link-mint\.spec\.ts/],
+      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/, /landing\.spec\.ts/, /boq-offline\.spec\.ts/, /boq-worker-filter\.spec\.ts/, /ai-link-mint\.spec\.ts/, /upload-proposals\.spec\.ts/],
     },
     {
       // R67 J-01/J-02/J-03 (audit R-246/R-279/R-280). The public marketing

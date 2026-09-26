@@ -365,6 +365,12 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // class as /invoices/new above: a create screen opened from its own parent
   // screen, never a standalone sidebar destination.
   "/projects/new",
+  // PROJEXA-BUILD-002 WP-10. Two screens reached by a link from the screens where the work starts, never from the sidebar:
+  // /projects/from-file (a workbook made into a project) from /projects/new and from the composer attach control, and /proposals
+  // (what waits for a person) from /projects/from-file. Neither has a project of its own to carry, so a sidebar entry would add a
+  // second door to rooms that already have one.
+  "/projects/from-file",
+  "/proposals",
   "/punch-list/[id]",
   "/punch-list/new",
   "/purchase-orders/new",

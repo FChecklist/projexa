@@ -199,7 +199,12 @@ export const SHIPPED_ROUTES: readonly string[] = [
   // became a real route. Reached from the Create Project button on /dashboard,
   // on /dashboard/overview and from /projects' own empty state, never from the
   // sidebar -- see nav-routes.test.ts's ROUTES_INTENTIONALLY_NOT_IN_NAV entry.
+  // PROJEXA-BUILD-002 WP-10 (way 1): a whole workbook turned into a new project and its BOQ. Reached from /projects/new and from
+  // /proposals, never from the sidebar.
+  "/projects/from-file",
   "/projects/new",
+  // PROJEXA-BUILD-002 WP-10: what waits for a person (AI-prepared proposals, files with open questions).
+  "/proposals",
   "/punch-list",
   "/punch-list/[id]",
   "/punch-list/new",
