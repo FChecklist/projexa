@@ -39,6 +39,7 @@ import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import { createClient } from "@/lib/supabase/client";
 import { rememberSelectedProject } from "@/lib/project-cookie";
+import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import Image from "next/image";
 
 type OrganizationInfo = { email: string; organization: { name: string } };
@@ -68,6 +69,8 @@ export function AppTopbar({
     // makes the next user's list screens report "there are none" about a
     // project that was never theirs.
     rememberSelectedProject(null);
+    // The device copy of a project's BOQ must not outlive the session on a shared browser.
+    await clearBoqDeviceCopiesOnSignOut();
     await supabase.auth.signOut();
     router.push("/login");
   }

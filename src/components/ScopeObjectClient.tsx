@@ -11,7 +11,7 @@
 // Approval / Approve / Create Revision / Compare) render as a real toolbar
 // in the body instead, immediately below the header, matching a real SAP
 // Object Page's own object-specific action bar.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 // R67 F-34 (D-09) + D-22, reconciled by the integration train: the FORKED
@@ -33,6 +33,14 @@ import { revisionLabel } from "@/lib/boq-lineage";
 import { EMPTY_VALUE } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { formatDateTime } from "@/lib/format-date";
+// PROJEXA-BUILD-001 U-33: the switches, the reads and the project search of the browser-first screen. Every GET to /api/scope this
+// file used to send is in boq-read-source.ts now (register row BR-419); with both switches off (the default) the requests are the
+// same ones as before.
+import { BOQ_READ_FLAGS_OFF, type BoqReadFlags } from "@/lib/boq-read-flags";
+import { createBoqFilterClient, type BoqFilterClient } from "@/lib/boq-filter-client";
+import { BoqLoadSuperseded, loadBoqForScreen, readBoqCompare, readProjectBoqs, screenStateAfter, type BoqScreenState } from "@/lib/boq-read-source";
+import BoqLineExplorer from "@/components/BoqLineExplorer";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
   boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
@@ -63,6 +71,7 @@ export default function ScopeObjectClient({
   boqId,
   importedNotice = null,
   attachedFileName = null,
+  readFlags = BOQ_READ_FLAGS_OFF,
 }: {
   boqId: string;
   /**
@@ -73,6 +82,8 @@ export default function ScopeObjectClient({
   importedNotice?: string | null;
   /** R67 D-27: "Attached: SI-2026-014.pdf", carried here in ?attached= by the revise screen for the same reason. */
   attachedFileName?: string | null;
+  /** PROJEXA-BUILD-001 U-33: BUILD001_BOQ_READ_VIA_GATEWAY / BUILD001_BOQ_BROWSER_FIRST, read on the server by the page. Both off by default. */
+  readFlags?: BoqReadFlags;
 }) {
   const router = useRouter();
   const [boq, setBoq] = useState<Boq | null>(null);
@@ -80,6 +91,14 @@ export default function ScopeObjectClient({
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // U-33: where the last load came from, and the project search index it filled (browser-first only).
+  const [screenLoad, setScreenLoad] = useState<BoqScreenState | null>(null);
+  const filterRef = useRef<BoqFilterClient | null>(null);
+  // Which load is the newest. load() can run again while an earlier run is still going (the route moved to another BOQ, a submit or
+  // approve reloaded the page, React's development double-mount), and every run shares the one search index above. Only the newest
+  // run may change the screen or the index; an older one stops (see isCurrent in boq-read-source.ts).
+  const loadSeq = useRef(0);
+  const [filterClient, setFilterClient] = useState<BoqFilterClient | null>(null);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   // R80/GAP-14: the HEADER edit. Display/edit is the same two-state machine
@@ -105,27 +124,43 @@ export default function ScopeObjectClient({
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
   const orgMoney = useOrgMoney();
 
-  async function load() {
+  async function load(opts: { afterWrite?: boolean } = {}) {
+    const seq = ++loadSeq.current;
+    const isCurrent = () => seq === loadSeq.current;
     setLoading(true);
     try {
       // The real backend response for GET /api/scope/{id} is the BOQ's own
       // fields PLUS lineItems -- one real call, matching how the old View
       // dialog loaded it. Vendors fetched alongside for the inline vendor
       // Select (real, already-working PATCH per line item).
-      const [data, vendorsData] = await Promise.all([
-        fetchJson<Boq & { lineItems: BoqLineItemRow[] }>(`/api/scope/${boqId}`),
+      //
+      // U-33: with the gateway switch on, the same BOQ and its lines come from
+      // loadBoqForScreen() (src/lib/boq-read-source.ts) instead; with it off
+      // that function makes exactly the GET this line used to make. afterWrite
+      // reads the BOQ back through the proxy right after a submit or approve.
+      const filter = readFlags.browserFirst ? (filterRef.current ??= createBoqFilterClient()) : null;
+      const [loaded, vendorsData] = await Promise.all([
+        loadBoqForScreen({ boqId, flags: readFlags, filter, afterWrite: opts.afterWrite, isCurrent }),
         fetchJson<{ vendors: Vendor[] }>(`/api/vendors`).catch(() => ({ vendors: [] })),
       ]);
-      setBoq({ id: data.id, projectId: data.projectId, version: data.version, title: data.title, status: data.status, parentBoqId: data.parentBoqId, createdAt: data.createdAt });
-      setRows(data.lineItems ?? []);
+      // A newer load started while this one was running: its answer is the one the screen shows.
+      if (!isCurrent()) return;
+      setBoq(loaded.boq);
+      setRows(loaded.lines);
       setVendors(vendorsData.vendors ?? []);
+      setFilterClient(filter);
+      // A reload after a write does not refill the search index, so the index and the device copy keep what the last load left in them.
+      setScreenLoad((prev) => screenStateAfter(prev, loaded, opts.afterWrite === true));
       setLoadError(null);
-      void loadRevisionContext(data);
+      // The revision banners are network reads and none of them is needed to read the scope: skipped when the lines came from the device.
+      if (loaded.source !== "device-copy") void loadRevisionContext(loaded.boq);
     } catch (err) {
+      if (err instanceof BoqLoadSuperseded || !isCurrent()) return;
       setBoq(null);
       setLoadError(errorMessage(err, "Couldn't load this BOQ"));
     } finally {
-      setLoading(false);
+      // Loading ends when the newest load ends, so the screen never looks finished while a newer load is still running.
+      if (isCurrent()) setLoading(false);
     }
   }
 
@@ -140,10 +175,10 @@ export default function ScopeObjectClient({
    */
   async function loadRevisionContext(data: Boq) {
     const [siblings, instructions, comparison] = await Promise.all([
-      fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(data.projectId)}`).catch(() => ({ boqs: [] })),
+      readProjectBoqs(data.projectId).catch(() => ({ boqs: [] })),
       fetchJson<{ siteInstructions?: SiteInstruction[] }>(`/api/site-instructions?projectId=${encodeURIComponent(data.projectId)}`).catch(() => ({ siteInstructions: [] })),
       data.parentBoqId
-        ? fetchJson<{ totalVariation?: number }>(`/api/scope/${data.id}/compare`).catch(() => null)
+        ? readBoqCompare(data.id).catch(() => null)
         : Promise.resolve(null),
     ]);
 
@@ -161,6 +196,8 @@ export default function ScopeObjectClient({
   }
 
   useEffect(() => { load(); }, [boqId]);
+  // U-33: the worker belongs to this screen; stop it when the screen goes, and drop a load that is still running.
+  useEffect(() => () => { loadSeq.current += 1; filterRef.current?.dispose(); filterRef.current = null; }, []);
 
   /**
    * R67 D-26: the inline budget cells confirm IN PLACE -- a "Saved" tick beside
@@ -251,7 +288,7 @@ export default function ScopeObjectClient({
         return;
       }
       toast.success(action === "submit" ? "Submitted for approval" : "Approved");
-      await load();
+      await load({ afterWrite: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : `Couldn't ${action} this BOQ`);
     } finally {
@@ -296,7 +333,7 @@ export default function ScopeObjectClient({
       // upstream's own sentence is shown rather than a generic failure, and
       // the screen is reloaded so it stops offering an edit it cannot make.
       if (!res.ok) {
-        if (res.status === 409) await load();
+        if (res.status === 409) await load({ afterWrite: true });
         throw new Error(data.error ?? "Couldn't save this BOQ");
       }
       setBoq((prev) => (prev ? { ...prev, title: typeof data.title === "string" ? data.title : title } : prev));
@@ -441,6 +478,16 @@ export default function ScopeObjectClient({
       messages={[
         ...(importedNotice ? [{ level: "success" as const, text: importedNotice }] : []),
         ...(attachedFileName ? [{ level: "success" as const, text: `Attached: ${attachedFileName}` }] : []),
+        // U-33: the browser-first states a person needs named, never left to be inferred from a table that looks normal.
+        ...(screenLoad?.source === "device-copy"
+          ? [{ level: "info" as const, text: `Offline: showing the ${rows.length} line${rows.length === 1 ? "" : "s"} of this BOQ saved on this device${screenLoad.copySavedAt ? ` on ${formatDateTime(screenLoad.copySavedAt)}` : ""}. Use Refresh lines when you are back online.` }]
+          : []),
+        ...(screenLoad?.source === "rest-fallback"
+          ? [{ level: "info" as const, text: "The line gateway is switched off, so this BOQ was read the usual way." }]
+          : []),
+        ...(screenLoad?.copyStatus === "failed"
+          ? [{ level: "warning" as const, text: "A copy of these lines could not be saved on this device, so they will not show offline." }]
+          : []),
       ]}
     >
       {/* R80/GAP-14: the header form. ONE field, because one field is all the
@@ -522,11 +569,25 @@ export default function ScopeObjectClient({
             Compare to Previous
           </Button>
         )}
+        {/* U-33: reads the lines again (from the gateway when online, from the device copy when not). */}
+        {readFlags.browserFirst && (
+          <Button size="sm" variant="outline" onClick={() => load()}>
+            Refresh lines
+          </Button>
+        )}
       </div>
 
       {/* R-50, Phase 2: THE GRID -- see BoqDualViewGrid.tsx's own header for
           the full spec this wires into. Always visible, every stage. */}
       <BoqDualViewGrid boqId={boqId} />
+
+      {/* U-33 (E-10): the project line search. Its index lives in a Web Worker and is filled by load() above. */}
+      {filterClient && screenLoad && screenLoad.indexedLines > 0 && (
+        <BoqLineExplorer
+          client={filterClient} boqId={boqId} indexedLines={screenLoad.indexedLines}
+          current={{ boqTitle: boq.title, boqVersion: boq.version, boqStatus: boq.status }}
+        />
+      )}
 
       {rows.length === 0 ? (
         <p className="py-10 text-center text-sm text-ct-muted">This BOQ has no line items.</p>

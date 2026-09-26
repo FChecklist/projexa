@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, LogOut, Settings, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { rememberSelectedProject } from "@/lib/project-cookie";
+import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -42,6 +43,8 @@ export default function AccountMenu({ email }: { email?: string }) {
     // which VERIDIAN answers with zero rows and no error, i.e. a list screen
     // calmly saying "there are none" about somebody else's project.
     rememberSelectedProject(null);
+    // The device copy of a project's BOQ must not outlive the session on a shared browser.
+    await clearBoqDeviceCopiesOnSignOut();
     await supabase.auth.signOut();
     router.push("/login");
   }

@@ -60,6 +60,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
+// PROJEXA-BUILD-001 U-33: the grid's two reads live in boq-read-source.ts, so this file names no /api/scope read (BR-419). They stay on
+// the proxy on purpose: the project-side cost columns are what the Edge gateway never returns.
+import { readBoqDualView } from "@/lib/boq-read-source";
 
 // ─── A4's mathematics, mirrored client-side for live preview (see header). ─
 
@@ -191,11 +194,8 @@ function effectiveContract(line: DualViewLine): { qty: string; rate: string } {
   };
 }
 
-async function fetchBoq(boqId: string, view?: "customer"): Promise<DualViewBoq> {
-  const res = await fetch(`/api/scope/${boqId}${view ? `?view=${view}` : ""}`, { cache: "no-store" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? "Couldn't load this BOQ's money view");
-  return data as DualViewBoq;
+function fetchBoq(boqId: string, view?: "customer"): Promise<DualViewBoq> {
+  return readBoqDualView<DualViewBoq>(boqId, view);
 }
 
 export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
