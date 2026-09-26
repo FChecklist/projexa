@@ -68,9 +68,6 @@ export const MUTATING_METHODS: ReadonlySet<string> = new Set(["POST", "PUT", "PA
 export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/access-review": "ORG_ADMIN",
   "/access-review/certifications/[id]": "ORG_ADMIN",
-  // WO-PROJEXA-AI-LINK-001: creating/rotating/revoking your OWN AI Link
-  // token -- same self-service-on-own-record shape as /todos below.
-  "/ai-link": "ANY_MEMBER",
   // Applying an AI-proposed action (the ALLOWED_VERBS allowlist) against a
   // todo in the caller's own org. Same tier as /todos/[id] itself, which
   // this route is a verb-restricted way of writing to.

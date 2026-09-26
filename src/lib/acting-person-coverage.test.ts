@@ -42,8 +42,6 @@ const relOf = (file: string) => path.relative(SRC, file).split(path.sep).join("/
 // path).
 // ---------------------------------------------------------------------------
 const NO_SESSION_ROUTES: Record<string, string> = {
-  "app/api/ai/[token]/route.ts":
-    "Public AI-link snapshot: authorised by an unguessable token, not a session. Read-only (GET /tasks, the read-only /assistant codeReference dispatch), so there is no person to name and nothing it sends is refused for lacking one.",
   "app/api/org/provision/route.ts":
     "Org provisioning at signup: its one VERIDIAN call is provisionVeridianOrg(), which uses the platform application key and deliberately never carries a person (the person does not exist in the new org yet).",
   "app/api/integrations/google-sheets/webhook/route.ts":

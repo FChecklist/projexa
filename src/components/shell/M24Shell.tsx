@@ -220,7 +220,6 @@ import { HOME_ROUTE } from "@/components/veri-chat/veri-chat-context";
 import { SearchTrigger } from "@/components/search-command";
 import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
-import { AiLinkButton } from "./AiLinkButton";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
@@ -3888,9 +3887,12 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             // switcher of their own.
             openSignal={switcherOpenSignal}
             search={<SearchTrigger />}
+            // BUILD-001 U-44 (BR-587): the "Connect your AI" button handed out
+            // links to the retired /api/ai/[token] route (M4) and is removed
+            // with it. The universal AI work link replaces it once its mint
+            // screen exists (spec C-8).
             alerts={
               <div className="flex items-center gap-1">
-                <AiLinkButton />
                 <NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />
               </div>
             }
