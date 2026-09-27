@@ -99,11 +99,13 @@ test("AW-601 (screen): pick a file, read it, see the totals and the questions, c
   skipUnlessLocal(testInfo.project.name);
   const jobs = await setUp(page, context);
 
-  await test.step("the form asks for a file and a product, and Read is off with the reason until both are chosen", async () => {
+  await test.step("the form asks for a file, and Read is off with the reason until one is chosen (the organisation's only product is already chosen for the person)", async () => {
     await page.goto("/projects/from-file");
     await expect(page.getByTestId("doc-file")).toBeVisible({ timeout: 120_000 });
     await expect(page.getByTestId("doc-read")).toBeDisabled();
-    await expect(page.getByTestId("doc-read-reason")).toHaveText("Choose a file and a product to continue.");
+    // UploadProjectDocumentClient preselects a lone product, and this stub returns exactly one, so only the file is missing.
+    await expect(page.getByTestId("doc-product")).toHaveValue(PRODUCT.id);
+    await expect(page.getByTestId("doc-read-reason")).toHaveText("Choose a file to continue.");
   });
 
   await test.step("a file of the wrong type is refused in words, before any byte is sent", async () => {
