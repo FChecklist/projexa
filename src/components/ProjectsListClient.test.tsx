@@ -5,11 +5,19 @@
 // header controls are Filter | Export | New in that DOM order, no [role=dialog]
 // exists on this route, and a failed read never renders the empty-state
 // sentence.
+//
+// WO ai-work-link-ui-and-projects-tab (2026-09-29) ADDED the "with a qualifying role" describe block below: a "Copy AI work link"
+// action per row (AiWorkLinkCompact.tsx, reused as-is) and a "New project with my AI" button above the list (AiWorkLinkButtons.tsx,
+// showMainTrigger=false). The suites above are UNCHANGED and stay green because the default beforeEach stub below never answers
+// GET /api/organization with a role -- useOrgRole() resolves to null, and AiWorkLinkCompact/AiWorkLinkButtons render nothing while
+// role is unknown (the same "say nothing until known" rule every AI-work-link surface follows) -- so the pre-existing header-order
+// and no-dialog assertions are exercised exactly as they were before this feature existed.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { AI_WORK_LINK_ROLE_NOTE } from "@/lib/ai-work-link-access";
 
 const push = mock((_: string) => {});
 const realNavigation = await import("next/navigation");
@@ -145,5 +153,54 @@ describe("ProjectsListClient", () => {
     expect(exportButton.disabled).toBe(true);
     expect(exportButton.getAttribute("title")).toBe("No rows to export");
     expect(exportButton.textContent).toContain("No rows to export");
+  });
+});
+
+describe("ProjectsListClient -- with a qualifying role (WO ai-work-link-ui-and-projects-tab)", () => {
+  function stubWithRole(role: string) {
+    stubFetch((url) => {
+      if (url.includes("/api/projects")) return ok({ projects: PROJECTS });
+      if (url.includes("/api/organization")) return ok({ role, organization: { country: "IN" } });
+      if (url.includes("/api/currencies")) {
+        return ok({ currencies: [{ id: "c1", code: "AED", name: "UAE Dirham", symbol: null, isBaseCurrency: true }] });
+      }
+      return ok({});
+    });
+  }
+
+  test("'New project with my AI' renders above the list, and NOT the main 'AI work link for this project' trigger (no single project here)", async () => {
+    stubWithRole("owner");
+    const view = render(<ProjectsListClient />);
+    await waitFor(() => expect(view.getByRole("link", { name: "Cedar Heights Villa - Phase 1" })).toBeTruthy());
+    expect(view.getByTestId("ai-new-project-open")).toBeTruthy();
+    // showMainTrigger=false: this screen has no single project of its own for that button to point at.
+    expect(view.queryByText("AI work link for this project")).toBeNull();
+  });
+
+  test("each row gets its own 'Copy AI work link' action -- one per row, none for a role below member", async () => {
+    stubWithRole("client_viewer");
+    const view = render(<ProjectsListClient />);
+    await waitFor(() => expect(view.getByRole("link", { name: "Cedar Heights Villa - Phase 1" })).toBeTruthy());
+    // client_viewer is below the member line (ai-work-link-access.ts) -- the role note, not the action, and no button at all.
+    expect(view.queryAllByTestId("awl-compact-trigger")).toHaveLength(0);
+    expect(view.getAllByText(AI_WORK_LINK_ROLE_NOTE).length).toBeGreaterThan(0);
+  });
+
+  test("a qualifying role sees exactly one 'Copy AI work link' trigger per row, and clicking one never navigates that row", async () => {
+    stubWithRole("owner");
+    const view = render(<ProjectsListClient />);
+    await waitFor(() => expect(view.getByRole("link", { name: "Cedar Heights Villa - Phase 1" })).toBeTruthy());
+
+    const triggers = view.getAllByTestId("awl-compact-trigger");
+    expect(triggers).toHaveLength(PROJECTS.length);
+    for (const t of triggers) expect(t.textContent).toContain("Copy AI work link");
+
+    // The row action's own wrapper (data-testid="awl-row-action", __aiLink's renderCell) stops propagation exactly like the
+    // "name" column's Link already does -- clicking inside it must never also fire the row's onRowClick navigation. Clicked on
+    // the wrapper itself, not the inner trigger button, so this checks the propagation guard on its own, without also kicking
+    // off a real mint against the AWL service (that flow is AiWorkLinkCompact.test.tsx's job, with its own fake client).
+    push.mockClear();
+    fireEvent.click(view.getAllByTestId("awl-row-action")[0]!);
+    expect(push).not.toHaveBeenCalled();
   });
 });

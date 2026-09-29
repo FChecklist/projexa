@@ -171,7 +171,10 @@ describe("Create", () => {
     expect(client.log.mint).toEqual([{ projectId: "p1", level: 0, days: 30, label: "my laptop AI" }]);
     const shown = (await screen.findByTestId("awl-link")) as HTMLInputElement;
     expect(shown.value).toBe(LINK);
-    expect(screen.getByTestId("awl-instruction").textContent).toContain("Paste this link into your AI assistant");
+    // WO ai-work-link-ui-and-projects-tab (2026-09-29): the sentence now names the assistants explicitly, matching the compact
+    // one-click confirmation's own wording (AiWorkLinkCompact.tsx) rather than saying "your AI assistant".
+    expect(screen.getByTestId("awl-instruction").textContent).toContain("Paste this link into ChatGPT, Gemini, Claude, Grok, DeepSeek, Z.ai");
+    expect(screen.getByTestId("awl-instruction").textContent).toContain("or any AI you use");
     // the options and Create are gone: the link is not made twice by a second press
     expect(screen.queryByTestId("awl-create")).toBeNull();
 

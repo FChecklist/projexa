@@ -16,3 +16,10 @@ export function canMakeAiWorkLink(role: string | null | undefined): boolean {
 
 /** The sentence a role below that line reads in place of the buttons. */
 export const AI_WORK_LINK_ROLE_NOTE = "Making an AI work link needs the member role or above. Ask a project member or an admin to make one."
+
+/** WO ai-work-link-ui-and-projects-tab (2026-09-29). The exact assistant list this feature names everywhere it talks about "any AI
+ *  you use" -- AiWorkLinkCompact.tsx's one-click confirmation and AiWorkLinkDialog.tsx's own ResultPanel instruction sentence both
+ *  read this one constant, so the two sentences cannot drift apart from each other as either file is edited later. Lives here
+ *  (rather than in either of those two components) so neither has to import the other just for this string. Order and punctuation
+ *  match the product owner's own wording verbatim. */
+export const AI_ASSISTANT_NAMES = "ChatGPT, Gemini, Claude, Grok, DeepSeek, Z.ai"

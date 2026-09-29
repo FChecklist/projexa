@@ -221,6 +221,9 @@ import { SearchTrigger } from "@/components/search-command";
 import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
 import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
+// WO ai-work-link-ui-and-projects-tab (2026-09-29): the left-panel "Work on this project with any AI" banner (leftPanelBanner's own
+// definition, below) uses the same one-click compact component the top rail and the Projects list row action use.
+import { AiWorkLinkCompact } from "@/components/ai-link/AiWorkLinkCompact";
 import { ChatDocumentAttach, loadChatProducts } from "@/components/shell/ChatDocumentAttach";
 import { canSendProjectDocument } from "@/lib/project-document-access";
 import { getFromDocumentClient } from "@/lib/project-from-document-client";
@@ -262,6 +265,13 @@ import { asOfLabel } from "@/lib/pane-state";
 // enter a module. See `onSelectReportsView`/`onSelectDashboardView` below.
 const REPORTS_MODULE = MODULE_CATALOGUE.find((m) => m.id === "reports") ?? null;
 const DASHBOARD_MODULE = MODULE_CATALOGUE.find((m) => m.id === "dashboard") ?? null;
+
+// LEFT SCREEN COMPLETION, 2026-09-29 (WO ai-work-link-ui-and-projects-tab) -- PROJECTS, the 7th view the product owner added this
+// session, FIRST in the row (see LeftScreenCompletion.tsx's own LEFT_VIEWS comment). Unlike Reports/Dashboard, Projects has NO
+// MODULE_CATALOGUE entry: D-69's Projects list (ProjectsListClient.tsx, route below) is a flat, org-wide list with no leaves/verbs
+// of its own, so there is nothing to look up the way REPORTS_MODULE/DASHBOARD_MODULE are above -- the bare route constant is
+// enough. See onSelectProjectsView below for why this follows onLeftHome's simpler pattern rather than selectEntity()'s module one.
+const PROJECTS_ROUTE = "/projects";
 
 const PINNED_CARDS_KEY = "veri.pill.pinned";
 const LEGACY_PILL_USAGE_KEY = "veri.pill.usage";
@@ -1821,6 +1831,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     } else if (nextView === "dashboard" && DASHBOARD_MODULE) {
       const dest = moduleRoute(DASHBOARD_MODULE, projectId);
       if (normalisePathname(screen.pathname) !== normalisePathname(dest)) router.push(dest);
+    } else if (nextView === "projects") {
+      // Same right-pane sync rule as Reports/Dashboard above, for a view with no MODULE_CATALOGUE entry to look a route up from --
+      // see PROJECTS_ROUTE's own comment (this file's header, near REPORTS_MODULE).
+      if (normalisePathname(screen.pathname) !== normalisePathname(PROJECTS_ROUTE)) router.push(PROJECTS_ROUTE);
     } else if ((nextView === "modules" || nextView === "tasks" || nextView === "home") && screen.pathname !== HOME_ROUTE) {
       router.push(HOME_ROUTE);
     }
@@ -2290,6 +2304,17 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     selectLeftView("dashboard");
   }, [selectEntity, selectLeftView]);
 
+  // LEFT SCREEN COMPLETION, 2026-09-29 (WO ai-work-link-ui-and-projects-tab) -- PROJECTS. Does NOT call selectEntity(): unlike
+  // Reports/Dashboard there is no ModuleDef for Projects to set as a chain segment (see PROJECTS_ROUTE's own comment above), so
+  // there is nothing for a chain sentence to narrow and no leaves for `optionLevel` to compute -- this follows onLeftHome's
+  // simpler "push the route if not already there, select the view" pattern instead.
+  const onSelectProjectsView = useCallback(() => {
+    if (normalisePathname(pathname ?? "") !== normalisePathname(PROJECTS_ROUTE)) {
+      router.push(PROJECTS_ROUTE);
+    }
+    selectLeftView("projects");
+  }, [pathname, router, selectLeftView]);
+
   const onLeftSelectView = useCallback(
     (view: LeftViewId) => {
       if (view === "home") {
@@ -2302,6 +2327,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       }
       if (view === "dashboard") {
         onSelectDashboardView();
+        return;
+      }
+      if (view === "projects") {
+        onSelectProjectsView();
         return;
       }
       // LEFT SCREEN COMPLETION, 2026-09-14 (owner escalation, direct quote:
@@ -2344,7 +2373,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       }
       selectLeftView(view);
     },
-    [onLeftHome, onSelectReportsView, onSelectDashboardView, screen.pathname, router, selectLeftView, activeTab, loadTasks]
+    [onLeftHome, onSelectReportsView, onSelectDashboardView, onSelectProjectsView, screen.pathname, router, selectLeftView, activeTab, loadTasks]
   );
 
   // R67 A-07 -- A CARD CLICK. It records usage and OPENS THE CARD'S OWN ROUTE.
@@ -3563,6 +3592,33 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       </div>
     ) : null;
 
+  // LEFT SCREEN COMPLETION, 2026-09-29 (WO ai-work-link-ui-and-projects-tab) -- "Work on this project with any AI", via
+  // LeftScreenCompletion's own `banner` prop -- ALREADY rendered above everything else "regardless of which view is active" per
+  // that prop's own doc comment (see LeftScreenCompletion.tsx), which is exactly the placement this feature asked for: visible no
+  // matter which of the 7 tabs is open, not tucked inside one of them. Reuses AiWorkLinkCompact -- the SAME one-click mint/copy/
+  // confirm component the top rail and the Projects list row action use (see that file's own header for why there is only one
+  // implementation) -- so this banner's action behaves identically to every other AI work link trigger in the app, not a fourth
+  // reimplementation.
+  //
+  // STACKING WITH shellErrors' OWN BANNER, ABOVE: the two are combined into one `banner` value below (a real backend failure
+  // first, then this one), never each passed to a separate prop -- LeftScreenCompletion only has room for one `banner` slot, and
+  // the error banner's own "renders above everything" contract (LeftScreenCompletion.test.tsx) is about being FIRST in that combined
+  // node, not about being the only thing in it.
+  const aiWorkLinkPanelBanner = (
+    <div className="m-2 shrink-0 rounded-lg border p-3 text-[12px]" style={{ borderColor: "var(--color-ct-border)" }} data-testid="ai-work-link-panel-banner">
+      <p className="font-semibold" style={{ color: "var(--color-ct-navy)" }}>
+        Work on this project with any AI
+      </p>
+      <p className="mt-0.5" style={{ color: "var(--color-ct-muted)" }}>
+        Copy your AI work link and paste it into ChatGPT, Gemini, Claude, Grok, DeepSeek, Z.ai — or any AI you use. It can read this
+        project and get to work for you.
+      </p>
+      <div className="mt-1.5">
+        <AiWorkLinkCompact role={shell.role} project={project ? { id: project.id, name: project.name } : null} triggerLabel="Copy AI work link" />
+      </div>
+    </div>
+  );
+
   // LEFT SCREEN COMPLETION, 2026-09-14 -- THE "Tasks" VIEW'S OWN CONTENT.
   // Byte-for-byte the same TaskMaster wiring this shell has always had
   // (tabs/activeTab/onTabChange/primaryGroup/secondaryGroup/systemGroup/
@@ -3735,7 +3791,13 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   const boxOneShowsOptionLevel =
     activeLeftView === "modules" || activeLeftView === "reports" || activeLeftView === "dashboard";
   const leftViewContent =
-    activeLeftView === "tasks" ? (
+    activeLeftView === "projects" ? (
+      // LEFT SCREEN COMPLETION, 2026-09-29 -- Projects has no leaves/verbs of its own for this box to drill into (see
+      // PROJECTS_ROUTE's own comment above): the right pane already shows the full list the moment the tab is clicked
+      // (onSelectProjectsView), so there is genuinely nothing left for this region to add. Matches this file's own
+      // "some views show nothing beyond the tab row" precedent rather than inventing filler content.
+      null
+    ) : activeLeftView === "tasks" ? (
       tasksViewContent
     ) : activeLeftView === "modules" ? (
       optionLevel ?? modulesCatalogue
@@ -3992,7 +4054,12 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               onReset={onReset}
               chainSentence={leftChainSentence}
               loaded={leftLoadedBanner}
-              banner={leftPanelBanner}
+              banner={
+                <>
+                  {leftPanelBanner}
+                  {aiWorkLinkPanelBanner}
+                </>
+              }
             >
               {leftViewContent}
             </LeftScreenCompletion>
