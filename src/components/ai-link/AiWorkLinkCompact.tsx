@@ -47,6 +47,7 @@ export function AiWorkLinkCompact({
   client,
   triggerLabel = "AI work link",
   className,
+  compact = false,
 }: {
   /** The person's PROJEXA role, or null/undefined while it is not known yet -- see ai-work-link-access.ts. */
   role: string | null | undefined;
@@ -59,6 +60,16 @@ export function AiWorkLinkCompact({
    *  ...) -- see this file's header for why the BEHAVIOUR behind the label never varies by caller. */
   triggerLabel?: string;
   className?: string;
+  /** WO ai-work-link-ui-and-projects-tab (2026-09-29), fixed same day (independent verify pass -- a real click-through, run for real
+   *  via `bunx playwright test`, found this): the top rail's own header is a fixed h-9 (36px) with no overflow handling
+   *  (TopRail.tsx), but the "done" state below used to always render 3 stacked lines (confirmation + a full sentence naming every
+   *  assistant + the "Change access or expiry" button) -- tall enough to spill past 36px into the page content below it, which then
+   *  visually covered "Change access or expiry" and made it unclickable (reproduced directly: a real Playwright click on it timed
+   *  out, intercepted by a nav element from the main content area). AiWorkLinkButtons.tsx already had a `compact` prop for exactly
+   *  this narrow-rail context (it just never reached this file) -- threaded through here now, collapsing the done/error states to
+   *  ONE row instead of three so nothing can overflow a fixed-height rail regardless of viewport width. The left-panel banner and
+   *  the Projects-list row action have real room and pass nothing, so they keep the fuller, unabbreviated text unchanged. */
+  compact?: boolean;
 }) {
   const [phase, setPhase] = useState<"idle" | "minting" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -99,22 +110,42 @@ export function AiWorkLinkCompact({
   }
 
   if (phase === "done") {
+    const fullSentence = `Paste it into ${AI_ASSISTANT_NAMES} — or any AI you use. Read-and-draft access, expires in 7 days.`;
     return (
       <div className={className} data-testid="awl-compact-confirm">
-        <p className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "var(--color-veri-teal, #0E7C6E)" }}>
-          <Check className="size-3.5" aria-hidden="true" /> Link copied
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Paste it into {AI_ASSISTANT_NAMES} — or any AI you use. Read-and-draft access, expires in 7 days.
-        </p>
-        <button
-          type="button"
-          className="text-xs font-medium text-ct-navy underline"
-          onClick={() => setDialogOpen(true)}
-          data-testid="awl-compact-change"
-        >
-          Change access or expiry
-        </button>
+        {compact ? (
+          // ONE row, not three -- see this file's `compact` prop doc above for why. The full sentence is still reachable (the
+          // row's own title tooltip, and in full inside the dialog "Change" opens) rather than silently dropped.
+          <div className="flex items-center gap-1.5 text-sm" title={fullSentence}>
+            <Check className="size-3.5 shrink-0" aria-hidden="true" style={{ color: "var(--color-veri-teal, #0E7C6E)" }} />
+            <span className="font-medium" style={{ color: "var(--color-veri-teal, #0E7C6E)" }}>
+              Link copied
+            </span>
+            <button
+              type="button"
+              className="shrink-0 text-xs font-medium text-ct-navy underline"
+              onClick={() => setDialogOpen(true)}
+              data-testid="awl-compact-change"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "var(--color-veri-teal, #0E7C6E)" }}>
+              <Check className="size-3.5" aria-hidden="true" /> Link copied
+            </p>
+            <p className="text-xs text-muted-foreground">{fullSentence}</p>
+            <button
+              type="button"
+              className="text-xs font-medium text-ct-navy underline"
+              onClick={() => setDialogOpen(true)}
+              data-testid="awl-compact-change"
+            >
+              Change access or expiry
+            </button>
+          </>
+        )}
         <AiWorkLinkDialog open={dialogOpen} onOpenChange={setDialogOpen} mode="project" project={project} client={awl} />
       </div>
     );
@@ -135,10 +166,10 @@ export function AiWorkLinkCompact({
         {phase === "minting" ? "Copying…" : triggerLabel}
       </Button>
       {phase === "error" && (
-        <p className="mt-1 text-xs text-destructive" role="alert" data-testid="awl-compact-error">
+        <p className={`mt-1 text-xs text-destructive ${compact ? "truncate" : ""}`} role="alert" data-testid="awl-compact-error" title={compact ? (error ?? undefined) : undefined}>
           {error}{" "}
           <button type="button" className="underline" onClick={() => setDialogOpen(true)} data-testid="awl-compact-change">
-            Change access or expiry
+            {compact ? "Change" : "Change access or expiry"}
           </button>
         </p>
       )}

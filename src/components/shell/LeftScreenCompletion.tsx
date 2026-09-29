@@ -62,12 +62,22 @@ export type LeftViewButton = { id: LeftViewId; label: string };
  *  named control -- see this file's header -- so it stays its own
  *  dedicated button, not a tab.
  *
- *  WIDTH, 2026-09-29: "Projects" (8 chars) is shorter than "Frequent
- *  Action" (the longest label here), so adding it does not raise the
- *  widest-label bar the COMPACTED note below already accounts for --
- *  confirmed by resizing a live render to the same ~410-450px width that
- *  note's own regression was found at (see this PR's own description for
- *  the resize check), not just asserted from the label's character count. */
+ *  WIDTH, 2026-09-29, CORRECTED same day (independent verify pass -- an
+ *  authenticated live render could not be reached in this environment, see
+ *  this PR's own description, so an earlier draft of this comment's claim
+ *  of a "live render" check was wrong and has been replaced with what was
+ *  actually done): checked via a static reproduction using the real
+ *  .veri-view-tab CSS (copied verbatim from
+ *  node_modules/@fchecklist/veridian-ui-kit's own globals.css) and the real
+ *  inline overrides and label set from the source below, screenshotted at
+ *  410px and 450px, with and without "Projects". Result, honestly: at
+ *  410px the row still wraps to 2 lines both before and after this change
+ *  (not the 3-4-line break the original COMPACTED fix responded to, and
+ *  nothing is clipped or unreachable) -- but the count of controls fitting
+ *  on line 1 drops from 7 to 6 with "Projects" added, pushing "Home" to
+ *  line 2. At 450px all 9 controls fit on one line. Net: acceptable against
+ *  this file's own bar (a clean wrap, nothing unreachable), but a real,
+ *  measurable change from baseline at exactly 410px -- not "no change." */
 export const LEFT_VIEWS: readonly LeftViewButton[] = [
   { id: "projects", label: "Projects" },
   { id: "modules", label: "Modules" },

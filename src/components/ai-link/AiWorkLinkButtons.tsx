@@ -63,7 +63,7 @@ export function AiWorkLinkButtons({
     <>
       <div className="flex items-center gap-1" data-testid="ai-work-link-buttons">
         {showMainTrigger && (
-          <AiWorkLinkCompact role={role} project={project} client={awl} triggerLabel="AI work link for this project" />
+          <AiWorkLinkCompact role={role} project={project} client={awl} triggerLabel="AI work link for this project" compact={compact} />
         )}
         {showNewProject && (
           <Button type="button" variant="outline" size="sm" onClick={() => setNewProjectOpen(true)} aria-label="New project with my AI" data-testid="ai-new-project-open">

@@ -2,9 +2,13 @@ import { test, expect, type BrowserContext, type Page, type Route } from "@playw
 import { buildProjectFixture } from "./support/boq-fixture";
 import { APP_ORIGIN, signInLocally, stubAppApis } from "./support/boq-local";
 
-// PROJEXA-BUILD-002 WP-08, register row AW-405: a signed-in user opens a project, clicks "AI work link", chooses the level and the days,
-// reads the warning, presses Create, gets the link ONCE with a Copy button, sees the link in the list and revokes it. The same file holds
-// two runs of that path, told apart by the Playwright project the runner uses:
+// PROJEXA-BUILD-002 WP-08, register row AW-405: a signed-in user opens a project, clicks "AI work link for this project", and it mints
+// immediately with the safe defaults (level 0, 7 days) and copies the link to the clipboard -- no dialog. "Change access or expiry" opens
+// the full picker (level, days, a name, the DB-sourced warning, Create) for anyone who wants something other than the default, and shows
+// every link already made for the project, including the default one just made (switched off the moment a second one is created). UPDATED
+// 2026-09-29 (WO ai-work-link-ui-and-projects-tab) for the one-click redesign -- see AiWorkLinkCompact.tsx's own header for the full design
+// history; the dialog this test drives via "Change access or expiry" is the exact same, unchanged AiWorkLinkDialog the main trigger used to
+// open directly. The same file holds two runs of that path, told apart by the Playwright project the runner uses:
 //
 //   1. "boq-local"  (playwright.boq-local.config.ts, the config the register command uses). A local PROJEXA server, a synthetic signed-in
 //      browser, and the Edge function ai-work-link ANSWERED IN THE BROWSER by the stub below, which follows the contract of
@@ -121,7 +125,7 @@ async function expectTokenNowhere(page: Page, context: BrowserContext, token: st
 
 // ---- run 1: the screen, against the stub ----
 
-test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, list it, Revoke", async ({ page, context }, testInfo) => {
+test("AW-405 (screen): one click mints and copies, Change access opens the picker, read the warning, Create, see the link once, Copy, list it, Revoke", async ({ page, context }, testInfo) => {
   test.skip(testInfo.project.name !== "boq-local", "this run is for playwright.boq-local.config.ts (the stubbed Edge function)");
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: APP_ORIGIN });
   const fixture = buildProjectFixture();
@@ -130,19 +134,46 @@ test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, 
   const project = { id: fixture.projectId, name: "Fixture Tower" };
   const edge = await stubEdge(page, session.accessToken, project);
 
-  await test.step("the button is in the top rail for a member role, on the project named in the address", async () => {
+  // Scoped to the top rail specifically: M24Shell's left-panel banner (WO ai-work-link-ui-and-projects-tab) renders a SECOND, fully
+  // independent AiWorkLinkCompact instance on this same route with the same default testids -- confirmed by actually running this spec
+  // (a bare page.getByTestId("awl-compact-trigger") is a strict-mode violation, 2 matches). Each instance holds its own React state, so
+  // acting on the rail's trigger never changes what the banner's own (separate, unclicked, unminted) instance shows.
+  const rail = page.getByTestId("ai-work-link-buttons");
+
+  await test.step("the compact trigger is in the top rail for a member role, on the project named in the address", async () => {
     await page.goto(`/projects?projectId=${encodeURIComponent(project.id)}`);
-    await expect(page.getByTestId("ai-work-link-open")).toBeEnabled({ timeout: 120_000 });
-    await expect(page.getByTestId("ai-new-project-open")).toBeVisible();
+    await expect(rail.getByTestId("awl-compact-trigger")).toBeEnabled({ timeout: 120_000 });
+    await expect(rail.getByTestId("ai-new-project-open")).toBeVisible();
+    expect(edge.seen.filter((s) => s.path === "/mint")).toHaveLength(0);
   });
 
-  await test.step("the dialog shows the sentence the service sent, before any link exists", async () => {
-    await page.getByTestId("ai-work-link-open").click();
+  let defaultLink = "";
+  await test.step("one click mints immediately with the safe defaults and copies the link -- no dialog", async () => {
+    await rail.getByTestId("awl-compact-trigger").click();
+    const confirm = rail.getByTestId("awl-compact-confirm");
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("Link copied");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    defaultLink = await page.evaluate(() => navigator.clipboard.readText());
+    expect(defaultLink).toMatch(LINK_SHAPE);
+
+    const mints = edge.seen.filter((s) => s.path === "/mint");
+    expect(mints).toHaveLength(1);
+    expect(mints[0].body).toEqual({ projectId: project.id, level: 0, days: 7 });
+    for (const call of edge.seen) {
+      expect(call.authorization).toBe(`Bearer ${session.accessToken}`);
+      expect(call.cookie).toBeUndefined();
+      expect(call.path).not.toMatch(TOKEN_SHAPE);
+    }
+  });
+
+  await test.step("\"Change access or expiry\" opens the full picker, warns that a new link switches the default one off, and shows the sentence the service sent for each level", async () => {
+    await rail.getByTestId("awl-compact-change").click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: `AI work link for ${project.name}` })).toBeVisible();
+    await expect(dialog.getByTestId("awl-replace-note")).toBeVisible();
     await expect(dialog.getByText(`STUB WARNING for ${project.name} at level 0: 12 BOQ lines, 3 tasks, 2 people.`)).toBeVisible();
     await expect(dialog.getByTestId("awl-create")).toBeEnabled();
-    expect(edge.seen.filter((s) => s.path === "/mint")).toHaveLength(0);
     // a level 1 choice asks the service again and shows its sentence, not a fixed one
     await dialog.getByLabel(/Direct entries/).check();
     await expect(dialog.getByText(`STUB WARNING for ${project.name} at level 1`)).toBeVisible();
@@ -151,7 +182,7 @@ test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, 
   });
 
   let link = "";
-  await test.step("Create shows the link once, in the right shape, made with the person's own token and nothing else", async () => {
+  await test.step("Create makes a SECOND link, in the right shape, naming the real assistants, made with the person's own token and nothing else", async () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("1 day").check();
     await dialog.getByLabel(/Name for this link/).fill("spec assistant");
@@ -160,11 +191,13 @@ test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, 
     await expect(input).toBeVisible();
     link = await input.inputValue();
     expect(link).toMatch(LINK_SHAPE);
-    await expect(dialog.getByTestId("awl-instruction")).toContainText("Paste this link into your AI assistant");
+    expect(link).not.toBe(defaultLink);
+    // named explicitly, from the same constant the one-click confirmation reads -- the two sentences must not drift apart
+    await expect(dialog.getByTestId("awl-instruction")).toContainText("Paste this link into ChatGPT, Gemini, Claude, Grok, DeepSeek, Z.ai");
 
     const mints = edge.seen.filter((s) => s.path === "/mint");
-    expect(mints).toHaveLength(1);
-    expect(mints[0].body).toEqual({ projectId: project.id, level: 0, days: 1, label: "spec assistant" });
+    expect(mints).toHaveLength(2);
+    expect(mints[1].body).toEqual({ projectId: project.id, level: 0, days: 1, label: "spec assistant" });
     for (const call of edge.seen) {
       expect(call.authorization).toBe(`Bearer ${session.accessToken}`);
       expect(call.cookie).toBeUndefined();
@@ -172,21 +205,23 @@ test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, 
     }
   });
 
-  await test.step("Copy puts exactly that link on the clipboard", async () => {
+  await test.step("Copy puts exactly that (second) link on the clipboard", async () => {
     await page.getByTestId("awl-copy").click();
     await expect(page.getByTestId("awl-status")).toHaveText("Link copied.");
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
   });
 
-  await test.step("the service has the link (re-read from it), and the list of the dialog shows it without a token", async () => {
+  await test.step("the service has both links (re-read from it) -- the default one switched off, the named one active -- and the dialog's list shows both without a token", async () => {
     const token = link.slice(link.lastIndexOf("/") + 1);
+    const defaultToken = defaultLink.slice(defaultLink.lastIndexOf("/") + 1);
     expect(edge.links.filter((l) => l.revokedAt === null)).toHaveLength(1);
-    expect(edge.links[0].token).toBe(token);
-    const row = page.getByTestId("awl-link-row");
-    await expect(row).toHaveCount(1);
-    await expect(row).toHaveAttribute("data-status", "active");
-    await expect(row).toContainText("spec assistant");
-    await expect(row).toContainText("Read and draft");
+    expect(edge.links.find((l) => l.token === token)?.revokedAt).toBeNull();
+    expect(edge.links.find((l) => l.token === defaultToken)?.revokedAt).not.toBeNull();
+    const rows = page.getByTestId("awl-link-row");
+    await expect(rows).toHaveCount(2);
+    await expect(page.locator('[data-testid="awl-link-row"][data-status="active"]')).toContainText("spec assistant");
+    await expect(page.locator('[data-testid="awl-link-row"][data-status="active"]')).toContainText("Read and draft");
+    await expect(page.locator('[data-testid="awl-link-row"][data-status="revoked"]')).toContainText("Link without a name");
   });
 
   await test.step("closing the dialog removes the link from the page, the address, storage and cookies", async () => {
@@ -194,8 +229,10 @@ test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, 
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expectTokenNowhere(page, context, token);
-    // and a second open shows the options again, not the link
-    await page.getByTestId("ai-work-link-open").click();
+    // and a second open (via the confirm state's own escape hatch -- the trigger button itself is gone once phase is "done") shows the
+    // options again, not the link: the just-created "spec assistant" link is the active one now, so the picker (not the confirm state)
+    // is what re-opening the compact trigger's dialog shows.
+    await rail.getByTestId("awl-compact-change").click();
     await expect(page.getByTestId("awl-create")).toBeEnabled();
     await expect(page.getByTestId("awl-link")).toHaveCount(0);
     await expectTokenNowhere(page, context, token);
@@ -204,9 +241,9 @@ test("AW-405 (screen): open, read the warning, Create, see the link once, Copy, 
   await test.step("Revoke switches the link off at the service, and the list re-read shows it revoked", async () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Revoke link spec assistant" }).click();
-    await expect(dialog.getByTestId("awl-link-row")).toHaveAttribute("data-status", "revoked");
+    await expect(page.locator('[data-testid="awl-link-row"][data-status="active"]')).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: /Revoke link/ })).toHaveCount(0);
-    expect(edge.links[0].revokedAt).not.toBeNull();
+    expect(edge.links.every((l) => l.revokedAt !== null)).toBe(true);
     expect(edge.seen.filter((s) => s.path.endsWith("/revoke"))).toHaveLength(1);
   });
 });
@@ -253,10 +290,15 @@ test("AW-405 (live): a link made in the dialog answers at /context, is listed wi
     const awlGet = (path: string) => request.get(`${AWL_URL}${path}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
 
     await page.goto(`/workspace/${encodeURIComponent(projectId)}`);
-    // the top rail has one of these buttons too; the workspace header's is the last in the page
-    const open = page.getByTestId("ai-work-link-open").last();
-    await expect(open).toBeEnabled({ timeout: 60_000 });
-    await open.click();
+    // the top rail has one of these triggers too; the workspace header's is the last in the page
+    const trigger = page.getByTestId("awl-compact-trigger").last();
+    await expect(trigger).toBeEnabled({ timeout: 60_000 });
+    // one click mints the default (level 0, 7 days -- already this test's own settings, minus the name) and copies it; a named link
+    // needs the full picker, reached via "Change access or expiry" once the one-click confirmation is showing.
+    await trigger.click();
+    const change = page.getByTestId("awl-compact-change").last();
+    await expect(change).toBeVisible({ timeout: 30_000 });
+    await change.click();
     const dialog = page.getByRole("dialog");
 
     // the real sentence of the database: its own closing words, not text of this app
@@ -293,7 +335,7 @@ test("AW-405 (live): a link made in the dialog answers at /context, is listed wi
     await expectTokenNowhere(page, context, token);
 
     // Revoke through the dialog, then read it back from the service and from the link itself
-    await open.click();
+    await change.click();
     await page.getByRole("dialog").getByRole("button", { name: `Revoke link ${label}` }).click();
     await expect(page.getByRole("dialog").getByRole("button", { name: `Revoke link ${label}` })).toHaveCount(0, { timeout: 30_000 });
     const after = await awlGet(`/links?project=${encodeURIComponent(projectId)}`);
