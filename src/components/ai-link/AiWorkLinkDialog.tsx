@@ -16,6 +16,11 @@
 // outside the dialog does not close it (Escape and the Done button still do), so it is not lost by a stray click.
 //
 // ONE LINK PER PERSON AND PROJECT. Making a new link switches off the earlier one for the same person and project, and the dialog says so.
+//
+// NO LONGER THE DEFAULT PATH (WO ai-work-link-ui-and-projects-tab, 2026-09-29). The "project" mode used to be what AiWorkLinkButtons.tsx
+// opened on every click. It is now reached only via that trigger's own "Change access or expiry" link (AiWorkLinkCompact.tsx), after
+// the one-click mint/copy path -- this dialog's own mechanism (the level/duration picker, the DB-sourced warning, Create) is unchanged,
+// it is simply optional now rather than the first thing a person sees.
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +28,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { formatDateTime } from "@/lib/format-date";
 import { AWL_DAYS, AwlError, type AwlClient, type AwlDays, type AwlLevel, type AwlLinkRow, type AwlMinted, type AwlWarning } from "@/lib/ai-work-link-client";
+// WO ai-work-link-ui-and-projects-tab (2026-09-29): the instruction sentence below names the assistants explicitly, from the SAME
+// constant AiWorkLinkCompact.tsx's one-click confirmation reads, so the two sentences describing "which AI" cannot drift apart.
+import { AI_ASSISTANT_NAMES } from "@/lib/ai-work-link-access";
 
 export type AiLinkProject = { id: string; name: string };
 
@@ -92,8 +100,9 @@ function ResultPanel({ minted, projectName, warning, announce }: { minted: AwlMi
         </div>
       )}
       <p className="text-sm" data-testid="awl-instruction">
-        Paste this link into your AI assistant and ask it to read the link and help you with {projectName}. Use an assistant that only you use, and do not
-        share the link. It stops working on {formatWhen(minted.expiresAt) || "its expiry date"}, or when you revoke it.
+        Paste this link into {AI_ASSISTANT_NAMES} — or any AI you use — and ask it to read the link and help you with {projectName}. Use an
+        assistant that only you use, and do not share the link. It stops working on {formatWhen(minted.expiresAt) || "its expiry date"}, or
+        when you revoke it.
       </p>
       {warning && (
         <p className="text-sm text-muted-foreground" data-testid="awl-result-warning">

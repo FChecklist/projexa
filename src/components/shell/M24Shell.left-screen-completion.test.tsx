@@ -232,6 +232,73 @@ describe("Left Screen Completion -- 1. MODULES (full drill-down, Back, right-pan
   });
 });
 
+describe("Left Screen Completion -- 0. PROJECTS (WO ai-work-link-ui-and-projects-tab, 2026-09-29: no MODULE_CATALOGUE entry, no leaves -- a plain-route view, onLeftHome's pattern not selectEntity()'s)", () => {
+  test("is the FIRST tab, selecting it navigates the right pane to /projects, and Back pops straight to the prior view (no leaves to unwind first)", async () => {
+    const { container } = renderShell();
+    await bootstrapped(container);
+
+    // Placement: first in the row, before "Modules" -- the product owner's own explicit request this session.
+    const tabs = [...leftNav(container).querySelectorAll('[role="tab"]')];
+    expect(tabs[0]!.textContent).toBe("Projects");
+
+    clickView(container, "Projects");
+    const projectsTab = tabs.find((t) => t.textContent === "Projects")!;
+    expect(projectsTab.getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(pushed).toContain("/projects"));
+
+    // Projects adds NO segment of its own (it is not a MODULE_CATALOGUE entry, unlike Reports/Dashboard which append "› Reports"/
+    // "› Dashboard" via selectEntity) -- the chain sentence, if it renders at all, is only ever the bootstrap's own project root,
+    // never "... › Projects". And there is no "Which step?" fieldset the way Reports/Dashboard/Modules show one, since there are
+    // no leaves to offer.
+    const sentence = container.querySelector('[data-testid="left-chain-sentence"]');
+    if (sentence) expect(sentence.textContent).not.toContain("Projects");
+    expect(container.querySelector("fieldset")).toBeNull();
+
+    // Back: nothing to unwind on Projects itself (no leaf, no module segment) -- pops straight to the view history, landing on
+    // "Frequent Action" (the view open before Projects was ever clicked), same tier-3 rule Modules/Reports/Dashboard all fall to
+    // once THEIR own leaves/module are already cut.
+    clickBack(container);
+    await waitFor(() => expect(container.querySelector('[aria-label="Things you can do"]')).not.toBeNull());
+    const frequentTab = [...leftNav(container).querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Frequent Action")!;
+    expect(frequentTab.getAttribute("aria-selected")).toBe("true");
+  });
+
+  test("already on /projects: no redundant push, same no-op-navigation rule Home/Reports/Dashboard already follow", async () => {
+    CURRENT_PATHNAME = "/projects";
+    const { container } = renderShell();
+    await bootstrapped(container);
+
+    clickView(container, "Projects");
+    await waitFor(() => {
+      const tab = [...leftNav(container).querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Projects")!;
+      expect(tab.getAttribute("aria-selected")).toBe("true");
+    });
+    expect(pushed).toEqual([]);
+  });
+
+  test("Back re-syncs the right pane to /projects when popping the view history back INTO Projects, not just Box 1's own tab", async () => {
+    // Arrive somewhere else, so Projects -> (some other view) -> Back has a real route to sync away from and back to.
+    CURRENT_PATHNAME = "/permits";
+    const { container } = renderShell();
+    await bootstrapped(container);
+
+    clickView(container, "Projects");
+    await waitFor(() => expect(pushed).toContain("/projects"));
+
+    // Switch to a view with nothing of its own to unwind either (Home) -- this is Box 1's OWN tab switch, not a Back press,
+    // so it does not consult leftViewHistoryRef at all.
+    clickView(container, "Home");
+    await waitFor(() => expect(container.querySelector('[data-testid="left-view-content"]')?.textContent).toContain("Jump to any module"));
+
+    // Back: pops the view history (which now holds ["frequent", "projects"] most-recent-last) back to "Projects" -- the exact
+    // branch this feature adds to onLeftBack's own nextView sync (see M24Shell.tsx, right beside the Reports/Dashboard ones).
+    clickBack(container);
+    await waitFor(() => expect(pushed[pushed.length - 1]).toBe("/projects"));
+    const projectsTab = [...leftNav(container).querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Projects")!;
+    expect(projectsTab.getAttribute("aria-selected")).toBe("true");
+  });
+});
+
 describe("Left Screen Completion -- 2. REPORTS (real MODULE_CATALOGUE entry, its own leaf, Back, sync)", () => {
   test("Reports -> Open: reuses selectEntity() like any other module, navigates, and Back walks it back", async () => {
     const { container } = renderShell();

@@ -43,6 +43,28 @@
 #      session with zero other context can act on them correctly.
 # ============================================================================
 active:
+  - session_label: "claude-code (workflow subagent, isolated worktree C:/ct/projexa-worktrees/ai-work-link, branch feat/ai-work-link-ui-and-projects-tab) -- add a 'Projects' tab (first in the left panel's tab row), wire it end-to-end following the 'reports' view's pattern, add a one-click 'Copy AI work link' action + 'New project with my AI' button to ProjectsListClient, make the AI work link one-click by default (inline 'Link copied' confirmation instead of always opening the dialog), name the assistants (ChatGPT/Gemini/Claude/Grok/DeepSeek/Z.ai) in both the compact confirmation and the dialog's instruction text, and add a left-panel banner via LeftScreenCompletion's `banner` prop."
+    claimed_at: "2026-09-29T (this session)"
+    completed_at: "2026-09-29T (this session)"
+    claim: |
+      [DONE -- commit d754a891 pushed to origin/feat/ai-work-link-ui-and-projects-tab, no PR
+      opened per this task's own instruction ("handled outside this workflow"); `bunx tsc --noEmit`,
+      `eslint` and `bun test --isolate` all green on every touched/added file. Live browser
+      click-through was attempted but blocked by this environment's own tooling: the Browser
+      pane's `preview_start` ignores a new `name` config and always relaunches the pre-existing
+      compliance-tracker one (confirmed twice, after force-freeing the port each time), and
+      `navigate` denies any raw http://localhost:* URL outright -- verified instead via the
+      M24Shell.left-screen-completion.test.tsx integration suite (mounts the real M24Shell tree,
+      clicks the real tab row) plus component tests; noted honestly, not glossed over.]
+
+      File scope: src/components/shell/LeftScreenCompletion.tsx, src/components/shell/M24Shell.tsx,
+      src/components/ai-link/AiWorkLinkButtons.tsx, src/components/ai-link/AiWorkLinkDialog.tsx,
+      src/components/ai-link/AiWorkLinkCompact.tsx (new), src/lib/ai-work-link-access.ts,
+      src/components/ProjectsListClient.tsx, plus each touched file's sibling *.test.tsx.
+      Based on origin/main @ b11608f3 (includes #326 "AI work link dialog and 'New project with
+      my AI'" already merged -- this claim builds ON TOP of that, not duplicating it). Does not
+      touch compliance-tracker (separate repo, separate worktree). Not touching any file another
+      active entry below claims.
   - session_label: "claude-code (interactive, worktree C:/ct/projexa-lastproject-fix, branch fix/last-used-project-server-side) -- PROJEXA-NEXT-001 follow-up: server-side last-used-project fallback (memberships.last_project_id), closing the gap PR #308 correctly left open. [DONE -- PR #318 open, tests/typecheck/lint/authz-drift-test all green locally, awaiting CI. Owner has now given standing authority for this project: 'complete all 111 requirements, merge your own green PRs, take your own call, don't ask' -- continuing directly into the next priority items (the 7 daily-use screens/surfaces) rather than pausing for per-task approval.]"
     claimed_at: "2026-09-21T (this session)"
     completed_at: "2026-09-21T (this session)"

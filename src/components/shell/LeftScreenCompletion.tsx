@@ -12,8 +12,8 @@
 // BOX AND BOTTOM LEFT BOX OF EQUAL SIZES ... LETS CALL IT 'LEFT SCREEN
 // COMPLETION'".
 //
-// WHAT THIS COMPONENT OWNS: the top box only -- the 7-control row (6
-// selectable views + Back, with Reset kept as an 8th, de-emphasised control
+// WHAT THIS COMPONENT OWNS: the top box only -- the 8-control row (7
+// selectable views + Back, with Reset kept as a 9th, de-emphasised control
 // so the existing "clear everything" action is not lost -- see this file's
 // own note on Reset below) and the single content region beneath it, which
 // renders EXACTLY ONE view's content at a time. This is what makes the
@@ -30,6 +30,13 @@
 // shell so the 7-view mechanism can be unit-tested on its own (see
 // LeftScreenCompletion.test.tsx) independently of M24Shell's real bootstrap.
 //
+// "PROJECTS" ADDED 2026-09-29 (WO ai-work-link-ui-and-projects-tab, owner
+// escalation in that session): a 7th selectable view, FIRST in the row --
+// see LEFT_VIEWS' own comment below for placement and width reasoning. Every
+// comment on this file written before that date that says "6 views"/"7-
+// control row" is counting the state as it stood on 2026-09-14 and is left
+// as historical record rather than silently renumbered throughout.
+//
 // THE CHAIN SENTENCE AND "LOADED FROM HISTORY" BANNER are reused here in
 // simplified form (words only, no per-segment Remove buttons -- see
 // ControlStrip.tsx for the fuller version this is adapted from). The
@@ -41,14 +48,38 @@
 // traded for a much smaller, focused component.
 import type { ReactNode } from "react";
 
-export type LeftViewId = "modules" | "tasks" | "frequent" | "reports" | "dashboard" | "home";
+export type LeftViewId = "projects" | "modules" | "tasks" | "frequent" | "reports" | "dashboard" | "home";
 
 export type LeftViewButton = { id: LeftViewId; label: string };
 
-/** The 6 SELECTABLE views, in the order the owner named them. "Back" is the
- *  7th named control but is not a persistent view -- see this file's header
- *  -- so it is rendered as its own dedicated button, not a 7th tab. */
+/** The 6 SELECTABLE views the owner named on 2026-09-14 (see header), PLUS
+ *  "projects" -- added 2026-09-29 (WO ai-work-link-ui-and-projects-tab) at
+ *  the product owner's explicit request, placed FIRST rather than appended
+ *  last: it is the entity every other module nests under (see
+ *  ProjectsListClient.tsx's own header, D-69), so it leads the row rather
+ *  than trailing behind views that are all, in effect, about a project
+ *  already chosen. "Back" is a separate, non-persistent 7th (now 8th)
+ *  named control -- see this file's header -- so it stays its own
+ *  dedicated button, not a tab.
+ *
+ *  WIDTH, 2026-09-29, CORRECTED same day (independent verify pass -- an
+ *  authenticated live render could not be reached in this environment, see
+ *  this PR's own description, so an earlier draft of this comment's claim
+ *  of a "live render" check was wrong and has been replaced with what was
+ *  actually done): checked via a static reproduction using the real
+ *  .veri-view-tab CSS (copied verbatim from
+ *  node_modules/@fchecklist/veridian-ui-kit's own globals.css) and the real
+ *  inline overrides and label set from the source below, screenshotted at
+ *  410px and 450px, with and without "Projects". Result, honestly: at
+ *  410px the row still wraps to 2 lines both before and after this change
+ *  (not the 3-4-line break the original COMPACTED fix responded to, and
+ *  nothing is clipped or unreachable) -- but the count of controls fitting
+ *  on line 1 drops from 7 to 6 with "Projects" added, pushing "Home" to
+ *  line 2. At 450px all 9 controls fit on one line. Net: acceptable against
+ *  this file's own bar (a clean wrap, nothing unreachable), but a real,
+ *  measurable change from baseline at exactly 410px -- not "no change." */
 export const LEFT_VIEWS: readonly LeftViewButton[] = [
+  { id: "projects", label: "Projects" },
   { id: "modules", label: "Modules" },
   { id: "tasks", label: "Tasks" },
   { id: "frequent", label: "Frequent Action" },

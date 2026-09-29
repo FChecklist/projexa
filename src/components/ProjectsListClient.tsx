@@ -25,6 +25,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ListScreen, ScreenFrame, type FieldMessage, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import DataLoadError from "@/components/DataLoadError";
+// WO ai-work-link-ui-and-projects-tab (2026-09-29). The one-click "Copy AI work link" row action (AiWorkLinkCompact.tsx) and the
+// "New project with my AI" header button (AiWorkLinkButtons.tsx, showMainTrigger=false -- this screen has no single project of its
+// own to point the main "AI work link for this project" trigger at, only the new-project path makes sense here).
+import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
+import { AiWorkLinkCompact } from "@/components/ai-link/AiWorkLinkCompact";
+import { useOrgRole } from "@/hooks/use-org-role";
 // R67 D-61/D-62: the money helpers are lane G-05's shared modules. D-61
 // briefly shipped its own format-money.ts plus a useCurrencyCode() hook in
 // @/lib/currency; G-05's format-money.ts + useOrgMoney() landed on main first
@@ -46,13 +52,16 @@ import {
 
 const FUNCTION_ID = "projects.list";
 
-// Five columns, well inside ListScreen's M28 cap of seven High.
+// Six columns, still inside ListScreen's M28 cap of seven High. "AI work link" is a synthetic field (no such key on ProjectRow,
+// same trick "__status" already uses below) -- renderCell.__aiLink is the entire column, there is nothing for formatCell to fall
+// back to since this cell is never a bare value.
 const COLUMNS: ScreenColumn[] = [
   { label: "Project", field: "name", type: "text", importance: "High" },
   { label: "% complete", field: "percentByValue", type: "number", importance: "High" },
   { label: "Contract value", field: "contractValue", type: "number", importance: "High" },
   { label: "Project value", field: "projectValue", type: "number", importance: "High" },
   { label: "Status", field: "__status", type: "text", importance: "High" },
+  { label: "AI work link", field: "__aiLink", type: "text", importance: "High" },
 ];
 
 export default function ProjectsListClient() {
@@ -63,6 +72,9 @@ export default function ProjectsListClient() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [status, setStatus] = useState("");
   const { money } = useOrgMoney();
+  // WO ai-work-link-ui-and-projects-tab: gates both the row action and the header's "New project with my AI" button, same helper
+  // (canMakeAiWorkLink, via AiWorkLinkCompact/AiWorkLinkButtons) every other AI-work-link surface in this app already uses.
+  const { role } = useOrgRole();
   const inFlight = useRef(false);
 
   const load = useCallback(async () => {
@@ -103,18 +115,33 @@ export default function ProjectsListClient() {
   const messages: FieldMessage[] = loadError ? [{ level: "error", text: loadError }] : [];
 
   return (
-    <ScreenFrame
-      breadcrumb="Projects"
-      filterAction={{ label: "Filter", onClick: () => setFilterOpen((open) => !open) }}
-      exportAction={{
-        label: "Export",
-        onClick: () => downloadCsv("projects.csv", toCsv(PROJECT_EXPORT_HEADERS, projectExportRows(shown))),
-        disabledReason: loading ? "Still loading" : shown.length === 0 ? "No rows to export" : undefined,
-      }}
-      // The frame draws the plus (C01-13), so the label is the plain word.
-      newAction={{ label: "New", onClick: () => router.push("/projects/new") }}
-      messages={messages}
-    >
+    <div className="flex h-full min-h-0 flex-col">
+      {/* WO ai-work-link-ui-and-projects-tab (2026-09-29): ScreenFrame (@fchecklist/veridian-ui-kit/screens, a shared, unmodified-
+          here package) draws a FIXED 3-action header -- Filter | Export | New, GLOBAL across every list screen in this app, with no
+          slot for a 4th. Rather than hand-editing that shared component for one screen's extra button, this row sits directly
+          above it, right-aligned to the same edge "New" lives on, so the two read as one header at a glance. */}
+      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-ct-border bg-ct-cloud/40 px-4 py-1.5">
+        <AiWorkLinkButtons
+          role={role}
+          project={null}
+          showNewProject
+          showMainTrigger={false}
+          // A new shell project made from here belongs in THIS list immediately, not only after a manual refresh.
+          onProjectCreated={() => void load()}
+        />
+      </div>
+      <ScreenFrame
+        breadcrumb="Projects"
+        filterAction={{ label: "Filter", onClick: () => setFilterOpen((open) => !open) }}
+        exportAction={{
+          label: "Export",
+          onClick: () => downloadCsv("projects.csv", toCsv(PROJECT_EXPORT_HEADERS, projectExportRows(shown))),
+          disabledReason: loading ? "Still loading" : shown.length === 0 ? "No rows to export" : undefined,
+        }}
+        // The frame draws the plus (C01-13), so the label is the plain word.
+        newAction={{ label: "New", onClick: () => router.push("/projects/new") }}
+        messages={messages}
+      >
       {filterOpen && (
         <div className="flex flex-wrap items-center gap-3 border-b border-ct-border px-4 py-3">
           <label className="flex items-center gap-1.5 text-[12.5px] text-ct-navy">
@@ -217,9 +244,24 @@ export default function ProjectsListClient() {
                 </span>
               );
             },
+            // WO ai-work-link-ui-and-projects-tab: one click, per project, reusing the SAME compact mint/copy/confirm component the
+            // top rail and the left-panel banner use -- see AiWorkLinkCompact.tsx's own header for why there is only one
+            // implementation of this behaviour. `whitespace-normal` overrides ListScreen's own `<td>` `whitespace-nowrap` (applied
+            // to every cell regardless of its renderCell) so the confirmation sentence wraps instead of overflowing the row, and
+            // stopPropagation keeps a click inside this cell from also firing the row's own onRowClick (the same guard the "name"
+            // column's Link already uses above).
+            __aiLink: (row) => {
+              const project = row as unknown as ProjectRow;
+              return (
+                <div className="max-w-[220px] whitespace-normal" onClick={(e) => e.stopPropagation()} data-testid="awl-row-action">
+                  <AiWorkLinkCompact role={role} project={{ id: project.id, name: project.name }} triggerLabel="Copy AI work link" />
+                </div>
+              );
+            },
           }}
         />
       )}
-    </ScreenFrame>
+      </ScreenFrame>
+    </div>
   );
 }
