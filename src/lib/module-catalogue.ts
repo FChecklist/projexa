@@ -98,6 +98,29 @@ export type ModuleDef = {
    * Customers and Vendors, and the Reports catalogue).
    */
   needsProject?: boolean;
+  /**
+   * TRUE for a module Sumeet's 111 requirements (platform.sumeet_requirements,
+   * project pcrjmlpuqsbocqfwoxod) do not cover, per the owner's direct
+   * 2026-09-30 instruction ("ONLY SHOW THE MODULES WHICH SUMEET 111
+   * REQUIREMENT'S NEED, REST CAN BE HIDE, REST CAN BE NOT WORKED").
+   *
+   * THIS IS A VISIBILITY FLAG, NOT A DELETION. A hidden module's own route,
+   * leaves and pages are untouched and still work for anyone who reaches them
+   * directly (a bookmark, a deep link) -- only the three real nav surfaces that
+   * OFFER a module to a user stop listing it: the composer's expanded "All
+   * modules" grid (src/lib/pill-catalogue.ts's build(), which drops any pill
+   * whose resolved module is hidden), and the left-rail-replacement / mobile
+   * drawer nav sourced from src/components/AppSidebar.tsx's NAV_SECTIONS
+   * (src/lib/nav-routes.ts's filterVisibleNav()). moduleForPathname(),
+   * moduleForPill() and every other resolution function in this file are
+   * UNCHANGED by this flag on purpose -- a hidden module's own screen still
+   * has to know what module it is.
+   *
+   * Absent (or false) modules are exactly module-catalogue.test.ts's own
+   * "Sumeet's 111" describe block -- re-derive from platform.sumeet_
+   * requirements rather than trusting this comment if it ever looks stale.
+   */
+  hidden?: boolean;
 };
 
 export const MODULE_CATALOGUE: readonly ModuleDef[] = [
@@ -269,6 +292,13 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "budgets",
     label: "Budget",
     route: "/budgets",
+    // Sumeet's 111 requirements (2026-09-30 scoping): NOT one of the 111 --
+    // R-C09 ("Module: Budget") is the BOQ line-item budget % + vendor
+    // name/amount, which lives on /scope?tab=budget (the "scope" module
+    // below), not here. This entry's own leaf opens /finance/budgets/new,
+    // the ERP's fiscal-year ledger (R67 D-62) -- a real PROJEXA screen, just
+    // not the one any of the 111 rows describe. See module-catalogue.test.ts.
+    hidden: true,
     // R80 Part 5 GAP-1: "/budgets" alone was a lie by omission. All three
     // /budgets/* routes are pure redirects into /finance/budgets/* (D-62), and
     // this module's own create leaf sends the user to /finance/budgets/new --
@@ -328,6 +358,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "customers",
     label: "Customers",
     route: "/customers",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a
+    // standalone Customers CRM module -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/customers"],
     needsProject: false,
     pillKeys: ["customers", "customer"],
@@ -342,6 +375,11 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "vendors",
     label: "Vendors",
     route: "/vendors",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a
+    // standalone Vendors CRM module (R-C09's "vendor name + amount" is a
+    // per-BOQ-line field on "scope", not this org-wide directory) -- see
+    // ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/vendors"],
     needsProject: false,
     pillKeys: ["vendors", "vendor"],
@@ -394,6 +432,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "accounting",
     label: "Accounting",
     route: "/accounting",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers general
+    // ledger/journal accounting -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/accounting"],
     needsProject: false,
     pillKeys: ["accounting", "journal", "journal_entries", "ledger"],
@@ -409,6 +450,10 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "procurement",
     label: "Procurement",
     route: "/procurement",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers
+    // purchase orders/RFQs/requisitions/goods receipts -- see
+    // ModuleDef.hidden's own comment.
+    hidden: true,
     // GAP-10: purchase orders are split across two route families -- create and
     // list at /purchase-orders, the object page at /procurement/purchase-orders
     // /[id]. Both belong to this module, so the strip keeps saying "Procurement"
@@ -431,6 +476,12 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "invoices",
     label: "Invoices",
     route: "/invoices",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers general
+    // sales invoicing/credit notes (R-95's "invoice" step belongs to Billing
+    // Milestones, a real, separate, uncatalogued page -- see
+    // src/app/(app)/billing-milestones/page.tsx, not this module) -- see
+    // ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/invoices"],
     needsProject: false,
     pillKeys: ["invoices", "invoice", "billing", "credit_notes", "credit_note"],
@@ -446,6 +497,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "quotations",
     label: "Quotations",
     route: "/quotations",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers sales
+    // quotations -- see ModuleDef.hidden's own comment.
+    hidden: true,
     // Sales quotations only. The PURCHASE quotation at
     // /procurement/quotations/new is a different entity on a different table
     // that happens to share the word (GAP-10), and it belongs to Procurement.
@@ -463,6 +517,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "sales-orders",
     label: "Sales Orders",
     route: "/sales-orders",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers sales
+    // orders -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/sales-orders"],
     needsProject: false,
     pillKeys: ["sales_orders", "sales_order", "order", "orders"],
@@ -477,6 +534,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "sales",
     label: "Sales Pipeline",
     route: "/sales",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a sales
+    // CRM pipeline -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/sales"],
     needsProject: false,
     pillKeys: ["sales", "leads", "lead", "opportunities", "opportunity", "crm", "pipeline"],
@@ -497,6 +557,11 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "inventory",
     label: "Inventory",
     route: "/inventory",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers an
+    // org-wide inventory/warehouse module (R-C08's "material database" is the
+    // "materials" module below, project-scoped) -- see ModuleDef.hidden's
+    // own comment.
+    hidden: true,
     prefixes: ["/inventory"],
     needsProject: false,
     pillKeys: ["inventory", "stock", "warehouse", "warehouses", "items"],
@@ -513,6 +578,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "expenses",
     label: "Expenses",
     route: "/expenses",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers employee
+    // expense claims -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/expenses"],
     needsProject: false,
     pillKeys: ["expenses", "expense", "claim", "claims", "reimbursement"],
@@ -527,6 +595,10 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "employees",
     label: "Employees",
     route: "/employees",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers HR/
+    // employee records (R-C07's "Manpower DB" is the "labour" module below,
+    // site workers, not office HR) -- see ModuleDef.hidden's own comment.
+    hidden: true,
     // "/hr" is this module's own hub screen, not a module of its own -- it has
     // no create route and no object route, so giving it a segment of its own
     // would put a dead end in the strip.
@@ -547,6 +619,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "payroll",
     label: "Payroll",
     route: "/payroll",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers payroll
+    // -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/payroll"],
     needsProject: false,
     pillKeys: ["payroll", "payslip", "payslips", "salary", "salaries"],
@@ -565,6 +640,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "recruitment",
     label: "Recruitment",
     route: "/recruitment",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers hiring/
+    // recruitment -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/recruitment"],
     needsProject: false,
     pillKeys: ["recruitment", "hiring", "openings", "candidates", "applications"],
@@ -581,6 +659,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "grc",
     label: "Governance & Risk",
     route: "/grc",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers GRC
+    // (policies/risks/audits/cases) -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/grc"],
     needsProject: false,
     pillKeys: ["grc", "governance", "risk", "risks", "policies", "policy", "compliance", "audit", "audits"],
@@ -601,6 +682,10 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "kpis",
     label: "KPIs",
     route: "/kpis",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a
+    // standalone KPI/target-tracking module -- see ModuleDef.hidden's own
+    // comment.
+    hidden: true,
     prefixes: ["/kpis"],
     pillKeys: ["kpis", "kpi", "metrics", "targets"],
     placeholder: "e.g. set a monthly concrete pour target for this project",
@@ -627,6 +712,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "punch-list",
     label: "Punch List",
     route: "/punch-list",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a
+    // punch-list/snagging module -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/punch-list"],
     pillKeys: ["punch_list", "punch", "snag", "snags", "snagging", "defects"],
     placeholder: "e.g. log a snag for the cracked tile in unit 4B",
@@ -640,6 +728,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "rfis",
     label: "RFIs",
     route: "/rfis",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers RFIs --
+    // see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/rfis"],
     pillKeys: ["rfis", "rfi", "queries", "information_request"],
     placeholder: "e.g. raise an RFI about the beam reinforcement detail",
@@ -653,6 +744,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "submittals",
     label: "Submittals",
     route: "/submittals",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers
+    // submittals -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/submittals"],
     pillKeys: ["submittals", "submittal", "approvals", "material_approval"],
     placeholder: "e.g. submit the tile sample for approval",
@@ -666,6 +760,11 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "site-diary",
     label: "Site Diary",
     route: "/site-diary",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a
+    // separate site-diary module (Work Progress's daily entries/photos --
+    // R-48 -- are the "work-progress" module below) -- see ModuleDef.hidden's
+    // own comment.
+    hidden: true,
     prefixes: ["/site-diary"],
     pillKeys: ["site_diary", "diary", "daily_report", "day_report"],
     placeholder: "e.g. record today's site diary entry",
@@ -679,6 +778,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "ffe",
     label: "FF&E",
     route: "/ffe",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers FF&E --
+    // see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/ffe"],
     pillKeys: ["ffe", "furniture", "fixtures", "equipment"],
     placeholder: "e.g. add the lobby seating to the FF&E schedule",
@@ -692,6 +794,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "mood-boards",
     label: "Mood Boards",
     route: "/mood-boards",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers mood
+    // boards -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/mood-boards"],
     pillKeys: ["mood_boards", "mood_board", "moodboard", "concept"],
     placeholder: "e.g. start a mood board for the master bedroom",
@@ -705,6 +810,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "wiki",
     label: "Wiki",
     route: "/wiki",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers a
+    // per-project wiki -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/wiki"],
     needsProject: false,
     pillKeys: ["wiki", "handbook", "sop", "sops"],
@@ -719,6 +827,9 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "knowledge-base",
     label: "Knowledge Base",
     route: "/knowledge-base",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers an
+    // org-wide knowledge base -- see ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/knowledge-base"],
     needsProject: false,
     pillKeys: ["knowledge_base", "kb", "help", "articles"],
@@ -738,6 +849,12 @@ export const MODULE_CATALOGUE: readonly ModuleDef[] = [
     id: "project-directory",
     label: "Project Directory",
     route: "/projects",
+    // Sumeet's 111 requirements (2026-09-30 scoping): no row covers an
+    // org-wide project directory/creation screen of its own (every one of the
+    // 111 rows is scoped to work WITHIN a project already selected via the
+    // top-rail ProjectSwitcher, which this flag does not touch) -- see
+    // ModuleDef.hidden's own comment.
+    hidden: true,
     prefixes: ["/projects"],
     needsProject: false,
     // DELIBERATELY EMPTY, and this is the whole point of the entry. Two

@@ -46,6 +46,7 @@
 
 import { CARD_CATALOGUE, allModulesEntries, type AllModulesEntry } from "./card-catalogue";
 import { pillTargetFor, type PillTarget } from "./pill-routes";
+import { MODULE_CATALOGUE } from "./module-catalogue";
 
 /**
  * Where a pill goes. There is no fifth kind, and no pill that renders has none.
@@ -142,10 +143,29 @@ function withKeyHints(entries: readonly Omit<PillEntry, "keyHint">[]): PillEntry
   });
 }
 
+/**
+ * Sumeet's 111 requirements (2026-09-30 scoping, owner directive: "ONLY SHOW
+ * THE MODULES WHICH SUMEET 111 REQUIREMENT'S NEED, REST CAN BE HIDE"). A pill
+ * whose destination is a module MODULE_CATALOGUE marks `hidden` is treated
+ * exactly like a destination that does not exist -- this is what lets
+ * "Customers"/"Vendors"/"Budgets" and the rest drop out of BOTH the Sumeet-
+ * ordered band and the Platform group in one place, without allModulesEntries()
+ * itself (card-catalogue.ts) needing to know about product scoping at all. See
+ * module-catalogue.ts's ModuleDef.hidden for the full rationale.
+ */
+function targetIsHiddenModule(target: PillTarget | null): boolean {
+  if (!target || target.kind !== "module") return false;
+  return MODULE_CATALOGUE.find((m) => m.id === target.moduleId)?.hidden === true;
+}
+
 function build(): readonly PillEntry[] {
   const wired: Omit<PillEntry, "keyHint">[] = [];
   for (const entry of allModulesEntries()) {
     const target = targetFor(entry);
+    // Sumeet's 111 requirements scoping -- see targetIsHiddenModule's own
+    // comment. Checked before the "no destination" branch below so a hidden
+    // module is silently omitted rather than ever reaching the strip.
+    if (targetIsHiddenModule(target)) continue;
     const destination: PillDestination | null =
       entry.kind === "other" ? "input" : target ? target.kind : null;
     // A-11 / A-12: a pill with no wired destination does not render at all.

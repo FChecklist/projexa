@@ -142,6 +142,56 @@ describe("MODULE_CATALOGUE", () => {
   });
 });
 
+// Owner directive, 2026-09-30: "ONLY SHOW THE MODULES WHICH SUMEET 111
+// REQUIREMENT'S NEED, REST CAN BE HIDE, REST CAN BE NOT WORKED." Verified
+// against platform.sumeet_requirements (project pcrjmlpuqsbocqfwoxod, 111
+// rows) -- re-derive this set from that table, not from this list, if it
+// ever looks stale.
+describe("hidden (Sumeet's 111 requirements scoping)", () => {
+  const NEEDED = [
+    "dashboard",
+    "permits",
+    "drawings",
+    "documents",
+    "moms",
+    "scope",
+    "work-progress",
+    "labour",
+    "materials",
+    "schedule",
+    "reports",
+    "design-studio",
+    "change-orders",
+    "analysis",
+  ];
+
+  test("every module is accounted for exactly once, as needed or hidden", () => {
+    const ids = MODULE_CATALOGUE.map((m) => m.id);
+    expect(new Set(NEEDED).size).toBe(NEEDED.length);
+    expect(NEEDED.every((id) => ids.includes(id))).toBe(true);
+  });
+
+  test("a module in Sumeet's 111 is never hidden", () => {
+    const wronglyHidden = MODULE_CATALOGUE.filter((m) => NEEDED.includes(m.id) && m.hidden).map((m) => m.id);
+    expect(wronglyHidden).toEqual([]);
+  });
+
+  test("a module NOT in Sumeet's 111 is always hidden -- no silent third state", () => {
+    const missed = MODULE_CATALOGUE.filter((m) => !NEEDED.includes(m.id) && !m.hidden).map((m) => m.id);
+    expect(missed).toEqual([]);
+  });
+
+  test("hiding a module does not change what it resolves to -- only nav offers it, not resolution", () => {
+    // "budgets" is hidden (it is the ERP fiscal-year screen, R67 D-62 -- not
+    // Sumeet's R-C09, which lives on "scope"'s own ?tab=budget), but it must
+    // still resolve normally for anyone who lands on it directly.
+    expect(moduleForPathname("/budgets")?.id).toBe("budgets");
+    expect(moduleForPathname("/budgets")?.hidden).toBe(true);
+    expect(moduleForPill("customers", "Customers")?.id).toBe("customers");
+    expect(moduleForPill("customers", "Customers")?.hidden).toBe(true);
+  });
+});
+
 describe("moduleForPathname", () => {
   test("resolves a list route", () => {
     expect(moduleForPathname("/permits")?.id).toBe("permits");

@@ -25,6 +25,18 @@ import {
 import { SUMEET_MODULE_ORDER } from "./card-catalogue";
 import { MODULE_CATALOGUE } from "./module-catalogue";
 
+// Owner directive, 2026-09-30 (Sumeet's 111 requirements scoping): "budgets"
+// is in SUMEET_MODULE_ORDER (card-catalogue.ts, unchanged by this scoping --
+// it is a historical ordering artifact, not a visibility flag) but is ALSO
+// one of the 25 modules module-catalogue.ts now marks `hidden` -- it is the
+// ERP fiscal-year screen (R67 D-62), not R-C09's own BOQ budget %, which
+// lives on "scope". PILL_CATALOGUE drops any hidden module's pill entirely
+// (see pill-catalogue.ts's targetIsHiddenModule), so the rendered list is
+// SUMEET_MODULE_ORDER minus its own hidden entries, not the raw array.
+const VISIBLE_SUMEET_ORDER = SUMEET_MODULE_ORDER.filter(
+  (id) => !MODULE_CATALOGUE.find((m) => m.id === id)?.hidden
+);
+
 describe("PILL_CATALOGUE -- fixed, frozen, and handed out by identity", () => {
   test("pillCatalogue() returns the very same array every time", () => {
     expect(pillCatalogue()).toBe(PILL_CATALOGUE);
@@ -53,15 +65,23 @@ describe("PILL_CATALOGUE -- fixed, frozen, and handed out by identity", () => {
     expect(PILL_CATALOGUE.map((e) => e.id)).toEqual(before);
   });
 
-  test("Sumeet's eleven modules come first, in his order (A-14: never usage)", () => {
-    expect(PILL_CATALOGUE.slice(0, 11).map((e) => e.moduleId)).toEqual([...SUMEET_MODULE_ORDER]);
+  test("Sumeet's visible modules come first, in his order (A-14: never usage)", () => {
+    // Not literally "eleven" any more -- 2026-09-30 (Sumeet's 111 requirements
+    // scoping) hid "budgets" out of the eleven SUMEET_MODULE_ORDER names, so
+    // ten of the original eleven render here. See VISIBLE_SUMEET_ORDER above.
+    expect(PILL_CATALOGUE.slice(0, VISIBLE_SUMEET_ORDER.length).map((e) => e.moduleId)).toEqual(VISIBLE_SUMEET_ORDER);
     expect(PILL_CATALOGUE[0].label).toBe("Permits");
-    expect(PILL_CATALOGUE[10].label).toBe("Reports");
+    expect(PILL_CATALOGUE[VISIBLE_SUMEET_ORDER.length - 1].label).toBe("Reports");
   });
 
-  test("'Other — type it' is the twelfth entry and its destination is the box", () => {
-    expect(PILL_CATALOGUE[11].id).toBe("other");
-    expect(PILL_CATALOGUE[11].destination).toBe("input");
+  test("'budgets' itself does not render -- it is hidden (2026-09-30 scoping)", () => {
+    expect(PILL_CATALOGUE.some((e) => e.moduleId === "budgets")).toBe(false);
+  });
+
+  test("'Other — type it' immediately follows Sumeet's visible modules and its destination is the box", () => {
+    const idx = VISIBLE_SUMEET_ORDER.length;
+    expect(PILL_CATALOGUE[idx].id).toBe("other");
+    expect(PILL_CATALOGUE[idx].destination).toBe("input");
   });
 });
 
@@ -105,10 +125,15 @@ describe("every pill has a wired destination (A-11 / A-12 / A-17)", () => {
   test("D-10: a demoted universal pill still reaches the same destination", () => {
     // The Platform group is what makes the demotion safe -- these names must
     // still be here, and still resolve to a real module.
-    expect(pillEntryById("platform.customers")?.moduleId).toBe("customers");
-    expect(pillEntryById("platform.vendors")?.moduleId).toBe("vendors");
     expect(pillEntryById("platform.minutes_of_meeting")?.moduleId).toBe("moms");
     expect(pillEntryById("platform.calendar")?.moduleId).toBe("schedule");
+  });
+
+  test("2026-09-30 (Sumeet's 111 requirements scoping) supersedes D-10 for exactly these two: Customers and Vendors are hidden modules now, so the platform pill that used to demote-but-keep them is gone rather than pointing at a screen this build no longer offers", () => {
+    expect(MODULE_CATALOGUE.find((m) => m.id === "customers")?.hidden).toBe(true);
+    expect(MODULE_CATALOGUE.find((m) => m.id === "vendors")?.hidden).toBe(true);
+    expect(pillEntryById("platform.customers")).toBeNull();
+    expect(pillEntryById("platform.vendors")).toBeNull();
   });
 
   test("'Projects' survives as a pointer at the rail, not as a dead end", () => {
