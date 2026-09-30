@@ -54,7 +54,15 @@ function recordHref(r: ExceptionRecord): string | null {
     case "material_issue": return `/materials/${linkId}`; // linkId is the MATERIAL's id, not the issue's own id -- no per-issue screen exists
     case "labour_roster": return `/labour/${linkId}`;
     case "punch_list_item": return `/punch-list/${linkId}`;
-    case "interim_bill": return `/invoices?highlight=${linkId}`; // same pattern BillingMilestonesClient.tsx's own "View invoice" action already uses
+    // Fixed 2026-09-30 (Sumeet EXC-ITEM-24 verification): this used to be
+    // `/invoices?highlight=<interim bill id>`, but invoices/page.tsx only
+    // reads ?tab= -- nothing anywhere reads ?highlight= -- so the click landed
+    // on the plain invoices list, and an interim bill's own id is not a sales
+    // invoice id anyway. The exceptions API now sends the bill's real
+    // sales_invoice_id as linkId when the bill has been invoiced: that opens
+    // the real /invoices/[id] screen. A bill not yet invoiced has no invoice
+    // screen, so it opens Billing Milestones, where interim bills are listed.
+    case "interim_bill": return r.linkId ? `/invoices/${r.linkId}` : "/billing-milestones";
     default: return null; // vendor_dispute / customer_complaint / invoice_item (no screen yet) or "date" (not a record)
   }
 }
