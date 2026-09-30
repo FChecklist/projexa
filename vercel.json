@@ -3,5 +3,5 @@
   "regions": [
     "bom1"
   ],
-  "ignoreCommand": "sh -c 'exit 0'"
+  "ignoreCommand": "sh -c '[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ] && exit 0; git diff --name-only HEAD^ HEAD | grep -qvE \"^(.*\\.md$|.*\\.jsonl$|.*\\.csv$|\\.github/)\" && exit 1; exit 0'"
 }
