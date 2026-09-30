@@ -9,69 +9,133 @@
 //
 // PROJEXA-E2E-001, continued (2026-09-21, owner directive, quoted verbatim):
 // "WE NEED TO SPEND MINIMUM VERCEL CREDITS ... THAN WE GO LIVE BY RECHARGING
-// VERCEL." Investigated first, not just applied blind: both projects'
-// `live` flag was already `false` and every deployment PROJEXA-E2E-001's own
-// merges to main had triggered (dpl_HbGeekZ7.../dpl_EwyTrQAQ...) showed
-// readyState=BLOCKED with target=null -- the project-pause/spend-cap
-// backstop documented in R87's own findings was in fact catching every one
-// of them, so no real build/compute was spent by those merges. Tightening
-// anyway, on the owner's explicit instruction, rather than relying on that
-// backstop as the only line of defense: ignoreCommand is now unconditional
-// -- `exit 0` on every ref, VERCEL_ENV included -- so nothing here can ever
-// reach a real build again until the owner recharges and says go live,
-// at which point THIS is the one line that changes back.
-import { describe, expect, test } from "bun:test"
+// VERCEL." Tightened to unconditional `exit 0` on every ref, with the exit
+// condition written directly into the old version of this file: "until the
+// owner recharges and says go live, at which point THIS is the one line that
+// changes back."
+//
+// 2026-09-30, owner directive, quoted verbatim, this session: "CAN WE GO LIVE
+// ON PROJEXA-AI.COM NOW FOR TESTING ON SERVER?" -- the owner saying go live,
+// without recharging (explicitly still on Hobby, $0). Investigated first, not
+// applied blind: every production deployment since the start of this session
+// (both `projexa` and `veridian-compliance-ai`) was CANCELED with errorLink
+// pointing at "ignored-build-step" -- this exact unconditional ignoreCommand
+// was the actual, sole blocker; projexa-ai.com had been serving a ~10-day-old
+// build the entire session. A Hobby-plan deploy costs $0 regardless of
+// whether it runs, as long as build-minute quotas aren't exceeded, so
+// deploying does not conflict with "no recharge" -- confirmed with the owner
+// directly (not assumed) before changing this file, given how firmly and
+// repeatedly the zero-Vercel-spend rule had been stated across this session.
+//
+// Restores branch+path gating (the same shape as the R87 version): skip any
+// non-main branch outright; on main, additionally skip when every changed
+// file is docs/KT-report-only (*.md/*.jsonl/*.csv/.github/**); otherwise
+// proceed. (Compliance-tracker's copy of this file also excludes dpdp-app/**
+// -- not needed here, PROJEXA's own repo carries no DPDP content.)
+//
+// FIXTURE-REPO-DRIVEN (same approach the R87 version of this test used):
+// rather than depending on a real historical commit that happens to be
+// docs-only existing in THIS repo (searched -- none of the last 30 commits
+// qualify, this repo's commits are almost always real code), builds a small,
+// throwaway git repo under a temp directory with deterministic fixture
+// commits, so every case (non-main, main+code, main+docs-only,
+// main+mixed) is exercised against a real `git diff` and a real shell, not a
+// re-implementation of the ignoreCommand's own logic.
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { tmpdir } from "node:os"
 
 function readVercelJson() {
   const raw = readFileSync(join(import.meta.dir, "..", "..", "vercel.json"), "utf8")
   return JSON.parse(raw)
 }
 
-function runIgnoreCommand(cmd: string, vercelEnv: string | undefined): number | null {
-  const env = { ...process.env }
-  if (vercelEnv === undefined) {
-    delete env.VERCEL_ENV
-  } else {
-    env.VERCEL_ENV = vercelEnv
+function sh(cwd: string, cmd: string, env?: Record<string, string>) {
+  const proc = Bun.spawnSync(["sh", "-c", cmd], { cwd, env: { ...process.env, ...env } })
+  return proc
+}
+
+/** Builds a throwaway git repo with a base commit, then one more commit per `commits` entry, in order. Returns its path. */
+function buildFixtureRepo(commits: ReadonlyArray<{ files: Record<string, string> }>): string {
+  const dir = mkdtempSync(join(tmpdir(), "vercel-lockdown-fixture-"))
+  sh(dir, "git init -q && git config user.email t@t.test && git config user.name t")
+  writeFileSync(join(dir, "README.md"), "base\n")
+  sh(dir, "git add -A && git commit -q -m base")
+  for (const [i, c] of commits.entries()) {
+    for (const [path, content] of Object.entries(c.files)) {
+      const full = join(dir, path)
+      mkdirSync(join(full, ".."), { recursive: true })
+      writeFileSync(full, content)
+    }
+    sh(dir, `git add -A && git commit -q -m commit-${i}`)
   }
-  const proc = Bun.spawnSync(["sh", "-c", cmd], { env })
+  return dir
+}
+
+function runIgnoreCommand(cmd: string, cwd: string, gitRef: string): number | null {
+  const proc = sh(cwd, cmd, { VERCEL_GIT_COMMIT_REF: gitRef })
   return proc.exitCode
 }
 
-describe("Vercel deploy lockdown (PROJEXA-E2E-001, 2026-09-21) -- ignoreCommand skips unconditionally", () => {
+let repo: string
+
+beforeAll(() => {
+  repo = buildFixtureRepo([
+    { files: { "src/app/page.tsx": "// real code v1\n" } }, // commit-0: real code only
+    { files: { "docs/NOTES.md": "notes\n" } }, // commit-1: docs-only
+    { files: { "R80_PART7_KT/log.csv": "a,b\n" } }, // commit-2: KT csv-only
+    { files: { "src/app/page.tsx": "// real code v2\n", "docs/NOTES.md": "more notes\n" } }, // commit-3: mixed
+  ])
+})
+
+afterAll(() => {
+  rmSync(repo, { recursive: true, force: true })
+})
+
+describe("Vercel deploy gate (2026-09-30, owner-directed go-live) -- branch + path", () => {
   test("git.deploymentEnabled is not relied upon (still gone since R87)", () => {
     const v = readVercelJson()
     expect(v.git).toBeUndefined()
   })
 
-  test("ignoreCommand exists and does not branch on VERCEL_ENV, branch name, or git diff", () => {
+  test("ignoreCommand exists and branches on both VERCEL_GIT_COMMIT_REF and git diff", () => {
     const v = readVercelJson()
     expect(typeof v.ignoreCommand).toBe("string")
-    expect(v.ignoreCommand).not.toContain("VERCEL_ENV")
-    expect(v.ignoreCommand).not.toContain("VERCEL_GIT_COMMIT_REF")
-    expect(v.ignoreCommand).not.toContain("git diff")
+    expect(v.ignoreCommand).toContain("VERCEL_GIT_COMMIT_REF")
+    expect(v.ignoreCommand).toContain("git diff")
   })
 
-  test("VERCEL_ENV=production is skipped (exit 0) -- no build proceeds until the owner reverts this", () => {
+  test("a non-main branch is skipped (exit 0) regardless of what changed", () => {
     const v = readVercelJson()
-    expect(runIgnoreCommand(v.ignoreCommand, "production")).toBe(0)
+    expect(runIgnoreCommand(v.ignoreCommand, repo, "some-feature-branch")).toBe(0)
   })
 
-  test("VERCEL_ENV=preview is skipped (exit 0) -- every branch/PR build", () => {
+  test("main with real code changes proceeds (non-zero)", () => {
     const v = readVercelJson()
-    expect(runIgnoreCommand(v.ignoreCommand, "preview")).toBe(0)
+    // HEAD^ HEAD in the fixture repo is commit-3 (mixed) vs commit-2 -- real code present, must proceed.
+    expect(runIgnoreCommand(v.ignoreCommand, repo, "main")).not.toBe(0)
   })
 
-  test("VERCEL_ENV=development is skipped (exit 0)", () => {
+  test("main with a docs-only commit is skipped (exit 0)", () => {
     const v = readVercelJson()
-    expect(runIgnoreCommand(v.ignoreCommand, "development")).toBe(0)
+    sh(repo, "git checkout -q HEAD~2") // land on commit-1 (docs-only vs commit-0, real code)
+    try {
+      expect(runIgnoreCommand(v.ignoreCommand, repo, "main")).toBe(0)
+    } finally {
+      sh(repo, "git checkout -q -")
+    }
   })
 
-  test("VERCEL_ENV unset is skipped (exit 0) -- fail closed, not open", () => {
+  test("main with a KT csv-only commit is skipped (exit 0)", () => {
     const v = readVercelJson()
-    expect(runIgnoreCommand(v.ignoreCommand, undefined)).toBe(0)
+    sh(repo, "git checkout -q HEAD~1") // land on commit-2 (csv-only vs commit-1, docs-only) -- still all-skippable
+    try {
+      expect(runIgnoreCommand(v.ignoreCommand, repo, "main")).toBe(0)
+    } finally {
+      sh(repo, "git checkout -q -")
+    }
   })
 })
 
