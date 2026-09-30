@@ -1,3 +1,5 @@
+import { moduleForPathname } from "./module-catalogue";
+
 // R-81 ("NO visible pill may be unwired") -- the shipped-route registry the
 // sidebar filters itself against, so a nav entry pointing at a page that does
 // not exist can never render for a prospect clicking at random.
@@ -311,5 +313,43 @@ export function filterShippedNav<Item extends { href: string }, Section extends 
 ): Section[] {
   return sections
     .map((section) => ({ ...section, items: section.items.filter((item) => isShippedRoute(item.href)) }))
+    .filter((section) => section.items.length > 0);
+}
+
+// Sumeet's 111 requirements (2026-09-30 scoping, owner directive: "ONLY SHOW
+// THE MODULES WHICH SUMEET 111 REQUIREMENT'S NEED, REST CAN BE HIDE, REST CAN
+// BE NOT WORKED"). Kept deliberately separate from isShippedRoute/
+// filterShippedNav above rather than folded into them: R-81's own concern
+// ("does a real page exist behind this href") is a different question from
+// product scoping ("should THIS build offer this href at all"), and a route
+// that is genuinely shipped but out of Sumeet's 111 is not the same defect as
+// a dead link -- conflating them would make filterShippedNav's own existing
+// tests (which use "/rfis" as a "this is a real, keep it" fixture) describe
+// the wrong thing. See module-catalogue.ts's ModuleDef.hidden for the flag
+// itself and src/lib/pill-catalogue.ts's targetIsHiddenModule for the
+// composer's own equivalent of this same check.
+//
+// A route no module owns (e.g. "/billing-milestones", "/copilot", "/settings")
+// is never hidden by this check -- hiding is opt-in, keyed to a specific
+// ModuleDef the owner's 111-requirements review actually excluded, not a
+// default for anything MODULE_CATALOGUE simply does not catalogue.
+export function isVisibleModuleRoute(href: string): boolean {
+  return !moduleForPathname(href)?.hidden;
+}
+
+/**
+ * filterShippedNav, plus: drops any item whose route belongs to a
+ * MODULE_CATALOGUE entry marked `hidden`. This is what AppSidebar.tsx's
+ * VISIBLE_NAV_SECTIONS runs through instead of filterShippedNav directly --
+ * VISIBLE_NAV_SECTIONS is the one array that feeds BOTH the mobile nav drawer
+ * (AppTopbar.tsx's MobileSidebarTrigger) and the M24 HOME "All modules"
+ * directory (ModuleDirectory.tsx), so fixing it here reaches both real,
+ * currently-live surfaces at once rather than needing a parallel fix in each.
+ */
+export function filterVisibleNav<Item extends { href: string }, Section extends { items: Item[] }>(
+  sections: readonly Section[]
+): Section[] {
+  return filterShippedNav(sections)
+    .map((section) => ({ ...section, items: section.items.filter((item) => isVisibleModuleRoute(item.href)) }))
     .filter((section) => section.items.length > 0);
 }

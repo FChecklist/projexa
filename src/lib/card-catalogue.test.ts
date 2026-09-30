@@ -729,30 +729,34 @@ describe("every key the shell records can be ranked back into a card", () => {
     //   (the box), the rail's Projects, Email and Teams (VERIDIAN).
     //
     //   RESOLVES TO A MODULE WITH NO CARD in CARD_CATALOGUE, so rankCards()
-    //   recognises the key and then has nothing to stand in for it: Customers,
-    //   Vendors, Policies (-> the `grc` module) and, since R81, Analysis.
-    //   Analysis used to be recorded, but only because "analysis" resolved to
-    //   WORK-PROGRESS -- so every Analysis click quietly trained the ranking to
-    //   surface Work Progress cards, which is the same wrong-module defect
-    //   R81 fixed on the greying. It now resolves to the /analysis hub, which
-    //   has no card, so it declines for the honest reason Policies does. The
-    //   day /analysis gains a card it starts recording again, with no change
-    //   here.
+    //   recognises the key and then has nothing to stand in for it: Policies
+    //   (-> the `grc` module) and, since R81, Analysis. Analysis used to be
+    //   recorded, but only because "analysis" resolved to WORK-PROGRESS -- so
+    //   every Analysis click quietly trained the ranking to surface Work
+    //   Progress cards, which is the same wrong-module defect R81 fixed on the
+    //   greying. It now resolves to the /analysis hub, which has no card, so
+    //   it declines for the honest reason Policies does. The day /analysis
+    //   gains a card it starts recording again, with no change here.
     //
     //   RESOLVES TO NO MODULE -- Department: /employees?tab=departments is a
     //   real screen, but the `employees` module lists "departments", not
     //   "department", so moduleForPill() finds nothing.
+    //
+    //   DOES NOT RENDER AT ALL (2026-09-30, Sumeet's 111 requirements
+    //   scoping) -- Customers and Vendors are no longer in this list to
+    //   decline: pill-catalogue.ts's build() drops a pill whose module is
+    //   `hidden` before isRankablePill ever sees it, the same way it already
+    //   drops a pill with no destination. See module-catalogue.ts's
+    //   ModuleDef.hidden.
     expect(declined.map((e) => e.id).sort()).toEqual(
       [
         "other",
         "platform.analysis",
-        "platform.customers",
         "platform.department",
         "platform.email",
         "platform.policies",
         "platform.projects",
         "platform.teams",
-        "platform.vendors",
       ].sort()
     );
   });

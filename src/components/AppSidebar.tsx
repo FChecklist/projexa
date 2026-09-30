@@ -15,7 +15,7 @@ import {
   Milestone,
 } from "lucide-react";
 import { AppSidebar as SharedAppSidebar, type NavItem as SharedNavItem, type NavSection as SharedNavSection, type MiddleColumnToggle } from "@fchecklist/veridian-ui-kit/shell";
-import { filterShippedNav } from "@/lib/nav-routes";
+import { filterVisibleNav } from "@/lib/nav-routes";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Suspense, useEffect, useState } from "react";
@@ -223,20 +223,47 @@ const NAV_SECTIONS: NavSection[] = [
 // MEASURED as of 2026-08-26: NAV_SECTIONS declared 46 entries (three
 // independent counts agreed -- 46 `href:` keys, 46 `labelKey:` keys, and 46
 // Nav.items keys in messages/en.json), and all 46 resolved to a real page, so
-// this filter hid 0 of 46. R52 added a 47th, /site-materials, which was a
-// live module with no nav entry (R48_NAV_OMITS_LIVE_MODULE_ROUTE_01); that
-// entry was removed again by PROJEXA-E2E-001 item 5 (2026-09-20, see the
-// removal comment a few lines up) once /site-materials itself was retired as
-// a redundant duplicate of /materials rather than a distinct module, so the
-// count is back to 46. It is a standing guard against the next unwired
-// entry, not a mass cull -- the honest finding is that PROJEXA's SIDEBAR was
-// never the source of the unwired-pill risk (see veri-chat-context.tsx's
-// fetchCapabilityTree for where that risk actually lives).
+// filterShippedNav alone hid 0 of 46. R52 added a 47th, /site-materials,
+// which was a live module with no nav entry (R48_NAV_OMITS_LIVE_MODULE_ROUTE_
+// 01); that entry was removed again by PROJEXA-E2E-001 item 5 (2026-09-20,
+// see the removal comment a few lines up) once /site-materials itself was
+// retired as a redundant duplicate of /materials rather than a distinct
+// module, so the count is back to 46. filterShippedNav itself is a standing
+// guard against the next unwired entry, not a mass cull -- the honest finding
+// is that PROJEXA's SIDEBAR was never the source of the unwired-pill risk
+// (see veri-chat-context.tsx's fetchCapabilityTree for where that risk
+// actually lives).
+//
+// 2026-09-30 (owner directive, Sumeet's 111 requirements scoping): now runs
+// through filterVisibleNav instead of filterShippedNav alone, which ALSO
+// drops any entry whose href belongs to a MODULE_CATALOGUE module marked
+// `hidden`. RE-MEASURED against today's actual NAV_SECTIONS (49 entries now,
+// not the 2026-08-26 baseline's 46 -- Billing Milestones and the Design
+// group's Floor Plans-as-drawings entry were added since): 28 of the 49 now
+// resolve to a hidden module (Projects; Site Diary, Wiki; RFIs, Submittals,
+// Punch List; Mood Boards, FF&E; Inventory, Vendors, Procurement, Purchase
+// Orders; all 6 Sales-section entries; GRC; Expenses, Accounting, Invoices;
+// all 4 HR-section entries; KPIs, Knowledge Base) and drop out of both
+// surfaces this array feeds -- taking the Sales, GRC and HR sections down to
+// zero items each, so all three disappear entirely rather than rendering an
+// empty header. The remaining 21 are exactly Sumeet's 14 needed modules'
+// nav entries, plus 3 module-catalogue entries that map to a DIFFERENT,
+// visible module than their own label suggests (Floor Plans -> "drawings",
+// Budgets -> "scope" via /scope?tab=budget), plus the 4 MODULE_CATALOGUE
+// cannot see at all (Billing Milestones, AI Copilot, Settings, and Company
+// Dashboard as a second Dashboard leaf) -- see module-catalogue.ts's
+// ModuleDef.hidden and nav-routes.ts's filterVisibleNav for the mechanism.
+// No entry was deleted from NAV_SECTIONS above; a hidden module's page still
+// exists and is still reachable by a direct link, only the offer to click
+// into it from here is gone. R-81's own guard (this file's own hrefs must
+// each resolve to a real page) is unaffected: it reads NAV_SECTIONS' raw
+// source text, not this filtered export, so it still catches a genuinely dead
+// href regardless of hidden status.
 // R52: exported so HOME's module directory renders the SAME groups from the
 // SAME filtered source. M24 deletes the left rail and makes HOME the grouped
 // module directory that replaces it -- if the directory rebuilt its own list,
 // the two would drift and a module could exist in one and not the other.
-export const VISIBLE_NAV_SECTIONS: NavSection[] = filterShippedNav(NAV_SECTIONS);
+export const VISIBLE_NAV_SECTIONS: NavSection[] = filterVisibleNav(NAV_SECTIONS);
 
 // veridian-ui-kit migration: the shared AppSidebar component owns only the
 // generic nav-sections shell/style (logo row + scrollable section list, per

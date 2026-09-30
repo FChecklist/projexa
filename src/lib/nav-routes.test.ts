@@ -18,7 +18,7 @@
 import { describe, test, expect } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
-import { SHIPPED_ROUTES, isShippedRoute, filterShippedNav } from "./nav-routes";
+import { SHIPPED_ROUTES, isShippedRoute, filterShippedNav, filterVisibleNav, isVisibleModuleRoute } from "./nav-routes";
 import { MODULE_CATALOGUE } from "./module-catalogue";
 
 const APP_ROOT = join(import.meta.dir, "..", "app");
@@ -116,6 +116,54 @@ describe("filterShippedNav", () => {
   test("preserves the other fields on a section it keeps", () => {
     const sections = [{ titleKey: "keep", extra: 42, items: [{ href: "/scope" }] }];
     expect(filterShippedNav(sections)[0].extra).toBe(42);
+  });
+});
+
+// Owner directive, 2026-09-30 (Sumeet's 111 requirements scoping). Kept
+// separate from the filterShippedNav suite above on purpose -- see
+// filterVisibleNav's own header comment for why "shipped" and "visible" are
+// different questions.
+describe("isVisibleModuleRoute / filterVisibleNav (Sumeet's 111 requirements scoping)", () => {
+  test("a route whose module is hidden is not visible", () => {
+    expect(MODULE_CATALOGUE.find((m) => m.id === "rfis")?.hidden).toBe(true);
+    expect(isVisibleModuleRoute("/rfis")).toBe(false);
+  });
+
+  test("a route whose module is not hidden is visible", () => {
+    expect(MODULE_CATALOGUE.find((m) => m.id === "scope")?.hidden ?? false).toBe(false);
+    expect(isVisibleModuleRoute("/scope")).toBe(true);
+  });
+
+  test("a route no module owns is visible by default -- hiding is opt-in, not a default for the uncatalogued", () => {
+    expect(isVisibleModuleRoute("/billing-milestones")).toBe(true);
+    expect(isVisibleModuleRoute("/copilot")).toBe(true);
+    expect(isVisibleModuleRoute("/settings")).toBe(true);
+  });
+
+  test("ignores the ?projectId= suffix, same as isShippedRoute", () => {
+    expect(isVisibleModuleRoute("/rfis?projectId=abc123")).toBe(false);
+    expect(isVisibleModuleRoute("/scope?projectId=abc123")).toBe(true);
+  });
+
+  test("filterVisibleNav drops a hidden-module item that filterShippedNav alone would keep", () => {
+    const sections = [{ titleKey: "s1", items: [{ href: "/rfis" }, { href: "/scope" }] }];
+    // filterShippedNav alone: both are real shipped pages, so both survive.
+    expect(filterShippedNav(sections)[0].items).toEqual([{ href: "/rfis" }, { href: "/scope" }]);
+    // filterVisibleNav: /rfis additionally drops, because "rfis" is hidden.
+    expect(filterVisibleNav(sections)[0].items).toEqual([{ href: "/scope" }]);
+  });
+
+  test("still drops an unshipped route too -- filterVisibleNav is additive, not a replacement check", () => {
+    const sections = [{ titleKey: "s1", items: [{ href: "/not-a-real-page" }, { href: "/scope" }] }];
+    expect(filterVisibleNav(sections)[0].items).toEqual([{ href: "/scope" }]);
+  });
+
+  test("drops a section left with no items once every entry in it is hidden", () => {
+    const sections = [
+      { titleKey: "all-hidden", items: [{ href: "/rfis" }, { href: "/submittals" }] },
+      { titleKey: "live", items: [{ href: "/scope" }] },
+    ];
+    expect(filterVisibleNav(sections).map((s) => s.titleKey)).toEqual(["live"]);
   });
 });
 
