@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X, ArrowRight } from "lucide-react";
+import { Menu, X, ArrowRight, Sparkles } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 
@@ -69,6 +69,12 @@ export function MarketingHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 xl:flex">
+          <Link
+            href={contactHref}
+            className="inline-flex items-center gap-1.5 rounded-full border border-px-orange/60 bg-px-orange/15 px-3 py-1.5 text-xs font-semibold text-px-orange transition-colors hover:bg-px-orange/25"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> {t("freeAi")}
+          </Link>
           <Button asChild variant="ghost" className="text-px-cloud2 hover:bg-white/10 hover:text-white">
             <Link href="/login">{t("login")}</Link>
           </Button>
@@ -107,6 +113,13 @@ export function MarketingHeader() {
               </Link>
             ))}
           </nav>
+          <Link
+            href={contactHref}
+            onClick={() => setOpen(false)}
+            className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-full border border-px-orange/60 bg-px-orange/15 px-3 py-2 text-sm font-semibold text-px-orange"
+          >
+            <Sparkles className="h-4 w-4" /> {t("freeAi")}
+          </Link>
           <div className="mt-4 flex flex-col gap-2">
             <Button asChild variant="outline" className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white">
               <Link href="/login" onClick={() => setOpen(false)}>{t("login")}</Link>
