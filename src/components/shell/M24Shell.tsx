@@ -3473,7 +3473,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             {platformNotice} — {NOT_IN_PROJEXA}
           </span>
           <a href={VERIDIAN_LINK} target="_blank" rel="noopener noreferrer" className="veri-view-tab">
-            Open VERIDIAN
+            Open full dashboard
           </a>
         </p>
       );

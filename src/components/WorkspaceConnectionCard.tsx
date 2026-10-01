@@ -121,7 +121,7 @@ export default function WorkspaceConnectionCard({ canRepair }: { canRepair: bool
         ) : (
           <div className="space-y-3">
             <p role="alert" className="text-sm text-px-error">
-              This workspace is not connected to VERIDIAN, so project data cannot load. This
+              This workspace is not connected to PROJEXA, so project data cannot load. This
               happens when signup created the organisation but did not finish connecting it.
               Reconnecting is safe and does not affect your team or your existing records.
             </p>

@@ -112,7 +112,7 @@ const NOTES: Readonly<Record<PillDestination, string | undefined>> = {
   view: undefined,
   rail: "pick one in the top rail",
   input: undefined,
-  platform: "opens VERIDIAN",
+  platform: "opens full dashboard",
 };
 
 /**

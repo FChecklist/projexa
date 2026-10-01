@@ -190,7 +190,7 @@ describe("BudgetCreateClient with no fiscal years and no chart of accounts (C-15
     globalThis.fetch = router(blockedHandlers("admin"));
     const view = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
     await waitFor(() => {
-      const link = view.getByRole("link", { name: "Set up in VERIDIAN" }) as HTMLAnchorElement;
+      const link = view.getByRole("link", { name: "Set up in ERP" }) as HTMLAnchorElement;
       expect(link.getAttribute("href")).toBe(`${ORIGIN}${VERIDIAN_ERP_SETUP_PATH}`);
       expect(view.getByRole("alert").textContent).toContain("This organisation has no fiscal years");
     });
@@ -202,7 +202,7 @@ describe("BudgetCreateClient with no fiscal years and no chart of accounts (C-15
     await waitFor(() => {
       expect(view.getByRole("alert")).toBeTruthy();
     });
-    expect(view.queryByRole("link", { name: "Set up in VERIDIAN" })).toBeNull();
+    expect(view.queryByRole("link", { name: "Set up in ERP" })).toBeNull();
   });
 });
 
@@ -237,11 +237,11 @@ describe("BudgetCreateClient -- the blocked org (D-42)", () => {
     globalThis.fetch = router(blockedHandlers("admin"));
     const { getByText, queryByText } = render(<BudgetCreateClient veridianOrigin={ORIGIN} />);
 
-    await waitFor(() => expect(getByText("Set up in VERIDIAN")).toBeDefined());
+    await waitFor(() => expect(getByText("Set up in ERP")).toBeDefined());
     expect(queryByText(NON_ADMIN_ACTION_LABEL)).toBeNull();
     // A real destination, not a route that 404s: VERIDIAN's own ERP periods
     // screen, which is where a fiscal year is actually created.
-    const link = getByText("Set up in VERIDIAN").closest("a")!;
+    const link = getByText("Set up in ERP").closest("a")!;
     expect(link.getAttribute("href")).toContain("/erp/periods");
   });
 

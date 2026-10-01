@@ -237,7 +237,7 @@ describe("describeProjectListFailure", () => {
   test("a bare HTTP status phrase is replaced -- it is not the backend's words about anything", async () => {
     const { describeProjectListFailure } = await import("./project-selection");
     for (const raw of ["Internal Server Error", "internal server error.", "500", "Bad Gateway", "503"]) {
-      expect(describeProjectListFailure(raw)).toBe("VERIDIAN answered with an internal error.");
+      expect(describeProjectListFailure(raw)).toBe("The server answered with an internal error.");
     }
   });
 
@@ -263,7 +263,7 @@ describe("projectListFailureBanner", () => {
   test("leads with the item's own sentence, then the described cause", async () => {
     const { projectListFailureBanner } = await import("./project-selection");
     expect(projectListFailureBanner("Internal Server Error")).toBe(
-      "Couldn't load your project list: VERIDIAN answered with an internal error."
+      "Couldn't load your project list: The server answered with an internal error."
     );
     expect(projectListFailureBanner("No veridian_credentials row for this organisation")).toBe(
       "Couldn't load your project list: No veridian_credentials row for this organisation"
@@ -465,7 +465,7 @@ describe("resolveSelectedProject (VERIDIAN stubbed)", () => {
     const result = await resolveSelectedProject(undefined, "org-1", { allProjectsWhenUnset: true });
     expect(result.project).toBeNull();
     expect(result.projects).toEqual([]);
-    expect(result.errorMessage).toBe("Failed to load projects from VERIDIAN");
+    expect(result.errorMessage).toBe("Failed to load projects from PROJEXA");
     expect(result.fellBack).toBe(false);
   });
 });

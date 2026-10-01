@@ -70,7 +70,7 @@ export type PillTarget =
   | { kind: "platform" };
 
 /** The words band 2 shows for a platform-only name (A-17, verbatim). */
-export const NOT_IN_PROJEXA = "Not part of PROJEXA — open VERIDIAN";
+export const NOT_IN_PROJEXA = "Not part of this view — open the full dashboard";
 
 /**
  * The link itself is a REDIRECT ROUTE, not a hard-coded origin. VERIDIAN's

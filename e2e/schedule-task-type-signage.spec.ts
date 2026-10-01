@@ -77,7 +77,7 @@ test.describe("New Task: the Type control never shows a loading word as its valu
     await page.goto("/schedule/tasks/new");
     await expect(page.locator(TYPE_CONTROL)).toContainText("No task types - Add one");
     await expect(page.locator(TYPE_CONTROL)).toBeDisabled();
-    await expect(page.getByText("Task types come from VERIDIAN.", { exact: false })).toBeVisible();
+    await expect(page.getByText("Task types come from PROJEXA.", { exact: false })).toBeVisible();
   });
 
   test("a failed load is not reported as 'this org has no task types'", async ({ page }) => {

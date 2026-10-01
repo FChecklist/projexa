@@ -60,7 +60,7 @@ describe("DrawingCreateClient with a failed project resolution", () => {
     expect(view.getByRole("link", { name: "Back to Drawings" })).toBeTruthy();
     expect(document.body.textContent).not.toContain("Internal Server Error");
     expect(view.getByRole("alert").textContent).toContain(
-      "Couldn't load your project list: VERIDIAN answered with an internal error."
+      "Couldn't load your project list: The server answered with an internal error."
     );
   });
 

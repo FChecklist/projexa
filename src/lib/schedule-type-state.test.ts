@@ -80,6 +80,6 @@ describe("exactly one instruction per state", () => {
   test("the empty state names where task types actually come from", () => {
     // "Add one" with no destination inside PROJEXA would be a dead end; task
     // types are defined in VERIDIAN, and the hint says so.
-    expect(SCHEDULE_TYPE_HINT.empty).toContain("VERIDIAN");
+    expect(SCHEDULE_TYPE_HINT.empty).toContain("PROJEXA");
   });
 });

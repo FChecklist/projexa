@@ -50,7 +50,7 @@ import { isInReportRegistry } from "@/lib/report-registry";
  * cannot render. "Not yet viewable here" said nothing about where it CAN be
  * read; this names the surface.
  */
-export const NOT_AVAILABLE_HERE = "Not available in PROJEXA yet — runs on the VERIDIAN dashboard";
+export const NOT_AVAILABLE_HERE = "Not available in this view yet — runs on the full dashboard";
 
 /** The badge on an entry the Reports and Analysis Engine runs inside PROJEXA. */
 export const RUNS_HERE_BADGE = "Runs here";
@@ -329,8 +329,8 @@ export function ReportCatalogSection({
           {catalog === null
             ? "Loading the full catalog..."
             : loadError
-              ? "Could not load the catalog from VERIDIAN -- try again shortly."
-              : `${constructionEntries.length} construction reports — ${runHereCount} run here with your project; the rest run on the VERIDIAN dashboard.`}
+              ? "Could not load the catalog from PROJEXA -- try again shortly."
+              : `${constructionEntries.length} construction reports — ${runHereCount} run here with your project; the rest run on the full dashboard.`}
         </p>
         {catalog !== null && !loadError && (
           <p className="text-[11px] text-px-muted/80">

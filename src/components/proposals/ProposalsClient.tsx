@@ -261,7 +261,7 @@ export function ProposalsScreen({
                   <Button type="button" size="sm" disabled={!mayApprove || card?.busy === true} onClick={() => void approve(proposal)} data-testid="proposal-approve">
                     {card?.busy ? "Approving" : "Approve"}
                   </Button>
-                  <Button type="button" size="sm" variant="outline" disabled title="VERIDIAN has no reject action for these proposals yet" data-testid="proposal-reject">
+                  <Button type="button" size="sm" variant="outline" disabled title="There is no reject action for these proposals yet" data-testid="proposal-reject">
                     Reject (not available yet)
                   </Button>
                 </div>

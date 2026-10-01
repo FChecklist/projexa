@@ -148,7 +148,7 @@ export default function InvoiceCreateClient() {
         </div>
         <div className="rounded-md border border-px-border p-2 text-sm">
           Subtotal ({lines.length} {lines.length === 1 ? "line" : "lines"}) — {orgMoney.money(subtotal)}
-          <p className="text-xs text-px-muted">Tax is applied by VERIDIAN from each line&apos;s tax template on save.</p>
+          <p className="text-xs text-px-muted">Tax is applied by PROJEXA from each line&apos;s tax template on save.</p>
         </div>
       </div>
     </ObjectScreen>

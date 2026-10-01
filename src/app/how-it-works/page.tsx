@@ -4,7 +4,7 @@ import { HowItWorksContent } from "@/components/marketing/how-it-works/HowItWork
 export const metadata: Metadata = {
   title: "How PROJEXA Works — One Core, Every Module Connected | PROJEXA",
   description:
-    "See exactly how PROJEXA's modules coordinate on a real example -- one change order moving through five modules, with nobody re-typing anything, on top of VERIDIAN AI OS.",
+    "See exactly how PROJEXA's modules coordinate on a real example -- one change order moving through five modules, with nobody re-typing anything, on top of PROJEXA AI OS.",
 };
 
 // R67 J-01 (audit R-246): this page reads nothing from the request itself,

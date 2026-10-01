@@ -186,7 +186,7 @@ async function DashboardHome({
     data = dashboardResult.value;
   } else {
     const err = dashboardResult.reason;
-    errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load dashboard from VERIDIAN";
+    errorMessage = err instanceof VeridianApiError ? err.message : "Failed to load dashboard from PROJEXA";
   }
   if (currencyResult.status === "fulfilled") {
     currencies = currencyResult.value.currencies ?? [];

@@ -22,7 +22,7 @@
  */
 export function describeProjectListFailure(raw: string): string {
   return /^(internal server error|internal error|error|500|bad gateway|502|service unavailable|503)\.?$/i.test(raw.trim())
-    ? "VERIDIAN answered with an internal error."
+    ? "The server answered with an internal error."
     : raw;
 }
 

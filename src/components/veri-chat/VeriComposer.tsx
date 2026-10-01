@@ -261,7 +261,7 @@ export default function VeriComposer() {
           : chainComplete
             ? isDispatchableChain
               ? `Ready — press send for "${completedLeaf?.label}"`
-              : `Viewing "${completedLeaf?.label}" — live VERIDIAN data, dispatch coming soon for this module`
+              : `Viewing "${completedLeaf?.label}" — live PROJEXA data, dispatch coming soon for this module`
             : "Select an option above to begin…";
 
   return (

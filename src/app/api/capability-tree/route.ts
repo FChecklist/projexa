@@ -41,7 +41,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   const result = await callVeridianResult<{ nodes: unknown[] }>("/capability-tree", {
     organizationId: ctx.organizationId!,
   });
-  if (!result.ok) return veridianErrorResponse(result, "Failed to load capability tree from VERIDIAN");
+  if (!result.ok) return veridianErrorResponse(result, "Failed to load capability tree from PROJEXA");
 
   const body = JSON.stringify(result.data);
   const etag = etagFor(body);
