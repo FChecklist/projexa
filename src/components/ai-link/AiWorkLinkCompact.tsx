@@ -101,9 +101,12 @@ export function AiWorkLinkCompact({
   const isUser = scope === "user";
   const awl = client ?? getAwlClient();
 
-  // Say nothing while the role is unknown, say why once it is known -- a button must never flash up and then disappear.
-  if (!role) return null;
-  if (!canMakeAiWorkLink(role)) {
+  // A project button says nothing while the role is unknown, and says why once it is known -- it must never flash up and then disappear.
+  // The USER-WIDE button is different: it is the person's way into every project, so it stays in view while the role is still loading (or
+  // could not be loaded -- a slow or failing data service must not hide it). The service decides what such a link may do from the person's
+  // live role on every call, so showing it early grants nothing; once the role is known and too low, the usual note replaces it.
+  if (!role && !isUser) return null;
+  if (role && !canMakeAiWorkLink(role)) {
     return (
       <p className={className} data-testid="awl-compact-role-note">
         {AI_WORK_LINK_ROLE_NOTE}

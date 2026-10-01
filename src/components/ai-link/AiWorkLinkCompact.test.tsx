@@ -105,6 +105,26 @@ describe("who sees what", () => {
   });
 });
 
+describe("the user-wide button stays in view while the role is unknown", () => {
+  test("a user-scope button renders (enabled) while the role is still loading or could not be loaded", () => {
+    render(<AiWorkLinkCompact role={null} project={null} client={fakeClient()} scope="user" triggerLabel="AI prompt" />);
+    const trigger = screen.getByTestId("awl-compact-trigger") as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.textContent).toContain("AI prompt");
+  });
+
+  test("once the role is known and too low, the usual note replaces it", () => {
+    render(<AiWorkLinkCompact role="viewer" project={null} client={fakeClient()} scope="user" triggerLabel="AI prompt" />);
+    expect(screen.queryByTestId("awl-compact-trigger")).toBeNull();
+    expect(screen.getByTestId("awl-compact-role-note")).toBeTruthy();
+  });
+
+  test("a project-scope button still renders nothing while the role is unknown", () => {
+    const view = render(<AiWorkLinkCompact role={undefined} project={PROJECT} client={fakeClient()} />);
+    expect(view.container.innerHTML).toBe("");
+  });
+});
+
 describe("one button: mint once with the safe defaults, copy a ready prompt, copy again as often as wanted", () => {
   test("first click mints level 0 / 7 days and copies a prompt with the real link, naming no dialog", async () => {
     const client = fakeClient();
