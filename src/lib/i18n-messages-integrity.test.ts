@@ -25,7 +25,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const MESSAGES_DIR = path.join(import.meta.dir, "..", "..", "messages");
-const LOCALES = ["en", "hi"] as const;
+const LOCALES = ["en"] as const;
 
 function readRaw(locale: string): string {
   return readFileSync(path.join(MESSAGES_DIR, `${locale}.json`), "utf8");

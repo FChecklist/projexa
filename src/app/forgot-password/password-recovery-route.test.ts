@@ -7,7 +7,6 @@ import {
   PUBLIC_PAGE_PATHS_FOR_TEST,
 } from "@/lib/authz/page-access";
 import en from "../../../messages/en.json";
-import hi from "../../../messages/hi.json";
 
 // G-08 -- the password recovery route, asserted end to end as a ROUTE rather
 // than as a component.
@@ -110,7 +109,7 @@ describe("G-08: a locked-out user can get back in", () => {
       forgotPassword: new Set(keysIn(forgotSrc)),
       resetPassword: new Set(keysIn(resetSrc)),
     };
-    for (const [label, messages] of [["en", en], ["hi", hi]] as const) {
+    for (const [label, messages] of [["en", en]] as const) {
       const auth = (messages as { Auth: Record<string, Record<string, string>> }).Auth;
       for (const [section, keys] of Object.entries(needed)) {
         for (const key of keys) {

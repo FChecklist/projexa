@@ -40,18 +40,11 @@ describe("MARKETING_ROUTES", () => {
 });
 
 describe("localisedMarketingPath", () => {
-  test("sends a Hindi visitor to the Hindi document", () => {
-    expect(localisedMarketingPath("/", "hi")).toBe("/hi");
-    expect(localisedMarketingPath("/how-it-works", "hi")).toBe("/hi/how-it-works");
-  });
-
   test("returns null when the request is already on the right document", () => {
     // null means "no rewrite", which is what keeps the English path free of
     // an unnecessary middleware rewrite on every single request.
     expect(localisedMarketingPath("/", "en")).toBeNull();
     expect(localisedMarketingPath("/how-it-works", "en")).toBeNull();
-    expect(localisedMarketingPath("/hi", "hi")).toBeNull();
-    expect(localisedMarketingPath("/hi/how-it-works", "hi")).toBeNull();
   });
 
   test("never rewrites a route that is not a marketing page", () => {
@@ -69,18 +62,17 @@ describe("localisedMarketingPath", () => {
     // The map is keyed on the canonical (default-locale) paths, so a request
     // that already names a locale document -- including the rewritten one
     // Next re-enters middleware with -- is left exactly where it is.
-    for (const locale of ["en", "hi", "fr"]) {
+    for (const locale of ["en", "fr"]) {
       expect(`${locale}: ${localisedMarketingPath("/hi", locale)}`).toBe(`${locale}: null`);
-      expect(`${locale}: ${localisedMarketingPath("/hi/how-it-works", locale)}`).toBe(`${locale}: null`);
     }
   });
 });
 
 describe("the landing routes", () => {
   test("are the landing page in every locale -- the ones a logged-in visitor skips", () => {
-    expect([...LANDING_ROUTES].sort()).toEqual(["/", "/hi"]);
+    expect([...LANDING_ROUTES].sort()).toEqual(["/"]);
     expect(isLandingRoute("/")).toBe(true);
-    expect(isLandingRoute("/hi")).toBe(true);
+    expect(isLandingRoute("/hi")).toBe(false);
     expect(isLandingRoute("/how-it-works")).toBe(false);
     expect(isLandingRoute("/hi/how-it-works")).toBe(false);
   });

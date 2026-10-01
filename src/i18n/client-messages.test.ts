@@ -13,7 +13,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { CLIENT_MESSAGE_NAMESPACES, pickClientMessages, type MessageTree } from "./client-messages";
 import en from "../../messages/en.json";
-import hi from "../../messages/hi.json";
 
 const SRC_DIR = join(import.meta.dir, "..");
 
@@ -93,7 +92,7 @@ describe("CLIENT_MESSAGE_NAMESPACES", () => {
   });
 
   test("every listed namespace resolves in every locale file", () => {
-    for (const [locale, messages] of Object.entries({ en, hi })) {
+    for (const [locale, messages] of Object.entries({ en })) {
       for (const namespace of CLIENT_MESSAGE_NAMESPACES) {
         expect(`${locale}:${namespace}:${resolvePath(messages as MessageTree, namespace) !== undefined}`)
           .toBe(`${locale}:${namespace}:true`);
@@ -125,7 +124,7 @@ describe("pickClientMessages", () => {
   });
 
   test("is materially smaller than the full catalogue in both locales", () => {
-    for (const messages of [en, hi]) {
+    for (const messages of [en]) {
       const full = JSON.stringify(messages).length;
       const picked = JSON.stringify(pickClientMessages(messages as MessageTree)).length;
       expect(picked).toBeLessThan(full / 2);

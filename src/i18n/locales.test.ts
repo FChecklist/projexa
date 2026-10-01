@@ -15,8 +15,8 @@ import {
 } from "./locales";
 
 describe("the locale vocabulary", () => {
-  test("is the two locales this app actually ships message files for", () => {
-    expect([...SUPPORTED_LOCALES]).toEqual(["en", "hi"]);
+  test("is the one locale this app ships (English only)", () => {
+    expect([...SUPPORTED_LOCALES]).toEqual(["en"]);
     expect(DEFAULT_LOCALE).toBe("en");
   });
 
@@ -27,7 +27,7 @@ describe("the locale vocabulary", () => {
 
 describe("resolveLocale", () => {
   test("a supported cookie value wins", () => {
-    expect(resolveLocale("hi")).toBe("hi");
+    expect(resolveLocale("hi")).toBe("en");
     expect(resolveLocale("en")).toBe("en");
   });
 
@@ -44,7 +44,7 @@ describe("resolveLocale", () => {
 
 describe("isSupportedLocale", () => {
   test("narrows only the real locales", () => {
-    expect(isSupportedLocale("hi")).toBe(true);
+    expect(isSupportedLocale("hi")).toBe(false);
     expect(isSupportedLocale("en")).toBe(true);
     expect(isSupportedLocale("de")).toBe(false);
     expect(isSupportedLocale(undefined)).toBe(false);
@@ -55,9 +55,9 @@ describe("isSupportedLocale", () => {
 
 describe("localeFromAcceptLanguage", () => {
   test("reads the first tag's primary subtag", () => {
-    expect(localeFromAcceptLanguage("hi-IN,hi;q=0.9,en;q=0.8")).toBe("hi");
+    expect(localeFromAcceptLanguage("hi-IN,hi;q=0.9,en;q=0.8")).toBeNull();
     expect(localeFromAcceptLanguage("en-GB,en;q=0.9")).toBe("en");
-    expect(localeFromAcceptLanguage("HI")).toBe("hi");
+    expect(localeFromAcceptLanguage("HI")).toBeNull();
   });
 
   test("returns null rather than a locale this app has no messages for", () => {

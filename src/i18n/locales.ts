@@ -15,7 +15,7 @@
 // and it is imported by middleware.ts -- which is what made a shared leaf
 // module necessary rather than merely tidy.
 
-export const SUPPORTED_LOCALES = ["en", "hi"] as const;
+export const SUPPORTED_LOCALES = ["en"] as const;
 export const DEFAULT_LOCALE = "en" as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 

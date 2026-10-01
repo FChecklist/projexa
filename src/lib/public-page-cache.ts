@@ -32,8 +32,8 @@ import { DEFAULT_LOCALE, type SupportedLocale } from "../i18n/locales";
  * silently serving it English.
  */
 export const MARKETING_ROUTES = {
-  "/": { en: "/", hi: "/hi" },
-  "/how-it-works": { en: "/how-it-works", hi: "/hi/how-it-works" },
+  "/": { en: "/" },
+  "/how-it-works": { en: "/how-it-works" },
 } as const satisfies Record<string, Record<SupportedLocale, string>>;
 
 export type CanonicalMarketingRoute = keyof typeof MARKETING_ROUTES;
@@ -44,7 +44,7 @@ export type CanonicalMarketingRoute = keyof typeof MARKETING_ROUTES;
  * public-page-cache.test.ts asserts it against the derivation in both
  * directions, so the two cannot drift.
  */
-export const STATIC_PUBLIC_ROUTES = ["/", "/hi", "/how-it-works", "/hi/how-it-works"] as const;
+export const STATIC_PUBLIC_ROUTES = ["/", "/how-it-works"] as const;
 
 export function isStaticPublicRoute(pathname: string): boolean {
   return (STATIC_PUBLIC_ROUTES as readonly string[]).includes(pathname);
