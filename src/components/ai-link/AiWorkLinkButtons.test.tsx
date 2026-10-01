@@ -52,6 +52,9 @@ function fakeClient(): AwlClient & { minted: unknown[]; asked: string[] } {
     async revoke() {
       throw new Error("not used here");
     },
+    async mintUserLink() {
+      throw new Error("not used here");
+    },
     async newProject() {
       throw new Error("not used here");
     },

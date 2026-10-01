@@ -82,6 +82,9 @@ function fakeClient(over: { warning?: (projectId: string, level: 0 | 1) => Promi
       client.rows = client.rows.map((r) => (r.id === linkId ? { ...r, status: "revoked" as const, revokedAt: "2026-09-26T10:00:00Z" } : r));
       return { linkId, revoked: true, already: false };
     },
+    async mintUserLink() {
+      throw new Error("not used here");
+    },
     async newProject(input) {
       log.newProject.push(input);
       return over.newProject ? over.newProject() : minted({ shell: true, project: { id: "shell1", name: "New project" }, linkId: "lnk_shell" });

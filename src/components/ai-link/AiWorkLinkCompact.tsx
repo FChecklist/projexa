@@ -48,6 +48,17 @@ function buildAiPrompt(link: string, moduleLabel: string | undefined): string {
   ].join(" ");
 }
 
+/** The message for a USER-WIDE link. The manual behind the link (the `ai-work-link` Edge Function) does the real work -- it makes the AI
+ *  list every project, then "Report on all above", then "Create New Project" -- so this only points the AI at it and states the menu in
+ *  case the AI summarises instead of fetching. */
+function buildUserPrompt(link: string): string {
+  return [
+    `This is my private PROJEXA work link: ${link}`,
+    `Open that link first (a plain GET request) -- it returns a manual that says what you can read and do for me, and how. Follow it and work on my behalf.`,
+    `Start by showing me a numbered list of ALL my projects, then as the second-to-last option "Report on all above", and as the last option "Create New Project". I will choose and we start working.`,
+  ].join(" ");
+}
+
 export function AiWorkLinkCompact({
   role,
   project,
@@ -58,6 +69,7 @@ export function AiWorkLinkCompact({
   variant = "outline",
   copyMode = "prompt",
   moduleLabel,
+  scope = "project",
 }: {
   /** The person's PROJEXA role, or null/undefined while it is not known yet -- see ai-work-link-access.ts. */
   role: string | null | undefined;
@@ -77,11 +89,16 @@ export function AiWorkLinkCompact({
   copyMode?: "link" | "prompt";
   /** Only read in "prompt" mode: the module the person is standing in, folded into "Today I want help with my X work". */
   moduleLabel?: string;
+  /** "project" (default): the link is for `project`. "user": ONE link for the whole person -- all their projects, a report on all of
+   *  them, and creating a new one. No project is needed and the button is never disabled for lack of one. Always the prompt message. */
+  scope?: "project" | "user";
 }) {
   const [phase, setPhase] = useState<"idle" | "minting" | "copied" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   // The link made for ONE project, kept so every later click only re-copies it (no second mint, no rate-limit pressure).
+  // projectId is the literal "user" for a user-wide link.
   const [minted, setMinted] = useState<{ projectId: string; link: string } | null>(null);
+  const isUser = scope === "user";
   const awl = client ?? getAwlClient();
 
   // Say nothing while the role is unknown, say why once it is known -- a button must never flash up and then disappear.
@@ -95,18 +112,21 @@ export function AiWorkLinkCompact({
   }
 
   async function copyIt() {
-    if (!project || phase === "minting") return;
+    if ((!isUser && !project) || phase === "minting") return;
     setError(null);
     try {
-      let link = minted && minted.projectId === project.id ? minted.link : null;
+      const key = isUser ? "user" : project!.id;
+      let link = minted && minted.projectId === key ? minted.link : null;
       if (!link) {
         setPhase("minting");
-        const made = await awl.mint({ projectId: project.id, level: AWL_ONE_CLICK_LEVEL, days: AWL_ONE_CLICK_DAYS });
+        const made = isUser
+          ? await awl.mintUserLink({ days: AWL_ONE_CLICK_DAYS })
+          : await awl.mint({ projectId: project!.id, level: AWL_ONE_CLICK_LEVEL, days: AWL_ONE_CLICK_DAYS });
         link = made.link;
-        setMinted({ projectId: project.id, link });
+        setMinted({ projectId: key, link });
       }
       try {
-        await navigator.clipboard.writeText(copyMode === "prompt" ? buildAiPrompt(link, moduleLabel) : link);
+        await navigator.clipboard.writeText(isUser ? buildUserPrompt(link) : copyMode === "prompt" ? buildAiPrompt(link, moduleLabel) : link);
       } catch {
         // Clipboard refused (insecure context or permission): the link still exists and is reused on the next click.
       }
@@ -118,8 +138,10 @@ export function AiWorkLinkCompact({
   }
 
   const copied = phase === "copied";
-  const what = copyMode === "prompt" ? "Prompt copied" : "Link copied";
-  const hint = `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use, and it works on your behalf. Click again to copy it again. Read-and-draft access, expires in 7 days.`;
+  const what = copyMode === "prompt" || isUser ? "Prompt copied" : "Link copied";
+  const hint = isUser
+    ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. It lists all your projects, can report on all of them or start a new one, and works on your behalf. Click again to copy it again. Read-and-draft access, expires in 7 days.`
+    : `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use, and it works on your behalf. Click again to copy it again. Read-and-draft access, expires in 7 days.`;
 
   return (
     <div className={className}>
@@ -127,8 +149,8 @@ export function AiWorkLinkCompact({
         type="button"
         variant={variant}
         size="sm"
-        disabled={!project || phase === "minting"}
-        title={project ? (copied ? hint : undefined) : "Select a project first"}
+        disabled={(!isUser && !project) || phase === "minting"}
+        title={isUser || project ? (copied ? hint : undefined) : "Select a project first"}
         onClick={() => void copyIt()}
         data-testid="awl-compact-trigger"
       >

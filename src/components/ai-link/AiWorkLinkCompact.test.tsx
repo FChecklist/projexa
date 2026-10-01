@@ -17,10 +17,12 @@ import { AwlError, type AwlClient, type AwlMinted } from "@/lib/ai-work-link-cli
 const PROJECT = { id: "p1", name: "Tower A" };
 const LINK = "https://example.supabase.co/functions/v1/ai-work-link/pxa_token";
 
-function fakeClient(over: { mint?: () => Promise<AwlMinted> } = {}): AwlClient & { minted: unknown[] } {
+function fakeClient(over: { mint?: () => Promise<AwlMinted> } = {}): AwlClient & { minted: unknown[]; userMinted: unknown[] } {
   const minted: unknown[] = [];
+  const userMinted: unknown[] = [];
   return {
     minted,
+    userMinted,
     async warning(projectId, level) {
       return { projectId, projectName: "Tower A", sentence: "SERVER SENTENCE", level, lines: 0, tasks: 0, people: 1, moneyVisible: false, writesEnabled: true, maxLevel: 1 };
     },
@@ -44,6 +46,20 @@ function fakeClient(over: { mint?: () => Promise<AwlMinted> } = {}): AwlClient &
     },
     async revoke() {
       throw new Error("not used here");
+    },
+    async mintUserLink(input) {
+      userMinted.push(input);
+      return {
+        linkId: "lnk_user",
+        level: 0,
+        expiresAt: "2026-10-06T10:00:00Z",
+        label: null,
+        project: null,
+        link: "https://example.supabase.co/functions/v1/ai-work-link/pxa_user_token",
+        inbox: null,
+        notice: "This is the only time the link is shown.",
+        shell: false,
+      };
     },
     async newProject() {
       throw new Error("not used here");
@@ -148,5 +164,40 @@ describe("one button: mint once with the safe defaults, copy a ready prompt, cop
     expect((await screen.findByTestId("awl-compact-error")).textContent).toContain("You made 10 links in the last hour.");
     expect(screen.getByTestId("awl-compact-trigger")).toBeTruthy();
     expect(clipboard).toHaveLength(0);
+  });
+});
+
+describe("scope=\"user\" -- ONE link for the whole person, no project needed", () => {
+  test("is enabled with no project, mints a user link (no project id), and copies a prompt naming the list, the report and the new-project option", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="owner" project={null} client={client} scope="user" triggerLabel="AI prompt" />);
+    const trigger = screen.getByTestId("awl-compact-trigger") as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+
+    await act(async () => void fireEvent.click(trigger));
+
+    expect(client.userMinted).toEqual([{ days: AWL_ONE_CLICK_DAYS }]);
+    expect(client.minted).toHaveLength(0); // never the per-project mint
+    expect(clipboard).toHaveLength(1);
+    expect(clipboard[0]).toContain("pxa_user_token");
+    expect(clipboard[0]).toContain("numbered list of ALL my projects");
+    expect(clipboard[0]).toContain("Report on all above");
+    expect(clipboard[0]).toContain("Create New Project");
+    expect(screen.getByTestId("awl-compact-trigger").textContent).toContain("Prompt copied");
+  });
+
+  test("copies again on every click with no second mint", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="owner" project={null} client={client} scope="user" />);
+    for (let i = 0; i < 3; i++) await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect(client.userMinted).toHaveLength(1);
+    expect(clipboard).toHaveLength(3);
+    expect(clipboard[2]).toEqual(clipboard[0]);
+  });
+
+  test("a read-only role still sees the plain sentence, not a button", () => {
+    render(<AiWorkLinkCompact role="client_viewer" project={null} client={fakeClient()} scope="user" />);
+    expect(screen.queryByTestId("awl-compact-trigger")).toBeNull();
+    expect(screen.getByTestId("awl-compact-role-note")).toBeTruthy();
   });
 });
