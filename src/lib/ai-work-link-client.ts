@@ -105,6 +105,9 @@ export type AwlClient = {
   links: (projectId: string) => Promise<AwlLinkRow[]>
   revoke: (linkId: string) => Promise<AwlRevoked>
   newProject: (input: { days: AwlDays }) => Promise<AwlMinted>
+  /** A USER-WIDE link: not tied to one project. Pasted into an outside AI, it lists all the person's projects (plus "Report on all" and
+   *  "Create New Project") and works in whichever one they choose. Always Read-and-draft (level 0); takes no project. */
+  mintUserLink: (input: { days: AwlDays; label?: string }) => Promise<AwlMinted>
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
@@ -238,6 +241,10 @@ export function createAwlClient(deps: AwlDeps): AwlClient {
     },
     async newProject(input) {
       return parseMinted(await send("POST", "/new-project", { days: input.days }), true)
+    },
+    async mintUserLink(input) {
+      const label = input.label?.trim()
+      return parseMinted(await send("POST", "/user-link", { days: input.days, ...(label ? { label } : {}) }), false)
     },
   }
 }

@@ -139,6 +139,17 @@ describe("request shapes", () => {
   });
 });
 
+describe("mintUserLink", () => {
+  test("POST /user-link with only the days: no project, and the answer parses with project null", async () => {
+    const f = fakeFetch({ status: 201, body: { ...MINTED, project: null, scope: "user" } });
+    const m = await createAwlClient({ session: session().s, fetch: f.fn }).mintUserLink({ days: 7 });
+    expect(f.calls[0].url).toBe(`${AWL_URL}/user-link`);
+    expect(f.calls[0].init.method).toBe("POST");
+    expect(JSON.parse(String(f.calls[0].init.body))).toEqual({ days: 7 });
+    expect(m).toMatchObject({ project: null, shell: false, link: LINK });
+  });
+});
+
 describe("a stale session", () => {
   test("SESSION_STALE refreshes the session and sends the same request once more with the new token", async () => {
     const f = fakeFetch({ status: 401, body: { error: "Sign in again to make a link: this session is more than 15 minutes old.", status: 401, code: "SESSION_STALE" } }, { status: 201, body: MINTED });

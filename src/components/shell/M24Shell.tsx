@@ -3893,7 +3893,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             // of this outline-button-heavy header row.
             alerts={
               <div className="flex items-center gap-1">
-                <AiWorkLinkButtons role={shell.role} project={project ? { id: project.id, name: project.name } : null} showNewProject compact variant="default" onProjectCreated={() => invalidateShell("projects")} />
+                <AiWorkLinkButtons role={shell.role} project={null} showMainTrigger={false} showNewProject compact variant="default" onProjectCreated={() => invalidateShell("projects")} />
                 <NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />
               </div>
             }
@@ -4139,19 +4139,19 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // sits next to the trigger -- see AiWorkLinkCompact's own
           // buildAiPrompt for why "change the language" re-copies the
           // already-minted link rather than minting again.
+          // 2026-10-01 (owner directive): the project-specific AI link is gone from the shell. The ONE button here is a USER-WIDE
+          // link (`scope="user"`): pasted into any outside AI it lists all the person's projects, then "Report on all above", then
+          // "Create New Project", and works in whichever they pick. It no longer depends on a selected project or module.
           examples={
-            promptModule ? (
-              <AiWorkLinkCompact
-                role={shell.role}
-                project={project ? { id: project.id, name: project.name } : null}
-                triggerLabel="AI prompt — paste in any AI"
-                copyMode="prompt"
-                moduleLabel={promptModule.label}
-                compact
-                variant="default"
-                className="text-[12px]"
-              />
-            ) : undefined
+            <AiWorkLinkCompact
+              role={shell.role}
+              project={null}
+              scope="user"
+              triggerLabel="AI prompt — paste in any AI"
+              compact
+              variant="default"
+              className="text-[12px]"
+            />
           }
         />
       }
