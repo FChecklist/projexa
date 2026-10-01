@@ -1,8 +1,8 @@
 /// <reference types="bun-types" />
-// WO ai-work-link-ui-and-projects-tab (2026-09-29). The shared one-click component AiWorkLinkButtons.tsx, ProjectsListClient.tsx's
-// row action and M24Shell.tsx's left-panel banner all reuse: mint immediately with the safe defaults (level 0, 7 days), copy to the
-// clipboard, show a small inline confirmation IN PLACE OF THE BUTTON (not a modal), and "Change access or expiry" opens the real,
-// unchanged AiWorkLinkDialog. The service client is a fake; the dialog itself is covered by AiWorkLinkDialog.test.tsx.
+// The shared one-click component (top rail, composer, Projects-list row action, workspace header). SIMPLIFIED 2026-10-01 (owner: "a
+// simple prompt ... the user copies it as many times as they want"): ONE button mints once with the safe defaults (level 0, 7 days),
+// copies a ready-to-paste prompt with the real link inside it, and every later click just copies it again. No dialog, no "Change"
+// link, no language toggle. The service client is a fake.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -15,6 +15,7 @@ import { AI_ASSISTANT_NAMES, AI_WORK_LINK_ROLE_NOTE } from "@/lib/ai-work-link-a
 import { AwlError, type AwlClient, type AwlMinted } from "@/lib/ai-work-link-client";
 
 const PROJECT = { id: "p1", name: "Tower A" };
+const LINK = "https://example.supabase.co/functions/v1/ai-work-link/pxa_token";
 
 function fakeClient(over: { mint?: () => Promise<AwlMinted> } = {}): AwlClient & { minted: unknown[] } {
   const minted: unknown[] = [];
@@ -88,102 +89,64 @@ describe("who sees what", () => {
   });
 });
 
-describe("one click mints with the safe defaults, copies, and confirms -- no dialog", () => {
-  test("mints level 0 / 7 days, copies the link, and shows the inline confirmation naming the assistants", async () => {
+describe("one button: mint once with the safe defaults, copy a ready prompt, copy again as often as wanted", () => {
+  test("first click mints level 0 / 7 days and copies a prompt with the real link, naming no dialog", async () => {
     const client = fakeClient();
-    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} triggerLabel="AI work link for this project" />);
+    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} moduleLabel="Scope" triggerLabel="AI prompt" />);
 
-    // No dialog opens on click -- this is the whole point of the change.
     await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
     expect(screen.queryByRole("dialog")).toBeNull();
 
     expect(client.minted).toEqual([{ projectId: "p1", level: AWL_ONE_CLICK_LEVEL, days: AWL_ONE_CLICK_DAYS }]);
     expect(AWL_ONE_CLICK_LEVEL).toBe(0);
     expect(AWL_ONE_CLICK_DAYS).toBe(7);
-    expect(clipboard).toEqual(["https://example.supabase.co/functions/v1/ai-work-link/pxa_token"]);
+    expect(clipboard).toHaveLength(1);
+    expect(clipboard[0]).toContain(LINK);
+    expect(clipboard[0]).toContain("Scope");
+    expect(clipboard[0]).toContain("GET");
 
     const confirm = await screen.findByTestId("awl-compact-confirm");
-    expect(confirm.textContent).toContain("Link copied");
     expect(confirm.textContent).toContain(AI_ASSISTANT_NAMES);
-    expect(confirm.textContent).toContain("Read-and-draft access, expires in 7 days.");
-    // The button itself is gone -- replaced, not merely covered.
-    expect(screen.queryByTestId("awl-compact-trigger")).toBeNull();
+    expect(confirm.textContent).toContain("expires in 7 days");
+    // The button stays (it is the "copy again" control) and says what happened.
+    expect(screen.getByTestId("awl-compact-trigger").textContent).toContain("Prompt copied");
+    // The complications are gone.
+    expect(screen.queryByTestId("awl-compact-change")).toBeNull();
+    expect(screen.queryByTestId("awl-compact-locale-toggle")).toBeNull();
   });
 
-  test("a mint failure shows the reason and offers 'Change access or expiry', not a stuck spinner", async () => {
+  test("clicking again copies the same prompt again with NO second mint, as many times as wanted", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} />);
+    for (let i = 0; i < 3; i++) await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+
+    expect(client.minted).toHaveLength(1);
+    expect(clipboard).toHaveLength(3);
+    expect(clipboard[1]).toEqual(clipboard[0]);
+    expect(clipboard[2]).toEqual(clipboard[0]);
+  });
+
+  test("switching to another project makes that project's own link", async () => {
+    const client = fakeClient();
+    const view = render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    view.rerender(<AiWorkLinkCompact role="owner" project={{ id: "p2", name: "Tower B" }} client={client} />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect(client.minted).toHaveLength(2);
+  });
+
+  test("copyMode=\"link\" still copies the bare link", async () => {
+    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={fakeClient()} copyMode="link" />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect(clipboard).toEqual([LINK]);
+  });
+
+  test("a mint failure shows the reason and the button stays so the person can retry", async () => {
     const client = fakeClient({ mint: async () => Promise.reject(new AwlError("You made 10 links in the last hour. Wait before making another.", 429, "MINT_CAP_HOUR")) });
     render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} />);
     await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
     expect((await screen.findByTestId("awl-compact-error")).textContent).toContain("You made 10 links in the last hour.");
-    // The trigger is back (not replaced by a permanent confirmation) so the person can retry.
     expect(screen.getByTestId("awl-compact-trigger")).toBeTruthy();
-  });
-});
-
-// 2026-09-30 (owner feedback: "why two links, ideally only one" -- M24Shell.tsx used to place this component's link-only trigger
-// next to a second, separate "AI prompt" chip with no real link embedded). copyMode="prompt" merges the two: one click mints AND
-// copies a ready-to-paste message carrying the real link, with a language toggle to re-copy the same link in another language.
-describe("copyMode=\"prompt\" -- one trigger mints AND copies a ready-to-paste message with the real link inside it", () => {
-  test("copies a message containing the real link and the module label, not a bare link and not a placeholder asking for one", async () => {
-    const client = fakeClient();
-    render(
-      <AiWorkLinkCompact role="owner" project={PROJECT} client={client} copyMode="prompt" moduleLabel="Scope" triggerLabel="AI prompt — paste in any AI" />
-    );
-    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
-
-    expect(clipboard).toHaveLength(1);
-    expect(clipboard[0]).toContain("https://example.supabase.co/functions/v1/ai-work-link/pxa_token");
-    expect(clipboard[0]).toContain("Scope");
-    expect(clipboard[0]).toContain(AI_ASSISTANT_NAMES);
-    // Never the old two-chip prompt's placeholder wording, which assumed the link might not be included.
-    expect(clipboard[0]).not.toContain("If I have not given you the link yet");
-
-    const confirm = await screen.findByTestId("awl-compact-confirm");
-    expect(confirm.textContent).toContain("Prompt copied");
-  });
-
-  test("the language toggle re-copies the already-minted link in the new language, with no second mint", async () => {
-    const client = fakeClient();
-    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} copyMode="prompt" moduleLabel="Scope" />);
-    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
-    await screen.findByTestId("awl-compact-confirm");
-    expect(client.minted).toHaveLength(1);
-
-    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-locale-hi")));
-
-    expect(client.minted).toHaveLength(1); // still one mint -- the toggle never re-mints
-    expect(clipboard).toHaveLength(2);
-    expect(clipboard[1]).toContain("https://example.supabase.co/functions/v1/ai-work-link/pxa_token");
-    expect(clipboard[1]).not.toEqual(clipboard[0]); // a real, different (Hindi) string, not the same text copied twice
-  });
-
-  test("copyMode defaults to \"link\": no locale toggle rendered, unchanged bare-link behaviour", () => {
-    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={fakeClient()} />);
-    expect(screen.queryByTestId("awl-compact-locale-toggle")).toBeNull();
-  });
-});
-
-describe("'Change access or expiry' opens the real, unchanged dialog", () => {
-  test("after a successful one-click copy", async () => {
-    const client = fakeClient();
-    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} />);
-    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
-    await screen.findByTestId("awl-compact-confirm");
-
-    fireEvent.click(screen.getByTestId("awl-compact-change"));
-    expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "AI work link for Tower A" })).toBeTruthy();
-    // The dialog's own warning-before-write gate is intact -- unaffected by the one-click path above it.
-    expect(await screen.findByText("SERVER SENTENCE")).toBeTruthy();
-  });
-
-  test("after a mint failure, as the escape hatch out of the error state", async () => {
-    const client = fakeClient({ mint: async () => Promise.reject(new AwlError("Refused.", 403, "ROLE_TOO_LOW")) });
-    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} />);
-    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
-    await screen.findByTestId("awl-compact-error");
-
-    fireEvent.click(screen.getByTestId("awl-compact-change"));
-    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(clipboard).toHaveLength(0);
   });
 });

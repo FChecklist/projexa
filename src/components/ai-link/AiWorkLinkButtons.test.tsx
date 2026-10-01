@@ -113,21 +113,9 @@ describe("what each button does", () => {
     await act(async () => void fireEvent.click(trigger));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(client.minted).toEqual([{ projectId: "p1", level: 0, days: 7 }]);
-    expect(clipboard).toEqual(["https://example.supabase.co/functions/v1/ai-work-link/pxa_token"]);
+    expect(clipboard).toHaveLength(1);
+    expect(clipboard[0]).toContain("https://example.supabase.co/functions/v1/ai-work-link/pxa_token");
     expect(await screen.findByTestId("awl-compact-confirm")).toBeTruthy();
-  });
-
-  test("'AI work link for this project' opens the real dialog (with its own warning fetch) via 'Change access or expiry'", async () => {
-    const client = fakeClient();
-    render(<AiWorkLinkButtons role="owner" project={PROJECT} showNewProject client={client} />);
-    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
-    await act(async () => void fireEvent.click(await screen.findByTestId("awl-compact-change")));
-
-    expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "AI work link for Tower A" })).toBeTruthy();
-    expect(await screen.findByText("SERVER SENTENCE")).toBeTruthy();
-    expect(client.asked).toContain("warning p1 0");
-    expect(client.asked).toContain("links p1");
   });
 
   test("with no project selected the main trigger is disabled and says why", () => {
