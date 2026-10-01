@@ -221,8 +221,6 @@ import { SearchTrigger } from "@/components/search-command";
 import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
 import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
-// WO ai-work-link-ui-and-projects-tab (2026-09-29): the left-panel "Work on this project with any AI" banner (leftPanelBanner's own
-// definition, below) uses the same one-click compact component the top rail and the Projects list row action use.
 import { AiWorkLinkCompact } from "@/components/ai-link/AiWorkLinkCompact";
 import { ChatDocumentAttach, loadChatProducts } from "@/components/shell/ChatDocumentAttach";
 import { canSendProjectDocument } from "@/lib/project-document-access";
@@ -1702,31 +1700,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     composerRef.current?.focus();
   }, [chain, setLoaded]);
 
-  // 2026-09-15 -- EXAMPLE CHIPS, NOW CLICKABLE. This REVERSES A-11/A-12's own
-  // rule ("the whole of what a pill is allowed to do to the input -- it must
-  // never type into it"), per the owner's explicit directive: the chips look
-  // like buttons (rounded pill, hairline border, per the 2026-09-08 mock
-  // re-skin) and a control that looks clickable but silently does nothing on
-  // click is exactly the kind of dead control M24 elsewhere refuses to ship.
-  // A click REPLACES the draft outright rather than appending -- the same
-  // "one clear action, not an accumulation" rule Reset already follows above
-  // -- and moves focus into the box so the next keystroke lands where the
-  // user would expect, with the caret after the inserted text rather than
-  // before it (a plain .focus() leaves the caret at position 0).
-  const onExampleSelect = useCallback((example: string) => {
-    setDraft(example);
-    const el = composerRef.current;
-    if (!el) return;
-    el.focus();
-    // Deferred one tick: the textarea's value prop updates on this same
-    // render, but setSelectionRange must run after the DOM actually reflects
-    // it, or the browser clamps the requested offset to the OLD (often
-    // shorter, sometimes empty) value's length.
-    requestAnimationFrame(() => {
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    });
-  }, []);
+  // 2026-09-30 (owner directive): the example-query chips this function used
+  // to drive were replaced by an AI-prompt-and-work-link pair (see the
+  // `examples` prop further down) -- removed along with them, since nothing
+  // else called it.
 
   // ─── LEFT SCREEN COMPLETION, 2026-09-14 ──────────────────────────────────
   //
@@ -3553,71 +3530,23 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     onLeafSelect,
   ]);
 
-  // LEFT SCREEN COMPLETION, 2026-09-14 -- shellErrors' own banner, now
-  // rendered by LeftScreenCompletion (Box 1) ABOVE whichever of the 7 views
-  // is active, regardless of which one that is -- a real backend failure
-  // must never be hidden behind a view the user has to think to open, same
-  // rule this banner has always followed, just no longer gated on
-  // `tasksExpanded` (that state -- and the Task Master pane it used to gate
-  // -- no longer exists; Tasks is one of the 7 views now).
-  //
-  // 2026-09-15 BUGFIX (live-browser report: a cold-start construction-data
-  // outage put 5+ "Couldn't load X" lines in this list at once, and since
-  // this banner sat above the tablist with no height cap, it pushed the 7
-  // view tabs -- Box 1's actual primary navigation -- below the fold,
-  // forcing a scroll just to click "Dashboard" or "Back"). `max-h-28
-  // overflow-y-auto` caps THIS banner's own height (the list scrolls inside
-  // itself once it has more than ~3 lines) so it can never again displace
-  // the tablist. The banner still renders first in the DOM, unconditionally
-  // above the nav row -- LeftScreenCompletion.test.tsx's own "renders above
-  // everything" assertion is about DOM order, not pixel height, and stays
-  // true; only its own vertical footprint is now bounded.
-  const leftPanelBanner =
-    shellErrors.length > 0 ? (
-      <div
-        role="status"
-        className="m-2 max-h-28 shrink-0 overflow-y-auto rounded-lg border p-3 text-[12px]"
-        style={{ borderColor: "var(--color-ct-border)" }}
-      >
-        <p className="font-semibold" style={{ color: "var(--color-veri-status-late)" }}>
-          This panel is showing less than it should.
-        </p>
-        <ul className="mt-1 space-y-0.5" style={{ color: "var(--color-ct-muted)" }}>
-          {shellErrors.map((e) => (
-            <li key={e.what}>
-              Couldn&apos;t load {e.what}: {e.detail}
-            </li>
-          ))}
-        </ul>
-      </div>
-    ) : null;
+  // 2026-09-30 (owner directive, local-testing feedback): the shellErrors
+  // "This panel is showing less than it should" banner that used to render
+  // here (LEFT SCREEN COMPLETION, 2026-09-14) was removed from Box 1
+  // entirely, on the owner's explicit instruction ("THIS IS NOT NEEDED -
+  // DELETE THIS SECTION", screenshot showed the "Couldn't load your
+  // workspace: Unauthorized" case). `shellErrors` state and the
+  // `recordShellError`-style setter it feeds are left in place unchanged
+  // (removing them would mean re-auditing every call site's OTHER reason
+  // for existing, out of scope for a UI-only removal) -- they simply have
+  // no visible banner to render into any more.
 
-  // LEFT SCREEN COMPLETION, 2026-09-29 (WO ai-work-link-ui-and-projects-tab) -- "Work on this project with any AI", via
-  // LeftScreenCompletion's own `banner` prop -- ALREADY rendered above everything else "regardless of which view is active" per
-  // that prop's own doc comment (see LeftScreenCompletion.tsx), which is exactly the placement this feature asked for: visible no
-  // matter which of the 7 tabs is open, not tucked inside one of them. Reuses AiWorkLinkCompact -- the SAME one-click mint/copy/
-  // confirm component the top rail and the Projects list row action use (see that file's own header for why there is only one
-  // implementation) -- so this banner's action behaves identically to every other AI work link trigger in the app, not a fourth
-  // reimplementation.
-  //
-  // STACKING WITH shellErrors' OWN BANNER, ABOVE: the two are combined into one `banner` value below (a real backend failure
-  // first, then this one), never each passed to a separate prop -- LeftScreenCompletion only has room for one `banner` slot, and
-  // the error banner's own "renders above everything" contract (LeftScreenCompletion.test.tsx) is about being FIRST in that combined
-  // node, not about being the only thing in it.
-  const aiWorkLinkPanelBanner = (
-    <div className="m-2 shrink-0 rounded-lg border p-3 text-[12px]" style={{ borderColor: "var(--color-ct-border)" }} data-testid="ai-work-link-panel-banner">
-      <p className="font-semibold" style={{ color: "var(--color-ct-navy)" }}>
-        Work on this project with any AI
-      </p>
-      <p className="mt-0.5" style={{ color: "var(--color-ct-muted)" }}>
-        Copy your AI work link and paste it into ChatGPT, Gemini, Claude, Grok, DeepSeek, Z.ai — or any AI you use. It can read this
-        project and get to work for you.
-      </p>
-      <div className="mt-1.5">
-        <AiWorkLinkCompact role={shell.role} project={project ? { id: project.id, name: project.name } : null} triggerLabel="Copy AI work link" />
-      </div>
-    </div>
-  );
+  // 2026-09-30 (local-testing feedback): the left-panel "Work on this project with any AI" banner that used to render here
+  // (WO ai-work-link-ui-and-projects-tab, 2026-09-29) was removed -- stacked above the 7-tab nav next to the backend-error
+  // banner, it read as clutter rather than a feature, and duplicated the top rail's own trigger. The top rail's
+  // AiWorkLinkButtons (below, in `alerts`) is now the ONE prominent, always-visible entry point instead: its `compact`
+  // prop was dropped so the "AI work link for this project" label is never hidden behind an icon-only button, on any
+  // screen width. AiWorkLinkCompact/AiWorkLinkDialog (the actual mint/copy/confirm flow) are unchanged.
 
   // LEFT SCREEN COMPLETION, 2026-09-14 -- THE "Tasks" VIEW'S OWN CONTENT.
   // Byte-for-byte the same TaskMaster wiring this shell has always had
@@ -3957,9 +3886,14 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             // links to the retired /api/ai/[token] route (M4) and is removed
             // with it. The universal AI work link replaced it (spec C-8):
             // AiWorkLinkButtons opens the mint dialog (BUILD-002 WP-08, AW-405).
+            // 2026-09-30: `variant="default"` added (local-testing feedback --
+            // this is now the ONE always-visible AI-work-link entry point, see
+            // the removed left-panel banner's old spot above) so it reads as a
+            // filled, brand-coloured button rather than blending into the rest
+            // of this outline-button-heavy header row.
             alerts={
               <div className="flex items-center gap-1">
-                <AiWorkLinkButtons role={shell.role} project={project ? { id: project.id, name: project.name } : null} showNewProject compact onProjectCreated={() => invalidateShell("projects")} />
+                <AiWorkLinkButtons role={shell.role} project={project ? { id: project.id, name: project.name } : null} showNewProject compact variant="default" onProjectCreated={() => invalidateShell("projects")} />
                 <NotificationBell initialNotifications={shell.notifications as never} initialUnreadCount={shell.unreadCount} />
               </div>
             }
@@ -4043,9 +3977,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             )
           }
           // BOX 1 -- LEFT SCREEN COMPLETION. `leftViewContent`/
-          // `leftChainSentence`/`leftLoadedBanner`/`leftPanelBanner`/
-          // `tasksViewContent`/`onLeftSelectView`/`onLeftBack` are all
-          // computed above, right before this `return`.
+          // `leftChainSentence`/`leftLoadedBanner`/`tasksViewContent`/
+          // `onLeftSelectView`/`onLeftBack` are all computed above, right
+          // before this `return`. No `banner` prop any more -- see the
+          // 2026-09-30 comment above where `leftPanelBanner` used to be
+          // computed.
           pills={
             <LeftScreenCompletion
               active={activeLeftView}
@@ -4054,12 +3990,6 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               onReset={onReset}
               chainSentence={leftChainSentence}
               loaded={leftLoadedBanner}
-              banner={
-                <>
-                  {leftPanelBanner}
-                  {aiWorkLinkPanelBanner}
-                </>
-              }
             >
               {leftViewContent}
             </LeftScreenCompletion>
@@ -4180,46 +4110,47 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                 ? promptModule.placeholder
                 : "Type a task, a question or a record — e.g. 'excavation 50%', 'which permits expire this month', 'WPR January'"
           }
-          // R67 A-02: worked examples in the module's own vocabulary, so a
-          // site engineer sees what a sentence this box accepts looks like
-          // before typing one.
+          // 2026-09-30 (owner directive, local-testing feedback): the
+          // per-module example-query chips (R67 A-02/A-11/A-12, 2026-09-07
+          // re-skin, 2026-09-15 clickable) were first replaced with two chips
+          // (an "AI prompt" text-only chip + AiWorkLinkCompact's own link
+          // chip) so a user standing in a module could hand this project to
+          // an external AI. The prompt's own wording deliberately does NOT
+          // try to explain PROJEXA's data model, roles or how to propose a
+          // change -- that would duplicate (and drift from) the REAL manual
+          // the AI work link's own backend generates fresh on every GET to
+          // the link (`compliance-tracker`'s `ai-work-link` Edge Function,
+          // `manual.ts`). This prompt's only job is to point the external AI
+          // at that manual and hand over TODAY's actual intent (the module).
           //
-          // 2026-09-07 -- VISUAL-ONLY re-skin to match the frozen mock (owner
-          // direction): the mock renders each example as its own small
-          // bordered chip, not one combined "e.g. X · Y" sentence. A-02's
-          // actual content -- the worked examples, in the module's own
-          // words -- is unchanged; only the rendering is per-chip.
-          //
-          // 2026-09-15 -- CLICKABLE, per the owner's own directive (see
-          // `onExampleSelect`'s own comment above for why this reverses
-          // A-11/A-12). Real `<button>`s now, not `<span>`s -- an
-          // `aria-label` names the action for a screen reader, since the
-          // visible text alone ("which permits expire this month") does not
-          // say what activating it does.
+          // 2026-09-30 CONSOLIDATED, same day (direct owner feedback on the
+          // two-chip version: "why two links, ideally only one to be there
+          // ... prominent so that it's visible and user gets tempted to use
+          // it"): the two chips are now ONE -- AiWorkLinkCompact's own
+          // `copyMode="prompt"` mints the link AND copies the ready-to-paste
+          // sentence with the real link already inside it, in one click, as
+          // a single prominent (`variant="default"`, filled brand colour,
+          // same look as the top-rail's own main CTA) trigger. This also
+          // fixes a real gap the two-chip version had: pasting the prompt
+          // chip ALONE (without also copying the link chip) left the
+          // external AI with an instruction to fetch a link it was never
+          // given -- copyMode="prompt" cannot produce that outcome, since it
+          // only ever copies after a real mint. A language toggle (EN/हिं)
+          // sits next to the trigger -- see AiWorkLinkCompact's own
+          // buildAiPrompt for why "change the language" re-copies the
+          // already-minted link rather than minting again.
           examples={
             promptModule ? (
-              <span className="flex flex-wrap gap-1">
-                {promptModule.examples.map((ex) => (
-                  <button
-                    key={ex}
-                    type="button"
-                    onClick={() => onExampleSelect(ex)}
-                    disabled={submitting}
-                    aria-label={`Use example: ${ex}`}
-                    title="Click to use this in the box"
-                    // 2026-09-08 -- VISUAL-ONLY, per the owner's "100% copy
-                    // of mock" mandate: the mock's own example chips are a
-                    // WHITE pill with a hairline border, not a bare-outline
-                    // one -- the border/radius/padding here already matched,
-                    // only the missing white fill did not. Preserved
-                    // verbatim now that the element is a real button.
-                    className="cursor-pointer rounded-full border px-1.5 py-0.5 hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{ background: "#fff", borderColor: "var(--color-ct-border)", color: "var(--color-ct-muted)" }}
-                  >
-                    {ex}
-                  </button>
-                ))}
-              </span>
+              <AiWorkLinkCompact
+                role={shell.role}
+                project={project ? { id: project.id, name: project.name } : null}
+                triggerLabel="AI prompt — paste in any AI"
+                copyMode="prompt"
+                moduleLabel={promptModule.label}
+                compact
+                variant="default"
+                className="text-[12px]"
+              />
             ) : undefined
           }
         />

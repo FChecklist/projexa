@@ -120,6 +120,49 @@ describe("one click mints with the safe defaults, copies, and confirms -- no dia
   });
 });
 
+// 2026-09-30 (owner feedback: "why two links, ideally only one" -- M24Shell.tsx used to place this component's link-only trigger
+// next to a second, separate "AI prompt" chip with no real link embedded). copyMode="prompt" merges the two: one click mints AND
+// copies a ready-to-paste message carrying the real link, with a language toggle to re-copy the same link in another language.
+describe("copyMode=\"prompt\" -- one trigger mints AND copies a ready-to-paste message with the real link inside it", () => {
+  test("copies a message containing the real link and the module label, not a bare link and not a placeholder asking for one", async () => {
+    const client = fakeClient();
+    render(
+      <AiWorkLinkCompact role="owner" project={PROJECT} client={client} copyMode="prompt" moduleLabel="Scope" triggerLabel="AI prompt — paste in any AI" />
+    );
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+
+    expect(clipboard).toHaveLength(1);
+    expect(clipboard[0]).toContain("https://example.supabase.co/functions/v1/ai-work-link/pxa_token");
+    expect(clipboard[0]).toContain("Scope");
+    expect(clipboard[0]).toContain(AI_ASSISTANT_NAMES);
+    // Never the old two-chip prompt's placeholder wording, which assumed the link might not be included.
+    expect(clipboard[0]).not.toContain("If I have not given you the link yet");
+
+    const confirm = await screen.findByTestId("awl-compact-confirm");
+    expect(confirm.textContent).toContain("Prompt copied");
+  });
+
+  test("the language toggle re-copies the already-minted link in the new language, with no second mint", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} copyMode="prompt" moduleLabel="Scope" />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    await screen.findByTestId("awl-compact-confirm");
+    expect(client.minted).toHaveLength(1);
+
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-locale-hi")));
+
+    expect(client.minted).toHaveLength(1); // still one mint -- the toggle never re-mints
+    expect(clipboard).toHaveLength(2);
+    expect(clipboard[1]).toContain("https://example.supabase.co/functions/v1/ai-work-link/pxa_token");
+    expect(clipboard[1]).not.toEqual(clipboard[0]); // a real, different (Hindi) string, not the same text copied twice
+  });
+
+  test("copyMode defaults to \"link\": no locale toggle rendered, unchanged bare-link behaviour", () => {
+    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={fakeClient()} />);
+    expect(screen.queryByTestId("awl-compact-locale-toggle")).toBeNull();
+  });
+});
+
 describe("'Change access or expiry' opens the real, unchanged dialog", () => {
   test("after a successful one-click copy", async () => {
     const client = fakeClient();

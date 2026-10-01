@@ -25,6 +25,7 @@ export function AiWorkLinkButtons({
   showNewProject = false,
   showMainTrigger = true,
   compact = false,
+  variant,
   onProjectCreated,
   client,
 }: {
@@ -40,6 +41,8 @@ export function AiWorkLinkButtons({
   showMainTrigger?: boolean;
   /** The top rail is narrow: the button labels give way to icons below a wide screen, and the role sentence is only shown on a wide one. */
   compact?: boolean;
+  /** Passed straight to the main trigger (AiWorkLinkCompact); "default" is the filled, brand-coloured look. */
+  variant?: "outline" | "default";
   onProjectCreated?: (project: AiLinkProject) => void;
   /** The service client. The default is the signed-in browser's. */
   client?: AwlClient;
@@ -63,7 +66,7 @@ export function AiWorkLinkButtons({
     <>
       <div className="flex items-center gap-1" data-testid="ai-work-link-buttons">
         {showMainTrigger && (
-          <AiWorkLinkCompact role={role} project={project} client={awl} triggerLabel="AI work link for this project" compact={compact} />
+          <AiWorkLinkCompact role={role} project={project} client={awl} triggerLabel="AI work link for this project" compact={compact} variant={variant} />
         )}
         {showNewProject && (
           <Button type="button" variant="outline" size="sm" onClick={() => setNewProjectOpen(true)} aria-label="New project with my AI" data-testid="ai-new-project-open">
