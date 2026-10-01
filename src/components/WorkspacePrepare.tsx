@@ -141,7 +141,7 @@ export function WorkspacePrepareView({
           type="button"
           onClick={onContinue}
           data-testid="prepare-continue"
-          className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-white hover:opacity-90"
+          className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-px-ink hover:opacity-90"
         >
           {progress.finished ? "Open PROJEXA" : "Skip for now"}
         </button>
