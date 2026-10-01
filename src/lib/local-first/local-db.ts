@@ -25,7 +25,17 @@ export type LocalRecord = {
 export type MetaEntry = { key: string; value: unknown };
 
 export const LOCAL_DB_NAME = "projexa-local";
-export const LOCAL_DB_VERSION = 1;
+// v2 adds the byOrgTypeProject index (slice 2: reading one project's rows of one kind without scanning the organisation).
+export const LOCAL_DB_VERSION = 2;
+
+/**
+ * Database name for one signed-in person. Two people on one laptop get two separate databases, so
+ * their replicas can never mix. The slice-1 name (LOCAL_DB_NAME) stays the default of openLocalDb.
+ */
+export function localDbNameFor(userId: string): string {
+  if (!userId) throw new Error("A local database name needs the signed-in user id");
+  return `${LOCAL_DB_NAME}:${userId}`;
+}
 const STORE_META = "meta";
 const STORE_RECORDS = "records";
 
@@ -44,12 +54,24 @@ function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
+export type PutInput = Omit<LocalRecord, "id" | "rev" | "updatedAt"> & { id: string; updatedAt?: number };
+
 export type LocalDb = {
   getMeta<T = unknown>(key: string): Promise<T | undefined>;
   setMeta(key: string, value: unknown): Promise<void>;
-  putRecord(record: Omit<LocalRecord, "id" | "rev" | "updatedAt"> & { id: string; updatedAt?: number }): Promise<LocalRecord>;
+  putRecord(record: PutInput): Promise<LocalRecord>;
+  /**
+   * Writes many records in ONE transaction: all of them are stored or none (a record that belongs to a
+   * different organisation aborts the whole batch). Used by the sync engine, one page chunk at a time.
+   */
+  putRecords(records: PutInput[]): Promise<number>;
+  /** Removes records by their full id (`${type}:${id}`). Missing ids are fine. Returns how many were removed. */
+  deleteRecords(ids: string[]): Promise<number>;
+  /** Removes every record of one project (the person lost access to it). Returns how many were removed. */
+  deleteByProject(orgId: string, projectId: string): Promise<number>;
   getRecord(type: string, id: string): Promise<LocalRecord | undefined>;
   listByOrg(orgId: string, type?: string): Promise<LocalRecord[]>;
+  listByProject(orgId: string, type: string, projectId: string): Promise<LocalRecord[]>;
   countRecords(orgId?: string): Promise<number>;
   close(): void;
 };
@@ -66,11 +88,13 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
     open.onupgradeneeded = () => {
       const upgrade = open.result;
       if (!upgrade.objectStoreNames.contains(STORE_META)) upgrade.createObjectStore(STORE_META, { keyPath: "key" });
-      if (!upgrade.objectStoreNames.contains(STORE_RECORDS)) {
-        const store = upgrade.createObjectStore(STORE_RECORDS, { keyPath: "id" });
-        store.createIndex("byOrg", "orgId");
-        store.createIndex("byOrgType", ["orgId", "type"]);
-      }
+      const store = upgrade.objectStoreNames.contains(STORE_RECORDS)
+        ? open.transaction!.objectStore(STORE_RECORDS)
+        : upgrade.createObjectStore(STORE_RECORDS, { keyPath: "id" });
+      if (!store.indexNames.contains("byOrg")) store.createIndex("byOrg", "orgId");
+      if (!store.indexNames.contains("byOrgType")) store.createIndex("byOrgType", ["orgId", "type"]);
+      if (!store.indexNames.contains("byOrgTypeProject")) store.createIndex("byOrgTypeProject", ["orgId", "type", "projectId"]);
+      if (!store.indexNames.contains("byOrgProject")) store.createIndex("byOrgProject", ["orgId", "projectId"]);
     };
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => reject(open.error ?? new Error("Could not open the local database"));
@@ -108,6 +132,61 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
       store.put(next);
       await done(tx);
       return next;
+    },
+    async putRecords(inputs) {
+      if (inputs.length === 0) return 0;
+      const tx = db.transaction(STORE_RECORDS, "readwrite");
+      const store = tx.objectStore(STORE_RECORDS);
+      const finished = done(tx);
+      finished.catch(() => {}); // the abort below is reported through the thrown error, not twice
+      try {
+        for (const input of inputs) {
+          const existing = (await req(store.get(input.id))) as LocalRecord | undefined;
+          if (existing && existing.orgId !== input.orgId) {
+            throw new Error("Refusing to overwrite a record that belongs to a different organisation.");
+          }
+          store.put({
+            id: input.id,
+            type: input.type,
+            orgId: input.orgId,
+            projectId: input.projectId,
+            data: input.data,
+            updatedAt: input.updatedAt ?? Date.now(),
+            rev: (existing?.rev ?? 0) + 1,
+          } satisfies LocalRecord);
+        }
+      } catch (err) {
+        try { tx.abort(); } catch { /* already finished */ }
+        throw err;
+      }
+      await finished;
+      return inputs.length;
+    },
+    async deleteRecords(ids) {
+      if (ids.length === 0) return 0;
+      const tx = db.transaction(STORE_RECORDS, "readwrite");
+      const store = tx.objectStore(STORE_RECORDS);
+      let removed = 0;
+      for (const id of ids) {
+        if ((await req(store.getKey(id))) !== undefined) {
+          store.delete(id);
+          removed += 1;
+        }
+      }
+      await done(tx);
+      return removed;
+    },
+    async deleteByProject(orgId, projectId) {
+      const tx = db.transaction(STORE_RECORDS, "readwrite");
+      const store = tx.objectStore(STORE_RECORDS);
+      const keys = (await req(store.index("byOrgProject").getAllKeys([orgId, projectId]))) as IDBValidKey[];
+      for (const key of keys) store.delete(key);
+      await done(tx);
+      return keys.length;
+    },
+    async listByProject(orgId, type, projectId) {
+      const store = db.transaction(STORE_RECORDS).objectStore(STORE_RECORDS);
+      return (await req(store.index("byOrgTypeProject").getAll([orgId, type, projectId]))) as LocalRecord[];
     },
     async getRecord(type, id) {
       return (await req(db.transaction(STORE_RECORDS).objectStore(STORE_RECORDS).get(`${type}:${id}`))) as LocalRecord | undefined;

@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { openLocalDb } from "@/lib/local-first/local-db";
+import { formatDateTime } from "@/lib/format-date";
+import { localDbNameFor, openLocalDb } from "@/lib/local-first/local-db";
+import { getSharedReplica } from "@/lib/local-first/replica-shared";
+import type { Replica } from "@/lib/local-first/replica";
 import {
   PREPARE_BUDGET_MS,
   formatCountdown,
@@ -41,12 +44,22 @@ function pause(ms: number, signal: AbortSignal) {
   });
 }
 
-export function buildSteps(userId: string, prefetch: (href: string) => void): PrepareStep[] {
+/** What the "copy your projects" step says when the sync did not finish; PROJEXA still works from the server. */
+export function syncFailureMessage(report: { status: string; issues: { reason: string; message: string; projectId?: string }[] }): string {
+  const first = report.issues[0];
+  if (report.status === "signed_out") return "You are signed out, so your projects could not be copied. Sign in again.";
+  if (first && !first.projectId && (first.reason === "not_found" || first.reason === "network" || first.reason === "timeout" || first.reason === "server")) {
+    return "The laptop copy service is not reachable yet, so your projects will open from the server for now.";
+  }
+  return first?.message ?? "Some projects could not be copied to this laptop.";
+}
+
+export function buildSteps(userId: string, prefetch: (href: string) => void, replicaFor: (userId: string) => Replica = getSharedReplica): PrepareStep[] {
   return [
     {
       id: "worker",
       label: "Install PROJEXA on this laptop",
-      weight: 20,
+      weight: 15,
       run: async ({ signal }) => {
         if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
           throw new Error("This browser cannot keep PROJEXA on the laptop (no service worker).");
@@ -63,7 +76,7 @@ export function buildSteps(userId: string, prefetch: (href: string) => void): Pr
     {
       id: "app",
       label: "Download your screens",
-      weight: 60,
+      weight: 45,
       run: async ({ signal, onDetail }) => {
         let n = 0;
         for (const href of WARM_ROUTES) {
@@ -78,14 +91,26 @@ export function buildSteps(userId: string, prefetch: (href: string) => void): Pr
     {
       id: "database",
       label: "Open your local database",
-      weight: 20,
+      weight: 10,
       run: async () => {
-        const db = await openLocalDb();
+        const db = await openLocalDb(undefined, localDbNameFor(userId));
         try {
           await db.setMeta("workspace", { userId, preparedAt: Date.now(), schema: 1 });
         } finally {
           db.close();
         }
+      },
+    },
+    {
+      id: "projects",
+      label: "Copy your projects to this laptop",
+      weight: 30,
+      run: async ({ signal, onDetail }) => {
+        // Real progress: projects finished out of projects to copy. A service that is unreachable or not
+        // deployed yet fails this one step (reported on the screen); PROJEXA keeps working from the server.
+        const report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        if (signal.aborted) return;
+        if (report.status !== "done") throw new Error(syncFailureMessage(report));
       },
     },
   ];
@@ -94,9 +119,12 @@ export function buildSteps(userId: string, prefetch: (href: string) => void): Pr
 export function WorkspacePrepareView({
   progress,
   onContinue,
+  lastSyncedAt,
 }: {
   progress: PrepareProgress;
   onContinue: () => void;
+  /** When the projects were last copied to this laptop (ms since epoch); null when never. Omit to hide the line. */
+  lastSyncedAt?: number | null;
 }) {
   const icon = (s: string) => (s === "done" ? "✓" : s === "failed" ? "!" : s === "running" ? "…" : "·");
   return (
@@ -137,6 +165,11 @@ export function WorkspacePrepareView({
             Some of this could not finish. PROJEXA still works; it will try again next time you sign in.
           </p>
         ) : null}
+        {progress.finished && lastSyncedAt !== undefined ? (
+          <p data-testid="prepare-last-synced" className="mt-3 text-xs text-px-muted">
+            {lastSyncedAt ? `Last synced ${formatDateTime(lastSyncedAt)}` : "Projects not copied to this laptop yet"}
+          </p>
+        ) : null}
         <button
           type="button"
           onClick={onContinue}
@@ -159,6 +192,7 @@ export function WorkspacePrepare() {
   const [userId, setUserId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [progress, setProgress] = useState<PrepareProgress | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null | undefined>(undefined);
   const started = useRef(false);
 
   useEffect(() => {
@@ -187,6 +221,7 @@ export function WorkspacePrepare() {
       budgetMs: PREPARE_BUDGET_MS,
       onProgress: setProgress,
     }).then((result) => {
+      setLastSyncedAt(getSharedReplica(userId).getStatus().report?.syncedAt ?? null);
       try {
         if (result.ready) localStorage.setItem(readyKey(userId), String(Date.now()));
       } catch { /* ignore */ }
@@ -199,5 +234,5 @@ export function WorkspacePrepare() {
   };
 
   if (!open || !progress) return null;
-  return <WorkspacePrepareView progress={progress} onContinue={close} />;
+  return <WorkspacePrepareView progress={progress} onContinue={close} lastSyncedAt={lastSyncedAt} />;
 }

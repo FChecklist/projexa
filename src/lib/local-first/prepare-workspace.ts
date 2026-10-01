@@ -11,7 +11,7 @@
 
 export const PREPARE_BUDGET_MS = 3 * 60 * 1000;
 
-export type StepId = "worker" | "app" | "database";
+export type StepId = "worker" | "app" | "database" | "projects";
 
 export type PrepareStep = {
   id: StepId;

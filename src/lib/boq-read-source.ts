@@ -62,7 +62,7 @@ export async function readBoqDualView<T>(boqId: string, view?: "customer"): Prom
 
 // ─── The gateway path ─────────────────────────────────────────────────────────────────────────────────────────────
 
-export type BoqScreenSource = "rest" | "gateway" | "device-copy" | "rest-fallback"
+export type BoqScreenSource = "rest" | "gateway" | "device-copy" | "rest-fallback" | "local-replica"
 
 export type BoqScreenLoad = {
   boq: Boq

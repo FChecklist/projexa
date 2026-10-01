@@ -9,7 +9,7 @@ mock.module("next/navigation", () => ({ useRouter: () => ({ prefetch: () => {}, 
 mock.module("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { getUser: async () => ({ data: { user: null } }) } }) }));
 
 // Dynamically imported so the module is evaluated AFTER register() has created `document`.
-const { WorkspacePrepareView, WARM_ROUTES } = await import("./WorkspacePrepare");
+const { WorkspacePrepareView, WARM_ROUTES, buildSteps, syncFailureMessage } = await import("./WorkspacePrepare");
 import type { PrepareProgress } from "@/lib/local-first/prepare-workspace";
 
 const base: PrepareProgress = {
@@ -18,6 +18,7 @@ const base: PrepareProgress = {
     { id: "worker", label: "Install PROJEXA on this laptop", state: "done" },
     { id: "app", label: "Download your screens", state: "running" },
     { id: "database", label: "Open your local database", state: "waiting" },
+    { id: "projects", label: "Copy your projects to this laptop", state: "waiting" },
   ],
   elapsedMs: 30_000,
   remainingMs: 150_000,
@@ -71,5 +72,55 @@ describe("WorkspacePrepareView", () => {
     expect(container.textContent).not.toMatch(/veridian/i);
     expect(WARM_ROUTES.length).toBeGreaterThan(5);
     expect(WARM_ROUTES.every((r) => r.startsWith("/"))).toBe(true);
+  });
+});
+
+describe("the 'Copy your projects to this laptop' step", () => {
+  const noReplica = (report: Record<string, unknown>) => () => ({
+    sync: async (_s?: AbortSignal, onProgress?: (p: { projectsDone: number; projectsTotal: number }) => void) => {
+      onProgress?.({ projectsDone: 1, projectsTotal: 2 });
+      onProgress?.({ projectsDone: 2, projectsTotal: 2 });
+      return report;
+    },
+    syncProject: async () => report,
+    getStatus: () => ({ status: "done", report: null }),
+  }) as never;
+
+  test("is the 4th step, and the weights add up to 100", () => {
+    const steps = buildSteps("u1", () => {});
+    expect(steps.map((s) => s.id)).toEqual(["worker", "app", "database", "projects"]);
+    expect(steps.reduce((sum, s) => sum + s.weight, 0)).toBe(100);
+    expect(steps[3]!.label).toBe("Copy your projects to this laptop");
+  });
+
+  test("reports real progress as projects done out of total", async () => {
+    const steps = buildSteps("u1", () => {}, noReplica({ status: "done", issues: [] }));
+    const seen: [number, number][] = [];
+    await steps[3]!.run({ signal: new AbortController().signal, onDetail: (d, t) => seen.push([d, t]) });
+    expect(seen).toEqual([[1, 2], [2, 2]]);
+  });
+
+  test("an unreachable or not-yet-deployed service fails this step gracefully, with a plain sentence", async () => {
+    const steps = buildSteps("u1", () => {}, noReplica({ status: "error", issues: [{ reason: "not_found", message: "x" }] }));
+    await expect(steps[3]!.run({ signal: new AbortController().signal, onDetail: () => {} })).rejects.toThrow(/not reachable yet.*server for now/);
+  });
+
+  test("signed out, and a single project failing, have their own messages", () => {
+    expect(syncFailureMessage({ status: "signed_out", issues: [] })).toMatch(/Sign in again/);
+    expect(syncFailureMessage({ status: "partial", issues: [{ reason: "store", message: "Disk full", projectId: "p1" }] })).toBe("Disk full");
+  });
+
+  test("the screen shows 'Last synced' when finished, and never says VERIDIAN", () => {
+    const done: PrepareProgress = { ...base, percent: 100, finished: true, steps: base.steps.map((s) => ({ ...s, state: "done" as const })) };
+    const stamp = Date.UTC(2026, 9, 2, 10, 0, 0);
+    const a = render(<WorkspacePrepareView progress={done} onContinue={() => {}} lastSyncedAt={stamp} />);
+    expect(a.getByTestId("prepare-last-synced").textContent).toMatch(/^Last synced /);
+    expect(a.container.textContent).not.toMatch(/veridian/i);
+    a.unmount();
+    const b = render(<WorkspacePrepareView progress={done} onContinue={() => {}} lastSyncedAt={null} />);
+    expect(b.getByTestId("prepare-last-synced").textContent).toBe("Projects not copied to this laptop yet");
+    b.unmount();
+    const c = render(<WorkspacePrepareView progress={base} onContinue={() => {}} lastSyncedAt={stamp} />);
+    expect(c.queryByTestId("prepare-last-synced")).toBeNull(); // not while it is still running
   });
 });
