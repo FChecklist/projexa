@@ -3,6 +3,7 @@
 import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
 import M24Shell from "@/components/shell/M24Shell";
 import { ShellScreenProvider } from "@/components/shell/shell-screen-context";
+import { WorkspacePrepare } from "@/components/WorkspacePrepare";
 
 // R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
 // cc_spec point 187). It is the ONE place that governs all 53 app routes, so
@@ -51,6 +52,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <VeriChatProvider>
       <ShellScreenProvider>
         <M24Shell>{children}</M24Shell>
+        <WorkspacePrepare />
       </ShellScreenProvider>
     </VeriChatProvider>
   );
