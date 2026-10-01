@@ -117,7 +117,7 @@ describe("fetchAllBoqLines", () => {
 
   test("403 keeps the gateway's own sentence and code", async () => {
     const impl = (async () =>
-      new Response(JSON.stringify({ error: "Your PROJEXA account is not linked to a VERIDIAN user - ask your admin", code: "USER_NOT_LINKED" }), { status: 403 })) as typeof fetch
+      new Response(JSON.stringify({ error: "Your PROJEXA account is not linked to a PROJEXA user - ask your admin", code: "USER_NOT_LINKED" }), { status: 403 })) as typeof fetch
     const err = await collect({ fetchImpl: impl }).catch((e) => e)
     expect(err.status).toBe(403)
     expect(err.code).toBe("USER_NOT_LINKED")

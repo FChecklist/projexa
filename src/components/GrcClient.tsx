@@ -745,7 +745,7 @@ export default function GrcClient({
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm text-px-muted">
         <ShieldAlert className="size-4" />
-        <span>Real GRC data from VERIDIAN AI OS — risk register, audits, policies, vendor risk, fraud cases, access review, and statutory obligations.</span>
+        <span>Real GRC data from PROJEXA AI OS — risk register, audits, policies, vendor risk, fraud cases, access review, and statutory obligations.</span>
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto">

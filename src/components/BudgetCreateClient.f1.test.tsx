@@ -65,7 +65,7 @@ describe("BudgetCreateClient — no enabled-then-disabled flip", () => {
     // it is keyboard- and screen-reader-native, and it is why this suite can
     // assert the first frame at all. The property is identical: the control is
     // disabled, with its reason readable, before anything has been fetched.
-    const trigger = getByText("No fiscal years found in VERIDIAN").closest("select");
+    const trigger = getByText("No fiscal years found in PROJEXA").closest("select");
     expect(trigger).not.toBeNull();
     expect(trigger!.hasAttribute("disabled")).toBe(true);
   });
@@ -85,7 +85,7 @@ describe("BudgetCreateClient — no enabled-then-disabled flip", () => {
   test("an unconfigured org is told it is a SETUP task, and is offered no Reload", () => {
     const { getAllByText, queryByText } = render(<BudgetCreateClient initialLookups={EMPTY_BUDGET_LOOKUPS} />);
 
-    expect(getAllByText(/must be set up in VERIDIAN before a budget can be created here/).length).toBeGreaterThan(0);
+    expect(getAllByText(/must be set up in the ERP module before a budget can be created here/).length).toBeGreaterThan(0);
     expect(queryByText("Reload lists")).toBeNull();
   });
 

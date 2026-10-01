@@ -22,6 +22,6 @@ export const GET = withTiming("GET", async function GET() {
     const data = await callVeridian<{ nodes: unknown[] }>("/module-chain", { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return veridianErrorResponse(err, "Failed to load the VERIDIAN module chain");
+    return veridianErrorResponse(err, "Failed to load the PROJEXA module chain");
   }
 });

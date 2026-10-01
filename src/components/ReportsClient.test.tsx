@@ -767,7 +767,7 @@ describe("ReportsClient: the Full Catalog and the picker are one screen (R67 E-1
     const details = getByTestId("catalog-other-domains") as HTMLDetailsElement;
     details.open = true;
     expect((await findByTestId("catalog-not-available")).textContent).toContain(
-      "Not available in PROJEXA yet — runs on the VERIDIAN dashboard"
+      "Not available in this view yet — runs on the full dashboard"
     );
   });
 
@@ -782,7 +782,7 @@ describe("ReportsClient: the Full Catalog and the picker are one screen (R67 E-1
     // Both construction entries run here: attendance through the picker, the
     // WPR on its own screen. The number is counted, never typed.
     expect(getByTestId("catalog-header-sentence").textContent).toBe(
-      "2 construction reports — 2 run here with your project; the rest run on the VERIDIAN dashboard."
+      "2 construction reports — 2 run here with your project; the rest run on the full dashboard."
     );
     expect(container.textContent).not.toContain("Run this report");
   });

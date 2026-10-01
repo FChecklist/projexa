@@ -168,6 +168,6 @@ test.describe("Budgets (/finance/budgets)", () => {
     // placeholder string BudgetCreateClient.tsx:314 renders when
     // GET /api/fiscal-years returns empty. Same exact string as before;
     // only the container (a real page, not a dialog) changed.
-    await expect(page.getByText("No fiscal years found in VERIDIAN")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("No fiscal years found in PROJEXA")).toBeVisible({ timeout: 30_000 });
   });
 });

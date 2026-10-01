@@ -16,7 +16,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "PROJEXA — Construction Intelligence AI OS",
     short_name: "PROJEXA",
     description:
-      "PROJEXA digitizes the full construction execution lifecycle -- scope, drawings, budgets, vendors, manpower, daily site progress, and reporting -- with AI-native decision support, built on VERIDIAN AI OS.",
+      "PROJEXA digitizes the full construction execution lifecycle -- scope, drawings, budgets, vendors, manpower, daily site progress, and reporting -- with AI-native decision support, built on PROJEXA AI OS.",
     start_url: "/",
     display: "standalone",
     background_color: "#FFFDF9",

@@ -227,7 +227,7 @@ describe("R81: a query-carrying view is not 'here' on its screen's other tabs", 
 
 describe("the words and the link the platform line uses", () => {
   test("the sentence is the item's own", () => {
-    expect(NOT_IN_PROJEXA).toBe("Not part of PROJEXA — open VERIDIAN");
+    expect(NOT_IN_PROJEXA).toBe("Not part of this view — open the full dashboard");
   });
 
   test("the link is a redirect this repo serves, never a hard-coded hostname", () => {

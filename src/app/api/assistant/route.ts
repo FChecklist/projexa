@@ -109,8 +109,8 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
     // R67 F-20: the row still records the backend's own words, and the
     // response is built by the shared classifier so this route reports the
     // same typed code / Retry-After as every other proxy.
-    const message = err instanceof VeridianApiError ? err.message : "Failed to dispatch to VERIDIAN";
+    const message = err instanceof VeridianApiError ? err.message : "Failed to dispatch to PROJEXA";
     await supabase.from("assistant_queries").update({ status: "error", error_message: message }).eq("id", row.id);
-    return veridianErrorResponse(err, "Failed to dispatch to VERIDIAN");
+    return veridianErrorResponse(err, "Failed to dispatch to PROJEXA");
   }
 });

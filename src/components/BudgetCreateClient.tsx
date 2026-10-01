@@ -91,7 +91,7 @@ export function shortBlockedReason(missing: readonly string[]): string {
 }
 
 export function blockedBanner(missing: readonly string[]): string {
-  return `This organisation has no ${missing.join(" and ")} in VERIDIAN's ERP module yet, and both are required to create a budget. They must be set up in VERIDIAN before a budget can be created here.`;
+  return `This organisation has no ${missing.join(" and ")} in the ERP module yet, and both are required to create a budget. They must be set up in the ERP module before a budget can be created here.`;
 }
 
 /**
@@ -311,7 +311,7 @@ export default function BudgetCreateClient({
       label: "Fiscal Year",
       kind: "select",
       required: !blocked,
-      placeholder: fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in VERIDIAN",
+      placeholder: fiscalYears.length ? "Select a fiscal year" : "No fiscal years found in PROJEXA",
       // R67 F-04 (lane F1): a picker with nothing to pick is DISABLED, and its
       // placeholder says why. An enabled select that opens onto an empty list
       // is a control that fails after the click -- the exact pattern the
@@ -326,7 +326,7 @@ export default function BudgetCreateClient({
       name: "costCenterId",
       label: "Cost Center",
       kind: "select",
-      placeholder: costCenters.length ? "Select a cost center" : "No cost centers found in VERIDIAN",
+      placeholder: costCenters.length ? "Select a cost center" : "No cost centers found in PROJEXA",
       disabled: costCenters.length === 0,
       options: costCenters.map((cc) => ({ value: cc.id, label: cc.name })),
     },
@@ -335,7 +335,7 @@ export default function BudgetCreateClient({
       label: "Account",
       kind: "select",
       required: !blocked,
-      placeholder: accounts.length ? "Select an account" : "No chart of accounts found in VERIDIAN",
+      placeholder: accounts.length ? "Select an account" : "No chart of accounts found in PROJEXA",
       disabled: accounts.length === 0,
       options: accounts.map((a) => ({
         value: a.id,
@@ -437,7 +437,7 @@ export default function BudgetCreateClient({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm font-medium text-ct-navy underline"
             >
-              Set up in VERIDIAN
+              Set up in ERP
               <ExternalLink className="size-3.5" aria-hidden />
             </a>
             ) : undefined
@@ -473,7 +473,7 @@ export default function BudgetCreateClient({
           )}
           {lookupError && (
             <div role="alert" className="max-w-3xl rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm text-px-error">
-              Could not load fiscal years, cost centres or accounts from VERIDIAN: {lookupError}. This screen cannot
+              Could not load fiscal years, cost centres or accounts from PROJEXA: {lookupError}. This screen cannot
               tell whether they exist, so nothing here is a statement about your setup.
               <div className="mt-3">
                 <Button size="sm" variant="outline" onClick={reloadLookups} disabled={lookupsLoading}>

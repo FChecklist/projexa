@@ -315,7 +315,7 @@ export async function resolveSelectedProject(
     return {
       project: null,
       projects: [],
-      errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
+      errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from PROJEXA",
       source: null,
       status,
       // Nothing was resolved, so nothing was fallen back to -- and with no
@@ -405,7 +405,7 @@ export async function resolveRouteProject(
     return {
       project: null,
       projects: [],
-      errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from VERIDIAN",
+      errorMessage: err instanceof VeridianApiError ? err.message : "Failed to load projects from PROJEXA",
       source: null,
       // R67 D-70: carried for the caller's own logging, never rendered -- see
       // describeProjectListFailure() for what a user is shown instead.

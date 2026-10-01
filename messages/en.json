@@ -368,7 +368,7 @@
     "system": {
       "eyebrow": "The full picture",
       "heading": "One interface. One coordination core.",
-      "body": "PROJEXA is the interface you use every day — its engine is VERIDIAN AI OS, the same coordination core running underneath. That means every module a real construction or interior design business needs is already here, already connected."
+      "body": "PROJEXA is the interface you use every day, with one coordination core running underneath. That means every module a real construction or interior design business needs is already here, already connected."
     },
     "moduleCatalog": {
       "heading": "Every module a construction or interior design business runs on.",
@@ -625,7 +625,7 @@
       "login": "Log in",
       "signup": "Sign up",
       "disclaimer": "Disclaimer",
-      "copyright": "© {year} PROJEXA. Built on VERIDIAN AI OS."
+      "copyright": "© {year} PROJEXA. Built on PROJEXA AI OS."
     },
     "howItWorks": {
       "hero": {
@@ -634,9 +634,9 @@
       },
       "architecture": {
         "eyebrow": "How it's built",
-        "heading": "PROJEXA's interface, VERIDIAN's coordination core.",
+        "heading": "One interface. One coordination core.",
         "subhead": "Every category below is a real part of the app, wired into the same core underneath.",
-        "core": "VERIDIAN AI OS — Coordination Core"
+        "core": "PROJEXA AI OS — Coordination Core"
       },
       "trace": {
         "eyebrow": "A real example",

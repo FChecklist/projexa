@@ -614,8 +614,8 @@ export default function DashboardHomeView({
                 {/* R67 G-04 (R-231): both branches point at the control that
                     actually exists, by its own label. */}
                 {data.totalRevenue === 0
-                  ? `Total Revenue shows ${formatKpi(0, currencies)} because no VERIDIAN ERP sales invoices exist yet for this org.`
-                  : "Revenue reflects VERIDIAN ERP sales invoices for this org."}
+                  ? `Total Revenue shows ${formatKpi(0, currencies)} because no PROJEXA ERP sales invoices exist yet for this org.`
+                  : "Revenue reflects PROJEXA ERP sales invoices for this org."}
               </p>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/invoices/new"><Receipt className="size-4" /> Create / Link Invoice</Link>

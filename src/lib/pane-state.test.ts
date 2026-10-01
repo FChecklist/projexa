@@ -57,7 +57,7 @@ describe("loadingCaption -- waiting is narrated, late", () => {
   test("from 3 s the elapsed seconds arrive on their OWN line, so the line above does not move", () => {
     const caption = loadingCaption(4200, "permits", "Cedar Heights Villa – Phase 1");
     expect(caption.primary).toBe("Loading permits for Cedar Heights Villa – Phase 1…");
-    expect(caption.secondary).toBe("Still loading from VERIDIAN… 4s");
+    expect(caption.secondary).toBe("Still loading from PROJEXA… 4s");
     expect(caption.showRetry).toBe(false);
     expect(PANE_ELAPSED_WAIT_MS).toBe(3000);
   });

@@ -405,7 +405,7 @@ function ProjectPnlPanel({ scope }: { scope: CompanyScope }) {
         <div className="space-y-1.5"><Label>To</Label><Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} /></div>
         <Button size="sm" onClick={load}>Generate</Button>
       </div>
-      <p className="text-xs text-px-muted">Requires journal-entry lines tagged with a cost center linked to a project (VERIDIAN&apos;s Chart of Accounts / Cost Centers setup). Cost centers with no tagged postings in this range won&apos;t appear.</p>
+      <p className="text-xs text-px-muted">Requires journal-entry lines tagged with a cost center linked to a project (PROJEXA&apos;s Chart of Accounts / Cost Centers setup). Cost centers with no tagged postings in this range won&apos;t appear.</p>
       <Card className="shadow-card">
         <CardContent className="p-0">
           {loading ? <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
@@ -518,7 +518,7 @@ function BankReconciliationPanel() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-px-muted">Read-only for this wave — importing a new bank statement (file upload) and matching lines to journal entries is done from VERIDIAN&apos;s own Accounting workspace for now.</p>
+      <p className="text-xs text-px-muted">Read-only for this wave — importing a new bank statement (file upload) and matching lines to journal entries is done from PROJEXA&apos;s own Accounting workspace for now.</p>
       {loading ? (
         <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
       ) : imports.length === 0 ? (
@@ -611,7 +611,7 @@ export default function AccountingClient({ initialTab }: { initialTab?: string }
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm text-px-muted">
         <Landmark className="size-4" />
-        <span>Real GL data from VERIDIAN AI OS — every journal entry, report, and balance below is generated from actual postings.</span>
+        <span>Real GL data from PROJEXA AI OS — every journal entry, report, and balance below is generated from actual postings.</span>
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto">

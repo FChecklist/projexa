@@ -15,6 +15,6 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
     const data = await callVeridian(`/schedule/gantt?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return veridianErrorResponse(err, "Failed to load schedule from VERIDIAN");
+    return veridianErrorResponse(err, "Failed to load schedule from PROJEXA");
   }
 });

@@ -70,7 +70,7 @@ export default function MeetingCreateClient({ projectId }: { projectId: string }
         <div className="space-y-1.5">
           <Label>Participant user IDs (comma-separated, optional)</Label>
           <Input value={participantIds} onChange={(e) => setParticipantIds(e.target.value)} placeholder="usr_abc123, usr_def456" />
-          <p className="text-xs text-px-muted">No org directory/picker yet -- paste known VERIDIAN user IDs.</p>
+          <p className="text-xs text-px-muted">No org directory/picker yet -- paste known PROJEXA user IDs.</p>
         </div>
       </div>
     </ObjectScreen>

@@ -82,8 +82,8 @@ export const POST = withTiming("POST", async function POST(req: Request) {
       {
         error:
           err instanceof VeridianApiError
-            ? `Could not provision your VERIDIAN workspace: ${err.message}`
-            : "Could not provision your VERIDIAN workspace. Please try again.",
+            ? `Could not provision your PROJEXA workspace: ${err.message}`
+            : "Could not provision your PROJEXA workspace. Please try again.",
       },
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );

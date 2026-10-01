@@ -90,7 +90,7 @@ export const POST = withTiming("POST", async function POST() {
       organizationId,
       repaired: false,
       alreadyHealthy: true,
-      message: "This workspace is already connected to VERIDIAN. Nothing to repair.",
+      message: "This workspace is already connected to PROJEXA. Nothing to repair.",
     });
   }
 
@@ -131,8 +131,8 @@ export const POST = withTiming("POST", async function POST() {
       {
         error:
           err instanceof VeridianApiError
-            ? `Could not connect your VERIDIAN workspace: ${err.message}`
-            : "Could not connect your VERIDIAN workspace. Please try again.",
+            ? `Could not connect your PROJEXA workspace: ${err.message}`
+            : "Could not connect your PROJEXA workspace. Please try again.",
       },
       { status: err instanceof VeridianApiError ? err.status : 502 }
     );

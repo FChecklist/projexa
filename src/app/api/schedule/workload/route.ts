@@ -15,7 +15,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
     const data = await callVeridian(`/schedule/workload?projectId=${encodeURIComponent(projectId)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
-    return veridianErrorResponse(err, "Failed to load workload from VERIDIAN");
+    return veridianErrorResponse(err, "Failed to load workload from PROJEXA");
   }
 });
 

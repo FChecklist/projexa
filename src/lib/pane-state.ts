@@ -169,7 +169,7 @@ export function loadingCaption(
   }
   const named = projectName ? `Loading ${entity} for ${projectName}…` : `Loading ${entity}…`;
   if (elapsedMs >= PANE_ELAPSED_WAIT_MS) {
-    return { primary: named, secondary: `Still loading from VERIDIAN… ${seconds}s`, showRetry: false };
+    return { primary: named, secondary: `Still loading from PROJEXA… ${seconds}s`, showRetry: false };
   }
   if (elapsedMs >= PANE_NAMED_WAIT_MS) {
     return { primary: named, secondary: null, showRetry: false };

@@ -69,7 +69,7 @@ export default function WikiObjectClient({ pageId }: { pageId: string }) {
       onBack={() => router.push(`/wiki?projectId=${page.projectId}`)}
       messages={[{
         level: "info",
-        text: "Editing this page requires a per-user VERIDIAN session. PROJEXA's connection to VERIDIAN currently authenticates with a shared organization API key, not individual logins, so Edit is not offered here until that per-user identity bridge exists. Creating new pages is unaffected.",
+        text: "Editing this page requires a per-user session. PROJEXA's connection to its workspace currently authenticates with a shared organization API key, not individual logins, so Edit is not offered here until that per-user identity bridge exists. Creating new pages is unaffected.",
       }]}
     >
       <div className="px-4 py-3">

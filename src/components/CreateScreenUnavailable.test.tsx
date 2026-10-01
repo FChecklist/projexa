@@ -50,7 +50,7 @@ describe("CreateScreenUnavailable with a failed project-list read", () => {
   test("the banner says what failed, and never shows the bare HTTP status phrase", () => {
     const view = renderFailed();
     expect(view.getByRole("alert").textContent).toContain(
-      "Couldn't load your project list: VERIDIAN answered with an internal error."
+      "Couldn't load your project list: The server answered with an internal error."
     );
     expect(document.body.textContent).not.toContain("Internal Server Error");
   });

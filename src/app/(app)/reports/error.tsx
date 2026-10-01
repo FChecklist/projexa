@@ -43,7 +43,7 @@ export default function ReportsError({ error, reset }: { error: Error & { digest
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="text-sm text-px-error">
             Something went wrong loading Reports{error.message ? `: ${error.message}` : "."} This is usually a
-            temporary VERIDIAN connectivity issue -- try again.
+            temporary PROJEXA connectivity issue -- try again.
           </p>
           <Button size="sm" variant="outline" onClick={reset} className="gap-1.5 shrink-0">
             <RotateCcw className="size-3.5" /> Retry

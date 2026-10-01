@@ -49,7 +49,7 @@ export const SCHEDULE_TYPE_PLACEHOLDER: Record<ScheduleTypesState, string> = {
 export const SCHEDULE_TYPE_HINT: Record<ScheduleTypesState, string | null> = {
   loading: null,
   ready: null,
-  empty: "Task types come from VERIDIAN. Saving now uses your organisation's default type.",
+  empty: "Task types come from PROJEXA. Saving now uses your organisation's default type.",
   error: "Saving now uses your organisation's default type.",
 };
 

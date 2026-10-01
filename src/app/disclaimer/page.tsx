@@ -4,7 +4,7 @@ import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 
 export const metadata: Metadata = {
   title: "Disclaimer — PROJEXA",
-  description: "Disclaimer, Limitation of Liability and Notice of Rights for PROJEXA and all VERIDIAN AI OS products.",
+  description: "Disclaimer, Limitation of Liability and Notice of Rights for PROJEXA and all related products.",
 };
 
 // Same rationale as src/app/how-it-works/page.tsx: this page reads nothing
