@@ -78,12 +78,10 @@ describe("every marketing component translates in an EXPLICIT locale", () => {
 describe("the page routes pick the locale, one document each", () => {
   const ROUTE_FILES: Record<string, string> = {
     "/": join(APP_DIR, "page.tsx"),
-    "/hi": join(APP_DIR, "hi", "page.tsx"),
     "/how-it-works": join(APP_DIR, "how-it-works", "page.tsx"),
-    "/hi/how-it-works": join(APP_DIR, "hi", "how-it-works", "page.tsx"),
   };
 
-  test("MARKETING_ROUTES names exactly these four documents", () => {
+  test("MARKETING_ROUTES names exactly these two documents", () => {
     const documents = Object.values(MARKETING_ROUTES).flatMap((byLocale) => Object.values(byLocale));
     expect([...documents].sort()).toEqual(Object.keys(ROUTE_FILES).sort());
   });
@@ -97,13 +95,4 @@ describe("the page routes pick the locale, one document each", () => {
     });
   }
 
-  for (const route of ["/hi", "/hi/how-it-works"]) {
-    test(`${route} also overrides the CLIENT provider, or its header would be English`, () => {
-      // MarketingHeader and ContactForm are "use client" and read
-      // <NextIntlClientProvider>, which the root layout mounts in the ambient
-      // (default) locale -- so a Hindi document needs the nested provider.
-      const source = stripComments(readFileSync(ROUTE_FILES[route]!, "utf8"));
-      expect(source).toContain("MarketingLocaleProvider");
-    });
-  }
 });

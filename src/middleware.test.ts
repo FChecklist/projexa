@@ -76,22 +76,11 @@ describe("no cacheable public route carries a Set-Cookie", () => {
 });
 
 describe("the marketing pages are served in the visitor's locale by rewrite", () => {
-  test("a NEXT_LOCALE=hi cookie gets the Hindi landing document", async () => {
-    const response = await middleware(request("/", { cookie: "NEXT_LOCALE=hi" }));
-    expect(rewriteTarget(response)).toBe("/hi");
-    expect(response.status).toBe(200); // a rewrite, not a 3xx redirect
-    expect(response.headers.get("location")).toBeNull();
-  });
-
-  test("...and the Hindi /how-it-works document", async () => {
-    const response = await middleware(request("/how-it-works", { cookie: "NEXT_LOCALE=hi" }));
-    expect(rewriteTarget(response)).toBe("/hi/how-it-works");
-  });
-
-  test("a first-time visitor with a Hindi browser gets it too, with no cookie written", async () => {
-    const response = await middleware(request("/", { "accept-language": "hi-IN,hi;q=0.9,en;q=0.8" }));
-    expect(rewriteTarget(response)).toBe("/hi");
-    expect(response.headers.get("set-cookie")).toBeNull();
+  test("a Hindi cookie or Hindi browser is still served the English page (English only)", async () => {
+    for (const init of [{ cookie: "NEXT_LOCALE=hi" }, { "accept-language": "hi-IN,hi;q=0.9,en;q=0.8" }]) {
+      const response = await middleware(request("/", init));
+      expect(rewriteTarget(response)).toBeNull();
+    }
   });
 
   test("an English visitor is left on the English document, unrewritten", async () => {
@@ -102,12 +91,6 @@ describe("the marketing pages are served in the visitor's locale by rewrite", ()
   test("a locale this app has no messages for falls back to English, not a 404", async () => {
     const response = await middleware(request("/", { cookie: "NEXT_LOCALE=fr" }));
     expect(rewriteTarget(response)).toBeNull();
-  });
-
-  test("the Hindi document itself is served directly, not rewritten again", async () => {
-    const response = await middleware(request("/hi", { cookie: "NEXT_LOCALE=hi" }));
-    expect(rewriteTarget(response)).toBeNull();
-    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   test("no other route is rewritten by locale", async () => {
@@ -129,7 +112,7 @@ describe("the logged-out page gate still works", () => {
   });
 
   test("both marketing landing documents stay reachable logged out", async () => {
-    for (const route of ["/", "/hi", "/how-it-works", "/hi/how-it-works"]) {
+    for (const route of ["/", "/how-it-works"]) {
       const response = await middleware(request(route, { "accept-language": "en" }));
       expect(`${route}: ${response.headers.get("location")}`).toBe(`${route}: null`);
     }

@@ -40,9 +40,7 @@
 // Exact public page paths (everything NOT under src/app/(app)/).
 const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   "/", // marketing landing
-  "/hi", // the same landing page, prerendered in Hindi (R67 J-01)
   "/how-it-works",
-  "/hi/how-it-works",
   "/disclaimer",
   "/login",
   "/signup",

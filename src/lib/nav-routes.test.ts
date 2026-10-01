@@ -215,13 +215,6 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // app's sidebar -- same class as /how-it-works above: a real, standalone
   // page, reachable, just never via AppSidebar.
   "/disclaimer",
-  // The same two marketing pages prerendered in Hindi (R67 J-01). They are
-  // never linked from anywhere: middleware.ts REWRITES a Hindi visitor's
-  // request for "/" or /how-it-works to them, so the canonical URL a person
-  // sees and shares stays the one above. A nav entry -- or any link -- would
-  // be wrong, not merely unnecessary.
-  "/hi",
-  "/hi/how-it-works",
   "/login",
   "/signup",
   // G-08. The password recovery route. /forgot-password is reached from

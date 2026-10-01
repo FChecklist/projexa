@@ -25,7 +25,6 @@ import {
   resolveRequestLocale,
 } from "./request";
 import en from "../../messages/en.json";
-import hi from "../../messages/hi.json";
 
 /** A cookie reader that fails the test if the resolution ever consults it. */
 function noCookieRead(): Promise<string | undefined> {
@@ -34,7 +33,7 @@ function noCookieRead(): Promise<string | undefined> {
 
 describe("resolveLocale", () => {
   test("a supported cookie value wins", () => {
-    expect(resolveLocale("hi")).toBe("hi");
+    expect(resolveLocale("hi")).toBe("en");
     expect(resolveLocale("en")).toBe("en");
   });
 
@@ -56,7 +55,7 @@ describe("resolveLocale", () => {
   test("every supported locale has a real message file behind it", () => {
     // Guards loadMessages()'s dynamic `import(../../messages/${locale}.json)`,
     // which would 500 the whole app for a locale whose file was never added.
-    const files: Record<string, unknown> = { en, hi };
+    const files: Record<string, unknown> = { en };
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(files[locale] as object).length).toBeGreaterThan(0);
     }
@@ -65,12 +64,11 @@ describe("resolveLocale", () => {
 
 describe("resolveRequestLocale", () => {
   test("an explicitly requested locale wins, and no cookie is read for it", async () => {
-    expect(await resolveRequestLocale("hi", noCookieRead)).toBe("hi");
     expect(await resolveRequestLocale("en", noCookieRead)).toBe("en");
   });
 
   test("with no explicit locale it falls back to the NEXT_LOCALE cookie", async () => {
-    expect(await resolveRequestLocale(undefined, async () => "hi")).toBe("hi");
+    expect(await resolveRequestLocale(undefined, async () => "hi")).toBe(DEFAULT_LOCALE);
     expect(await resolveRequestLocale(undefined, async () => undefined)).toBe(DEFAULT_LOCALE);
   });
 
@@ -78,11 +76,11 @@ describe("resolveRequestLocale", () => {
     // It must fall through rather than trying to load messages/fr.json, which
     // does not exist -- a 500 on every page instead of a missing translation.
     expect(await resolveRequestLocale("fr", async () => undefined)).toBe(DEFAULT_LOCALE);
-    expect(await resolveRequestLocale("fr", async () => "hi")).toBe("hi");
+    expect(await resolveRequestLocale("fr", async () => "hi")).toBe(DEFAULT_LOCALE);
   });
 
   test("the two locales it can return are the two catalogues that exist", () => {
-    const files: Record<string, unknown> = { en, hi };
+    const files: Record<string, unknown> = { en };
     for (const locale of SUPPORTED_LOCALES) {
       expect(files[locale]).toBeDefined();
     }

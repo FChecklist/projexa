@@ -21,9 +21,7 @@ const APP_DIR = import.meta.dir;
 
 const ROUTE_FILES: Record<(typeof STATIC_PUBLIC_ROUTES)[number], string> = {
   "/": join(APP_DIR, "page.tsx"),
-  "/hi": join(APP_DIR, "hi", "page.tsx"),
   "/how-it-works": join(APP_DIR, "how-it-works", "page.tsx"),
-  "/hi/how-it-works": join(APP_DIR, "hi", "how-it-works", "page.tsx"),
 };
 
 // Imported once at module scope rather than inside each test: pulling in a
@@ -39,7 +37,7 @@ const ROUTE_MODULES: Record<string, RouteSegmentConfig> = Object.fromEntries(
 
 describe("the statically prerendered public routes", () => {
   test("STATIC_PUBLIC_ROUTES names exactly the marketing documents, one per locale", () => {
-    expect([...STATIC_PUBLIC_ROUTES].sort()).toEqual(["/", "/hi", "/hi/how-it-works", "/how-it-works"]);
+    expect([...STATIC_PUBLIC_ROUTES].sort()).toEqual(["/", "/how-it-works"]);
   });
 
   for (const route of STATIC_PUBLIC_ROUTES) {
