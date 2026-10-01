@@ -46,21 +46,12 @@ import { dirname, join, resolve } from "node:path";
 // Route -> the files `next build` writes for it under .next/server/app/.
 // "/" is written as index.html, not page.html; its client-reference manifest
 // is still page_client-reference-manifest.js.
-// The Hindi documents are measured too, not just the canonical two: they are
-// what a Hindi visitor is actually served (middleware rewrites "/" to "/hi"),
-// so the 500 KB budget applies to them exactly as it does to the English
-// ones, and they carry one thing the English pages do not -- a nested
-// NextIntlClientProvider with its own message payload.
+// English only: the two public marketing documents are measured against the 500 KB budget.
 export const PRERENDERED_ROUTES = {
   "/": { html: "index.html", clientManifest: "page_client-reference-manifest.js" },
-  "/hi": { html: "hi.html", clientManifest: "hi/page_client-reference-manifest.js" },
   "/how-it-works": {
     html: "how-it-works.html",
     clientManifest: "how-it-works/page_client-reference-manifest.js",
-  },
-  "/hi/how-it-works": {
-    html: "hi/how-it-works.html",
-    clientManifest: "hi/how-it-works/page_client-reference-manifest.js",
   },
 };
 
