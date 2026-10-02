@@ -161,7 +161,8 @@ async function readTimesheet(data: ShellData, projectId: string, opts: { mineOnl
   for (const raw of read.rows) {
     const e = toTimeEntry(raw);
     if (!e) continue;
-    const mine = e.userId === data.userId;
+    // The server writes user_id as the VERIDIAN person id; a row made on this laptop carries the sign-in id. Either is this person.
+    const mine = e.userId !== null && (e.userId === data.userId || (!!data.personId && e.userId === data.personId));
     if (opts.mineOnly && !mine) continue;
     entries.push({ ...e, ...pendingOf(view, e.id), task: taskLabel(e.issueId ? allTasks.get(e.issueId) : undefined), mine });
   }
