@@ -770,6 +770,15 @@ suite("F. limits and gates", () => {
     expect(claims.exp - claims.iat).toBe(86_400);
   });
 
+  wt("W29b", "client:FA", "the fake sync server's limits are the real handler's (a golden constant set, checked against handler.ts on every run)", async () => {
+    const L = fakeMod.REAL_LIMITS;
+    expect({ BODY_MAX_BYTES: handler.BODY_MAX_BYTES, PUSH_BODY_MAX_BYTES: handler.PUSH_BODY_MAX_BYTES, PUSH_OPS_MAX: handler.PUSH_OPS_MAX, PULL_IDS_MAX: handler.PULL_IDS_MAX, PULL_LIMIT_DEFAULT: handler.PULL_LIMIT_DEFAULT, PULL_LIMIT_MAX: handler.PULL_LIMIT_MAX, CHANGES_LIMIT_MAX: handler.CHANGES_LIMIT_MAX, IDS_LIMIT_MAX: handler.IDS_LIMIT_MAX, REQUESTS_PER_MINUTE: handler.REQUESTS_PER_MINUTE, SERVER_PROTOCOL: handler.SERVER_PROTOCOL })
+      .toEqual({ BODY_MAX_BYTES: L.BODY_MAX_BYTES, PUSH_BODY_MAX_BYTES: L.PUSH_BODY_MAX_BYTES, PUSH_OPS_MAX: L.PUSH_OPS_MAX, PULL_IDS_MAX: L.PULL_IDS_MAX, PULL_LIMIT_DEFAULT: L.PULL_LIMIT_DEFAULT, PULL_LIMIT_MAX: L.PULL_LIMIT_MAX, CHANGES_LIMIT_MAX: L.CHANGES_LIMIT_MAX, IDS_LIMIT_MAX: L.IDS_LIMIT_MAX, REQUESTS_PER_MINUTE: L.REQUESTS_PER_MINUTE, SERVER_PROTOCOL: L.SERVER_PROTOCOL });
+    // the client's own pull-by-ids chunk stays under the real body cap
+    expect(syncClientMod.SYNC_IDS_BODY_MAX_BYTES).toBeLessThan(handler.BODY_MAX_BYTES);
+    expect(syncClientMod.SYNC_IDS_LIMIT).toBeLessThanOrEqual(handler.PULL_IDS_MAX);
+  });
+
   wt("W30", "client:FA", "every route the client calls exists with the method the client uses (no router 404/405)", async () => {
     const used = new Set(seen.map((r) => `${r.method} ${r.path}`));
     console.log("[W30] routes used by the client:", [...used].sort().join(" | "));
