@@ -30,6 +30,8 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  /** `value` must be read from the event by the caller, synchronously (see the category input below). */
+  const setDraft = (lineId: string, value: string) => setDrafts((d) => ({ ...d, [lineId]: value }));
 
   if (data.state === "no_project") return <Message state="no_project">There is no project on this laptop yet. Open PROJEXA once while you are online.</Message>;
   if (data.state === "not_synced") return <Message state="not_synced">This BOQ&apos;s project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online.</Message>;
@@ -104,8 +106,12 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
                         value={draft ?? line.category ?? ""}
                         // The same handler on both events: a real keystroke raises both (the second is a no-op), and onInput is what
                         // the repo's test environment can drive (see src/lib/mom-form.ts's header).
-                        onChange={(e) => setDrafts((d) => ({ ...d, [line.id]: e.currentTarget.value }))}
-                        onInput={(e) => setDrafts((d) => ({ ...d, [line.id]: e.currentTarget.value }))}
+                        // The value is read HERE, while the event is being dispatched, never inside the state updater: React runs an
+                        // updater later when another update is already queued (the second of the two events above), and by then the
+                        // event's currentTarget is null -- in Chromium every keystroke crashed the screen ("This page couldn't load",
+                        // lf-e8, e2e/offline-local-first.spec.ts).
+                        onChange={(e) => setDraft(line.id, e.currentTarget.value)}
+                        onInput={(e) => setDraft(line.id, e.currentTarget.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && changed) void save(line.id);
                         }}

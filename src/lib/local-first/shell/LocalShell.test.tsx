@@ -3,7 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { IDBFactory } from "fake-indexeddb";
 import { localDbNameFor, openLocalDb } from "../local-db";
@@ -145,6 +145,36 @@ describe("the shell opens OFFLINE from the laptop's own copy", () => {
     expect(note.getAttribute("data-online")).toBe("0");
     expect(note.textContent).toContain("not saved on this laptop yet");
     expect(document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"]') === null).toBe(true);
+  });
+});
+
+describe("typing in the BOQ line's category box (lf-e8)", () => {
+  test("a second keystroke-event arriving before React renders: the screen keeps working and shows what was typed", async () => {
+    // In Chromium one keystroke raises onChange AND onInput; the second handler's state update was not computed at once (another
+    // was already queued), so React ran its updater later, after the event was over, read a null currentTarget and crashed the whole
+    // screen ("This page couldn't load"). Two input events inside one act() batch give React exactly that ordering here.
+    await seedLaptop();
+    setOnline(false);
+    go("/local/scope/boqA?projectId=p1");
+    const { findByTestId, getAllByTestId } = render(<LocalShell />);
+    await findByTestId("boq-local-title");
+    const input = getAllByTestId("boq-line-category-input")[1]! as HTMLInputElement;
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => { errors.push(event.error ?? event.message); event.preventDefault(); };
+    window.addEventListener("error", onError);
+    try {
+      act(() => {
+        fireEvent.input(input, { target: { value: "Stee" } });
+        fireEvent.input(input, { target: { value: "Steel" } });
+      });
+    } catch (err) {
+      errors.push(err);
+    } finally {
+      window.removeEventListener("error", onError);
+    }
+    expect(errors).toEqual([]);
+    expect((getAllByTestId("boq-line-category-input")[1]! as HTMLInputElement).value).toBe("Steel");
+    expect(await findByTestId("boq-line-save")).toBeTruthy();
   });
 });
 
