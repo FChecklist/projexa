@@ -856,11 +856,11 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
     const factory = idb();
     const r = replicaMod.createReplica({ userId: OSUBS[who], client: oClient(who), idb: factory, yieldFn: noYield, now: () => oclock });
     const open = () => localDbMod.openLocalDb(factory, localDbMod.localDbNameFor(OSUBS[who]));
-    const use = async (fn) => { const l = await open(); try { return await fn(l); } finally { l.close(); } };
+    const withDb = async (fn) => { const l = await open(); try { return await fn(l); } finally { l.close(); } };
     return {
-      who, factory, replica: r, use,
-      ids: (kind, project = ORG) => use(async (l) => (await l.listByProject("org-a", kind, project)).map((x) => x.id.slice(kind.length + 1)).sort()),
-      row: (kind, id) => use((l) => l.getRecord(kind, id)),
+      who, factory, replica: r, withDb,
+      ids: (kind, project = ORG) => withDb(async (l) => (await l.listByProject("org-a", kind, project)).map((x) => x.id.slice(kind.length + 1)).sort()),
+      row: (kind, id) => withDb((l) => l.getRecord(kind, id)),
     };
   };
   const requestsOf = (who, from) => oseen.slice(from).filter((r) => r.who === who);
@@ -916,7 +916,7 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
       expect(report.status).toBe("done");
       for (const kind of MEMBER_KINDS) expect(await lap.ids(kind)).toEqual(orgFix.OWN_A[kind]);
       expect(requestsOf(lap.who, from).every((r) => r.status === 200)).toBe(true);
-      const all = await lap.use((l) => l.listByOrg("org-a"));
+      const all = await lap.withDb((l) => l.listByOrg("org-a"));
       expect(JSON.stringify(all)).not.toContain("SECRET");
     }
     // money: credit_limit is null below rank 3 (member), present for a manager (0684 hidden columns)
@@ -925,7 +925,7 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
     // every organisation row's signature verifies over px2 with the sentinel project, from the laptop's own copy
     const pub = await signMod.importPublic(okey.public_jwk);
     for (const kind of ["vendors", "departments", "currencies"]) {
-      for (const r of await mem.use((l) => l.listByProject("org-a", kind, ORG))) {
+      for (const r of await mem.withDb((l) => l.listByProject("org-a", kind, ORG))) {
         const id = r.id.slice(kind.length + 1);
         const message = await fakeMod.signedMessage({ org: "org-a", project: ORG, kind, id, version: r.serverVersion, updated_at: r.serverUpdatedAt, data: r.data });
         expect(await signMod.verifyMessage(pub, message, r.sig)).toBe(true);
@@ -967,7 +967,7 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
   });
 
   wt("W43", "client:E7", "role change member -> viewer: vendor (and every member-only) rows leave the laptop, a pending edit of one stays with its outbox op, and nothing is asked that a viewer may not read", async () => {
-    await mem.use(async (l) => l.transact(async (tx) => {
+    await mem.withDb(async (l) => l.transact(async (tx) => {
       const r = await tx.getRecord("vendors", "ven-2");
       await tx.putRecord({ id: r.id, type: "vendors", orgId: r.orgId, projectId: r.projectId, data: { ...r.data, supplier_name: "Bright Paints (my edit)" }, dirty: "op-e7-mine", serverVersion: r.serverVersion, serverUpdatedAt: r.serverUpdatedAt, sig: r.sig, kid: r.kid });
       await tx.putOp({ opId: "op-e7-mine", functionId: "update_vendor", projectId: "proj-a", params: { name: "x" }, record: { kind: "vendors", id: "ven-2", baseVersion: r.serverVersion }, clientAt: "2026-10-02T12:00:00Z", status: "pending", attempts: 0, nextAttemptAt: 0 });
@@ -981,7 +981,7 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
       expect((await mem.row("vendors", "ven-2")).data.supplier_name).toBe("Bright Paints (my edit)");
       for (const kind of MEMBER_KINDS.filter((k) => k !== "vendors" && k !== "cost_visibility")) expect(await mem.ids(kind)).toEqual([]);
       expect(await mem.ids("cost_visibility")).toEqual(orgFix.OWN_A.cost_visibility);
-      expect((await mem.use((l) => l.listOps())).map((o) => o.opId)).toContain("op-e7-mine");
+      expect((await mem.withDb((l) => l.listOps())).map((o) => o.opId)).toContain("op-e7-mine");
       expect(requestsOf("u-mem", from).filter((r) => r.status !== 200)).toEqual([]); // not even a 404: the laptop never asked for what the role lost
     } finally {
       await odb.exec(`update compliance.users set role = 'member' where id = 'u-mem'`);
@@ -1007,7 +1007,7 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
       if (before.view_class !== after.view_class) expect(pulls.some((r) => r.body.project_id === "proj-a")).toBe(true);
       if (before.org_view_class !== after.org_view_class) expect(pulls.some((r) => MEMBER_KINDS.includes(r.body.kind))).toBe(true);
       expect((await mgr.row("cost_visibility", "cv1")).data.can_see_cost).toBe(false);
-      expect(await mgr.use((l) => l.getMeta("sync:class:proj-a"))).toMatchObject({ view: after.view_class });
+      expect(await mgr.withDb((l) => l.getMeta("sync:class:proj-a"))).toMatchObject({ view: after.view_class });
     } finally {
       await odb.exec(`update compliance.cost_visibility_config set can_see_cost = true where id = 'cv1'`);
     }
@@ -1022,7 +1022,7 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
     const pulls = requestsOf("u-mem", from).filter((r) => r.path === "/pull" && r.body.after === null);
     expect(pulls.some((r) => r.body.project_id === "proj-a")).toBe(true);
     expect(pulls.some((r) => r.body.kind === "vendors")).toBe(true);
-    expect(await mem.use((l) => l.getMeta("sync:epoch"))).toBe("e7-restored-epoch");
+    expect(await mem.withDb((l) => l.getMeta("sync:epoch"))).toBe("e7-restored-epoch");
     expect((await mem.row("vendors", "ven-2")).dirty).toBe("op-e7-mine");
     expect(await mem.ids("vendors")).toEqual(["ven-1", "ven-2"]);
     // and the next run is a normal one
@@ -1062,10 +1062,10 @@ suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
     const report = await b.replica.sync();
     if (report.status !== "done") console.log("[W47] org B report:", JSON.stringify(report.issues));
     expect(report.status).toBe("done");
-    const bRows = await b.use((l) => l.listByOrg("org-b"));
+    const bRows = await b.withDb((l) => l.listByOrg("org-b"));
     expect(bRows.length).toBeGreaterThan(0);
     expect(bRows.every((r) => r.orgId === "org-b")).toBe(true);
-    expect(await b.use((l) => l.countRecords("org-a"))).toBe(0);
-    expect(JSON.stringify(await mem.use((l) => l.listByOrg("org-a")))).not.toContain("SECRET");
+    expect(await b.withDb((l) => l.countRecords("org-a"))).toBe(0);
+    expect(JSON.stringify(await mem.withDb((l) => l.listByOrg("org-a")))).not.toContain("SECRET");
   });
 });
