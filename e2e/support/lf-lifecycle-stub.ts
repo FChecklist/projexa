@@ -193,6 +193,9 @@ export async function stubSyncService(context: BrowserContext, world: SyncWorld)
       case "install":
         world.installs.push(body as Record<string, unknown>);
         return reply(200, { recorded: true, server_time: now() });
+      case "prepare":
+        world.prepares.push(body as Record<string, unknown>);
+        return reply(200, { recorded: true, server_time: now() });
       default:
         return reply(404, { error: "not part of the local stub" });
     }
