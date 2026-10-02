@@ -13,7 +13,11 @@ export const shellManifestKey = (userId: string) => `shell:manifest:${userId}`;
 export type ShellManifest = {
   /** ms since epoch this was fetched. */
   at: number;
-  user: { id: string; name: string | null; role: string | null; org_id: string };
+  /**
+   * `id` is the SIGN-IN id (what the shell is keyed by). `personId` is the VERIDIAN person id (compliance.users.id, the manifest's
+   * user.id): what the server writes into a row's user_id (a time entry's, for one). Absent in a record cached by an older build.
+   */
+  user: { id: string; personId?: string | null; name: string | null; role: string | null; org_id: string };
   projects: { id: string; name: string | null; status: string | null }[];
 };
 
@@ -23,7 +27,7 @@ export function toShellManifest(manifest: SyncManifest, at: number): ShellManife
   return {
     at,
     // the person's SIGN-IN id (what the shell and its key are named by), not the VERIDIAN id: see manifestSignInId
-    user: { id: manifestSignInId(manifest), name: manifest.user.name ?? null, role: manifest.user.role ?? null, org_id: manifest.user.org_id },
+    user: { id: manifestSignInId(manifest), personId: manifest.user.id || null, name: manifest.user.name ?? null, role: manifest.user.role ?? null, org_id: manifest.user.org_id },
     projects: manifest.projects.map((p) => ({ id: p.id, name: p.name ?? null, status: p.status ?? null })),
   };
 }

@@ -83,13 +83,19 @@ export type NewChangeOrder = {
   costImpact?: string | number | null;
   /** As typed: "+/- days". */
   scheduleImpactDays?: string | number | null;
+  /**
+   * The sync service hid `cost_impact` from this person's role (the done marker's hiddenFields). Then NO costImpact is sent, not even
+   * the online screen's 0 for an empty box: a person may not write a money field they may not see (lf-e10b). The server's default
+   * applies; anything typed is ignored (the screen offers no such box).
+   */
+  costHidden?: boolean;
 };
 
 /** The same checks the online create screen makes, in its words. Empty object = fine. */
 export function validateNewChangeOrder(input: NewChangeOrder): Partial<Record<"title" | "costImpact" | "scheduleImpactDays", string>> {
   const errors: Partial<Record<"title" | "costImpact" | "scheduleImpactDays", string>> = {};
   if (!input.title.trim()) errors.title = "Title is required.";
-  const cost = typedNumber(input.costImpact);
+  const cost = input.costHidden ? undefined : typedNumber(input.costImpact);
   if (cost !== undefined && !Number.isFinite(cost)) errors.costImpact = "Cost impact must be a number.";
   const days = typedNumber(input.scheduleImpactDays);
   if (days !== undefined && !Number.isFinite(days)) errors.scheduleImpactDays = "Schedule impact must be a number of days.";
@@ -104,14 +110,15 @@ export async function createChangeOrderOffline(input: NewChangeOrder, access: De
     const tempId = tempIdOf();
     const title = input.title.trim();
     const reason = input.reason?.trim() ? input.reason.trim() : undefined;
-    const cost = typedNumber(input.costImpact);
+    const cost = input.costHidden ? undefined : typedNumber(input.costImpact);
     const days = typedNumber(input.scheduleImpactDays);
     const params: Record<string, unknown> = {
       projectId: input.projectId,
       title,
       ...(reason ? { reason } : {}),
-      // As the online screen sends them: the person's own figures, or 0 when left empty. The server decides what they become.
-      costImpact: cost ?? 0,
+      // As the online screen sends them: the person's own figures, or 0 when left empty. The server decides what they become. A role
+      // that may not see the cost sends none at all (costHidden).
+      ...(input.costHidden ? {} : { costImpact: cost ?? 0 }),
       scheduleImpactDays: days ?? 0,
     };
     const { opId } = await ctx.outbox.enqueue({

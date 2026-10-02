@@ -7,12 +7,9 @@
 // Money, budgets, valuation and progress-by-value are the SERVER's figures only: shown from the snapshot "As of ..., from this laptop",
 // or "worked out by the server when you are online" when there is none. Nothing on this screen computes one.
 
-import { useEffect, useState } from "react";
-import { OutboxAttention } from "@/components/OutboxAttention";
 import { formatAmount } from "@/lib/boq-helpers";
 import { formatDateTime } from "@/lib/format-date";
 import { WORKING_LOCALLY_TEXT } from "../../connectivity";
-import type { Outbox } from "../../outbox";
 import type { ShellScreenProps } from "../types";
 import { asOfLabel } from "../snapshot-cache";
 import { projectDashboardFor, projectDashboardSnapshotName, projectDashboardUrl, type DashboardData, type Fact } from "./dashboard-adapter";
@@ -52,18 +49,8 @@ function StatusList({ rows, none }: { rows: StatusCount[]; none: string }) {
 const figure = (n: number | null, kind: "percent" | "amount" | "count") =>
   n === null ? "Not set" : kind === "percent" ? `${Math.round(n * 10) / 10}%` : kind === "amount" ? formatAmount(n) : String(n);
 
-/** The outbox of this person, only if this tab already has one (peek never creates one, so nothing is sent from here). */
-function usePeekedOutbox(userId: string): Outbox | null {
-  const [outbox, setOutbox] = useState<Outbox | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void import("../../outbox-shared").then((m) => {
-      if (!cancelled) setOutbox(m.peekSharedOutbox(userId));
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [userId]);
-  return outbox;
-}
+// The card that says a change needs the person (OutboxAttention) is the shell's own, on every screen (LocalShell.tsx
+// ShellOutboxAttention, lf-e10b); this screen no longer mounts a second copy.
 
 export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<DashboardData>) {
   const project = shell.data.projects.find((p) => p.id === data.projectId);
@@ -71,7 +58,6 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
     ? [{ name: projectDashboardSnapshotName(data.projectId), url: projectDashboardUrl(data.projectId), validate: projectDashboardFor(data.projectId) }]
     : [];
   const status = useSnapshotRefresh(shell, reads);
-  const outbox = usePeekedOutbox(shell.data.userId);
   const online = shell.connectivity === "online";
   const w = data.waiting;
   const waitingTotal = w.outbox + w.shellEdits;
@@ -170,8 +156,6 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
           <p className="text-xs text-px-muted">Counted on this laptop from what is saved here. The schedule's critical path and approvals are decided by the server.</p>
         </>
       ) : null}
-
-      {outbox ? <OutboxAttention outbox={outbox} /> : null}
     </section>
   );
 }

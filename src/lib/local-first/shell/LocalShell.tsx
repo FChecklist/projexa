@@ -12,6 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker";
+import { OutboxAttention } from "@/components/OutboxAttention";
+import type { Outbox } from "../outbox";
+import { AiAttach } from "../ai/AiAttach";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -22,8 +25,6 @@ import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWrit
 import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
 import { connectShellOutbox, shellShowsOutboxCard, type ShellOutbox } from "./shell-outbox";
-import { OutboxAttention } from "@/components/OutboxAttention";
-import type { Outbox } from "../outbox";
 import type { ShellApi, ShellRoute, ShellScreenProps } from "./types";
 
 type Boot =
@@ -263,6 +264,9 @@ export default function LocalShell() {
         <NotInShell location={location} online={connectivity === "online"} />
       )}
       {outbox && shellShowsOutboxCard(matched?.route.pattern ?? null) ? <OutboxAttention key={data.userId} outbox={outbox} /> : null}
+      {/* The browser AI's door (window.projexa.ai, the inline manual, the person's "Yes, do it" for a delete it asked for). Mounted
+          here as in the online layout: once a laptop is prepared the worker serves THIS shell for app URLs, online too (lf-e10b). */}
+      <AiAttach />
     </Chrome>
   );
 }

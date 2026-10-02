@@ -1,6 +1,6 @@
 {
  "source": "FChecklist/compliance-tracker supabase/functions/ai-work-link/function-registry.generated.json",
- "source_commit": "7fd8172c82574138b4ad54475edb5663d1a3d767",
+ "source_commit": "d1119f6933912917d7195afaec99dbab31a48c6d",
  "note": "Write functions only. Copied verbatim (selected fields). The server stays the authority on every push; this copy only lets the laptop refuse early in plain words. Refresh with scripts/vendor-ai-function-registry.mjs.",
  "functions": [
   {
@@ -266,6 +266,48 @@
    "id_params": []
   },
   {
+   "function_id": "add_sprint_task",
+   "label": "Add a task to a sprint",
+   "module": "schedule",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "issueId",
+    "projectId",
+    "sprintId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "sprintId",
+     "label": "Sprint",
+     "any_of": [
+      "sprintId"
+     ]
+    },
+    {
+     "name": "issueId",
+     "label": "Task",
+     "any_of": [
+      "issueId"
+     ]
+    }
+   ],
+   "id_params": [
+    "issueId",
+    "sprintId"
+   ]
+  },
+  {
    "function_id": "answer_rfi",
    "label": "Answer an RFI",
    "module": "rfis",
@@ -401,6 +443,97 @@
    ]
   },
   {
+   "function_id": "archive_project",
+   "label": "Archive or reopen the project",
+   "module": "projects",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "projectId",
+    "status"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    }
+   ],
+   "id_params": []
+  },
+  {
+   "function_id": "archive_task",
+   "label": "Archive or restore a task",
+   "module": "schedule",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "isArchived",
+    "issueId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "issueId",
+     "label": "Task",
+     "any_of": [
+      "issueId"
+     ]
+    }
+   ],
+   "id_params": [
+    "issueId"
+   ]
+  },
+  {
+   "function_id": "cancel_change_order",
+   "label": "Cancel a change order",
+   "module": "change_orders",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "changeOrderId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "changeOrderId",
+     "label": "Change order",
+     "any_of": [
+      "changeOrderId"
+     ]
+    }
+   ],
+   "id_params": [
+    "changeOrderId"
+   ]
+  },
+  {
    "function_id": "capture_artifact",
    "label": "Save a note",
    "module": "memory",
@@ -496,6 +629,39 @@
    ]
   },
   {
+   "function_id": "close_sprint",
+   "label": "Close a sprint",
+   "module": "schedule",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "projectId",
+    "sprintId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "sprintId",
+     "label": "Sprint",
+     "any_of": [
+      "sprintId"
+     ]
+    }
+   ],
+   "id_params": [
+    "sprintId"
+   ]
+  },
+  {
    "function_id": "create_activity",
    "label": "New activity",
    "module": "work_progress",
@@ -572,6 +738,37 @@
    "id_params": []
   },
   {
+   "function_id": "create_boq_category",
+   "label": "Add a BOQ category",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "name",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "name",
+     "label": "Name",
+     "any_of": [
+      "name"
+     ]
+    }
+   ],
+   "id_params": []
+  },
+  {
    "function_id": "create_boq_revision",
    "label": "New BOQ revision",
    "module": "scope",
@@ -640,6 +837,119 @@
      "label": "Title",
      "any_of": [
       "title"
+     ]
+    }
+   ],
+   "id_params": []
+  },
+  {
+   "function_id": "create_company",
+   "label": "Add a company of the organisation",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "abbr",
+    "companyName",
+    "country",
+    "dateOfIncorporation",
+    "isGroup",
+    "parentCompanyId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "companyName",
+     "label": "Company name",
+     "any_of": [
+      "companyName"
+     ]
+    }
+   ],
+   "id_params": [
+    "parentCompanyId"
+   ]
+  },
+  {
+   "function_id": "create_currency",
+   "label": "Add a currency",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "code",
+    "name",
+    "projectId",
+    "symbol"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "code",
+     "label": "Currency code",
+     "any_of": [
+      "code"
+     ]
+    },
+    {
+     "name": "name",
+     "label": "Name",
+     "any_of": [
+      "name"
+     ]
+    }
+   ],
+   "id_params": []
+  },
+  {
+   "function_id": "create_customer",
+   "label": "Add a customer",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "creditLimit",
+    "customerName",
+    "defaultPaymentTermsDays",
+    "gstin",
+    "pan",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "customerName",
+     "label": "Customer name",
+     "any_of": [
+      "customerName"
      ]
     }
    ],
@@ -728,6 +1038,64 @@
     }
    ],
    "id_params": []
+  },
+  {
+   "function_id": "create_exchange_rate",
+   "label": "Record an exchange rate",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "fromCurrencyId",
+    "projectId",
+    "rate",
+    "rateDate",
+    "toCurrencyId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "fromCurrencyId",
+     "label": "From currency",
+     "any_of": [
+      "fromCurrencyId"
+     ]
+    },
+    {
+     "name": "toCurrencyId",
+     "label": "To currency",
+     "any_of": [
+      "toCurrencyId"
+     ]
+    },
+    {
+     "name": "rate",
+     "label": "Rate",
+     "any_of": [
+      "rate"
+     ]
+    },
+    {
+     "name": "rateDate",
+     "label": "Rate date",
+     "any_of": [
+      "rateDate"
+     ]
+    }
+   ],
+   "id_params": [
+    "fromCurrencyId",
+    "toCurrencyId"
+   ]
   },
   {
    "function_id": "create_ffe_item",
@@ -1415,6 +1783,40 @@
    ]
   },
   {
+   "function_id": "create_sprint",
+   "label": "New sprint",
+   "module": "schedule",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "endDate",
+    "goal",
+    "name",
+    "projectId",
+    "startDate"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "name",
+     "label": "Name",
+     "any_of": [
+      "name"
+     ]
+    }
+   ],
+   "id_params": []
+  },
+  {
    "function_id": "create_submittal",
    "label": "New submittal",
    "module": "submittals",
@@ -1443,6 +1845,43 @@
      "label": "Title",
      "any_of": [
       "title"
+     ]
+    }
+   ],
+   "id_params": []
+  },
+  {
+   "function_id": "create_vendor",
+   "label": "Add a vendor",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "creditLimit",
+    "defaultPaymentTermsDays",
+    "gst",
+    "pan",
+    "projectId",
+    "trade",
+    "vendorName",
+    "vendorType"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "vendorName",
+     "label": "Vendor name",
+     "any_of": [
+      "vendorName"
      ]
     }
    ],
@@ -1481,6 +1920,303 @@
    ],
    "id_params": [
     "parentPageId"
+   ]
+  },
+  {
+   "function_id": "delete_attendance",
+   "label": "Delete an attendance mark",
+   "module": "manpower",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "attendanceId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "attendanceId",
+     "label": "Attendance",
+     "any_of": [
+      "attendanceId"
+     ]
+    }
+   ],
+   "id_params": [
+    "attendanceId"
+   ]
+  },
+  {
+   "function_id": "delete_boq",
+   "label": "Delete a draft BOQ",
+   "module": "scope",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "boqId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "boqId",
+     "label": "BOQ",
+     "any_of": [
+      "boqId"
+     ]
+    }
+   ],
+   "id_params": [
+    "boqId"
+   ]
+  },
+  {
+   "function_id": "delete_boq_category",
+   "label": "Retire a BOQ category",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "categoryId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "categoryId",
+     "label": "Category",
+     "any_of": [
+      "categoryId"
+     ]
+    }
+   ],
+   "id_params": [
+    "categoryId"
+   ]
+  },
+  {
+   "function_id": "delete_meeting",
+   "label": "Delete a project meeting",
+   "module": "meetings",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "meetingId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "meetingId",
+     "label": "Meeting",
+     "any_of": [
+      "meetingId"
+     ]
+    }
+   ],
+   "id_params": [
+    "meetingId"
+   ]
+  },
+  {
+   "function_id": "delete_mom",
+   "label": "Delete a draft MoM",
+   "module": "meetings",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "meetingId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "meetingId",
+     "label": "Meeting",
+     "any_of": [
+      "meetingId"
+     ]
+    }
+   ],
+   "id_params": [
+    "meetingId"
+   ]
+  },
+  {
+   "function_id": "delete_permit",
+   "label": "Delete a permit",
+   "module": "permits",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "permitId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "permitId",
+     "label": "Permit",
+     "any_of": [
+      "permitId"
+     ]
+    }
+   ],
+   "id_params": [
+    "permitId"
+   ]
+  },
+  {
+   "function_id": "delete_progress_entry",
+   "label": "Delete a progress entry",
+   "module": "progress",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "entryId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "entryId",
+     "label": "Progress entry",
+     "any_of": [
+      "entryId"
+     ]
+    }
+   ],
+   "id_params": [
+    "entryId"
+   ]
+  },
+  {
+   "function_id": "delete_time_entry",
+   "label": "Delete my time entry",
+   "module": "timesheets",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "entryId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "entryId",
+     "label": "Time entry",
+     "any_of": [
+      "entryId"
+     ]
+    }
+   ],
+   "id_params": [
+    "entryId"
+   ]
+  },
+  {
+   "function_id": "dispose_document",
+   "label": "Dispose of a document",
+   "module": "documents",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "documentId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "documentId",
+     "label": "Document",
+     "any_of": [
+      "documentId"
+     ]
+    }
+   ],
+   "id_params": [
+    "documentId"
    ]
   },
   {
@@ -2126,6 +2862,215 @@
    ]
   },
   {
+   "function_id": "remove_mood_board_item",
+   "label": "Remove an item from a mood board",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "itemId",
+    "moodBoardId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "moodBoardId",
+     "label": "Mood board",
+     "any_of": [
+      "moodBoardId"
+     ]
+    },
+    {
+     "name": "itemId",
+     "label": "Item",
+     "any_of": [
+      "itemId"
+     ]
+    }
+   ],
+   "id_params": [
+    "itemId",
+    "moodBoardId"
+   ]
+  },
+  {
+   "function_id": "remove_placement",
+   "label": "Remove furniture from a floor plan",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "floorPlanId",
+    "placementId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "floorPlanId",
+     "label": "Floor plan",
+     "any_of": [
+      "floorPlanId"
+     ]
+    },
+    {
+     "name": "placementId",
+     "label": "Placement",
+     "any_of": [
+      "placementId"
+     ]
+    }
+   ],
+   "id_params": [
+    "floorPlanId",
+    "placementId"
+   ]
+  },
+  {
+   "function_id": "remove_room",
+   "label": "Remove a room from a floor plan",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "floorPlanId",
+    "projectId",
+    "roomId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "floorPlanId",
+     "label": "Floor plan",
+     "any_of": [
+      "floorPlanId"
+     ]
+    },
+    {
+     "name": "roomId",
+     "label": "Room",
+     "any_of": [
+      "roomId"
+     ]
+    }
+   ],
+   "id_params": [
+    "floorPlanId",
+    "roomId"
+   ]
+  },
+  {
+   "function_id": "remove_sprint_task",
+   "label": "Take a task out of a sprint",
+   "module": "schedule",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "issueId",
+    "projectId",
+    "sprintId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "sprintId",
+     "label": "Sprint",
+     "any_of": [
+      "sprintId"
+     ]
+    },
+    {
+     "name": "issueId",
+     "label": "Task",
+     "any_of": [
+      "issueId"
+     ]
+    }
+   ],
+   "id_params": [
+    "issueId",
+    "sprintId"
+   ]
+  },
+  {
+   "function_id": "rename_boq_category",
+   "label": "Rename a BOQ category",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "categoryId",
+    "name",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "categoryId",
+     "label": "Category",
+     "any_of": [
+      "categoryId"
+     ]
+    },
+    {
+     "name": "name",
+     "label": "New name",
+     "any_of": [
+      "name"
+     ]
+    }
+   ],
+   "id_params": [
+    "categoryId"
+   ]
+  },
+  {
    "function_id": "review_submittal",
    "label": "Review a submittal",
    "module": "submittals",
@@ -2449,6 +3394,270 @@
    ]
   },
   {
+   "function_id": "update_activity",
+   "label": "Change a work activity",
+   "module": "work_progress",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "activityId",
+    "categoryId",
+    "name",
+    "plannedQuantity",
+    "projectId",
+    "unit"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "activityId",
+     "label": "Activity",
+     "any_of": [
+      "activityId"
+     ]
+    }
+   ],
+   "id_params": [
+    "activityId",
+    "categoryId"
+   ]
+  },
+  {
+   "function_id": "update_attendance",
+   "label": "Correct an attendance mark",
+   "module": "manpower",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "attendanceId",
+    "hoursWorked",
+    "projectId",
+    "status"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "attendanceId",
+     "label": "Attendance",
+     "any_of": [
+      "attendanceId"
+     ]
+    }
+   ],
+   "id_params": [
+    "attendanceId"
+   ]
+  },
+  {
+   "function_id": "update_boq",
+   "label": "Rename a BOQ",
+   "module": "scope",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "boqId",
+    "projectId",
+    "title"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "boqId",
+     "label": "BOQ",
+     "any_of": [
+      "boqId"
+     ]
+    },
+    {
+     "name": "title",
+     "label": "Title",
+     "any_of": [
+      "title"
+     ]
+    }
+   ],
+   "id_params": [
+    "boqId"
+   ]
+  },
+  {
+   "function_id": "update_boq_line",
+   "label": "Change a BOQ line's description or unit",
+   "module": "scope",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "description",
+    "lineItemId",
+    "projectId",
+    "unit"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "lineItemId",
+     "label": "BOQ line",
+     "any_of": [
+      "lineItemId"
+     ]
+    }
+   ],
+   "id_params": [
+    "lineItemId"
+   ]
+  },
+  {
+   "function_id": "update_boq_line_amounts",
+   "label": "Change a BOQ line's quantities and rates",
+   "module": "scope",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 3,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "lineItemId",
+    "projectId",
+    "qtyContract",
+    "qtyProject",
+    "rateContract",
+    "rateProject"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "lineItemId",
+     "label": "BOQ line",
+     "any_of": [
+      "lineItemId"
+     ]
+    }
+   ],
+   "id_params": [
+    "lineItemId"
+   ]
+  },
+  {
+   "function_id": "update_change_order",
+   "label": "Change a draft change order",
+   "module": "change_orders",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "changeOrderId",
+    "costImpact",
+    "description",
+    "projectId",
+    "reason",
+    "scheduleImpactDays",
+    "title",
+    "trade"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "changeOrderId",
+     "label": "Change order",
+     "any_of": [
+      "changeOrderId"
+     ]
+    }
+   ],
+   "id_params": [
+    "changeOrderId"
+   ]
+  },
+  {
+   "function_id": "update_customer",
+   "label": "Change or retire a customer",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "creditLimit",
+    "customerId",
+    "customerName",
+    "defaultPaymentTermsDays",
+    "gstin",
+    "isActive",
+    "pan",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "customerId",
+     "label": "Customer",
+     "any_of": [
+      "customerId"
+     ]
+    }
+   ],
+   "id_params": [
+    "customerId"
+   ]
+  },
+  {
    "function_id": "update_document_metadata",
    "label": "Edit a document's details",
    "module": "documents",
@@ -2526,6 +3735,47 @@
    ]
   },
   {
+   "function_id": "update_floor_plan_status",
+   "label": "Mark a floor plan draft or final",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "floorPlanId",
+    "projectId",
+    "status"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "floorPlanId",
+     "label": "Floor plan",
+     "any_of": [
+      "floorPlanId"
+     ]
+    },
+    {
+     "name": "status",
+     "label": "Status",
+     "any_of": [
+      "status"
+     ]
+    }
+   ],
+   "id_params": [
+    "floorPlanId"
+   ]
+  },
+  {
    "function_id": "update_line_item_budget",
    "label": "Set a line budget",
    "module": "budget",
@@ -2566,6 +3816,81 @@
    ]
   },
   {
+   "function_id": "update_material",
+   "label": "Change a material",
+   "module": "materials",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "isActive",
+    "materialId",
+    "name",
+    "projectId",
+    "reorderLevel",
+    "spec",
+    "unit",
+    "unitCost"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "materialId",
+     "label": "Material",
+     "any_of": [
+      "materialId"
+     ]
+    }
+   ],
+   "id_params": [
+    "materialId"
+   ]
+  },
+  {
+   "function_id": "update_meeting",
+   "label": "Reschedule a meeting",
+   "module": "meetings",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "durationMinutes",
+    "meetingId",
+    "projectId",
+    "scheduledAt",
+    "title"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "meetingId",
+     "label": "Meeting",
+     "any_of": [
+      "meetingId"
+     ]
+    }
+   ],
+   "id_params": [
+    "meetingId"
+   ]
+  },
+  {
    "function_id": "update_milestone",
    "label": "Update a milestone",
    "module": "milestones",
@@ -2600,6 +3925,44 @@
    ],
    "id_params": [
     "milestoneId"
+   ]
+  },
+  {
+   "function_id": "update_mom_details",
+   "label": "Change a MoM's details",
+   "module": "meetings",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "agenda",
+    "attendees",
+    "meetingId",
+    "meetingType",
+    "projectId",
+    "scheduledAt",
+    "title"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "meetingId",
+     "label": "Meeting",
+     "any_of": [
+      "meetingId"
+     ]
+    }
+   ],
+   "id_params": [
+    "meetingId"
    ]
   },
   {
@@ -2641,6 +4004,164 @@
    ],
    "id_params": [
     "meetingId"
+   ]
+  },
+  {
+   "function_id": "update_mood_board",
+   "label": "Change a mood board",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "description",
+    "moodBoardId",
+    "projectId",
+    "roomOrArea",
+    "title"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "moodBoardId",
+     "label": "Mood board",
+     "any_of": [
+      "moodBoardId"
+     ]
+    }
+   ],
+   "id_params": [
+    "moodBoardId"
+   ]
+  },
+  {
+   "function_id": "update_permit",
+   "label": "Change a permit",
+   "module": "permits",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "expiryDate",
+    "issueDate",
+    "name",
+    "notes",
+    "permitAuthority",
+    "permitId",
+    "permitNumber",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "permitId",
+     "label": "Permit",
+     "any_of": [
+      "permitId"
+     ]
+    }
+   ],
+   "id_params": [
+    "permitId"
+   ]
+  },
+  {
+   "function_id": "update_placement",
+   "label": "Move furniture on a floor plan",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "floorPlanId",
+    "placementId",
+    "projectId",
+    "roomId",
+    "rotationDeg",
+    "x",
+    "y"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "floorPlanId",
+     "label": "Floor plan",
+     "any_of": [
+      "floorPlanId"
+     ]
+    },
+    {
+     "name": "placementId",
+     "label": "Placement",
+     "any_of": [
+      "placementId"
+     ]
+    }
+   ],
+   "id_params": [
+    "floorPlanId",
+    "placementId",
+    "roomId"
+   ]
+  },
+  {
+   "function_id": "update_progress_category",
+   "label": "Change a work category",
+   "module": "work_progress",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "categoryId",
+    "name",
+    "parentCategoryId",
+    "projectId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "categoryId",
+     "label": "Category",
+     "any_of": [
+      "categoryId"
+     ]
+    }
+   ],
+   "id_params": [
+    "categoryId",
+    "parentCategoryId"
    ]
   },
   {
@@ -2718,6 +4239,51 @@
    ]
   },
   {
+   "function_id": "update_room",
+   "label": "Change a room on a floor plan",
+   "module": "interior",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "ceilingHeightCm",
+    "floorPlanId",
+    "name",
+    "polygon",
+    "projectId",
+    "roomId"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "floorPlanId",
+     "label": "Floor plan",
+     "any_of": [
+      "floorPlanId"
+     ]
+    },
+    {
+     "name": "roomId",
+     "label": "Room",
+     "any_of": [
+      "roomId"
+     ]
+    }
+   ],
+   "id_params": [
+    "floorPlanId",
+    "roomId"
+   ]
+  },
+  {
    "function_id": "update_roster_entry",
    "label": "Change a worker",
    "module": "manpower",
@@ -2753,6 +4319,44 @@
    ],
    "id_params": [
     "rosterId"
+   ]
+  },
+  {
+   "function_id": "update_sprint",
+   "label": "Change a sprint",
+   "module": "schedule",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": false,
+   "excluded_reason": null,
+   "declared_params": [
+    "endDate",
+    "goal",
+    "name",
+    "projectId",
+    "sprintId",
+    "startDate",
+    "status"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "sprintId",
+     "label": "Sprint",
+     "any_of": [
+      "sprintId"
+     ]
+    }
+   ],
+   "id_params": [
+    "sprintId"
    ]
   },
   {
@@ -2798,6 +4402,86 @@
     "issueId",
     "milestoneId",
     "statusId"
+   ]
+  },
+  {
+   "function_id": "update_time_entry",
+   "label": "Correct my time entry",
+   "module": "timesheets",
+   "kind": "write",
+   "link_level": 1,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "activityType",
+    "comments",
+    "entryId",
+    "hours",
+    "issueId",
+    "projectId",
+    "spentOn"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "entryId",
+     "label": "Time entry",
+     "any_of": [
+      "entryId"
+     ]
+    }
+   ],
+   "id_params": [
+    "entryId",
+    "issueId"
+   ]
+  },
+  {
+   "function_id": "update_vendor",
+   "label": "Change or retire a vendor",
+   "module": "organisation",
+   "kind": "write",
+   "link_level": 2,
+   "min_role_rank": 2,
+   "money_sensitive": true,
+   "excluded_reason": null,
+   "declared_params": [
+    "creditLimit",
+    "defaultPaymentTermsDays",
+    "gst",
+    "isActive",
+    "pan",
+    "projectId",
+    "trade",
+    "vendorId",
+    "vendorName",
+    "vendorType"
+   ],
+   "required_params": [
+    {
+     "name": "projectId",
+     "label": "Project",
+     "any_of": [
+      "projectId"
+     ]
+    },
+    {
+     "name": "vendorId",
+     "label": "Vendor",
+     "any_of": [
+      "vendorId"
+     ]
+    }
+   ],
+   "id_params": [
+    "vendorId"
    ]
   },
   {
