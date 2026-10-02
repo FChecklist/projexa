@@ -25,6 +25,7 @@ function fixture(extra: { shell?: boolean; schema?: string } = {}) {
   put(".next/static/chunks/zeta.css", "body{color:red}");
   put(".next/static/media/font.woff2", new Uint8Array([0, 1, 2, 3, 250, 251, 252, 253, 254, 255]));
   put("public/logo-mark.svg", "<svg/>");
+  put("public/AAA-first.txt", "capital letters sort before the underscore of _next: only an explicit sort puts this first");
   put("public/icons/icon-192.png", new Uint8Array([137, 80, 78, 71]));
   put("public/_release/px-1999.01.01-001.tar.gz", "old bundle that must not be re-bundled or kept");
   put("public/_release/release.json", "{}");
@@ -71,6 +72,7 @@ describe("release script: the manifest", () => {
     const paths = manifest.files.map((f: { path: string }) => f.path);
     expect(paths).toEqual([...paths].sort());
     expect(paths).toEqual([
+      "AAA-first.txt",
       "_next/static/chunks/app.js",
       "_next/static/chunks/zeta.css",
       "_next/static/media/font.woff2",
