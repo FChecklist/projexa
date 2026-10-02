@@ -117,6 +117,17 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
   const json = (route: Route, origin: string | undefined, body: unknown, status = 200) =>
     route.fulfill({ status, headers: { ...CORS(origin), "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(body) });
   let seq = 0;
+  // What the server would hold after the applied pushes: a real pull returns the person's own created/changed rows, so the stub must too
+  // (otherwise the next pull puts the fixture back over a change the server had accepted, and the screen loses the AI's work).
+  const applied = new Map<string, Map<string, Row>>();
+  const serverRows = (person: Person, projectId: string, kind: Kind): { items: Row[]; hidden: string[] } => {
+    const base = rowsFor(person, projectId, kind);
+    const extra = applied.get(`${projectId}|${kind}`);
+    if (!extra) return base;
+    const items = base.items.map((r) => (extra.has(r.id) ? { ...r, data: { ...r.data, ...extra.get(r.id)!.data } } : r));
+    for (const r of extra.values()) if (!items.some((i) => i.id === r.id)) items.push(r);
+    return { items, hidden: base.hidden };
+  };
 
   await page.route(`${SYNC_BASE}/**`, async (route, request) => {
     const origin = request.headers()["origin"];
@@ -155,7 +166,7 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
         stub.refusedPulls.push({ by: sub, project, kind: String(body.kind) });
         return json(route, origin, { error: "Not found" }, 404);
       }
-      const { items, hidden } = rowsFor(person, project, kind);
+      const { items, hidden } = serverRows(person, project, kind);
       const rows = body.ids ? items.filter((r) => body.ids!.includes(r.id)) : items;
       return json(route, origin, {
         items: rows.map((r) => ({ id: r.id, updated_at: "2026-10-01T00:00:00Z", version: 1, data: r.data })),
@@ -168,7 +179,7 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
     if (request.method() === "POST" && path === "/ids") {
       const body = request.postDataJSON() as { project_id?: string; kind?: string };
       if (!readable.has(body.project_id ?? "")) return json(route, origin, { error: "Not found" }, 404);
-      const ids = (rowsFor(person, body.project_id!, body.kind as Kind).items).map((r) => r.id);
+      const ids = (serverRows(person, body.project_id!, body.kind as Kind).items).map((r) => r.id);
       return json(route, origin, { ids, has_more: false, next_id: null, versions: ids.map(() => 1), head_seq: 0, epoch: EPOCH, server_time: now });
     }
     if (request.method() === "POST" && path === "/push") {
@@ -187,6 +198,14 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
         seq += 1;
         const kind = op.record?.kind ?? (op.function_id === "create_rfi" ? "rfis" : op.function_id === "create_schedule_task" ? "tasks" : null);
         const id = op.record?.id ?? `lf-ai-srv-${seq}`;
+        if (kind) {
+          const { projectId: _p, issueId: _i, ...changed } = op.params as Record<string, unknown>;
+          const key = `${op.project_id}|${kind}`;
+          const bucket = applied.get(key) ?? new Map<string, Row>();
+          const before = bucket.get(id);
+          bucket.set(id, { id, data: { ...(before?.data ?? {}), ...(op.record ? {} : { id }), ...changed } });
+          applied.set(key, bucket);
+        }
         return {
           op_id: op.op_id, status: "applied", record_id: id, route: null, version: (op.record?.base_version ?? 0) + 1,
           ...(kind ? { server: { kind, id, version: (op.record?.base_version ?? 0) + 1, updated_at: now, data: { id, ...op.params } } } : {}),

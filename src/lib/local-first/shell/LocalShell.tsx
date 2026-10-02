@@ -413,7 +413,7 @@ function ScreenHost({ route, params, search, shell, refreshKey, projectKey }: { 
 function NotInShell({ location, online }: { location: ShellLocation; online: boolean }) {
   const serverUrl = serverPageUrl(location);
   useEffect(() => {
-    if (online) window.location.replace(serverUrl);
+    if (online && navigator.onLine !== false) window.location.replace(serverUrl);
   }, [online, serverUrl]);
   return (
     <section data-testid="local-shell-not-here" data-online={online ? "1" : "0"}>
