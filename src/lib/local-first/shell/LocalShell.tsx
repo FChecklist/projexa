@@ -21,7 +21,9 @@ import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
 import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
-import { connectShellOutbox, type ShellOutbox } from "./shell-outbox";
+import { connectShellOutbox, shellShowsOutboxCard, type ShellOutbox } from "./shell-outbox";
+import { OutboxAttention } from "@/components/OutboxAttention";
+import type { Outbox } from "../outbox";
 import type { ShellApi, ShellRoute, ShellScreenProps } from "./types";
 
 type Boot =
@@ -165,15 +167,17 @@ export default function LocalShell() {
 
   // The person's outbox (every screen's writes but the BOQ edit queue above): started as soon as the shell knows who they are, so what
   // a reload left waiting is sent when the laptop is back online (shell-outbox.ts says why this was missing).
-  const outboxRef = useRef<ShellOutbox | null>(null);
+  const outboxRef = useRef<ShellOutbox<Outbox> | null>(null);
+  const [outbox, setOutbox] = useState<Outbox | null>(null);
   useEffect(() => {
     if (!userId) return;
-    let live: ShellOutbox | null = null;
+    let live: ShellOutbox<Outbox> | null = null;
     let cancelled = false;
     void import("../outbox-shared").then(({ getSharedOutbox }) => {
       if (cancelled) return;
       live = connectShellOutbox(userId, { getOutbox: getSharedOutbox, onSettled: refresh });
       outboxRef.current = live;
+      setOutbox(live.outbox);
     }).catch(() => {
       /* the outbox could not load: edits stay stored and are sent by the next page load */
     });
@@ -181,6 +185,7 @@ export default function LocalShell() {
       cancelled = true;
       live?.stop();
       if (outboxRef.current === live) outboxRef.current = null;
+      setOutbox(null);
     };
   }, [userId, refresh]);
 
@@ -257,6 +262,7 @@ export default function LocalShell() {
       ) : (
         <NotInShell location={location} online={connectivity === "online"} />
       )}
+      {outbox && shellShowsOutboxCard(matched?.route.pattern ?? null) ? <OutboxAttention key={data.userId} outbox={outbox} /> : null}
     </Chrome>
   );
 }
