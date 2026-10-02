@@ -5,13 +5,15 @@
 import { createClient } from "@/lib/supabase/client";
 import { createSyncClient, type SyncClient } from "./sync-client";
 import { createRequestPacer, type RequestPacer } from "./rate-pacer";
+import { clientRelease } from "./release/running-release";
 
 /**
- * The release of the downloaded app, sent as X-Px-Client. The release bundle (CONTRACT.md section 3) sets
- * NEXT_PUBLIC_PX_RELEASE at build time; a deployment build falls back to its commit; a dev server is "dev".
+ * The release of the downloaded app, sent as X-Px-Client: the release this laptop INSTALLED (release/running-release.ts, remembered by the
+ * boot), so the service's release floor applies to it (lf-e12). Before any install: NEXT_PUBLIC_PX_RELEASE when a build sets it, a
+ * deployment build's commit, or "dev" -- none of which the floor ever blocks.
  */
 export function getReleaseVersion(): string {
-  return process.env.NEXT_PUBLIC_PX_RELEASE || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "dev";
+  return clientRelease({ buildName: process.env.NEXT_PUBLIC_PX_RELEASE || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || null });
 }
 
 export async function accessToken(): Promise<string | null> {

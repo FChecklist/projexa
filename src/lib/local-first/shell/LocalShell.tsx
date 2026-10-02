@@ -26,6 +26,7 @@ import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
 import { connectShellOutbox, shellShowsOutboxCard, type ShellOutbox } from "./shell-outbox";
 import type { ShellApi, ShellRoute, ShellScreenProps } from "./types";
+import { useServerRedirect } from "./server-redirect";
 
 type Boot =
   | { status: "loading" }
@@ -412,9 +413,7 @@ function ScreenHost({ route, params, search, shell, refreshKey, projectKey }: { 
 /** A path the shell has no screen for: the server's page when the laptop can reach it, a calm explanation when it cannot. */
 function NotInShell({ location, online }: { location: ShellLocation; online: boolean }) {
   const serverUrl = serverPageUrl(location);
-  useEffect(() => {
-    if (online && navigator.onLine !== false) window.location.replace(serverUrl);
-  }, [online, serverUrl]);
+  useServerRedirect(online, serverUrl);
   return (
     <section data-testid="local-shell-not-here" data-online={online ? "1" : "0"}>
       <h1 className="font-heading text-2xl text-px-ink">Not on this laptop yet</h1>
