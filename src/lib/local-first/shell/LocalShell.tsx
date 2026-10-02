@@ -16,6 +16,7 @@ import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectiv
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
 import { BOQ_LINES_KIND } from "../boq-local";
+import { AiAttach } from "../ai/AiAttach";
 import { chooseProject, readShellData, selectedProjectKey, type ShellData } from "./context";
 import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
@@ -222,6 +223,9 @@ export default function LocalShell() {
 
   return (
     <Chrome navigate={navigate} data={data} shell={shell} locationPath={location.path}>
+      {/* LOCAL-FIRST browser AI (R11, lf-e11): the same doors as every signed-in (app) page, for the person kept on this laptop -- this
+          shell is what opens with no internet, so without it a person's AI could not work offline at all. */}
+      <AiAttach userId={data.userId} />
       {location.path === "/" ? (
         <Home shell={shell} />
       ) : matched ? (
