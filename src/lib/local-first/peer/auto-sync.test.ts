@@ -12,6 +12,11 @@ import { ntfyProvider, supabaseRealtimeProvider } from "./signalling";
 
 const T1 = "2026-10-01T10:00:00Z";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Polls until `check` holds or the deadline passes (no fixed sleep: the suite runs under very different loads). */
+async function until(check: () => Promise<boolean> | boolean, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (await check()) return; await wait(20); }
+}
 
 describe("auto-sync with our server down", () => {
   test("two laptops find each other and converge with no button pressed", async () => {
@@ -40,16 +45,16 @@ describe("auto-sync with our server down", () => {
     });
     // attestation fetched, then the server goes down before the laptops ever meet
     const first = make(A);
-    await wait(30);
+    await until(async () => !!(await first.attestation.current()));
     first.stop();
     const firstB = make(B);
-    await wait(30);
+    await until(async () => !!(await firstB.attestation.current()));
     firstB.stop();
     serverUp.up = false;
 
     const a = make(A);
     const b = make(B);
-    await wait(400);
+    await until(async () => a.network()?.verifiedCount() === 1 && b.network()?.verifiedCount() === 1 && !!(await B.get("rfis", "fromA")) && !!(await A.get("tasks", "fromB")), 15_000);
     expect(a.network()?.verifiedCount()).toBe(1);
     expect(b.network()?.verifiedCount()).toBe(1);
     expect((await B.get("rfis", "fromA"))?.serverVersion).toBe(3);
@@ -57,5 +62,5 @@ describe("auto-sync with our server down", () => {
     expect(serverCalls).toBeGreaterThan(0); // it did try our server, failed quietly, and peers still worked
     a.stop();
     b.stop();
-  });
+  }, 20_000);
 });

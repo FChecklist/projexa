@@ -6,13 +6,17 @@ import { createMemoryRtc } from "./__fixtures__/memory-rtc";
 import { createTestSigner } from "./__fixtures__/test-signer";
 import { createLocalDbPeerStore } from "./localdb-store";
 import { createPeerNetwork, type PeerNetwork } from "./network";
-import { createSignalHub, ntfyProvider, supabaseRealtimeProvider } from "./signalling";
+import { createSignalHub, ntfyProvider, supabaseRealtimeProvider, type SignalEnvelope, type SignalHub } from "./signalling";
 
 // Whole-path: discovery over signalling (Supabase DOWN, so ntfy carries it), one link per pair, hello, exchange. No server in the data path.
 
 const NOW = Date.parse("2026-10-02T10:00:00Z");
 const T1 = "2026-10-01T10:00:00Z";
 const wait = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+async function until(check: () => Promise<boolean>, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (await check()) return; await wait(20); }
+}
 
 async function node(L: Laptop, deps: { rt: ReturnType<typeof createFakeRealtime>; nt: ReturnType<typeof createFakeNtfy>; rtc: ReturnType<typeof createMemoryRtc> }, counts: Map<string, number>): Promise<PeerNetwork> {
   const hub = createSignalHub({
@@ -38,7 +42,9 @@ describe("peer network", () => {
     const counts = new Map<string, number>();
     const nets = await Promise.all([A, B, C, X].map((L) => node(L, deps, counts)));
     for (const n of nets) await n.start();
-    await wait(300);
+    const full = async (L: Laptop) => (await L.db.listByOrg("org-1")).length === 3;
+    await until(async () => (await full(A)) && (await full(B)) && (await full(C)) && nets[0].verifiedCount() === 2);
+    await wait(100); // and give a wrongly-admitted laptop X time to receive anything
     // signalling went over ntfy, data did not: ntfy only ever saw small encrypted signalling messages
     expect(deps.nt.state.posts.length).toBeGreaterThan(0);
     expect(deps.nt.state.posts.every((p) => p.body.length < 4096 && !p.body.includes("rfis"))).toBe(true);
@@ -74,6 +80,39 @@ describe("peer network", () => {
     await wait(200);
     expect(deps.rtc.opened()).toBe(0);
     expect(await B.get("rfis", "a")).toBeUndefined();
+    na.close();
+    nb.close();
+  });
+
+  test("two laptops that start together and lose their first announces still find each other (re-announce)", async () => {
+    const signer = await createTestSigner();
+    const A = await makeLaptop(signer, { userId: "ua", org: "o", view: "v", projects: ["p1"], nowMs: NOW });
+    const B = await makeLaptop(signer, { userId: "ub", org: "o", view: "v", projects: ["p1"], nowMs: NOW });
+    await A.seed({ project: "p1", kind: "rfis", id: "a", version: 1, updated_at: T1, data: {} });
+    // a tiny bus that loses every announce sent in the first 50 ms (both laptops "not yet subscribed")
+    const started = Date.now();
+    const hubs: Array<SignalHub & { id: string }> = [];
+    const bus = (id: string): SignalHub & { id: string } => {
+      const h = {
+        id, onmessage: null as ((m: SignalEnvelope) => void) | null, remote: "bus" as string | null,
+        async ensure() { return "bus"; },
+        send(p: Omit<SignalEnvelope, "id" | "from">) {
+          if (p.kind === "announce" && Date.now() - started < 50) return;
+          const m = { ...p, id: crypto.randomUUID(), from: id } as SignalEnvelope;
+          for (const o of hubs) if (o !== h && (!m.to || m.to === o.id)) setTimeout(() => o.onmessage?.(m), 0);
+        },
+        close() {},
+      };
+      hubs.push(h);
+      return h;
+    };
+    const rtc = createMemoryRtc();
+    const mk = (L: Laptop, reannounceMs: number) => createPeerNetwork({ selfId: L.userId, hub: bus(L.userId), getSelf: async () => L.self, keys: L.keys, store: createLocalDbPeerStore(L.db, "o"), openLink: rtc.openLink, now: () => NOW, reannounceMs, replyEveryMs: 10 });
+    const na = mk(A, 150);
+    const nb = mk(B, 150);
+    await Promise.all([na.start(), nb.start()]);
+    await until(async () => !!(await B.get("rfis", "a")), 3000);
+    expect(await B.get("rfis", "a")).toBeDefined();
     na.close();
     nb.close();
   });

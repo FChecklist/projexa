@@ -14,6 +14,10 @@ import type { PeerLink, RtcHandle, RtcSignal } from "./transport";
 import type { KeyRing, PeerClaims } from "./verify";
 
 export const DEFAULT_MAX_PEERS = 8;
+/** A second announce this long after joining: two laptops that start together can miss each other's first one (ntfy has no presence). */
+export const REANNOUNCE_MS = 4000;
+/** Answer a given peer's broadcast announce at most this often (it re-announces when it did not hear us). */
+export const REPLY_EVERY_MS = 2_000;
 
 export type OpenLink = (o: { peerId: string; initiator: boolean; sendSignal: (s: RtcSignal) => void }) => RtcHandle;
 
@@ -35,6 +39,8 @@ export type PeerNetworkOptions = {
   onRows?: (n: number) => void;
   /** The number of verified peers changed. */
   onChange?: (verified: number) => void;
+  reannounceMs?: number;
+  replyEveryMs?: number;
 };
 
 export type PeerNetwork = {
@@ -50,9 +56,11 @@ type Entry = { handle: RtcHandle; session: PeerSession | null; initiator: boolea
 
 export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
   const entries = new Map<string, Entry>();
-  const replied = new Set<string>();
+  const replied = new Map<string, number>();
   const maxPeers = o.maxPeers ?? DEFAULT_MAX_PEERS;
   let closed = false;
+  let reannounced = false;
+  let reannounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const verifiedCount = () => [...entries.values()].filter((e) => e.session?.state === "verified").length;
   const changed = () => o.onChange?.(verifiedCount());
@@ -98,10 +106,13 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
       if (entries.has(m.from)) return;
       if (!(await o.getSelf())) return;
       if (o.selfId < m.from) await open(m.from, true);
-      else if (!replied.has(m.from)) {
-        // the other side has the smaller id: tell it we exist, it will offer
-        replied.add(m.from);
-        o.hub.send({ kind: "announce", to: m.from });
+      else {
+        // the other side has the smaller id: tell it we exist, it will offer (rate-limited per peer, never a storm)
+        const t = Date.now();
+        if (t - (replied.get(m.from) ?? -Infinity) >= (o.replyEveryMs ?? REPLY_EVERY_MS)) {
+          replied.set(m.from, t);
+          o.hub.send({ kind: "announce", to: m.from });
+        }
       }
       return;
     }
@@ -120,6 +131,11 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
       if (!(await o.getSelf())) return;
       await o.hub.ensure();
       o.hub.send({ kind: "announce" });
+      const again = o.reannounceMs ?? REANNOUNCE_MS;
+      if (again > 0 && !reannounced) {
+        reannounced = true;
+        reannounceTimer = setTimeout(() => { if (!closed && entries.size === 0) o.hub.send({ kind: "announce" }); }, again);
+      }
     },
     async syncAll(timeoutMs = 60_000) {
       const sessions = [...entries.values()].map((e) => e.session).filter((s): s is PeerSession => s?.state === "verified");
@@ -132,6 +148,7 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
     close() {
       if (closed) return;
       closed = true;
+      if (reannounceTimer) clearTimeout(reannounceTimer);
       try { o.hub.send({ kind: "leave" }); } catch { /* best effort */ }
       for (const [id, e] of entries) { e.session?.close("leave"); e.handle.close(); entries.delete(id); }
       o.hub.close();
