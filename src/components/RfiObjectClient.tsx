@@ -5,8 +5,8 @@
 // Object Page on the kit's ObjectScreen. The old "Answer" Dialog popup is
 // now a real inline form (not a second popup). No generic Edit/Delete --
 // no updateRfi() exists, only the 2 real transitions (answer/close).
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
@@ -14,8 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
-import { answerRfiLocally } from "@/lib/local-first/local-writes";
+import { answerRfiLocally, localBaseVersion } from "@/lib/local-first/local-writes";
 import { useLocalWrites } from "@/lib/local-first/use-local-writes";
+import { useDraft } from "@/lib/local-first/outbox-drafts";
 import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
 type Rfi = {
@@ -31,11 +32,21 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState("");
   const [busy, setBusy] = useState<"answer" | "close" | null>(null);
+  // LOCAL-FIRST (data:F12): the laptop's version of this RFI when the screen LOADED; the answer is based on it.
+  const baseVersion = useRef<number | null>(null);
+  // LOCAL-FIRST "Edit again": an answer the server did not take, named in the URL, is put back in the box.
+  const searchParams = useSearchParams();
+  const { draft, clear: clearDraft } = useDraft(searchParams?.get("draft"));
+  useEffect(() => {
+    if (draft?.functionId === "answer_rfi" && draft.params.rfiId === rfiId && typeof draft.params.answer === "string") setAnswerText(draft.params.answer);
+  }, [draft, rfiId]);
 
   async function load() {
     try {
-      setRfi(await fetchJson<Rfi>(`/api/rfis/${rfiId}`));
+      const data = await fetchJson<Rfi>(`/api/rfis/${rfiId}`);
+      setRfi(data);
       setLoadError(null);
+      baseVersion.current = await localBaseVersion({ projectId: data.projectId, kind: "rfis", id: rfiId }).catch(() => null);
     } catch (err) {
       setRfi(null);
       setLoadError(errorMessage(err, "Couldn't load this RFI"));
@@ -44,20 +55,25 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
   useEffect(() => { load(); }, [rfiId]);
 
   // LOCAL-FIRST: an answer made on this laptop that the server has not confirmed yet. Flag off = an empty view.
-  const pending = useLocalWrites("rfis", rfi?.projectId, { onApplied: () => { void load(); } });
+  // Only an applied change of THIS RFI reloads it (data:F5).
+  const pending = useLocalWrites("rfis", rfi?.projectId, { onApplied: (applied) => { if (applied.recordId === rfiId) void load(); } });
 
   async function submitAnswer() {
     if (!answerText.trim()) { toast.error("An answer is required"); return; }
     setBusy("answer");
+    let refused: string | null = null;
     try {
       // LOCAL-FIRST (see src/lib/local-first/local-writes.ts): with this RFI on the laptop, the answer is written there at once and
-      // sent by the outbox; anything else returns null and the request below runs as it always did.
-      const queued = rfi ? await answerRfiLocally({ projectId: rfi.projectId, rfiId, answer: answerText }) : null;
-      if (queued) {
+      // sent by the outbox; anything else returns null and the request below runs as it always did. A refusal before storing
+      // (a text above the server's limit) keeps the text in the box and still tries the online answer.
+      const result = rfi ? await answerRfiLocally({ projectId: rfi.projectId, rfiId, answer: answerText, baseVersion: baseVersion.current }) : null;
+      if (result?.queued) {
         toast.success("Answer saved on this laptop. It is being sent to the server.");
         setAnswerText("");
+        void clearDraft();
         return;
       }
+      if (result && !result.queued) refused = result.refused;
       const res = await fetch(`/api/rfis/${rfiId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "answer", answer: answerText }),
@@ -66,9 +82,10 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
       if (!res.ok) throw new Error(data?.error ?? "Failed to answer RFI");
       toast.success("RFI answered");
       setAnswerText("");
+      void clearDraft();
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't answer RFI");
+      toast.error(refused ?? (err instanceof Error ? err.message : "Couldn't answer RFI"));
     } finally {
       setBusy(null);
     }

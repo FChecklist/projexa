@@ -72,6 +72,11 @@ export type EnqueueInput = {
   /** Words for the person ("New RFI"): used if the change has to be undone. */
   label?: string;
   /**
+   * The edited fields as the FORM LOADED them (the version `record.baseVersion` names). The base of the three-way merge;
+   * without it, the laptop row's values at enqueue are used (they are the same unless the row was refreshed meanwhile).
+   */
+  before?: Record<string, unknown>;
+  /**
    * The optimistic local change, applied in the SAME transaction as the op is stored. It receives the open transaction:
    * await only calls on it (awaiting anything else lets the browser commit early). A throw stores nothing at all.
    */
@@ -939,6 +944,12 @@ export function createOutbox(options: OutboxOptions): Outbox {
                 // What this edit did to the row (for the three-way merge and for re-deriving the row after a revert).
                 effect = effectOf(before.data, row.data);
                 beforeValues = beforeOf(before.data, effect);
+                if (input.before) {
+                  for (const key of Object.keys(effect)) {
+                    const loaded = fieldValue(input.before, key);
+                    if (loaded !== undefined) beforeValues[key] = loaded;
+                  }
+                }
                 // The row's server side is remembered ONCE, from the first edit, so a revert goes back to the server's row.
                 patch.serverCopy = before.dirty
                   ? before.serverCopy

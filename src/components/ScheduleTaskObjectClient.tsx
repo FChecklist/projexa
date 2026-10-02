@@ -12,8 +12,8 @@
 // dependencies/sprint membership attached is a real data-model decision the
 // backend hasn't made. Archiving is the one real "remove this from view"
 // action that already exists.
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 // R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
@@ -25,8 +25,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { updateTaskLocally, type TaskPatch } from "@/lib/local-first/local-writes";
+import { localBaseVersion, updateTaskLocally, type TaskPatch } from "@/lib/local-first/local-writes";
 import { useLocalWrites } from "@/lib/local-first/use-local-writes";
+import { useDraft } from "@/lib/local-first/outbox-drafts";
 import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
 type Task = {
@@ -44,6 +45,23 @@ function waitingFields(edit: Record<string, unknown>): Partial<Task> {
   const out: Record<string, unknown> = {};
   for (const key of EDITABLE_FIELDS) if (key in edit) out[key] = edit[key];
   return out as Partial<Task>;
+}
+
+/** An empty date input and a missing date are the same thing. */
+const norm = (key: (typeof EDITABLE_FIELDS)[number], v: unknown) => ((key === "startDate" || key === "dueDate" || key === "description") && (v === "" || v === undefined) ? null : v);
+
+/**
+ * LOCAL-FIRST (FB data:F3): ONLY the fields the person changed since the form opened. A field they did not touch is never
+ * sent -- in particular a BOQ-linked task's % complete, which the server derives and refuses as typed.
+ */
+export function changedTaskFields(opened: Partial<Task>, values: Partial<Task>): TaskPatch {
+  const patch: Record<string, unknown> = {};
+  for (const key of EDITABLE_FIELDS) {
+    if (!(key in values)) continue;
+    const now = norm(key, values[key]);
+    if (now !== norm(key, opened[key])) patch[key] = now;
+  }
+  return patch as TaskPatch;
 }
 
 export default function ScheduleTaskObjectClient({
@@ -66,11 +84,22 @@ export default function ScheduleTaskObjectClient({
   createdNumber?: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [task, setTask] = useState<Task | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<StatusOption[]>([]);
-  const [mode, setMode] = useState<"display" | "edit">("display");
+  const [mode, setModeState] = useState<"display" | "edit">("display");
+  // load() runs on its own (an "applied" event, Retry): while the person is editing it must not replace what they typed (data:F5).
+  const modeRef = useRef<"display" | "edit">("display");
+  const setMode = (m: "display" | "edit") => { modeRef.current = m; setModeState(m); };
   const [values, setValues] = useState<Partial<Task>>({});
+  // LOCAL-FIRST (data:F12): what the form opened with -- the values the person started from and the laptop's server version
+  // AT LOAD. A save sends only what changed from `opened`, based on `baseVersion`, never on whatever the laptop holds later.
+  const [opened, setOpened] = useState<Partial<Task>>({});
+  const baseVersion = useRef<number | null>(null);
+  // LOCAL-FIRST "Edit again": a draft (an edit the server did not take) named in the URL opens the form filled with it.
+  const { draft, clear: clearDraft } = useDraft(searchParams?.get("draft"));
+  const [draftNote, setDraftNote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
 
@@ -87,7 +116,10 @@ export default function ScheduleTaskObjectClient({
     try {
       const data = await fetchJson<Task>(`/api/schedule/tasks/${taskId}`);
       setTask(data);
-      setValues(data);
+      if (modeRef.current !== "edit") {
+        setValues(data);
+        baseVersion.current = await localBaseVersion({ projectId: data.projectId, kind: "tasks", id: taskId }).catch(() => null);
+      }
       setLoadError(null);
       // Status options come from the board's own column list (the real
       // status taxonomy for this project) -- no separate endpoint needed.
@@ -102,29 +134,47 @@ export default function ScheduleTaskObjectClient({
   useEffect(() => { load(); }, [taskId]);
 
   // LOCAL-FIRST: an edit made on this laptop that the server has not confirmed yet. Flag off = an empty view and nothing changes.
-  const pending = useLocalWrites("tasks", task?.projectId, { onApplied: () => { void load(); } });
+  // Only an applied edit of THIS task reloads it (data:F5); another task of the project being applied is not this form's news.
+  const pending = useLocalWrites("tasks", task?.projectId, { onApplied: (applied) => { if (applied.recordId === taskId) void load(); } });
+
+  // "Edit again": once the task is loaded, open the form with the draft's fields laid over it.
+  useEffect(() => {
+    if (!draft || !task || draft.functionId !== "update_task" || draft.params.issueId !== taskId) return;
+    const start = { ...task, ...waitingFields(pending.edits.get(taskId) ?? {}) };
+    setOpened(start);
+    setValues({ ...start, ...waitingFields(draft.params) });
+    setMode("edit");
+    setDraftNote(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per draft, when the task is there to lay it over
+  }, [draft, task?.id]);
 
   async function handleSave() {
     setSaving(true);
+    let refused: string | null = null;
     try {
       // LOCAL-FIRST (flag px-local-first=1, see src/lib/local-first/local-writes.ts): with this task on the laptop at a server
       // version, the edit is written to the laptop at once and sent by the outbox (the server still decides, and says if
       // somebody else changed the task meanwhile). Anything else returns null and the save below runs as it always did.
       if (task) {
-        const patch: TaskPatch = {};
-        if (values.title !== undefined) patch.title = values.title;
-        if (values.description !== undefined) patch.description = values.description;
-        if (values.priority !== undefined) patch.priority = values.priority;
-        if (values.statusId !== undefined) patch.statusId = values.statusId;
-        patch.startDate = values.startDate || null;
-        patch.dueDate = values.dueDate || null;
-        if (values.completionPercentage !== undefined) patch.completionPercentage = values.completionPercentage;
-        const queued = await updateTaskLocally({ projectId: task.projectId, taskId, patch });
-        if (queued) {
-          toast.success("Task saved on this laptop. It is being sent to the server.");
+        const patch = changedTaskFields(opened, values);
+        if (Object.keys(patch).length === 0) {
+          toast.success("Nothing changed.");
           setMode("display");
+          void clearDraft();
           return;
         }
+        const loaded: Record<string, unknown> = {};
+        for (const key of Object.keys(patch) as (keyof TaskPatch)[]) loaded[key] = norm(key, opened[key]);
+        const result = await updateTaskLocally({ projectId: task.projectId, taskId, patch, baseVersion: baseVersion.current, loaded });
+        if (result?.queued) {
+          toast.success("Task saved on this laptop. It is being sent to the server.");
+          setMode("display");
+          setDraftNote(false);
+          void clearDraft();
+          return;
+        }
+        // Refused before it was stored (too long, a derived %): the form keeps the text; the online save may still take it.
+        if (result && !result.queued) refused = result.refused;
       }
       const res = await fetch(`/api/schedule/tasks/${taskId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -138,9 +188,11 @@ export default function ScheduleTaskObjectClient({
       if (!res.ok) throw new Error(data.error ?? "Failed to save task");
       toast.success("Task saved");
       setMode("display");
+      setDraftNote(false);
+      void clearDraft();
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save task");
+      toast.error(refused ?? (err instanceof Error ? err.message : "Couldn't save task"));
     } finally {
       setSaving(false);
     }
@@ -227,9 +279,9 @@ export default function ScheduleTaskObjectClient({
         { label: "Priority", value: view.priority.replace(/_/g, " ") },
         { label: "% Complete", value: `${view.completionPercentage}%` },
       ]}
-      onEdit={!view.isArchived ? () => { setValues(view); setMode("edit"); } : undefined}
+      onEdit={!view.isArchived ? () => { setOpened(view); setValues(view); setMode("edit"); } : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
-      onCancel={mode === "edit" ? () => { setValues(view); setMode("display"); } : undefined}
+      onCancel={mode === "edit" ? () => { setValues(view); setMode("display"); setDraftNote(false); } : undefined}
       onDelete={!view.isArchived ? handleArchive : undefined}
       deleteDisabledReason={view.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
       onBack={() => router.push(backTo ?? `/schedule?projectId=${view.projectId}&tab=timeline`)}
@@ -237,7 +289,10 @@ export default function ScheduleTaskObjectClient({
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
       // R67 D-47: the create screen's receipt, in the persistent message area
       // rather than a toast that has gone by the time the page paints.
-      messages={createdNumber ? [{ level: "success", text: `Activity #${createdNumber} created` }] : []}
+      messages={[
+        ...(createdNumber ? [{ level: "success" as const, text: `Activity #${createdNumber} created` }] : []),
+        ...(draftNote && draft ? [{ level: "warning" as const, text: `${draft.message} Your changes are filled in below: check them and save again.` }] : []),
+      ]}
     >
       <div className="space-y-3 px-4 py-3">
         {waiting ? <div><PendingSyncMarker /></div> : null}
