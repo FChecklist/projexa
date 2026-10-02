@@ -175,8 +175,14 @@ Signalling and presence use a Supabase Realtime channel named `px:<channel>` (th
 ## 6. Cost rules every laptop follows (measured in `docs/local-first/COST_MODEL.md`, enforced by `src/lib/local-first/cost/cost-budget.test.ts`)
 
 - No timer polls anything while the laptop is offline, while the tab has been hidden for an hour with no peer, or while a 426 paused sync.
-- A whole sync (manifest + every project's feed) at most every 6 hours, on open, and when a project has no feed position yet; otherwise the open project's feed on every scheduled run
-  (5 minutes while things change, backing off to 30) and every other project's at most hourly. A screen opening reads that project's feed at most once every 2 minutes.
+- **One call per scheduled round** (package lf-fc, cost:COST-03): the server step asks `GET /heads` (5 minutes while things change, backing off to 30). It reads a
+  project's feed (`/changes` from the stored position) only when that project's head is past it -- the open project at once, any other at most hourly; `/manifest` only
+  when `projects_etag` changed; and when `view_class` or `epoch` changed it drops the copy's non-dirty rows and positions (`peer/reset-copy.ts`) and runs a whole sync.
+  The first `/heads` answer after a recent whole sync is adopted as the baseline (meta `sync:heads`). A whole sync still runs at least daily (the spread delete repair),
+  on open, and when a project has no feed position yet. The organisation feed's head (`"__org__"`) and `org_view_class` are handed to `onOrgHead` /
+  `onOrgClassChanged`: an EXTENSION POINT for package E7, nothing reads them yet. A service without `/heads` (404) gets the earlier rule for a day: the open project's feed
+  every round, every other project's at most hourly, a whole sync every 6 hours. A screen opening reads that project's feed at most once every 2 minutes, and a
+  `/heads` round that found the project current counts as such a read.
 - No keyset sweep of a (project, kind) the feed covers; `/ids` at most weekly per feed-covered (project, kind), at most 12 per whole sync, never right after a fresh copy.
 - With a verified peer connected, the server step runs at most every 30 minutes (always on open / online / manual).
 - The person's edits are sent when made (one push per flush) and are never batched away or delayed to save cost.

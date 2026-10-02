@@ -94,6 +94,30 @@ with the app's `maxRetries: 2`):
 
 The ten-laptop world keeps the fake's cap lifted: the fake counts every caller against ONE limit, while the real limit is per person.
 
+### The one-call poll, `GET /heads` (FC cost:COST-03 / wire:F07, session 01XXRT)
+
+The auto-sync server step now asks `GET /heads` (backend drizzle/0686) once per round: every readable project's feed head, the projects' etag, the view
+classes and the epoch in ONE request. A feed is read only for a project whose head moved past the stored position (the open project at once, another one at
+most hourly); a moved etag runs a whole sync (manifest), a moved view class or epoch resets the copy (pending edits kept) and rebuilds it; a project `/heads`
+says is current counts as a feed check, so a screen opened just after does not re-ask it. An older service (404) falls back to lf-e6's project mode for a day.
+Measured with the same harness (the "After FC" column above was taken before this; `projectMode` in the harness keeps the old mode for comparison):
+
+| Scenario | lf-e6 project mode | **heads mode** | Test |
+|---|---:|---:|---|
+| (a) idle 8 h, 5 projects | 50 (changes 45) | **22** (heads 18, no feed read) | cost-budget (a): budget 60 -> **30**, `changes == 0` |
+| (a') idle 8 h, **20** projects | 155 | **22** | cost-budget (a'): budget **30** |
+| (b) working day, 5 projects | 209 | 246 (heads 72, changes 79, pull_ids 30) | cost-budget (b), budget 260 |
+| (b') working day, 20 projects (scratch run, same events) | 308 | 250 | -- |
+| (c) cold start, 5 projects | 163 | 160 | cost-budget (c), (c2) |
+| (d) reconnect after 3 days | 18 | 19 | cost-budget (d) |
+| (e) ten laptops, per laptop | 216.2 | 222 | cost-budget (e) |
+
+Why the busy 5-project day costs MORE (+37): in project mode the open project's feed read was both the check and the catch-up (one request a round); in heads
+mode a round where something moved costs `/heads` plus that read. What it buys: a quiet round costs one request whatever the number of projects (project mode
+paid one feed read per project per hour), so the cost no longer grows with the person's projects -- at 20 projects heads mode is cheaper both idle and busy, and
+the idle hours (most of a real day) cost half or less. Steady state for the measured 5-project working day: 246 a day, 5,412 a month, **92 laptops** in the
+free quota (asserted >= 80).
+
 ## Vercel: what a normal navigation costs once the release is installed and local-first mode is on
 
 Read from `next.config.ts`, `vercel.json`, `src/middleware.ts`, `src/app/sw.js/route.ts`, `src/lib/local-first/release/sw-core.ts`, `src/app/local/**`.
