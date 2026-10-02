@@ -7,7 +7,7 @@
 // refusal and rejection (network.stats()), the stored record with its version / signatures / dirty flag, the auto-sync assembly with a
 // counted (and unreachable) server, and the epoch reset of the server step.
 
-import { localDbNameFor, openLocalDb, type LocalDb } from "../local-db";
+import { changeCursorKey, localDbNameFor, openLocalDb, type LocalDb } from "../local-db";
 import { foreignOrg, LAST_SYNC_KEY, MANIFEST_KEY, type StoredManifest } from "../replica";
 import { createAutoSync, type AutoSync } from "./auto-sync";
 import { createLocalDbPeerStore } from "./localdb-store";
@@ -26,6 +26,8 @@ declare global {
 }
 
 type SeedRow = SignedRow & { dirty?: string };
+/** The change-feed head the stubbed GET /heads reports for every project (nothing moved since the copy was made). */
+const FEED_HEAD = 10;
 
 let db: LocalDb | null = null;
 let keys: KeyRing | null = null;
@@ -78,6 +80,11 @@ const harness = {
     await putRows(o.rows);
     if (o.manifest) await db.setMeta(MANIFEST_KEY, o.manifest);
     if (o.heads) await db.setMeta(HEADS_KEY, o.heads);
+    if (o.heads) {
+      // the whole sync that made the copy these heads describe, and each project's change-feed position at the head the stub reports
+      await db.setMeta(LAST_SYNC_KEY, { at: o.heads.at });
+      for (const p of o.manifest?.projectIds ?? []) await db.setMeta(changeCursorKey(p), { seq: FEED_HEAD });
+    }
   },
   /** More rows later (what a server pull on this laptop would store). */
   async addRows(rows: SeedRow[]) { await putRows(rows); },
@@ -133,7 +140,7 @@ const harness = {
       meta: db!, changes: async () => ({ head_seq: 0 }),
       sync: async () => { wholeSyncs += 1; await db!.setMeta(LAST_SYNC_KEY, { at: Date.now() }); return { status: "done" }; },
       syncProject: async () => ({ status: "done" }),
-      heads: async () => ({ heads: {}, projects_etag: "e1", view_class: answer.view_class, org_view_class: null, epoch: answer.epoch }),
+      heads: async () => ({ heads: Object.fromEntries(((await db!.getMeta<StoredManifest>(MANIFEST_KEY))?.projectIds ?? []).map((p) => [p, FEED_HEAD])), projects_etag: "e1", view_class: answer.view_class, org_view_class: null, epoch: answer.epoch }),
       resetCopy: async () => { await resetLocalCopy(db!); },
     });
     const r = await step();

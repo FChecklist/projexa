@@ -33,6 +33,8 @@ import { NEVER_PEER_KINDS } from "../replica-org";
 export const MAX_MESSAGE_BYTES = 512 * 1024;
 export const DEFAULT_BATCH_BYTES = 64 * 1024;
 export const KNOWN_PER_MESSAGE = 2000;
+/** lf-e9: how often a session asks for a lost hello again, and how often it answers such an ask (bounded: never a loop). */
+export const MAX_HELLO_RESENDS = 3;
 
 export type PairSummary = { n: number; digest: string };
 export type ProjectSummary = Record<string, PairSummary>;
@@ -93,7 +95,7 @@ export type PeerSession = {
 };
 
 type Msg =
-  | { t: "hello"; token: string }
+  | { t: "hello"; token: string; ask?: boolean }
   | { t: "have"; projects: Record<string, ProjectSummary>; reply?: boolean }
   | { t: "want"; project: string; kind: string; known: Array<[string, number]>; done: boolean }
   | { t: "items"; rows: SignedRow[] }
@@ -135,6 +137,8 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
   let readyResolve!: () => void;
   const ready = new Promise<void>((r) => (readyResolve = r));
   let firstHaveSeen = false;
+  let helloAsks = 0;
+  let helloResends = 0;
   // Messages are handled strictly one after another: a batch of rows is stored before the next message is looked at.
   let chain: Promise<void> = Promise.resolve();
 
@@ -182,8 +186,12 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     send({ t: "have", projects, reply });
   }
 
-  async function onHello(token: unknown) {
-    if (peer) return; // a second hello changes nothing
+  async function onHello(token: unknown, ask: boolean) {
+    if (peer) {
+      // a second hello changes nothing; one that ASKS means the peer never got ours (lf-e9: lost in a real browser), so it is sent again
+      if (ask && helloResends < MAX_HELLO_RESENDS) { helloResends += 1; send({ t: "hello", token: self.token }); }
+      return;
+    }
     const check = await verifyToken(token, keys, now());
     if (!check.ok) return refuse(check.reason);
     if (check.claims.org !== self.claims.org) return refuse("wrong_org");
@@ -196,7 +204,8 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     if (self.claims.orgView && peer.orgView && self.claims.orgView === peer.orgView) shared.add(ORG_PROJECT);
     state = "verified";
     options.onVerified?.(peer);
-    await sendHave(false);
+    // when we had to ask for this hello, the peer's own `have` arrived before it and was dropped: ask it to send that again
+    await sendHave(helloAsks > 0);
   }
 
   async function onHave(m: Extract<Msg, { t: "have" }>) {
@@ -294,9 +303,14 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     }
     if (typeof m !== "object" || m === null || typeof (m as { t?: unknown }).t !== "string") return refuse("protocol");
     if (m.t === "bye") return close("bye");
-    if (m.t === "hello") return onHello(m.token);
-    // Nothing but hello is looked at before the peer proved who it is.
-    if (!peer) return;
+    if (m.t === "hello") return onHello(m.token, m.ask === true);
+    // Nothing but hello is looked at before the peer proved who it is. But traffic from a peer whose hello we never saw means the peer
+    // verified US and its own hello was lost on the way (lf-e9: seen in Chromium when the answering side sends it the instant its data
+    // channel opens): ask for it again, a bounded number of times, instead of both sides waiting forever on a half-open session.
+    if (!peer) {
+      if (helloAsks < MAX_HELLO_RESENDS) { helloAsks += 1; send({ t: "hello", token: self.token, ask: true }); }
+      return;
+    }
     if (m.t === "have") return onHave(m);
     if (m.t === "want") return onWant(m);
     if (m.t === "items") return onItems(m);
