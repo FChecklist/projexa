@@ -43,6 +43,18 @@ export const WARM_ROUTES = [
 
 const SEEN_KEY = "px-workspace-prepare-seen";
 
+/**
+ * "This person already saw (or skipped) the screen in this tab session" -- PER PERSON (lf-e12, found in a real browser by
+ * e2e/lf-lifecycle-session.spec.ts): the key used to be one for the whole tab, so when person A signed out and person B signed in
+ * on the same tab, B was never offered the screen and B's workspace was never copied to the laptop.
+ */
+export const seenKey = (userId: string) => `${SEEN_KEY}:${userId}`;
+
+/** Whether the first-run screen opens for this person: not prepared on this laptop yet, and not already seen by them this session. */
+export function shouldOfferPrepare(userId: string, local: Pick<Storage, "getItem">, session: Pick<Storage, "getItem">): boolean {
+  return !local.getItem(readyKey(userId)) && !session.getItem(seenKey(userId));
+}
+
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     const t = setTimeout(resolve, ms);
@@ -218,7 +230,7 @@ export function WorkspacePrepare() {
       .then(({ data }) => {
         if (cancelled || !data.user) return;
         try {
-          if (localStorage.getItem(readyKey(data.user.id)) || sessionStorage.getItem(SEEN_KEY)) return;
+          if (!shouldOfferPrepare(data.user.id, localStorage, sessionStorage)) return;
         } catch {
           return; // storage blocked: do not trap the person behind a screen we cannot remember
         }
@@ -245,7 +257,7 @@ export function WorkspacePrepare() {
   }, [open, userId, router]);
 
   const close = () => {
-    try { sessionStorage.setItem(SEEN_KEY, "1"); } catch { /* ignore */ }
+    try { if (userId) sessionStorage.setItem(seenKey(userId), "1"); } catch { /* ignore */ }
     setOpen(false);
   };
 

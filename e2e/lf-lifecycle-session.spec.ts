@@ -70,6 +70,13 @@ test("sign-out keeps the copy by default; signing in again is instant (no re-dow
     await expect(page.getByTestId("prepare-percent"), "the first-run 'Preparing your workspace' screen came back for a kept copy").toHaveCount(0, { timeout: 15_000 });
     await expect.poll(() => page.evaluate(() => localStorage.getItem("px-identity-v1")), { timeout: 30_000 }).toContain(session.userId);
     expect(world.hits.filter((h) => h.route === "pull" || h.route === "pull_ids").length, "the kept copy was downloaded again").toBe(pullsBefore);
+    // FINDING (lf-e12): the DATA is kept, but the sign-out made the worker drop the person's release caches (sw-core CLEAR_PERSON), so the
+    // APP itself (the whole bundle, ~2.6 MB from the app's origin) is downloaded again after the re-login before the laptop works offline.
+    // Asserted as it is, so a change in either direction is seen: the install is reported again, as a fresh "installed".
+    const installsBefore = world.installs.length;
+    await expect.poll(() => releaseCaches(page), { timeout: 120_000, message: "the release was not put back after the re-login" }).toHaveLength(1);
+    await expect.poll(() => world.installs.length).toBe(installsBefore + 1);
+    expect(world.installs.at(-1)).toMatchObject({ status: "installed", previous_release: null });
     await goOffline(context, world, app.setOffline);
     await page.goto(`/local/scope/${A.boqId}?projectId=${A.projectId}`);
     await expect(page.getByTestId("boq-local-line")).toHaveCount(3);
@@ -171,6 +178,8 @@ test("the local-first opt-out is respected for every person of the browser, and 
   await page.waitForTimeout(5_000); // the boot starts 1.5 s after load; give it time to do (or not do) the first copy
   expect(await page.evaluate(() => localStorage.getItem("px-local-first")), "B's sign-in turned local-first back on in an opted-out browser").toBeNull();
   expect(world.hits.filter((h) => h.route === "pull").length, "an opted-out browser copied B's workspace").toBe(pullsBefore);
-  expect(await databases(page)).not.toContain(personDb(b.session.userId));
+  // nothing of B was copied (an empty database the screen opened to look is not a copy)
+  const bDb = await dumpDb(page, personDb(b.session.userId));
+  for (const l of B.lines) expect(bDb, "an opted-out browser holds B's rows").not.toContain(l.description);
   expect(a.session.userId).not.toBe(b.session.userId);
 });
