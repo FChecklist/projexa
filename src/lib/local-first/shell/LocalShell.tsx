@@ -103,6 +103,15 @@ export default function LocalShell() {
     }
   }, [userId]);
 
+  // The person's outbox (every shell write that is not a BOQ line edit: documents, minutes, change orders, time entries...) is created
+  // lazily by the first enqueue. After a reload nothing enqueues, so without this the ops stored before the reload were never sent while
+  // the person stayed on these screens (lf-e10b, found in a real browser). Starting it resumes them and listens for "online", exactly as
+  // M24Shell does for the online app; it sends nothing while offline and never more than once (op ids).
+  useEffect(() => {
+    if (!userId) return;
+    void import("../outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
+  }, [userId]);
+
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
   useEffect(() => {
     if (boot.status !== "signed_out" || !location || connectivity !== "online") return;
