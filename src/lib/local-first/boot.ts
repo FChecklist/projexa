@@ -39,6 +39,7 @@ import {
 import { createReleaseClient, type ReleaseClient } from "./release/release-client";
 import type { CacheStorageLike, InstalledRelease, MetaStore } from "./release/installer";
 import { META_KEYS } from "./release/release-constants";
+import { rememberRunningRelease } from "./release/running-release";
 import { createSwClient, ensureServiceWorker as registerWorker, type SwClient } from "./release/sw-client";
 import { refreshShellManifest } from "./shell/manifest-cache";
 import { createSyncClient, type SyncClient } from "./sync-client";
@@ -65,6 +66,8 @@ export type BootWiring = {
   /** Subscribes to browser events; returns the unsubscribe. */
   listen: (type: "online" | "storage", fn: (event: any) => void) => () => void;
   now?: () => number;
+  /** Told the release this laptop has installed after every pass (X-Px-Client names it: release/running-release.ts). */
+  rememberRelease?: (version: string | null) => void;
 };
 
 export type BootHandle = { stop(): void; /** Resolves when the current pass is finished (tests). */ settled(): Promise<void> };
@@ -98,6 +101,10 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
     gunzip: wiring.gunzip,
     now: wiring.now,
   }).catch(() => null);
+  // lf-e12: every later sync call names the release that is installed NOW (the one just installed, or the one that was), so the
+  // service's release floor (426) can apply to this laptop.
+  const installedNow = (await wiring.deviceMeta.getMeta<InstalledRelease>(META_KEYS.release).catch(() => undefined)) ?? null;
+  if (installedNow) wiring.rememberRelease?.(installedNow.version);
 
   if (!online) return { personId };
 
@@ -232,6 +239,7 @@ export async function startLocalFirstBoot(): Promise<BootHandle> {
       window.addEventListener(type, fn);
       return () => window.removeEventListener(type, fn);
     },
+    rememberRelease: (version) => rememberRunningRelease(version),
   };
   return startBoot(wiring);
 }
