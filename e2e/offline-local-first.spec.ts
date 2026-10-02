@@ -194,8 +194,14 @@ async function goOnline(context: BrowserContext, net: Net, app: AppStub) {
   await context.setOffline(false);
 }
 
+// Next.js itself mounts ONE empty role="alert" element on every App Router page, its route announcer (id __next-route-announcer__, in
+// node_modules/next/dist/client/components/app-router-announcer.js), that reads the new page title to a screen reader after a client
+// navigation. It is not an error and not ours, so it is the only alert excluded; any other dialog or alert still fails the test.
 const noDialog = async (page: Page) => {
-  await expect(page.locator('[role="dialog"], [role="alertdialog"], [role="alert"]'), "an error or dialog appeared for being offline").toHaveCount(0);
+  await expect(
+    page.locator('[role="dialog"], [role="alertdialog"], [role="alert"]:not(#__next-route-announcer__)'),
+    "an error or dialog appeared for being offline"
+  ).toHaveCount(0);
 };
 
 // ─── the tests ─────────────────────────────────────────────────────────────────────────────────
