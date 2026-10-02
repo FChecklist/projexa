@@ -46,7 +46,7 @@ async function goOnline(context: BrowserContext, world: SyncWorld, setApiOffline
   await context.setOffline(false);
 }
 
-test("sign-out keeps the copy by default; signing in again is instant (no re-download) and works offline", async ({ page, context }) => {
+test("sign-out keeps the copy by default; signing in again re-downloads no DATA (the app itself is put back) and works offline", async ({ page, context }) => {
   const console_ = watchConsole(page);
   const world = newWorld();
   await stubSyncService(context, world);
