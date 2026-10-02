@@ -45,7 +45,7 @@ async function makeV2Database(idb: IDBFactory, name: string) {
 
 describe("local database schema 3", () => {
   test("is version 3, and a database made by schema 2 keeps every record and meta value through the upgrade", async () => {
-    expect(LOCAL_DB_VERSION).toBe(3);
+    expect(LOCAL_DB_VERSION).toBeGreaterThanOrEqual(3); // schema 4 (local-db-v4.test.ts) keeps every v3 guarantee
     const idb = new IDBFactory();
     await makeV2Database(idb, "px-upgrade");
 
@@ -188,8 +188,9 @@ describe("local database schema 3", () => {
     const mine = (await db.getRecord("rfis", "mine"))!;
     expect(mine.dirty).toBe("op-9");
     expect(mine.serverCopy?.deleted).toBe(true);
-    // without the flag (a local, deliberate delete) it is removed as before
-    expect(await db.deleteRecords(["rfis:mine"])).toBe(1);
+    // schema 4 (data:F9): without the flag the dirty row is STILL kept; only the explicit local opt-out removes it
+    expect(await db.deleteRecords(["rfis:mine"])).toBe(0);
+    expect(await db.deleteRecords(["rfis:mine"], { local: true })).toBe(1);
     db.close();
   });
 

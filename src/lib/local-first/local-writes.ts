@@ -23,13 +23,41 @@
 // activity and a basis the person chose; sending its entry through this function would silently record it against a
 // different activity. It needs the backend to accept activityId and entryBasis first.
 
+//
+// WHAT THE SCREENS GET BACK (FB, 2026-10-02):
+//   { queued: true, opId }            written on the laptop, on its way
+//   { queued: false, refused, code }  REFUSED before anything was stored (a text above the server's 2,000 characters, an op
+//                                     above its 64 KB ceiling, a % complete the BOQ derives): the screen keeps the person's
+//                                     text, tries its normal online request, and shows `refused` if that cannot run either
+//   null                              the local path does not apply: the screen does exactly what it always did
+// The version an edit is based on is the one the FORM LOADED (`baseVersion`, data:F12), not whatever the laptop holds at
+// save time, so a newer row that arrived in between is detected as a conflict instead of being silently overwritten.
+
 import { localDbNameFor, openLocalDb, type LocalRecord } from "./local-db";
 import { isLocalFirstEnabled, resolveLocalUserId } from "./local-reader";
 import { MANIFEST_KEY, type StoredManifest } from "./replica";
-import type { Outbox } from "./outbox";
+import { OutboxRefusal, type Outbox } from "./outbox";
 
 /** Injected by tests; the screens pass nothing. */
 export type LocalWriteAccess = { userId?: string; idb?: IDBFactory; outbox?: Outbox };
+
+/** Refused before it was stored: nothing changed on the laptop, the screen still holds the text. */
+export type LocalWriteRefused = { queued: false; refused: string; code: string };
+
+function refusal(err: unknown): LocalWriteRefused | null {
+  return err instanceof OutboxRefusal ? { queued: false, refused: err.message, code: err.code } : null;
+}
+
+/** The server version of a row the laptop holds, for a form to remember when it LOADS (data:F12). Null when it holds none. */
+export async function localBaseVersion(input: { projectId: string; kind: "tasks" | "rfis"; id: string }, access: LocalWriteAccess = {}): Promise<number | null> {
+  const ctx = await ready(input.projectId, access);
+  if (!ctx) return null;
+  try {
+    return (await editableRow(ctx, input.kind, input.id, input.projectId))?.serverVersion ?? null;
+  } catch {
+    return null;
+  }
+}
 
 type Ready = { userId: string; orgId: string; idb: IDBFactory; outbox: Outbox };
 
@@ -78,7 +106,7 @@ const asObject = (data: unknown): Record<string, unknown> => (typeof data === "o
 export type NewRfi = { projectId: string; subject: string; question: string; dueDate?: string };
 
 /** Queues a new RFI. The row appears in the RFI list at once (with a temporary id) and is replaced by the real one when applied. */
-export async function createRfiLocally(input: NewRfi, access: LocalWriteAccess = {}): Promise<{ queued: true; opId: string; tempId: string } | null> {
+export async function createRfiLocally(input: NewRfi, access: LocalWriteAccess = {}): Promise<{ queued: true; opId: string; tempId: string } | LocalWriteRefused | null> {
   const ctx = await ready(input.projectId, access);
   if (!ctx) return null;
   const tempId = `local-${crypto.randomUUID()}`;
@@ -98,15 +126,15 @@ export async function createRfiLocally(input: NewRfi, access: LocalWriteAccess =
       },
     });
     return { queued: true, opId, tempId };
-  } catch {
-    return null;
+  } catch (err) {
+    return refusal(err);
   }
 }
 
 // ─── answer_rfi ───────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Queues the answer to an RFI the laptop holds. Null when it does not hold it (then the normal online answer is used). */
-export async function answerRfiLocally(input: { projectId: string; rfiId: string; answer: string }, access: LocalWriteAccess = {}): Promise<{ queued: true; opId: string } | null> {
+export async function answerRfiLocally(input: { projectId: string; rfiId: string; answer: string; baseVersion?: number | null }, access: LocalWriteAccess = {}): Promise<{ queued: true; opId: string } | LocalWriteRefused | null> {
   const ctx = await ready(input.projectId, access);
   if (!ctx) return null;
   try {
@@ -117,15 +145,15 @@ export async function answerRfiLocally(input: { projectId: string; rfiId: string
       projectId: input.projectId,
       params: { projectId: input.projectId, rfiId: input.rfiId, answer: input.answer },
       label: "Your answer to this RFI",
-      record: { kind: "rfis", id: input.rfiId, baseVersion: row.serverVersion },
+      record: { kind: "rfis", id: input.rfiId, baseVersion: typeof input.baseVersion === "number" ? input.baseVersion : row.serverVersion },
       optimistic: async (tx) => {
         const current = await tx.getRecord("rfis", input.rfiId);
         if (current) await tx.patchRecord("rfis", input.rfiId, { data: { ...asObject(current.data), answer: input.answer, status: "answered" } });
       },
     });
     return { queued: true, opId };
-  } catch {
-    return null;
+  } catch (err) {
+    return refusal(err);
   }
 }
 
@@ -142,26 +170,43 @@ export type TaskPatch = {
   completionPercentage?: number;
 };
 
-/** Queues a task edit based on the version the laptop holds. Null when it holds no such task (then the normal online save is used). */
-export async function updateTaskLocally(input: { projectId: string; taskId: string; patch: TaskPatch }, access: LocalWriteAccess = {}): Promise<{ queued: true; opId: string } | null> {
+/** A task whose % complete the server derives from its BOQ line (it refuses a typed one: progress_is_derived). */
+const isBoqLinked = (data: unknown) => {
+  const d = asObject(data);
+  return !!(d.boqLineItemId ?? d.boq_line_item_id);
+};
+
+/**
+ * Queues a task edit. `patch` must hold ONLY the fields the person changed (data:F3: a field they did not touch is never
+ * sent, so a BOQ-linked task's derived % complete is never re-sent by a title edit). `baseVersion` and `loaded` are what
+ * the form opened with (data:F12). Null when the laptop holds no such task (then the normal online save is used).
+ */
+export async function updateTaskLocally(
+  input: { projectId: string; taskId: string; patch: TaskPatch; baseVersion?: number | null; loaded?: Partial<Record<keyof TaskPatch, unknown>> },
+  access: LocalWriteAccess = {}
+): Promise<{ queued: true; opId: string } | LocalWriteRefused | null> {
   const ctx = await ready(input.projectId, access);
   if (!ctx) return null;
   try {
     const row = await editableRow(ctx, "tasks", input.taskId, input.projectId);
     if (!row) return null;
+    if ("completionPercentage" in input.patch && isBoqLinked(row.data)) {
+      return { queued: false, code: "PROGRESS_IS_DERIVED", refused: "This task's % complete comes from its BOQ line, so it cannot be typed in. Record progress against the BOQ line instead; your other changes are kept in the form." };
+    }
     const { opId } = await ctx.outbox.enqueue({
       functionId: "update_task",
       projectId: input.projectId,
       params: { projectId: input.projectId, issueId: input.taskId, ...input.patch },
       label: "Your change to this task",
-      record: { kind: "tasks", id: input.taskId, baseVersion: row.serverVersion },
+      record: { kind: "tasks", id: input.taskId, baseVersion: typeof input.baseVersion === "number" ? input.baseVersion : row.serverVersion },
+      ...(input.loaded ? { before: input.loaded as Record<string, unknown> } : {}),
       optimistic: async (tx) => {
         const current = await tx.getRecord("tasks", input.taskId);
         if (current) await tx.patchRecord("tasks", input.taskId, { data: { ...asObject(current.data), ...input.patch } });
       },
     });
     return { queued: true, opId };
-  } catch {
-    return null;
+  } catch (err) {
+    return refusal(err);
   }
 }

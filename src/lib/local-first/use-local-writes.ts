@@ -30,7 +30,8 @@ const EMPTY: LocalWritesView = { created: [], edits: new Map(), pendingCount: 0 
 export function useLocalWrites<T = unknown>(
   kind: string,
   projectId: string | null | undefined,
-  options: { onApplied?: () => void; access?: LocalWriteAccess } = {}
+  /** `onApplied` receives WHICH record was applied: an Object Page reloads only for its own record (data:F5). */
+  options: { onApplied?: (applied: { recordId: string | null; created: boolean; opId: string }) => void; access?: LocalWriteAccess } = {}
 ): LocalWritesView<T> {
   const [view, setView] = useState<LocalWritesView>(EMPTY);
   const onApplied = useRef(options.onApplied);
@@ -77,7 +78,7 @@ export function useLocalWrites<T = unknown>(
 
       await load();
       unsubscribe = outbox.subscribe((event) => {
-        if (event.type === "applied" && event.projectId === projectId && event.kind === kind) onApplied.current?.();
+        if (event.type === "applied" && event.projectId === projectId && event.kind === kind) onApplied.current?.({ recordId: event.recordId, created: event.created, opId: event.opId });
         if (event.type === "changed" || event.type === "applied" || event.type === "rejected" || event.type === "conflict") void load().catch(() => {});
       });
     })().catch(() => {

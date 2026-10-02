@@ -18,10 +18,17 @@
 // number we assign (`seq`, kept in meta) because an IndexedDB store cannot have a string key path AND an
 // auto-increment key at once.
 //
-// The one rule this file enforces on its own, so no caller can forget it: a write that comes FROM THE SERVER
-// (`{ fromServer: true }`: a pull, a tombstone, a reconcile) never overwrites or deletes a dirty row. It
-// parks the news in `serverCopy` instead, so the person's edit survives and a later revert / "keep theirs"
-// still has the freshest server row to go back to.
+// The one rule this file enforces on its own, so no caller can forget it: a write through this database's own
+// record methods (putRecord / putRecords / deleteRecords / deleteByProject: a pull, a tombstone, a reconcile, a
+// peer, a repair tool) never overwrites or deletes a dirty row. It parks the news in `serverCopy` instead, so the
+// person's edit survives and a later revert / "keep theirs" still has the freshest server row to go back to.
+// Before schema 4 this was opt-in (`{ fromServer: true }`) and a caller that forgot the flag silently destroyed a
+// pending edit (review finding data:F9); it is now the DEFAULT. The one deliberate opt-out is `{ local: true }`,
+// and the outbox does not even need that: it settles rows inside transact(), whose `tx` is the outbox's own path.
+//
+// SCHEMA 4 adds the `drafts` store: what a person typed for an edit the server turned down (or that they stopped
+// sending), kept until they re-send it or discard it, so a refusal never destroys the only copy of their work
+// (review finding data:F4). See outbox.ts.
 
 /** The freshest row the server is known to hold for a record that has a pending local edit. */
 export type ServerCopy = {
@@ -70,7 +77,13 @@ export type StoredServerRow = {
   kid?: string;
 };
 
-export type OutboxOpStatus = "pending" | "conflict" | "blocked";
+/**
+ * pending   waiting to be sent (or re-sent after a transient failure);
+ * conflict  the server holds a newer row: both sides are kept until the person chooses (also: the row was deleted);
+ * blocked   needs_server: this laptop cannot send it by itself;
+ * attention re-sends stopped (the server could not confirm it, or kept refusing the whole request): the person decides.
+ */
+export type OutboxOpStatus = "pending" | "conflict" | "blocked" | "attention";
 
 /** One edit waiting to reach the server. The op_id never changes, so a retry is always the same op. */
 export type OutboxOp = {
@@ -96,14 +109,49 @@ export type OutboxOp = {
   lastError?: string;
   /** The server's row when status is "conflict", kept so a reload still shows both sides. */
   conflictServer?: StoredServerRow;
+  /** status "conflict": "changed" (the server row moved; see conflictFields) or "deleted" (someone else removed the row). */
+  conflictKind?: "changed" | "deleted";
+  /** status "conflict"/"changed": the fields both sides changed to different values (the only ones the person must decide). */
+  conflictFields?: string[];
+  /**
+   * What THIS op's optimistic change did to the row's data (top-level keys -> new value), recorded at enqueue. Used to
+   * re-derive a row from the server's copy plus the edits still waiting (data:F10) and for the three-way merge (R12).
+   */
+  effect?: Record<string, unknown>;
+  /** The same keys as `effect`, as they were BEFORE this op (the "base" side of the three-way merge). */
+  before?: Record<string, unknown>;
+  /** status "attention": why re-sending stopped. */
+  attention?: "uncertain" | "refused";
 };
 
 export type NewOutboxOp = Omit<OutboxOp, "seq"> & { seq?: number };
 
+/**
+ * What a person typed for an edit that did not reach the server (refused, the row was deleted, too large, they
+ * stopped sending it). Kept in their own database until they re-send it ("Edit again") or discard it.
+ */
+export type OutboxDraft = {
+  /** The op it came from (its key). */
+  opId: string;
+  functionId: string;
+  projectId: string;
+  /** Exactly the parameters the op carried: the person's text, never trimmed or rewritten. */
+  params: Record<string, unknown>;
+  record?: { kind: string; id: string };
+  creates?: { kind: string; id: string };
+  label?: string;
+  /** Plain words: what was not saved and why. */
+  message: string;
+  /** The server's (or this laptop's) reason code, when there was one. */
+  code?: string;
+  at: number;
+};
+
 export const LOCAL_DB_NAME = "projexa-local";
 // v2 adds the byOrgTypeProject index (slice 2: reading one project's rows of one kind without scanning the organisation).
 // v3 adds record versions, the byDirty index and the outbox store (CONTRACT.md: the "schema" number of X-Px-Client).
-export const LOCAL_DB_VERSION = 3;
+// v4 adds the drafts store (an upgrade only ADDS it: every record, meta value and op of v3 is kept as it was).
+export const LOCAL_DB_VERSION = 4;
 
 /**
  * Database name for one signed-in person. Two people on one laptop get two separate databases, so
@@ -127,6 +175,7 @@ export const OUTBOX_NOTICES_KEY = "outbox:notices";
 const STORE_META = "meta";
 const STORE_RECORDS = "records";
 const STORE_OUTBOX = "outbox";
+const STORE_DRAFTS = "drafts";
 
 /** A row that has a valid server signature and no pending local edit may be handed to another laptop. Nothing else may. */
 export function isShareable(record: Pick<LocalRecord, "sig" | "kid" | "dirty">): boolean {
@@ -155,11 +204,17 @@ export type RecordPatch = Partial<Omit<LocalRecord, "id" | "type" | "orgId" | "r
 
 export type WriteOptions = {
   /**
-   * The write comes from the server (a pull page, a change-feed fetch, a tombstone). A dirty row is then left
-   * exactly as it is and the news is parked in its `serverCopy`; a row the server shows at an OLDER version than
-   * the one already stored is left alone.
+   * The write comes from the server (a pull page, a change-feed fetch, a tombstone): additionally, a row the server
+   * shows at an OLDER version than the one already stored is left alone, and a delete of a dirty row is remembered
+   * (serverCopy.deleted). A dirty row is protected with or without this flag.
    */
   fromServer?: boolean;
+  /**
+   * The ONE deliberate opt-out of the dirty-row protection: a local write that means to replace or remove a row
+   * even though an edit of it is waiting. Nothing in the app needs it today (the outbox settles rows inside
+   * transact()); it exists so a repair tool has to say so explicitly.
+   */
+  local?: boolean;
 };
 
 /** The same operations, inside ONE open transaction. Used by transact(); every call must be awaited before the callback ends. */
@@ -179,6 +234,10 @@ export type LocalTx = {
   updateOp(opId: string, patch: Partial<Omit<OutboxOp, "opId" | "seq">>): Promise<OutboxOp | undefined>;
   deleteOp(opId: string): Promise<boolean>;
   listOps(): Promise<OutboxOp[]>;
+  getDraft(opId: string): Promise<OutboxDraft | undefined>;
+  putDraft(draft: OutboxDraft): Promise<void>;
+  deleteDraft(opId: string): Promise<boolean>;
+  listDrafts(): Promise<OutboxDraft[]>;
 };
 
 export type LocalDb = {
@@ -191,9 +250,9 @@ export type LocalDb = {
    * Returns how many were actually written (a dirty row that was parked, or a stale version, is not counted).
    */
   putRecords(records: PutInput[], options?: WriteOptions): Promise<number>;
-  /** Removes records by their full id (`${type}:${id}`). Missing ids are fine. Returns how many were removed. */
+  /** Removes records by their full id (`${type}:${id}`). Missing ids are fine; a dirty row is kept. Returns how many were removed. */
   deleteRecords(ids: string[], options?: WriteOptions): Promise<number>;
-  /** Removes every record of one project (the person lost access to it). Returns how many were removed. */
+  /** Removes every record of one project (the person lost access to it), except rows with a pending edit. Returns how many were removed. */
   deleteByProject(orgId: string, projectId: string): Promise<number>;
   getRecord(type: string, id: string): Promise<LocalRecord | undefined>;
   /** Several records by their full id (`${type}:${id}`) in one transaction. Missing ids are simply absent from the map. */
@@ -210,8 +269,12 @@ export type LocalDb = {
   listOps(): Promise<OutboxOp[]>;
   updateOp(opId: string, patch: Partial<Omit<OutboxOp, "opId" | "seq">>): Promise<OutboxOp | undefined>;
   deleteOp(opId: string): Promise<boolean>;
+  // ── drafts (schema 4) ──
+  listDrafts(): Promise<OutboxDraft[]>;
+  getDraft(opId: string): Promise<OutboxDraft | undefined>;
+  deleteDraft(opId: string): Promise<boolean>;
   /**
-   * Runs `fn` inside ONE read-write transaction over records, meta and the outbox: everything it writes is stored
+   * Runs `fn` inside ONE read-write transaction over records, meta, the outbox and the drafts: everything it writes is stored
    * or none of it (a throw aborts). The callback may only await calls on the `tx` it is given (and plain
    * synchronous work): awaiting anything else lets the browser commit the transaction early.
    */
@@ -267,6 +330,7 @@ function txApi(tx: IDBTransaction): LocalTx {
   const records = () => tx.objectStore(STORE_RECORDS);
   const meta = () => tx.objectStore(STORE_META);
   const outbox = () => tx.objectStore(STORE_OUTBOX);
+  const drafts = () => tx.objectStore(STORE_DRAFTS);
 
   const api: LocalTx = {
     async getRecord(type, id) {
@@ -346,6 +410,21 @@ function txApi(tx: IDBTransaction): LocalTx {
     async listOps() {
       return (await req(outbox().index("bySeq").getAll())) as OutboxOp[];
     },
+    async getDraft(opId) {
+      return (await req(drafts().get(opId))) as OutboxDraft | undefined;
+    },
+    async putDraft(draft) {
+      drafts().put(draft);
+    },
+    async deleteDraft(opId) {
+      const store = drafts();
+      if ((await req(store.getKey(opId))) === undefined) return false;
+      store.delete(opId);
+      return true;
+    },
+    async listDrafts() {
+      return ((await req(drafts().getAll())) as OutboxDraft[]).sort((a, b) => a.at - b.at);
+    },
   };
   return api;
 }
@@ -376,6 +455,8 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
         ? open.transaction!.objectStore(STORE_OUTBOX)
         : upgrade.createObjectStore(STORE_OUTBOX, { keyPath: "opId" });
       if (!ops.indexNames.contains("bySeq")) ops.createIndex("bySeq", "seq", { unique: true });
+      // v4: what a person typed for an edit that did not reach the server, until they re-send or discard it.
+      if (!upgrade.objectStoreNames.contains(STORE_DRAFTS)) upgrade.createObjectStore(STORE_DRAFTS, { keyPath: "opId" });
     };
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => reject(open.error ?? new Error("Could not open the local database"));
@@ -384,7 +465,7 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
   db.onversionchange = () => db.close();
 
   const transact = async <T,>(fn: (tx: LocalTx) => Promise<T>): Promise<T> => {
-    const tx = db.transaction([STORE_RECORDS, STORE_META, STORE_OUTBOX], "readwrite");
+    const tx = db.transaction([STORE_RECORDS, STORE_META, STORE_OUTBOX, STORE_DRAFTS], "readwrite");
     const finished = done(tx);
     finished.catch(() => {}); // an abort is reported through the thrown error, not twice
     let result: T;
@@ -418,6 +499,14 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
         tx.abort();
         throw new Error(REFUSE_FOREIGN);
       }
+      // The dirty-row rule (data:F9): a row with a pending edit is not replaced; the news is parked for revert / keep-theirs.
+      // A write that itself carries the same op's dirty marker is the outbox's own (a seeded or rebuilt row) and goes through.
+      if (existing?.dirty && input.dirty !== existing.dirty) {
+        const parked = parkServerRow(existing, input);
+        if (parked !== existing) store.put(parked);
+        await done(tx);
+        return parked;
+      }
       const next = buildRecord(input, existing);
       store.put(next);
       await done(tx);
@@ -426,6 +515,7 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
     async putRecords(inputs, options) {
       if (inputs.length === 0) return 0;
       const fromServer = options?.fromServer === true;
+      const local = options?.local === true;
       const tx = db.transaction(STORE_RECORDS, "readwrite");
       const store = tx.objectStore(STORE_RECORDS);
       const finished = done(tx);
@@ -435,14 +525,12 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
         for (const input of inputs) {
           const existing = (await req(store.get(input.id))) as LocalRecord | undefined;
           if (existing && existing.orgId !== input.orgId) throw new Error(REFUSE_FOREIGN);
-          if (fromServer && existing) {
-            if (existing.dirty) {
-              const parked = parkServerRow(existing, input);
-              if (parked !== existing) store.put(parked);
-              continue;
-            }
-            if (isStale(existing, input)) continue;
+          if (existing?.dirty && !local) {
+            const parked = parkServerRow(existing, input);
+            if (parked !== existing) store.put(parked);
+            continue;
           }
+          if (fromServer && existing && isStale(existing, input)) continue;
           store.put(buildRecord(input, existing));
           written += 1;
         }
@@ -456,24 +544,20 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
     async deleteRecords(ids, options) {
       if (ids.length === 0) return 0;
       const fromServer = options?.fromServer === true;
+      const local = options?.local === true;
       const tx = db.transaction(STORE_RECORDS, "readwrite");
       const store = tx.objectStore(STORE_RECORDS);
       let removed = 0;
       for (const id of ids) {
-        if (fromServer) {
-          const existing = (await req(store.get(id))) as LocalRecord | undefined;
-          if (!existing) continue;
-          if (existing.dirty) {
-            // The person's edit survives a tombstone; what the server did is remembered for revert / keep-theirs.
-            store.put({ ...existing, serverCopy: { ...(existing.serverCopy ?? { data: existing.data, version: existing.serverVersion ?? null, updatedAt: existing.serverUpdatedAt ?? null }), deleted: true } } satisfies LocalRecord);
-            continue;
-          }
-          store.delete(id);
-          removed += 1;
-        } else if ((await req(store.getKey(id))) !== undefined) {
-          store.delete(id);
-          removed += 1;
+        const existing = (await req(store.get(id))) as LocalRecord | undefined;
+        if (!existing) continue;
+        if (existing.dirty && !local) {
+          // The person's edit survives; a server tombstone is remembered for revert / keep-theirs / the "deleted" card.
+          if (fromServer) store.put({ ...existing, serverCopy: { ...(existing.serverCopy ?? { data: existing.data, version: existing.serverVersion ?? null, updatedAt: existing.serverUpdatedAt ?? null }), deleted: true } } satisfies LocalRecord);
+          continue;
         }
+        store.delete(id);
+        removed += 1;
       }
       await done(tx);
       return removed;
@@ -481,10 +565,15 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
     async deleteByProject(orgId, projectId) {
       const tx = db.transaction(STORE_RECORDS, "readwrite");
       const store = tx.objectStore(STORE_RECORDS);
-      const keys = (await req(store.index("byOrgProject").getAllKeys([orgId, projectId]))) as IDBValidKey[];
-      for (const key of keys) store.delete(key);
+      const rows = (await req(store.index("byOrgProject").getAll([orgId, projectId]))) as LocalRecord[];
+      let removed = 0;
+      for (const row of rows) {
+        if (row.dirty) continue; // the outbox (and the server) decide what happens to a pending edit, not a manifest change
+        store.delete(row.id);
+        removed += 1;
+      }
       await done(tx);
-      return keys.length;
+      return removed;
     },
     async listByProject(orgId, type, projectId) {
       const store = db.transaction(STORE_RECORDS).objectStore(STORE_RECORDS);
@@ -533,6 +622,21 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
     },
     async deleteOp(opId) {
       return transact((tx) => tx.deleteOp(opId));
+    },
+    async listDrafts() {
+      // The read transaction is awaited to its end: left to finish on its own after close(), the next open of this database
+      // (another outbox call) was observed to stall under fake-indexeddb.
+      const tx = db.transaction(STORE_DRAFTS);
+      const finished = done(tx);
+      const rows = (await req(tx.objectStore(STORE_DRAFTS).getAll())) as OutboxDraft[];
+      await finished;
+      return rows.sort((a, b) => a.at - b.at);
+    },
+    async getDraft(opId) {
+      return (await req(db.transaction(STORE_DRAFTS).objectStore(STORE_DRAFTS).get(opId))) as OutboxDraft | undefined;
+    },
+    async deleteDraft(opId) {
+      return transact((tx) => tx.deleteDraft(opId));
     },
     transact,
     close() {

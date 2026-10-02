@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { FAKE_BASE_URL, FAKE_RELEASE, RELEASE_RE, REAL_LIMITS, canonicalJson, createFakeSyncServer, sha256Hex, type FakeServerOptions } from "./fake-sync-server";
+import { LOCAL_DB_VERSION } from "../local-db";
 
 // The fake is the yardstick the client's other test files are measured against, so it gets its own tests: each behaviour of the REAL
 // service (compliance-tracker supabase/functions/projexa-sync/handler.ts + drizzle/0677-0681) is asserted here once, against the REAL
@@ -401,7 +402,7 @@ describe("fake sync server: knobs", () => {
     await expect(s.client.manifest()).rejects.toMatchObject({ kind: "update_required", update: { current: "2026.10.05-001", minCompatible: "2026.10.04-001" } });
     s.requireUpdate(null);
     await s.client.manifest();
-    expect(s.requests.at(-1)!.headers["x-px-client"]).toBe(`${FAKE_RELEASE}; protocol=2; schema=3`);
+    expect(s.requests.at(-1)!.headers["x-px-client"]).toBe(`${FAKE_RELEASE}; protocol=2; schema=${LOCAL_DB_VERSION}`);
     expect(s.requests.at(-1)!.path).toBe("/manifest");
     expect(FAKE_BASE_URL).toContain("fake.sync.test");
   });

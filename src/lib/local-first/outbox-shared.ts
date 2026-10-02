@@ -27,12 +27,24 @@ export function getDeviceId(): string {
   }
 }
 
+/** navigator.storage.persist(), asked through the PWA's own once-per-laptop rule (persistence.ts). */
+async function requestPersistentStorage(): Promise<string> {
+  if (typeof navigator === "undefined" || !navigator.storage) return "unsupported";
+  const [{ ensurePersistence }, { deviceMetaStore }] = await Promise.all([import("./persistence"), import("./device-meta")]);
+  return ensurePersistence({ storage: navigator.storage, meta: deviceMetaStore() });
+}
+
 /** The (memoised) outbox for this person. Calling it also marks them as the laptop's active local user. */
 export function getSharedOutbox(userId: string): Outbox {
   setActiveLocalUser(userId);
   let outbox = outboxes.get(userId);
   if (!outbox) {
-    const created = createOutbox({ userId, deviceId: getDeviceId(), client: createSharedSyncClient({ timeoutMs: 20_000, maxRetries: 1 }) });
+    const created = createOutbox({
+      userId, deviceId: getDeviceId(), client: createSharedSyncClient({ timeoutMs: 20_000, maxRetries: 1 }),
+      // Before the first edit is stored only on this laptop, ask the browser to keep the site's storage (data:F13). Loaded
+      // lazily: the release/boot modules behind it are not needed until a person actually edits something.
+      requestPersistence: requestPersistentStorage,
+    });
     outbox = created;
     outboxes.set(userId, created);
     if (typeof window !== "undefined") {
