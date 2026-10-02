@@ -59,6 +59,8 @@ export type LocalRecord = {
   /** ES256 signature of the server row (base64url) and the key id that made it. Absent = unsigned: never hand to a peer. */
   sig?: string;
   kid?: string;
+  /** lf-e9: the server's px3 signature (also commits to the view class the row was cut for). Handed on to peers with `sig`. */
+  sig3?: string;
   /** The op_id of the pending local edit. Null/absent = clean. A dirty row is never overwritten, deleted or shared. */
   dirty?: string | null;
   serverCopy?: ServerCopy;
@@ -296,6 +298,7 @@ function buildRecord(input: PutInput, existing: LocalRecord | undefined): LocalR
   if (input.serverUpdatedAt !== undefined) next.serverUpdatedAt = input.serverUpdatedAt;
   if (input.sig !== undefined) next.sig = input.sig;
   if (input.kid !== undefined) next.kid = input.kid;
+  if (input.sig3 !== undefined) next.sig3 = input.sig3;
   if (input.dirty) next.dirty = input.dirty;
   if (input.serverCopy !== undefined) next.serverCopy = input.serverCopy;
   return next;

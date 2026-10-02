@@ -10,6 +10,8 @@ export type TestSigner = {
   publicKey: PublicKeyInfo;
   token(claims: Partial<PeerClaims> & { org: string; view: string; projects: string[] }, nowMs?: number): Promise<string>;
   row(org: string, row: Omit<SignedRow, "sig" | "kid">): Promise<SignedRow>;
+  /** lf-e9: an ES256 signature of any message with the same key (px3 rows, forged-claim tokens). */
+  signRaw(message: string): Promise<string>;
 };
 
 export async function createTestSigner(kid = "ktest1"): Promise<TestSigner> {
@@ -19,6 +21,7 @@ export async function createTestSigner(kid = "ktest1"): Promise<TestSigner> {
   return {
     kid,
     publicKey: { kid, alg: "ES256", jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }, active: true },
+    signRaw: sign,
     async token(claims, nowMs = Date.now()) {
       const iat = claims.iat ?? Math.floor(nowMs / 1000);
       const payload = { typ: "px-peer", v: 1, sub: claims.sub ?? "user-a", org: claims.org, projects: claims.projects, view: claims.view, iat, exp: claims.exp ?? iat + 86_400 };

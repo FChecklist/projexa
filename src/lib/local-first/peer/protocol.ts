@@ -14,6 +14,8 @@
 //     view class as ours; anything else is a bye and NOTHING of ours is ever sent (have/items wait for a verified hello);
 //   * a row is accepted only when its server signature verifies for OUR org, its project is in both tokens, it is not a
 //     tombstone, its version is strictly higher than the local serverVersion, and the local record is not dirty;
+//   * lf-e9: a row that carries the px3 signature (`sig3`, it commits to the view class the row was cut for) must verify for OUR
+//     view class, or it is refused as `wrong_view` (px3.test.ts); a row with only px2 is still accepted until every server sends px3;
 //   * the sender hands over only rows with a valid server signature and no pending local edit (local-db.ts isShareable),
 //     and never a version or a deletion of its own (a signed row cannot be altered: its version is inside the signature);
 //   * every message is size-capped; an oversized or unparseable message ends the session;
@@ -23,7 +25,7 @@
 //
 // Pure apart from WebCrypto: the link, the store, the keys and the clock are all injected.
 
-import { canonicalize, sha256Hex, verifyRow, verifyToken, type KeyRing, type PeerClaims, type SignedRow } from "./verify";
+import { canonicalize, sha256Hex, verifyRow, verifyRowV3, verifyToken, type KeyRing, type PeerClaims, type SignedRow } from "./verify";
 import type { PeerLink } from "./transport";
 import { ORG_PROJECT } from "../sync-client";
 import { NEVER_PEER_KINDS } from "../replica-org";
@@ -49,7 +51,7 @@ export type PeerStore = {
   apply(rows: SignedRow[]): Promise<number>;
 };
 
-export type RejectReason = "bad_signature" | "not_shared" | "tombstone" | "not_newer" | "dirty" | "foreign_org" | "malformed";
+export type RejectReason = "bad_signature" | "wrong_view" | "not_shared" | "tombstone" | "not_newer" | "dirty" | "foreign_org" | "malformed";
 
 export type SessionState = "connecting" | "verified" | "closed";
 
@@ -262,8 +264,12 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       if (!isRowShape(raw)) { reject("malformed"); continue; }
       if ((raw as { deleted?: unknown }).deleted !== undefined) { reject("tombstone"); continue; }
       if (!shared.has(raw.project) || !kindOk(raw.kind)) { reject("not_shared"); continue; }
-      const row: SignedRow = { project: raw.project, kind: raw.kind, id: raw.id, version: raw.version, updated_at: raw.updated_at, data: raw.data, sig: raw.sig, kid: raw.kid };
+      const sig3 = (raw as { sig3?: unknown }).sig3;
+      if (sig3 !== undefined && (typeof sig3 !== "string" || sig3 === "")) { reject("malformed"); continue; }
+      const row: SignedRow = { project: raw.project, kind: raw.kind, id: raw.id, version: raw.version, updated_at: raw.updated_at, data: raw.data, sig: raw.sig, kid: raw.kid, ...(sig3 ? { sig3 } : {}) };
       if (!(await verifyRow(row, self.claims.org, keys))) { reject("bad_signature"); continue; }
+      // lf-e9 (px3): a row that carries the view-class signature must carry it for OUR view class; one cut for another class is refused
+      if (row.sig3 && !(await verifyRowV3(row, self.claims.org, self.claims.view, keys))) { reject("wrong_view"); continue; }
       if (options.foreignOrg?.(row.data, self.claims.org)) { reject("foreign_org"); continue; }
       const local = await store.local(row.kind, row.id);
       if (local?.dirty) { reject("dirty"); continue; }
