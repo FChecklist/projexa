@@ -363,7 +363,13 @@ export function createReplica(options: ReplicaOptions): Replica {
       // lf-e7: a new epoch makes every version here meaningless; reset_required makes this project's position useless. Both are acted
       // on by run() (resetEverything / resetProject, then one more run); nothing of this page is applied.
       if ((await noteEpoch(db, page.epoch)) === "changed") throw classSignal("epoch_changed", { epoch: page.epoch });
-      if (page.reset_required) throw classSignal("reset_required", { projectId });
+      if (page.reset_required) {
+        // The overlap re-read (ask below our own position) can reach under the server's pruned history (its floor) when our position
+        // sits just above it: that is not a stale laptop. Ask again from our own position first; only a refusal THERE is a real reset
+        // (without this, every run after a prune would re-download the project).
+        if (ask < cursor) { ask = cursor; continue; }
+        throw classSignal("reset_required", { projectId });
+      }
       await applyChangePage(db, orgId, projectId, kinds, page.changes, report, signal);
       if (page.has_more && page.next_seq <= ask) {
         throw Object.assign(new Error("The change feed said there is more but did not move."), { replicaReason: "no_progress" as const });

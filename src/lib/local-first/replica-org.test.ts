@@ -200,7 +200,10 @@ describe("role change, cost-visibility change, epoch, reset_required", () => {
   test("reset_required for one project resyncs that project only (its rows re-pulled, the other project's left alone)", async () => {
     const t = setup("member");
     await t.replica.sync();
-    t.server.resetRequired.add("p1");
+    const before = t.server.headOf("p1");
+    t.server.upsert("p1", "tasks", "t2", { title: "Shuttering v2" });
+    t.server.upsert("p1", "tasks", "t2", { title: "Shuttering v3" });
+    t.server.floors.set("p1", before + 1); // history pruned past the laptop's position
     t.server.calls.length = 0;
     const report = await t.replica.sync();
     expect(report.status).toBe("done");
@@ -209,11 +212,45 @@ describe("role change, cost-visibility change, epoch, reset_required", () => {
     expect(t.server.calls.filter((c) => c.op === "pull" && c.projectId === "p2")).toEqual([]);
   });
 
+  test("after a prune just below the laptop's position, the overlap re-read is refused but the laptop is NOT stale: no re-download, ever", async () => {
+    const t = setup("member");
+    await t.replica.sync();
+    // pruned exactly up to the laptop's own positions (the newest pruned change is the last one it saw), then something new happens
+    t.server.floors.set(ORG_PROJECT, t.server.headOf(ORG_PROJECT));
+    t.server.floors.set("p1", t.server.headOf("p1"));
+    t.server.upsert(ORG_PROJECT, "vendors", "ven-1", { supplier_name: "Ace Cement Ltd" });
+    for (let round = 0; round < 3; round++) {
+      t.server.calls.length = 0;
+      expect((await t.replica.sync()).status).toBe("done");
+      expect(t.server.calls.filter((c) => c.op === "pull")).toEqual([]); // nothing re-downloaded
+    }
+    expect(((await t.row("vendors", "ven-1"))!.data as Record<string, unknown>).supplier_name).toBe("Ace Cement Ltd");
+  });
+
+  test("a laptop genuinely behind the pruned history (its own position below the floor) resyncs once, then runs normally", async () => {
+    const t = setup("member");
+    await t.replica.sync();
+    const before = t.server.headOf("p1");
+    t.server.upsert("p1", "tasks", "t1", { title: "changed while away" });
+    t.server.upsert("p1", "tasks", "t4", { title: "new while away" });
+    t.server.floors.set("p1", before + 1); // the change log up to the first of those was pruned
+    t.server.calls.length = 0;
+    expect((await t.replica.sync()).status).toBe("done");
+    expect(t.server.calls.filter((c) => c.op === "pull" && c.projectId === "p1").length).toBeGreaterThan(0);
+    expect(await t.ids("tasks", "p1")).toEqual(["t1", "t2", "t4"]);
+    t.server.calls.length = 0;
+    expect((await t.replica.sync()).status).toBe("done");
+    expect(t.server.calls.filter((c) => c.op === "pull")).toEqual([]);
+  });
+
   test("reset_required for the organisation resyncs the organisation", async () => {
     const t = setup("member");
     await t.replica.sync();
     await makeDirty(t, "departments", "dep-1", { name: "Mine" });
-    t.server.resetRequired.add(ORG_PROJECT);
+    const before = t.server.headOf(ORG_PROJECT);
+    t.server.upsert(ORG_PROJECT, "vendors", "ven-2", { supplier_name: "Bright Paints 2" });
+    t.server.upsert(ORG_PROJECT, "vendors", "ven-2", { supplier_name: "Bright Paints 3" });
+    t.server.floors.set(ORG_PROJECT, before + 1);
     t.server.calls.length = 0;
     expect((await t.replica.sync()).status).toBe("done");
     expect(t.server.calls.filter((c) => c.op === "pull" && c.projectId === ORG_PROJECT).length).toBeGreaterThan(0);

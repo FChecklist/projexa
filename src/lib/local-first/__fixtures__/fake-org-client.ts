@@ -26,6 +26,10 @@ export type FakeOrgServer = {
   epoch: string;
   /** Projects whose next /changes answers reset_required. */
   resetRequired: Set<string>;
+  /** The pruned-history floor per project (0686 projexa_change_floor): a /changes asked below it answers reset_required. */
+  floors: Map<string, number>;
+  /** The newest feed position of a project (what /heads and a head read answer). */
+  headOf(projectId: string): number;
   calls: Array<{ op: string; projectId?: string; kind?: string }>;
   upsert(projectId: string, kind: string, id: string, data: Record<string, unknown>): void;
   remove(projectId: string, kind: string, id: string): void;
@@ -62,6 +66,8 @@ export function createFakeOrgServer(o: { signInId: string; orgId?: string; proje
     costVisible: true,
     epoch: "epoch-1",
     resetRequired: new Set(),
+    floors: new Map(),
+    headOf: (p) => headOf(p),
     calls: [],
     noHeads: false,
     upsert(p, k, id, data) {
@@ -144,7 +150,7 @@ export function createFakeOrgServer(o: { signInId: string; orgId?: string; proje
       if (req.projectId !== ORG_PROJECT && !projects.includes(req.projectId)) throw new SyncError("not_found", "Not found", 404);
       const head = headOf(req.projectId);
       if (req.afterSeq === null) return { changes: [], next_seq: head, has_more: false, head_seq: head, epoch: s.epoch };
-      if (s.resetRequired.delete(req.projectId)) return { changes: [], next_seq: head, has_more: false, head_seq: head, epoch: s.epoch, reset_required: true };
+      if (s.resetRequired.delete(req.projectId) || req.afterSeq < (s.floors.get(req.projectId) ?? 0)) return { changes: [], next_seq: head, has_more: false, head_seq: head, epoch: s.epoch, reset_required: true };
       const allowed = new Set(kindsOf(req.projectId));
       const list = feed(req.projectId).filter((c) => c.seq > req.afterSeq! && allowed.has(c.kind));
       return { changes: list, next_seq: list.length ? list[list.length - 1]!.seq : req.afterSeq, has_more: false, head_seq: head, epoch: s.epoch };
