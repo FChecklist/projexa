@@ -110,7 +110,10 @@ export type World = { clock: SimClock; server: FakeSyncServer; jobs: FakeJobsSer
 export function createWorld(o: { projects?: number; rowsPerKind?: number } = {}): World {
   const clock = createSimClock();
   const projects = Array.from({ length: o.projects ?? 5 }, (_, i) => `p${i + 1}`);
-  const server = createFakeSyncServer({ projects, kinds: BACKEND_KINDS, includeServerOnApplied: true });
+  // The fake enforces the REAL 120 requests a minute per person on the clock it is given: this world's SIMULATED clock. A cold start of 5 projects x 28 kinds sends ~170 pulls without
+  // pacing, which the real server would answer 429 (client review wire:F07, package FC paces the first copy). Until FC lands the cap is lifted HERE so the steady-state budgets below
+  // stay meaningful; cost-budget.test.ts carries a todo for the cold start under the real cap.
+  const server = createFakeSyncServer({ projects, kinds: BACKEND_KINDS, includeServerOnApplied: true, now: clock.now, requestsPerMinute: Number.MAX_SAFE_INTEGER });
   for (const p of projects) {
     for (const k of BACKEND_KINDS) {
       for (let i = 0; i < (o.rowsPerKind ?? 2); i += 1) server.upsert({ kind: k.kind, projectId: p, id: `${p}-${k.kind}-${i}`, data: { name: `${k.kind} ${i}` } });
@@ -186,7 +189,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
     const res = await server.fetchImpl(input, init);
     if (route !== "manifest" || !res.ok) return res;
     const json = await res.json();
-    json.user = { ...json.user, id: userId };
+    json.user = { ...json.user, id: userId, auth_user_id: userId }; // the replica's guard compares the SIGN-IN id (user.auth_user_id): ten laptops are ten sign-ins
     return new Response(JSON.stringify(json), { status: 200, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
   const client: SyncClient = createSyncClient({

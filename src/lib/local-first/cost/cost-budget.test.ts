@@ -14,6 +14,9 @@ function note(r: ScenarioResult) {
 }
 
 describe("cost budget per scenario (requests per laptop, push ops counted twice: the push and its exec run)", () => {
+  // TODO(FC): the first copy must be PACED under the real cap (120 requests a minute per person, 429 + Retry-After). With the cap lifted in harness.ts createWorld this file measures
+  // the steady state; when FC lands, lift the lift and assert coldStart() completes with no 429.
+  test.todo("(c2) cold start of 5 projects under the REAL 120 requests/minute cap: paced, no 429, complete");
   test("(a) idle for 8 hours, online, tab visible", async () => {
     const r = await idle8h();
     note(r);

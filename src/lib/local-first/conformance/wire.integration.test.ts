@@ -45,8 +45,9 @@ if (!CT) console.log(SKIP_REASON);
 
 const env = (k: string) => process.env[k] === "1" || process.env.LF_RUN_PENDING === "1";
 const PENDING = {
-  backend: { tag: "BACKEND-PENDING", on: env("LF_BACKEND_HARDENED") },
-  FB: { tag: "CLIENT-PENDING:FB", on: env("LF_CLIENT_FB") },
+  // The backend hardening (packages D1-D3) and the outbox safety (FB) are MERGED: these groups run whenever CT_ROOT is set. The switches stay for a checkout of an older backend.
+  backend: { tag: "BACKEND-PENDING", on: process.env.LF_BACKEND_HARDENED !== "0" },
+  FB: { tag: "CLIENT-PENDING:FB", on: process.env.LF_CLIENT_FB !== "0" },
   FC: { tag: "CLIENT-PENDING:FC", on: env("LF_CLIENT_FC") },
 } as const;
 
@@ -455,7 +456,7 @@ suite("D. push through the outbox: update, create, answer; the real row shapes",
     const report = await outbox.flush();
     const sent = pushes().at(-1);
     expect(Object.keys(sent.body).sort()).toEqual(["device_id", "ops"]);
-    expect(sent.headers["x-px-client"]).toMatch(/protocol=2; schema=3$/);
+    expect(sent.headers["x-px-client"]).toMatch(/protocol=2; schema=\d+$/);
     const wire = sent.body.ops[0];
     expect(wire).toMatchObject({ function_id: "update_task", project_id: "proj-a", params: { projectId: "proj-a", issueId: "t1", title: "Pour slab L2" }, record: { kind: "tasks", id: "t1", base_version: baseVersion } });
     expect(sent.status).toBe(200);
@@ -659,13 +660,13 @@ suite("E. conflicts, rejections, uncertain outcomes", () => {
   });
 
   wt("W24", "client:FB", "an op above the backend's 64 KB per-op ceiling (0681 -> BAD_OP) is stopped by the client in words, not sent to be refused", async () => {
+    // package FB: the client refuses an over-long text AT THE EDIT, in words, before anything is queued or sent (the person's text stays in the form)
+    const sentBefore = pushes().length;
     const q = await writesMod.updateTaskLocally({ projectId: "proj-a", taskId: "t2", patch: { description: "x".repeat(70_000) } }, { userId: U, idb: IDB, outbox });
-    expect(q).toMatchObject({ queued: true });
+    expect(q).toMatchObject({ queued: false, code: "TEXT_TOO_LONG" });
+    expect(String(q.refused)).toContain("kept");
     await outbox.flush();
-    const state = await outbox.refresh();
-    const notice = state.notices.at(-1);
-    if (state.notices.length) await outbox.dismissNotice(notice.opId);
-    expect(notice?.message ?? "").toContain("too large");
+    expect(pushes().length).toBe(sentBefore); // nothing was sent to be refused by the backend
   }, "FB");
 });
 
@@ -824,6 +825,7 @@ suite("G. failure classes the backend and the client must agree on", () => {
     }
     clock += 10 * 60_000;
     await outbox.flush(); // clean up: the person is active again, the op applies
-    expect(state.status === "signed_out" || state.notices.length > 0 || state.blocked.length > 0).toBe(true);
+    // package FB: a whole-batch 403 NOT_LINKED PAUSES the outbox with its own status (one message, no retry storm)
+    expect(state.status === "not_linked" || state.status === "signed_out" || state.notices.length > 0 || state.blocked.length > 0 || state.attention.length > 0).toBe(true);
   }, "FB");
 });

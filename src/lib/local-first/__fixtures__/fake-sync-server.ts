@@ -242,6 +242,12 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
   const rows = new Map<string, Row>();
   const log: Change[] = [];
   const ledger = new Map<string, LedgerEntry>();
+  // The public mirror of the ledger (what tests read). Forgetting an op there ("the ledger forgot", a test of a lost ledger row) must forget it for the
+  // server too, or a re-send would still be answered `duplicate`: clear() and delete() reach both.
+  const publicLedger = new (class extends Map<string, { status: "applied"; record_id?: string; route?: string; version?: number }> {
+    override clear(): void { super.clear(); ledger.clear(); }
+    override delete(key: string): boolean { ledger.delete(key); return super.delete(key); }
+  })();
   let seq = 0;
   let clock = START;
   let idCounter = 0;
@@ -295,7 +301,7 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
     orgId, userId, veridianUserId,
     projects: opts.projects ? [...opts.projects] : ["p1"],
     requests: [],
-    ledger: new Map(),
+    ledger: publicLedger,
     signedOut: false,
     notLinked: false,
     client: undefined as unknown as SyncClient,
@@ -590,7 +596,7 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
       record(row, existing && !existing.deleted ? "U" : "I");
       const stored = { status: "applied" as const, record_id: row.id, route: outcome.route, version: row.version };
       ledger.set(opId, { hash: decision.hash, ...stored });
-      server.ledger.set(opId, stored);
+      publicLedger.set(opId, stored);
       results.push({ op_id: opId, status: "applied", record_id: row.id, route: outcome.route ?? null, version: row.version, ...(includeServer ? { server: await serverRow(row) } : {}) });
     }
     return json({ results, server_time: serverTime() });
