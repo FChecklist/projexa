@@ -19,7 +19,6 @@ import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectiv
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
 import { BOQ_LINES_KIND } from "../boq-local";
-import { AiAttach } from "../ai/AiAttach";
 import { chooseProject, readShellData, selectedProjectKey, type ShellData } from "./context";
 import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
@@ -276,9 +275,6 @@ export default function LocalShell() {
         <NotInShell location={location} online={connectivity === "online"} />
       )}
       {outbox && shellShowsOutboxCard(matched?.route.pattern ?? null) ? <OutboxAttention key={data.userId} outbox={outbox} /> : null}
-      {/* The browser AI's door (window.projexa.ai, the inline manual, the person's "Yes, do it" for a delete it asked for). Mounted
-          here as in the online layout: once a laptop is prepared the worker serves THIS shell for app URLs, online too (lf-e10b). */}
-      <AiAttach />
     </Chrome>
   );
 }
