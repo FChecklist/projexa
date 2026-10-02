@@ -74,8 +74,10 @@ export type PushedOp = { op_id: string; function_id: string; project_id: string;
 export type SyncStub = {
   /** Every request served, "METHOD /path" (+ project for a pull). */
   served: string[];
-  /** Every op of every POST /push, in order, with the sign-in id that sent it. */
+  /** Every DISTINCT op (by op_id) the server received and ran, in order, with the sign-in id that sent it. */
   pushed: PushedOp[];
+  /** Ops sent again with an op_id already received (answered `duplicate`, nothing ran): the laptop's retry after a lost answer. */
+  resent: PushedOp[];
   /** Pull requests the stub REFUSED with 404 (a project or organisation the person may not read). */
   refusedPulls: { by: string; project: string; kind: string }[];
 };
@@ -111,7 +113,7 @@ function rowsFor(person: Person, projectId: string, kind: Kind): { items: Row[];
  * added after the stub is installed (a second person signs in on the same laptop).
  */
 export async function stubSync(page: Page | BrowserContext, people: Map<string, Person>, net: Net): Promise<SyncStub> {
-  const stub: SyncStub = { served: [], pushed: [], refusedPulls: [] };
+  const stub: SyncStub = { served: [], pushed: [], resent: [], refusedPulls: [] };
   const json = (route: Route, origin: string | undefined, body: unknown, status = 200) =>
     route.fulfill({ status, headers: { ...CORS(origin), "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(body) });
   let seq = 0;
@@ -172,6 +174,13 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
     if (request.method() === "POST" && path === "/push") {
       const body = request.postDataJSON() as { device_id: string; ops: PushedOp[] };
       const results = body.ops.map((op) => {
+        // The handler's push ledger (exactly-once by op_id): an op sent again -- its first answer was lost, e.g. the page navigated
+        // away mid-request -- runs nothing and is answered `duplicate`. Only the first send of an op_id counts as a write.
+        const first = stub.pushed.find((p) => p.op_id === op.op_id && p.by === sub);
+        if (first) {
+          stub.resent.push({ ...op, by: sub });
+          return { op_id: op.op_id, status: "duplicate", record_id: first.record?.id ?? null, route: null, version: (first.record?.base_version ?? 0) + 1 };
+        }
         stub.pushed.push({ ...op, by: sub });
         // The handler's own shape check (handler.ts checkOp): a project the person may not read is refused, nothing runs.
         if (!readable.has(op.project_id)) return { op_id: op.op_id, status: "rejected", error: { code: "NOT_FOUND" } };

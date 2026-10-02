@@ -162,6 +162,10 @@ test("R7 create/update: queued with the optimistic change, shown on the person's
     await nudge(page);
     await page.waitForTimeout(2_000);
     expect(laptop.sync.pushed.map((o) => o.function_id).sort()).toEqual(["create_rfi", "create_schedule_task", "update_task"]);
+    // A resend happens when an answer was lost (the page navigated away mid-request): it must carry the SAME op_id, so the server's
+    // exactly-once ledger answers `duplicate` and nothing runs twice. A new op_id for the same change would be a double write.
+    const ids = new Set(laptop.sync.pushed.map((o) => o.op_id));
+    for (const r of laptop.sync.resent) expect(ids.has(r.op_id), `${r.function_id} was resent under a NEW op_id`).toBe(true);
   });
 
   await test.step("refusals are clear and queue nothing: unknown function, wrong action, missing and unknown params, another project", async () => {
