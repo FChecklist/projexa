@@ -88,7 +88,7 @@ export function toChangeOrder(raw: unknown): ChangeOrderRow | null {
 }
 
 /** Newest number first, as the online list reads; rows the server has not numbered yet (made here) at the top. */
-export function orderChangeOrders(rows: readonly ChangeOrderRow[]): ChangeOrderRow[] {
+export function orderChangeOrders<T extends ChangeOrderRow>(rows: readonly T[]): T[] {
   return [...rows].sort((a, b) => {
     if (a.number === null && b.number === null) return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
     if (a.number === null) return -1;
