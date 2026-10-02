@@ -56,7 +56,9 @@ export type FakeKind = { kind: string; project_scoped?: boolean; /** "updated_at
 type Row = { kind: string; id: string; projectId: string; data: Record<string, unknown>; version: number; updatedAt: string; deleted: boolean };
 type Change = { seq: number; projectId: string; kind: string; id: string; version: number; op: "I" | "U" | "D" };
 
-export type FakeRequest = { path: string; method: string; headers: Record<string, string>; body: unknown };
+// `body` is whatever JSON the client sent (always an object for the POST routes); tests read its fields directly.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type FakeRequest = { path: string; method: string; headers: Record<string, string>; body: any };
 
 /** What a push function handler sees. */
 export type FunctionContext = {
@@ -286,7 +288,7 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
     const common = { hidden_fields: [...hidden], redacted, server_time: new Date(clock).toISOString() };
     if (Array.isArray(body.ids)) {
       const ids = (body.ids as string[]).slice(0, 200);
-      const items = [];
+      const items: Awaited<ReturnType<typeof wireRow>>[] = [];
       for (const id of ids) {
         const r = rows.get(rowKey(kind, id));
         if (r && !r.deleted && r.projectId === projectId) items.push(await wireRow(r));
@@ -297,7 +299,7 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
     const after = typeof body.after === "string" ? body.after : null;
     const list = sorted(projectId, kind).filter((r) => after === null || cursorOf(r, kind) > after);
     const page = list.slice(0, limit);
-    const items = [];
+    const items: Awaited<ReturnType<typeof wireRow>>[] = [];
     for (const r of page) items.push(await wireRow(r));
     // "set whenever a page had rows; null for an empty page (keep the old one)"
     return json({ items, kid: keyId, next_cursor: page.length ? cursorOf(page[page.length - 1]!, kind) : null, has_more: list.length > page.length, ...common });
