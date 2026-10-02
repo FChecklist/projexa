@@ -5,9 +5,9 @@
 // (/labour/:id would read "new" as a worker id). It behaves exactly like the shell's own "not on this laptop" fallback
 // (LocalShell.tsx NotInShell): online it opens the server's page, offline it says so calmly.
 
-import { useEffect } from "react";
 import { serverPageUrl } from "../paths";
 import type { ShellScreenProps } from "../types";
+import { useServerRedirect } from "../server-redirect";
 
 export type ServerOnlyData = { path: string; what: string };
 
@@ -15,10 +15,7 @@ export default function DeliveryServerOnlyScreen({ shell, query, data }: ShellSc
   const online = shell.connectivity === "online";
   const search = query.toString();
   const url = serverPageUrl({ path: data.path, search: search ? `?${search}` : "" });
-  useEffect(() => {
-    // navigator.onLine too: the first render counts as online (server snapshot), and a redirect fired then races the next navigation when the laptop is really offline.
-    if (online && navigator.onLine !== false) window.location.replace(url);
-  }, [online, url]);
+  useServerRedirect(online, url);
   return (
     <section data-testid="delivery-server-only" data-online={online ? "1" : "0"}>
       <h1 className="font-heading text-2xl text-px-ink">{data.what}</h1>

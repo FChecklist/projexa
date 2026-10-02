@@ -5,9 +5,9 @@
 // like a path the shell does not have (LocalShell's NotInShell): online, the server's page opens; offline, a calm sentence says why the
 // screen needs a connection (it uploads a file, or needs data the laptop does not hold).
 
-import { useEffect } from "react";
 import { serverPageUrl } from "../paths";
 import type { ShellScreenProps } from "../types";
+import { useServerRedirect } from "../server-redirect";
 
 /** What the route's adapter (clusters/documents.ts) hands over: the path and query as asked for, never anything from the database. */
 export type ServerOnlyData = { path: string; search: string; title: string; reason: string };
@@ -15,9 +15,7 @@ export type ServerOnlyData = { path: string; search: string; title: string; reas
 export default function DocumentsServerOnlyScreen({ shell, data }: ShellScreenProps<ServerOnlyData>) {
   const online = shell.connectivity === "online";
   const serverUrl = serverPageUrl({ path: data.path, search: data.search });
-  useEffect(() => {
-    if (online && navigator.onLine !== false) window.location.replace(serverUrl);
-  }, [online, serverUrl]);
+  useServerRedirect(online, serverUrl);
   return (
     <section data-testid="documents-server-only" data-online={online ? "1" : "0"}>
       <h1 className="font-heading text-2xl text-px-ink">{data.title}</h1>
