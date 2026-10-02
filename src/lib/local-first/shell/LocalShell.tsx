@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker";
+import { OutboxAttention } from "@/components/OutboxAttention";
+import type { Outbox } from "../outbox";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -238,8 +240,25 @@ export default function LocalShell() {
       ) : (
         <NotInShell location={location} online={connectivity === "online"} />
       )}
-    </Chrome>
+      <ShellOutboxAttention userId={data.userId} />    </Chrome>
   );
+}
+
+/**
+ * The one card that tells the person when a change they made needs them (turned down and kept as a draft, a conflict, stopped...),
+ * on EVERY shell screen, once. It was mounted only in the online app's layout and on the local dashboard, so a refusal or a conflict
+ * answered while the person worked on any other shell screen reached them nowhere (lf-e10b, found in a real browser).
+ */
+function ShellOutboxAttention({ userId }: { userId: string }) {
+  const [outbox, setOutbox] = useState<Outbox | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void import("../outbox-shared").then((m) => {
+      if (!cancelled) setOutbox(m.getSharedOutbox(userId));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [userId]);
+  return outbox ? <OutboxAttention outbox={outbox} /> : null;
 }
 
 // ─── the chrome ─────────────────────────────────────────────────────────────────────────────────

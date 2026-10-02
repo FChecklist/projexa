@@ -211,3 +211,65 @@ test("documents: edits made offline wait on the laptop, survive a reload, and ar
   })
   expectCleanConsole(p.console)
 })
+
+test("documents: a viewer reads everything offline but is offered no change at all", async ({ page, context }) => {
+  const p = await prepareLaptop(page, context, "viewer")
+  await goOffline(context, p)
+  for (const [path, title] of [
+    ["/documents/lf-doc-safety", "document-title"],
+    ["/permits/lf-permit-dm", "permit-title"],
+    ["/drawings/lf-dwg-a101-c", "drawing-title"],
+  ] as const) {
+    await openLocal(page, path)
+    await expect(page.getByTestId(title)).not.toBeEmpty()
+    await expect(page.getByTestId("doc-edit-open"), `${path} offered an edit to a viewer`).toHaveCount(0)
+    await noCrash(page)
+  }
+  await openLocal(page, "/moms/lf-mom-12")
+  await expect(page.getByTestId("mom-minutes")).toHaveText("Pour of zone B moved to Thursday.")
+  await expect(page.getByTestId("mom-amend-open"), "a viewer was offered 'Amend the minutes'").toHaveCount(0)
+  expect(await readOutbox(page, p.session.userId)).toEqual([])
+  await goOnline(context, p)
+  expectCleanConsole(p.console)
+})
+
+test("documents: an edit the server REJECTS and one in CONFLICT reach the person on the laptop's screen, and what they typed is kept", async ({ page, context }) => {
+  const p = await prepareLaptop(page, context, "member")
+  p.sync.answerNext("update_mom_minutes", { status: "rejected", code: "NOT_PERMITTED" })
+  p.sync.answerNext("update_document_metadata", { status: "conflict", serverVersion: 7, server: { id: "lf-doc-safety", name: "Site safety plan (issued by HSE)" } })
+  await goOffline(context, p)
+
+  const typed = "Zone C pour postponed; awaiting the consultant's sign-off."
+  await openLocal(page, "/moms/lf-mom-12")
+  await page.getByTestId("mom-amend-open").click()
+  await page.getByTestId("mom-minutes-input").click()
+  await page.keyboard.press("ControlOrMeta+a")
+  await page.keyboard.type(typed)
+  await page.getByTestId("mom-amend-save").click()
+  await expect(page.getByTestId("mom-minutes")).toHaveText(typed)
+
+  await openLocal(page, "/documents/lf-doc-safety")
+  await page.getByTestId("doc-edit-open").click()
+  await retype(page, "doc-edit-name", "Site safety plan - laptop edit")
+  await page.getByTestId("doc-edit-save").click()
+  await expect(page.getByTestId("document-title")).toContainText("Site safety plan - laptop edit")
+
+  await page.reload()
+  await goOnline(context, p)
+  await expect.poll(() => p.sync.pushed.length, { timeout: 90_000, message: "the two edits were never sent" }).toBe(2)
+
+  await test.step("the rejected amendment: a card on THIS screen says it was not saved, and keeps the text", async () => {
+    const draft = page.getByTestId("outbox-draft")
+    await expect(draft, "the refusal never reached the person on the laptop's screen").toHaveCount(1, { timeout: 30_000 })
+    await expect(page.getByTestId("outbox-draft-text")).toContainText(typed)
+  })
+
+  await test.step("the conflict: both values are shown, and the person's own value is not lost", async () => {
+    const conflict = page.getByTestId("outbox-conflict")
+    await expect(conflict, "the conflict never reached the person on the laptop's screen").toHaveCount(1)
+    await expect(conflict).toContainText("Site safety plan - laptop edit")
+    await expect(conflict).toContainText("Site safety plan (issued by HSE)")
+  })
+  expect(p.sync.pushed.map((o) => o.function_id).sort()).toEqual(["update_document_metadata", "update_mom_minutes"])
+  expectCleanConsole(p.console)
+})
