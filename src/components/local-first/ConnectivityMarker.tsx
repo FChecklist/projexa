@@ -5,7 +5,23 @@
 // server being down) is not a problem the person has to solve -- PROJEXA keeps working from the laptop's own copy and syncs when
 // it can. While everything is fine it renders nothing at all.
 
+import { useSyncExternalStore } from "react";
 import { WORKING_LOCALLY_TEXT, useConnectivity, type Connectivity } from "@/lib/local-first/connectivity";
+
+// Whether the on-laptop shell is mounted (it sets data-px-shell="1" on <html> in its mount effect). Read LIVE, not once during render:
+// the floating marker usually renders BEFORE the shell's effect runs, and reading the attribute only at render left both markers on
+// screen (lf-e8: two identical "Working on this laptop" markers on /local/scope, found by e2e/offline-local-first.spec.ts in Chromium).
+function subscribeShellAttribute(onChange: () => void): () => void {
+  if (typeof MutationObserver === "undefined" || typeof document === "undefined") return () => {};
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-px-shell"] });
+  return () => observer.disconnect();
+}
+const shellAttributeSet = () => document.documentElement.dataset.pxShell === "1";
+
+export function useShellMarkerPresent(): boolean {
+  return useSyncExternalStore(subscribeShellAttribute, shellAttributeSet, () => false);
+}
 
 export function ConnectivityMarkerView({ state, className = "" }: { state: Connectivity; className?: string }) {
   if (state === "online") return null;
@@ -35,8 +51,9 @@ export function ConnectivityMarker({ state, className }: { state?: Connectivity;
  */
 export function FloatingConnectivityMarker() {
   const live = useConnectivity();
+  const shellHasItsOwn = useShellMarkerPresent();
   if (live === "online") return null;
-  if (typeof document !== "undefined" && document.documentElement.dataset.pxShell === "1") return null;
+  if (shellHasItsOwn) return null;
   return (
     <div className="pointer-events-none fixed bottom-2 right-3 z-40">
       <ConnectivityMarkerView state={live} />

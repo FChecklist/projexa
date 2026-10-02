@@ -5,8 +5,8 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 import { afterEach, describe, expect, test } from "bun:test";
 // `screen` is not used: static imports run before the registration above, and `screen` binds to the document at import time.
 import { act, cleanup, render, renderHook } from "@testing-library/react";
-import { createConnectivity, useConnectivity, WORKING_LOCALLY_TEXT, type Connectivity } from "@/lib/local-first/connectivity";
-import { ConnectivityMarker, ConnectivityMarkerView } from "./ConnectivityMarker";
+import { createConnectivity, getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity, WORKING_LOCALLY_TEXT, type Connectivity } from "@/lib/local-first/connectivity";
+import { ConnectivityMarker, ConnectivityMarkerView, FloatingConnectivityMarker } from "./ConnectivityMarker";
 
 afterEach(cleanup);
 
@@ -57,5 +57,24 @@ describe("useConnectivity follows the state live", () => {
   test("ConnectivityMarker with the shared state renders nothing while the page is online", () => {
     const { container } = render(<ConnectivityMarker />);
     expect(container.innerHTML).toBe("");
+  });
+});
+
+describe("the floating marker and the on-laptop shell's own marker never show together (lf-e8)", () => {
+  test("the shell mounting AFTER the floating marker rendered (its effect sets data-px-shell) removes the floating one; unmounting brings it back", async () => {
+    act(() => { reportServerFailure(); reportServerFailure(); reportServerFailure(); });
+    try {
+      expect(getConnectivity()).not.toBe("online");
+      const { queryAllByTestId } = render(<FloatingConnectivityMarker />);
+      expect(queryAllByTestId("connectivity-marker")).toHaveLength(1); // no shell yet: the floating one is the only sign
+      // what LocalShell's mount effect does, after the floating marker already rendered
+      await act(async () => { document.documentElement.dataset.pxShell = "1"; await Promise.resolve(); });
+      expect(queryAllByTestId("connectivity-marker")).toHaveLength(0);
+      await act(async () => { delete document.documentElement.dataset.pxShell; await Promise.resolve(); });
+      expect(queryAllByTestId("connectivity-marker")).toHaveLength(1);
+    } finally {
+      delete document.documentElement.dataset.pxShell;
+      act(() => reportServerSuccess());
+    }
   });
 });
