@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatDateTime } from "@/lib/format-date";
 import { localDbNameFor, openLocalDb } from "@/lib/local-first/local-db";
 import { getSharedReplica } from "@/lib/local-first/replica-shared";
+import { isLocalFirstEnabled } from "@/lib/local-first/local-reader";
 import type { Replica } from "@/lib/local-first/replica";
 import {
   PREPARE_BUDGET_MS,
@@ -20,6 +21,11 @@ import {
 // laptop, show a short "Preparing your workspace" screen (a 3-minute ceiling) while
 // PROJEXA downloads itself onto this laptop and opens the laptop's local database.
 // See src/lib/local-first/prepare-workspace.ts for why the progress is real.
+//
+// COST (package lf-fc, review cost:COST-02 / FLAG-16): the copy of the projects is the most expensive thing the client does
+// (one request per project x kind on the first sync), and with the local-first flag (`px-local-first`) OFF nothing ever reads
+// that copy. So with the flag off this component is INERT: it does not ask who is signed in, opens nothing, shows nothing and
+// sends nothing; and buildSteps leaves the "projects" step out entirely. A visitor who is not signed in never starts it either.
 
 /** The screens a person opens first; fetching them pulls their code onto the laptop. */
 export const WARM_ROUTES = [
@@ -54,8 +60,14 @@ export function syncFailureMessage(report: { status: string; issues: { reason: s
   return first?.message ?? "Some projects could not be copied to this laptop.";
 }
 
-export function buildSteps(userId: string, prefetch: (href: string) => void, replicaFor: (userId: string) => Replica = getSharedReplica): PrepareStep[] {
-  return [
+export function buildSteps(
+  userId: string,
+  prefetch: (href: string) => void,
+  replicaFor: (userId: string) => Replica = getSharedReplica,
+  /** The local-first flag. Off: the "projects" step (the replica's whole sync) is not part of the plan at all. */
+  localFirstOn: () => boolean = isLocalFirstEnabled,
+): PrepareStep[] {
+  const steps: PrepareStep[] = [
     {
       id: "worker",
       label: "Install PROJEXA on this laptop",
@@ -114,6 +126,8 @@ export function buildSteps(userId: string, prefetch: (href: string) => void, rep
       },
     },
   ];
+  // Flag off: nothing reads the laptop copy, so copying it would be pure cost (cost:COST-02).
+  return localFirstOn() ? steps : steps.filter((s) => s.id !== "projects");
 }
 
 export function WorkspacePrepareView({
@@ -197,6 +211,8 @@ export function WorkspacePrepare() {
 
   useEffect(() => {
     let cancelled = false;
+    // Flag off: inert (no Supabase call, no modal, no database, no sync request). See the header.
+    if (!isLocalFirstEnabled()) return;
     createClient()
       .auth.getUser()
       .then(({ data }) => {
