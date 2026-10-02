@@ -187,7 +187,45 @@ export type SyncClient = {
   changes(req: { projectId: string; afterSeq: number | null; limit?: number }, signal?: AbortSignal): Promise<ChangesPage>;
   ids(req: { projectId: string; kind: string; afterId: string | null; limit?: number }, signal?: AbortSignal): Promise<IdsPage>;
   push(req: { deviceId: string; ops: PushOp[] }, signal?: AbortSignal): Promise<PushResponse>;
+  /**
+   * GET /heads (backend drizzle/0686, package FC cost:COST-03): every readable project's change-feed head in ONE call, plus the
+   * projects' etag, the view classes and the epoch. Optional: a test double (or an older build) may not have it; an older SERVICE
+   * answers 404 (SyncError "not_found"), and the caller falls back to asking each project's feed.
+   */
+  heads?(signal?: AbortSignal): Promise<HeadsAnswer>;
 };
+
+/** What GET /heads answers. `heads` maps a project id (and "__org__", the organisation feed) to its head, in /changes' units. */
+export type HeadsAnswer = {
+  heads: Record<string, number>;
+  projects_etag: string | null;
+  role: string | null;
+  view_class: string | null;
+  org_view_class: string | null;
+  epoch: string | null;
+  server_time?: string;
+};
+
+/** The organisation feed's key in HeadsAnswer.heads (handler.ts ORG_SENTINEL). */
+export const ORG_HEAD_KEY = "__org__";
+
+function parseHeads(body: unknown): HeadsAnswer {
+  if (!isObject(body) || !isObject(body.heads)) {
+    throw new SyncError("bad_response", "The sync service sent a heads answer this version does not understand.");
+  }
+  const heads: Record<string, number> = {};
+  for (const [k, v] of Object.entries(body.heads)) if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) heads[k] = v;
+  const text = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    heads,
+    projects_etag: text(body.projects_etag),
+    role: text(body.role),
+    view_class: text(body.view_class),
+    org_view_class: text(body.org_view_class),
+    epoch: text(body.epoch),
+    ...(typeof body.server_time === "string" ? { server_time: body.server_time } : {}),
+  };
+}
 
 const defaultSleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -494,6 +532,9 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
       // The service runs every op through the real pipeline, one after another: allow it longer than a read. A timeout
       // is safe -- the same op_id sent again is answered "duplicate", never applied twice.
       return parsePush(await request("/push", { method: "POST", body: { device_id: req.deviceId, ops: req.ops }, timeoutMs: Math.max(timeoutMs, 60_000) }, signal));
+    },
+    async heads(signal) {
+      return parseHeads(await request("/heads", { method: "GET" }, signal));
     },
   };
 }

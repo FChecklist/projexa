@@ -22,7 +22,7 @@ export function flagOffReport(): SyncReport {
 export function gateByFlag(replica: Replica, flagOn: () => boolean = isLocalFirstEnabled): Replica {
   return {
     sync: (signal, onProgress) => (flagOn() ? replica.sync(signal, onProgress) : Promise.resolve(flagOffReport())),
-    syncProject: (projectId, kind, signal) => (flagOn() ? replica.syncProject(projectId, kind, signal) : Promise.resolve(flagOffReport())),
+    syncProject: (projectId, kind, signal, o) => (flagOn() ? replica.syncProject(projectId, kind, signal, o) : Promise.resolve(flagOffReport())),
     reconcileDeletes: (projectId, kind, o) => (flagOn() ? replica.reconcileDeletes(projectId, kind, o) : Promise.resolve({ removed: 0, skipped: true })),
     resume: () => replica.resume(),
     getStatus: () => replica.getStatus(),

@@ -129,8 +129,12 @@ export type ReplicaOptions = {
 export type Replica = {
   /** Copies every readable project. Safe to call again: it resumes and only pulls changes. */
   sync(signal?: AbortSignal, onProgress?: (progress: ReplicaProgress) => void): Promise<SyncReport>;
-  /** Brings one project (optionally one kind) up to date, e.g. in the background after a screen opened it. */
-  syncProject(projectId: string, kind?: string, signal?: AbortSignal): Promise<SyncReport>;
+  /**
+   * Brings one project (optionally one kind) up to date, e.g. in the background after a screen opened it. `moved: true` = the caller
+   * KNOWS the project changed (GET /heads said its head passed the stored position, server-step.ts heads mode): the "read a moment
+   * ago" shortcut (projectFreshMs) is skipped, since it would otherwise ignore that news for up to two minutes.
+   */
+  syncProject(projectId: string, kind?: string, signal?: AbortSignal, options?: { moved?: boolean }): Promise<SyncReport>;
   /**
    * Drops local, non-dirty rows of (project, kind) that the server's id list no longer holds. Normally run by sync()
    * after a pair was pulled to the end, at most once a day per pair; `force` runs it now.
@@ -476,7 +480,7 @@ export function createReplica(options: ReplicaOptions): Replica {
 
   // ─── one run ───────────────────────────────────────────────────────────────────────────────────────────────
 
-  async function run(scope: { projectId?: string; kind?: string }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void, allowStored = true): Promise<SyncReport> {
+  async function run(scope: { projectId?: string; kind?: string; moved?: boolean }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void, allowStored = true): Promise<SyncReport> {
     const report = emptyReport("syncing");
     setStatus("syncing", report);
     const internal = new AbortController();
@@ -598,7 +602,7 @@ export function createReplica(options: ReplicaOptions): Replica {
 
       // COST: the same project was read to the end of its feed a moment ago (a screen opened twice, the scheduler right after a
       // screen) and every asked kind is feed-covered: nothing can be learned by asking again so soon.
-      if (!wholeRun && hasFeed && projectFreshMs > 0) {
+      if (!wholeRun && hasFeed && projectFreshMs > 0 && !scope.moved) {
         const checked = feedCheckedAt.get(scope.projectId!);
         if (checked !== undefined && now() - checked < projectFreshMs) {
           let allCovered = targetKinds.length > 0;
@@ -840,7 +844,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     return report;
   }
 
-  function runLocked(key: string, scope: { projectId?: string; kind?: string }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void): Promise<SyncReport> {
+  function runLocked(key: string, scope: { projectId?: string; kind?: string; moved?: boolean }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void): Promise<SyncReport> {
     // A 426 paused sync: no call leaves this replica until the app has been updated.
     if (paused) return Promise.resolve(pausedReport());
     // The same request while one is already running joins it instead of starting a second copy.
@@ -863,7 +867,8 @@ export function createReplica(options: ReplicaOptions): Replica {
 
   return {
     sync: (signal, onProgress) => runLocked("all", {}, signal, onProgress),
-    syncProject: (projectId, kind, signal) => runLocked(`p:${projectId}:${kind ?? "*"}`, { projectId, kind }, signal),
+    // A `moved` run never joins a plain one already in flight (that one may end on the "read a moment ago" shortcut).
+    syncProject: (projectId, kind, signal, o) => runLocked(`p:${projectId}:${kind ?? "*"}${o?.moved ? ":moved" : ""}`, { projectId, kind, moved: o?.moved === true }, signal),
     async reconcileDeletes(projectId, kind, o) {
       if (paused) return { removed: 0, skipped: true };
       const db = await openLocalDb(options.idb ?? globalThis.indexedDB, localDbNameFor(options.userId));
