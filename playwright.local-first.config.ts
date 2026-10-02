@@ -33,7 +33,7 @@ const appEnv = {
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: [/offline-local-first\.spec\.ts/],
+  testMatch: [/offline-local-first\.spec\.ts/, /lf-(ai|delivery|documents|overview|lifecycle)-.*\.spec\.ts/],  // lf-e10a/b/c, lf-e11, lf-e12 (the peer specs have their own config)
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
