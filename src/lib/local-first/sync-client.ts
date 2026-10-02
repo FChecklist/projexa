@@ -117,19 +117,6 @@ export type ChangesPage = {
 
 export type IdsPage = { ids: string[]; has_more: boolean; next_id: string | null };
 
-/**
- * GET /heads (drizzle/0686): every feed head the person may read in ONE call, `heads[ORG_PROJECT]` for the organisation feed, and the
- * person's current classes and epoch. The cheap way to learn "nothing changed" and "my role / the epoch changed".
- */
-export type HeadsAnswer = {
-  heads: Record<string, number>;
-  projects_etag: string | null;
-  view_class: string | null;
-  org_view_class: string | null;
-  epoch: string | null;
-  server_time?: string;
-};
-
 /** One row as the push endpoint returns it (a conflict's current server row, or the row an op produced). */
 export type SyncServerRow = {
   kind: string;
@@ -185,6 +172,12 @@ export class SyncError extends Error {
   readonly status: number;
   /** Only for kind "update_required": what the service said about the newest and the oldest allowed release. */
   readonly update?: UpdateRequiredDetails;
+  /**
+   * Only for kind "rate_limited": the wait the service asked for (its Retry-After, in ms, uncapped). Absent = the 429 carried no
+   * Retry-After, which is how the service answers the DAILY quota ("Try again tomorrow"): such an answer is never retried (package lf-fc,
+   * review cost:COST-04), and the replica treats it as a long stop instead of a one-minute wait.
+   */
+  retryAfterMs?: number;
   constructor(kind: SyncErrorKind, message: string, status = 0, update?: UpdateRequiredDetails) {
     super(message);
     this.name = "SyncError";
@@ -218,9 +211,45 @@ export type SyncClient = {
   changes(req: { projectId: string; afterSeq: number | null; limit?: number }, signal?: AbortSignal): Promise<ChangesPage>;
   ids(req: { projectId: string; kind: string; afterId: string | null; limit?: number }, signal?: AbortSignal): Promise<IdsPage>;
   push(req: { deviceId: string; ops: PushOp[] }, signal?: AbortSignal): Promise<PushResponse>;
-  /** GET /heads (optional: a client double without it simply never polls heads; an older service answers 404 = SyncError not_found). */
+  /**
+   * GET /heads (backend drizzle/0686, package FC cost:COST-03): every readable project's change-feed head in ONE call, plus the
+   * projects' etag, the view classes and the epoch. Optional: a test double (or an older build) may not have it; an older SERVICE
+   * answers 404 (SyncError "not_found"), and the caller falls back to asking each project's feed.
+   */
   heads?(signal?: AbortSignal): Promise<HeadsAnswer>;
 };
+
+/** What GET /heads answers. `heads` maps a project id (and "__org__", the organisation feed) to its head, in /changes' units. */
+export type HeadsAnswer = {
+  heads: Record<string, number>;
+  projects_etag: string | null;
+  role?: string | null;
+  view_class: string | null;
+  org_view_class: string | null;
+  epoch: string | null;
+  server_time?: string;
+};
+
+/** The organisation feed's key in HeadsAnswer.heads (handler.ts ORG_SENTINEL). */
+export const ORG_HEAD_KEY = "__org__";
+
+function parseHeads(body: unknown): HeadsAnswer {
+  if (!isObject(body) || !isObject(body.heads)) {
+    throw new SyncError("bad_response", "The sync service sent a heads answer this version does not understand.");
+  }
+  const heads: Record<string, number> = {};
+  for (const [k, v] of Object.entries(body.heads)) if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) heads[k] = v;
+  const text = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    heads,
+    projects_etag: text(body.projects_etag),
+    role: text(body.role),
+    view_class: text(body.view_class),
+    org_view_class: text(body.org_view_class),
+    epoch: text(body.epoch),
+    ...(typeof body.server_time === "string" ? { server_time: body.server_time } : {}),
+  };
+}
 
 const defaultSleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -357,22 +386,6 @@ function parseChanges(body: unknown, afterSeq: number | null): ChangesPage {
   };
 }
 
-function parseHeads(body: unknown): HeadsAnswer {
-  if (!isObject(body) || !isObject(body.heads)) {
-    throw new SyncError("bad_response", "The sync service sent heads this version does not understand.");
-  }
-  const heads: Record<string, number> = {};
-  for (const [k, v] of Object.entries(body.heads)) if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) heads[k] = v;
-  const text = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : null);
-  return {
-    heads,
-    projects_etag: text(body.projects_etag),
-    view_class: text(body.view_class),
-    org_view_class: text(body.org_view_class),
-    epoch: text(body.epoch),
-    server_time: typeof body.server_time === "string" ? body.server_time : undefined,
-  };
-}
 
 function parseIds(body: unknown): IdsPage {
   if (!isObject(body) || !Array.isArray(body.ids) || typeof body.has_more !== "boolean") {
@@ -494,8 +507,12 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
         if (res.status === 404) throw new SyncError("not_found", "That project or data kind is not available to you.", 404);
         if (res.status === 429 || res.status >= 500) {
           const header = Number(res.headers?.get?.("Retry-After"));
-          if (Number.isFinite(header) && header > 0) retryAfterMs = Math.min(header * 1000, 30_000);
+          const asked = Number.isFinite(header) && header > 0 ? header * 1000 : null;
+          if (asked !== null) retryAfterMs = Math.min(asked, 30_000);
           failure = new SyncError(res.status === 429 ? "rate_limited" : "server", `The sync service answered ${res.status}.`, res.status);
+          if (res.status === 429 && asked !== null) failure.retryAfterMs = asked;
+          // A 429 WITHOUT Retry-After is the daily quota ("Try again tomorrow"): retrying it in seconds only spends more (cost:COST-04).
+          if (res.status === 429 && asked === null) throw failure;
         } else if (!res.ok) {
           throw new SyncError("bad_response", `The sync service answered ${res.status}.`, res.status);
         } else {
@@ -507,6 +524,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
         }
       } catch (err) {
         if (err instanceof SyncError && (err.kind === "signed_out" || err.kind === "not_found" || err.kind === "bad_response" || err.kind === "update_required")) throw err;
+        if (err instanceof SyncError && err.kind === "rate_limited" && err.retryAfterMs === undefined) throw err; // the daily quota: never retried
         if (outer?.aborted) throw new SyncError("aborted", "The sync was cancelled.");
         failure = err instanceof SyncError
           ? err

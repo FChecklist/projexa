@@ -128,12 +128,25 @@ describe("the change feed", () => {
   });
 
   test("a row whose version has not moved is not fetched again", async () => {
-    const { server, replica } = setup();
+    // Review cost:TEST-12: the old form of this test had no feed entries on its second sync, so 0 == 0 held even if the feed ALWAYS
+    // refetched. Now the second sync's feed DOES name the row (CHANGE_FEED_OVERLAP re-reads the last positions every run), at a
+    // version the laptop already holds: it must be skipped without a request. Removing `known >= change.version` fails this.
+    const { server, replica, open } = setup();
     server.upsert(progress("x1", 10));
     await replica.sync();
-    const before = server.requests.filter((r) => r.path === "/pull" && Array.isArray(r.body.ids)).length;
-    await replica.sync();
-    expect(server.requests.filter((r) => r.path === "/pull" && Array.isArray(r.body.ids)).length).toBe(before);
+    const byIds = () => server.requests.filter((r) => r.path === "/pull" && Array.isArray(r.body.ids)).length;
+    server.upsert(progress("x1", 20, false)); // version 2, in the feed
+    const r1 = await replica.sync();
+    expect(r1.status).toBe("done");
+    expect(byIds()).toBe(1); // the moved version WAS fetched (so the count below is not vacuous)
+    const changesBefore = server.requests.filter((r) => r.path === "/changes").length;
+    const r2 = await replica.sync();
+    expect(r2.status).toBe("done");
+    expect(server.requests.filter((r) => r.path === "/changes").length).toBeGreaterThan(changesBefore); // the feed was read again ...
+    expect(byIds()).toBe(1); // ... and named x1 v2 again, which the laptop already holds: not fetched a second time
+    const db = await open();
+    expect((await db.getRecord("progress", "x1"))!.serverVersion).toBe(2);
+    db.close();
   });
 
   test("the feed position moves only after the page's effects are stored: a failed fetch keeps it, and the next sync still applies the change", async () => {

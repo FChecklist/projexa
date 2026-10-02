@@ -33,6 +33,8 @@ import { createOutbox, type Outbox } from "../outbox";
 import { createAttestationSource } from "../peer/attest";
 import { createSyncScheduler, type SchedulerClock, type SyncScheduler } from "../peer/scheduler";
 import { createServerStep } from "../peer/server-step";
+import { resetLocalCopy } from "../peer/reset-copy";
+import { createRequestPacer } from "../rate-pacer";
 import { createReplica, type Replica } from "../replica";
 import { refreshShellManifest } from "../shell/manifest-cache";
 import { createFlushScheduler } from "../shell/pending-edits";
@@ -107,13 +109,13 @@ export function createSimClock(start = START): SimClock {
 export type World = { clock: SimClock; server: FakeSyncServer; jobs: FakeJobsServer; projects: string[] };
 
 /** One organisation's server, seeded with `rowsPerKind` rows of every kind in every project (and 10 editable tasks each). */
-export function createWorld(o: { projects?: number; rowsPerKind?: number } = {}): World {
+export function createWorld(o: { projects?: number; rowsPerKind?: number; requestsPerMinute?: number } = {}): World {
   const clock = createSimClock();
   const projects = Array.from({ length: o.projects ?? 5 }, (_, i) => `p${i + 1}`);
-  // The fake enforces the REAL 120 requests a minute per person on the clock it is given: this world's SIMULATED clock. A cold start of 5 projects x 28 kinds sends ~170 pulls without
-  // pacing, which the real server would answer 429 (client review wire:F07, package FC paces the first copy). Until FC lands the cap is lifted HERE so the steady-state budgets below
-  // stay meaningful; cost-budget.test.ts carries a todo for the cold start under the real cap.
-  const server = createFakeSyncServer({ projects, kinds: BACKEND_KINDS, includeServerOnApplied: true, now: clock.now, requestsPerMinute: Number.MAX_SAFE_INTEGER });
+  // The fake enforces the REAL 120 requests a minute per person on the clock it is given: this world's SIMULATED clock. Package lf-fc paces every
+  // replica request (rate-pacer.ts, 100 a minute, on the same simulated clock in createLaptop), so the cap that used to be lifted here is the real one
+  // again: a cold start of 5 projects x 28 kinds now completes under it with no 429 (cost-budget.test.ts (c2)). `requestsPerMinute` stays as a knob.
+  const server = createFakeSyncServer({ projects, kinds: BACKEND_KINDS, includeServerOnApplied: true, now: clock.now, ...(o.requestsPerMinute ? { requestsPerMinute: o.requestsPerMinute } : {}) });
   for (const p of projects) {
     for (const k of BACKEND_KINDS) {
       for (let i = 0; i < (o.rowsPerKind ?? 2); i += 1) server.upsert({ kind: k.kind, projectId: p, id: `${p}-${k.kind}-${i}`, data: { name: `${k.kind} ${i}` } });
@@ -141,6 +143,8 @@ export type LaptopOptions = {
   activeProject?: string;
   /** Wire the server step in its original head-check mode instead of peer-shared.ts's project mode (comparison only). */
   headMode?: boolean;
+  /** Wire the server step in lf-e6's project mode, without GET /heads (what an older service gets; comparison only). */
+  projectMode?: boolean;
   /** This person edits tasks offset..offset+9 of the open project (two people on one project edit different tasks). */
   taskOffset?: number;
 };
@@ -165,6 +169,10 @@ export type SimLaptop = {
   setVisible(visible: boolean): void;
   resetCounts(): void;
   total(): number;
+  /** Requests the server answered 429 (its 120/min cap), since the laptop was created. */
+  limited(): number;
+  /** The most requests this laptop sent in any rolling minute of the simulated clock. */
+  busiestMinute(): number;
   stop(): void;
 };
 
@@ -174,6 +182,8 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
   const idb = new IDBFactory();
   const env = { online: true, visible: true, lastActivity: clock.now(), peers: o.peers ?? 0, active: o.activeProject ?? world.projects[0] };
   let counts: RouteCounts = {};
+  let limited = 0;
+  const sentAt: number[] = [];
   const count = (route: keyof RouteCounts, n = 1) => { counts[route] = (counts[route] ?? 0) + n; };
 
   // Every request this laptop sends goes through here: counted by route, refused when the laptop is offline, and the
@@ -187,6 +197,8 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
     count(route);
     if (route === "push" && Array.isArray(body?.ops)) count("execOps", body.ops.length);
     const res = await server.fetchImpl(input, init);
+    if (res.status === 429) limited += 1;
+    sentAt.push(clock.now());
     if (route !== "manifest" || !res.ok) return res;
     const json = await res.json();
     json.user = { ...json.user, id: userId, auth_user_id: userId }; // the replica's guard compares the SIGN-IN id (user.auth_user_id): ten laptops are ten sign-ins
@@ -196,7 +208,9 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
     getAccessToken: async () => "token", baseUrl: FAKE_BASE_URL, fetchImpl, sleep: async () => {}, maxRetries: 1, getReleaseVersion: () => "2026.10.02-3",
   });
 
-  const replica = createReplica({ userId, client, idb, yieldFn: async () => {}, now: clock.now });
+  // The replica's pacer (package lf-fc) waits on the SIMULATED clock, exactly as the browser's waits on the real one.
+  const pacer = createRequestPacer({ now: clock.now, sleep: (ms) => new Promise<void>((r) => clock.setTimeout(r, ms)) });
+  const replica = createReplica({ userId, client, idb, yieldFn: async () => {}, now: clock.now, pacer });
   let n = 0;
   const outbox = createOutbox({ userId, client, deviceId: `device-${userId}`, idb, now: clock.now, sleep: (ms) => clock.track(new Promise<void>((r) => clock.setTimeout(r, ms))), autoFlush: false, locks: null, newOpId: () => `${userId}-op-${++n}` });
 
@@ -256,9 +270,15 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
         },
       });
       // peer-shared.ts's wiring: project mode, the open project every run (o.headMode: the original head-check mode, for comparison)
+      // peer-shared.ts's wiring (package FC): heads mode -- one GET /heads per run, a project's feed only when its head moved.
+      // o.projectMode: lf-e6's project mode without /heads (an older service), o.headMode: the original head check (comparison only).
       const serverStep = createServerStep({
         meta: d, changes: (r) => client.changes(r), sync: () => replica.sync(), now: clock.now,
-        ...(o.headMode ? {} : { syncProject: (projectId: string) => replica.syncProject(projectId), activeProject: () => env.active }),
+        ...(o.headMode ? {} : {
+          syncProject: (projectId: string, opts?: { moved?: boolean }) => replica.syncProject(projectId, undefined, undefined, opts),
+          activeProject: () => env.active,
+          ...(o.projectMode ? {} : { heads: () => client.heads!(), resetCopy: async () => { await resetLocalCopy(d); }, feedCurrent: (p: string) => replica.noteFeedCurrent?.(p) }),
+        }),
       });
       const att = attestation;
       scheduler = createSyncScheduler({
@@ -289,7 +309,11 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
       await clock.settle();
     },
     async prepare() {
-      await clock.track(replica.sync());
+      // The first copy is PACED (package lf-fc): past 100 requests it waits on the simulated clock, so time is moved on until it ends.
+      let finished = false;
+      const run = clock.track(replica.sync()).finally(() => { finished = true; });
+      while (!finished) await clock.advance(MINUTE);
+      await run;
     },
     async edit(i) {
       env.lastActivity = clock.now();
@@ -331,6 +355,8 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
     },
     resetCounts() { counts = {}; },
     total() { return Object.values(counts).reduce((a, b) => a + (b ?? 0), 0); },
+    limited: () => limited,
+    busiestMinute: () => Math.max(0, ...sentAt.map((at) => sentAt.filter((s) => s > at - MINUTE && s <= at).length)),
     stop() {
       scheduler?.stop();
       runner?.stop();

@@ -175,11 +175,46 @@ Signalling and presence use a Supabase Realtime channel named `px:<channel>` (th
 ## 6. Cost rules every laptop follows (measured in `docs/local-first/COST_MODEL.md`, enforced by `src/lib/local-first/cost/cost-budget.test.ts`)
 
 - No timer polls anything while the laptop is offline, while the tab has been hidden for an hour with no peer, or while a 426 paused sync.
-- A whole sync (manifest + every project's feed) at most every 6 hours, on open, and when a project has no feed position yet; otherwise the open project's feed on every scheduled run
-  (5 minutes while things change, backing off to 30) and every other project's at most hourly. A screen opening reads that project's feed at most once every 2 minutes.
+- **One call per scheduled round** (package lf-fc, cost:COST-03): the server step asks `GET /heads` (5 minutes while things change, backing off to 30). It reads a
+  project's feed (`/changes` from the stored position) only when that project's head is past it -- the open project at once, any other at most hourly; `/manifest` only
+  when `projects_etag` changed; and when `view_class` or `epoch` changed it drops the copy's non-dirty rows and positions (`peer/reset-copy.ts`) and runs a whole sync.
+  The first `/heads` answer after a recent whole sync is adopted as the baseline (meta `sync:heads`). A whole sync still runs at least daily (the spread delete repair),
+  on open, and when a project has no feed position yet. The organisation feed's head (`"__org__"`) and `org_view_class` are handed to `onOrgHead` /
+  `onOrgClassChanged`: an EXTENSION POINT for package E7, nothing reads them yet. A service without `/heads` (404) gets the earlier rule for a day: the open project's feed
+  every round, every other project's at most hourly, a whole sync every 6 hours. A screen opening reads that project's feed at most once every 2 minutes, and a
+  `/heads` round that found the project current counts as such a read.
 - No keyset sweep of a (project, kind) the feed covers; `/ids` at most weekly per feed-covered (project, kind), at most 12 per whole sync, never right after a fresh copy.
 - With a verified peer connected, the server step runs at most every 30 minutes (always on open / online / manual).
 - The person's edits are sent when made (one push per flush) and are never batched away or delayed to save cost.
+- **Flag off = zero** (package lf-fc, cost:COST-02/FLAG-16): with `px-local-first` not `"1"` the laptop makes NO sync request at all: WorkspacePrepare does nothing and
+  shows nothing, every call of the shared replica (`replica-shared.ts gateByFlag`) answers "idle" without a request, boot's re-download does not run, the outbox is not
+  created, and a plain sign-out does not touch IndexedDB.
+- **Pacing** (lf-fc, wire:F07): every replica request waits for a sliding-minute pacer of 100 a minute per tab (`rate-pacer.ts`), under the server's 120. A 429 with
+  `Retry-After` pauses that pacer for every caller.
+- **Circuit breaker** (lf-fc, cost:COST-04): 3 network / timeout / 5xx failures in a row, any 429, or a 403 stop the run (the remaining pairs are not tried) and store a stop
+  in the person's database (`sync:cooldown`: 1 minute doubling to 30; a 429 without `Retry-After` -- the daily quota -- at least 1 hour, doubling to 6; a 403 one hour).
+  Until it ends no run of any tab sends anything; a clean run clears it. The client never retries a 429 without `Retry-After`. A (project, kind) answered `400`/`413` is
+  not asked again for a day (`sync:refused:<project>:<kind>`).
+
+## 6a. Sign-out and this laptop's copy (decision of package lf-fc, 2026-10-02 -- THE OWNER MAY VETO IT)
+
+**Decision.** By default "Sign Out" KEEPS the person's copy of the workspace (`projexa-local:<sign-in id>`) and its "workspace ready" key on this laptop. One explicit
+choice, **"Sign out and delete this laptop's copy"** (AccountMenu, AppTopbar and Settings), deletes it.
+
+**Why.** The owner's priority is cost first, ease of work second, security third. Deleting the copy at every sign-out made the next sign-in repeat the whole first sync
+(one request per project x kind plus every row's egress: 401 requests at P=10 per morning for a person who signs out each evening) and left the person without an
+offline workspace until it finished. Keeping it costs nothing and works offline at once. Two people on one laptop never mix (one database per sign-in id, and a manifest of
+another person is refused).
+
+**What stays true in both modes.** The outbox is flushed first while the session lives; pending edits and drafts the server turned down ALWAYS keep the database (even when
+delete was chosen) and the person is told in words. A delete that fails or is blocked (PROJEXA open in another tab) is SAID, never silent, and the copy counts as kept.
+The BOQ hints (`px-local-first-boq:*`, which name a BOQ, not a person) are removed at every sign-out. A sign-out whose person cannot be told apart (the shell's
+`SIGNED_OUT` event before the person was known) deletes nothing -- the old "delete every local database with nothing pending" path, which could remove other people's
+copies, is gone. Code: `src/lib/local-first/sign-out.ts`; tests: `sign-out.test.ts`, `sign-out-everywhere.test.ts`, `components/sign-out-everywhere-paths.test.tsx`.
+
+**The residual risk (the security side of the trade-off).** The kept copy is protected at rest only by the browser profile's own storage: anyone who can use this
+browser profile can read it. On a shared or borrowed computer the person should use "Sign out and delete this laptop's copy". If the owner prefers privacy over cost here,
+the alternative is one line: make `deleteLocalCopy` default to true in `finishLocalWorkspaceOnSignOut` (and flip the two button labels).
 
 ## 7. Backend hardening (packages D1-D3 of the 2026-10-02 review: MERGED on `feat/lf-sync-backend`, not yet live until the migrations are applied and the functions deployed)
 

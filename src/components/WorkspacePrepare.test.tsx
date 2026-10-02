@@ -87,21 +87,22 @@ describe("the 'Copy your projects to this laptop' step", () => {
   }) as never;
 
   test("is the 4th step, and the weights add up to 100", () => {
-    const steps = buildSteps("u1", () => {});
+    // With the local-first flag on (the flag-off plan, without this step, is pinned in WorkspacePrepare.flag-off.test.tsx).
+    const steps = buildSteps("u1", () => {}, undefined, () => true);
     expect(steps.map((s) => s.id)).toEqual(["worker", "app", "database", "projects"]);
     expect(steps.reduce((sum, s) => sum + s.weight, 0)).toBe(100);
     expect(steps[3]!.label).toBe("Copy your projects to this laptop");
   });
 
   test("reports real progress as projects done out of total", async () => {
-    const steps = buildSteps("u1", () => {}, noReplica({ status: "done", issues: [] }));
+    const steps = buildSteps("u1", () => {}, noReplica({ status: "done", issues: [] }), () => true);
     const seen: [number, number][] = [];
     await steps[3]!.run({ signal: new AbortController().signal, onDetail: (d, t) => seen.push([d, t]) });
     expect(seen).toEqual([[1, 2], [2, 2]]);
   });
 
   test("an unreachable or not-yet-deployed service fails this step gracefully, with a plain sentence", async () => {
-    const steps = buildSteps("u1", () => {}, noReplica({ status: "error", issues: [{ reason: "not_found", message: "x" }] }));
+    const steps = buildSteps("u1", () => {}, noReplica({ status: "error", issues: [{ reason: "not_found", message: "x" }] }), () => true);
     await expect(steps[3]!.run({ signal: new AbortController().signal, onDetail: () => {} })).rejects.toThrow(/not reachable yet.*server for now/);
   });
 

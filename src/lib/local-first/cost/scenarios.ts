@@ -65,13 +65,13 @@ function workdayEvents(l: SimLaptop, world: World, offsetMs = 0, project = world
   return events;
 }
 
-export async function idle8h(o: LaptopOptions = {}): Promise<ScenarioResult> {
-  const world = createWorld();
+export async function idle8h(o: LaptopOptions = {}, w: { projects?: number } = {}): Promise<ScenarioResult> {
+  const world = createWorld(w.projects ? { projects: w.projects, rowsPerKind: 1 } : {});
   const l = await synced(world, o);
   await l.open();
   await world.clock.advance(8 * HOUR);
   l.stop();
-  return summarise("idle8h", [l]);
+  return summarise(w.projects ? `idle8h${w.projects}Projects` : "idle8h", [l]);
 }
 
 export async function workday(o: LaptopOptions = {}): Promise<ScenarioResult> {
@@ -85,14 +85,23 @@ export async function workday(o: LaptopOptions = {}): Promise<ScenarioResult> {
   return summarise("workday", [l]);
 }
 
-export async function coldStart(o: LaptopOptions = {}): Promise<ScenarioResult & { complete: boolean }> {
+export async function coldStart(o: LaptopOptions = {}): Promise<ScenarioResult & { complete: boolean; limited: number; busiestMinute: number; storedRows: number }> {
+  // The server's REAL cap (120 a minute per person) on the simulated clock: the first copy must be paced under it (package lf-fc, wire:F07).
   const world = createWorld();
   const l = createLaptop(world, o);
   await l.open();
   await world.clock.advance(1 * HOUR);
   const report = l.replica.getStatus().report;
   l.stop();
-  return { ...summarise("coldStart5Projects", [l]), complete: report?.status === "done" || report?.status === "idle" ? true : !!report && report.issues.length === 0 };
+  // complete = every row of every project is on the laptop
+  const d = await l.db();
+  let storedRows = 0;
+  for (const p of world.projects) for (const k of ["tasks", "boq_lines", "wiki_pages"]) storedRows += (await d.listByProject(world.server.orgId, k, p)).length;
+  return {
+    ...summarise("coldStart5Projects", [l]),
+    complete: report?.status === "done" || report?.status === "idle" ? true : !!report && report.issues.length === 0,
+    limited: l.limited(), busiestMinute: l.busiestMinute(), storedRows,
+  };
 }
 
 export async function reconnect3d(o: LaptopOptions = {}): Promise<ScenarioResult & { caughtUp: boolean }> {
@@ -124,7 +133,9 @@ export async function reconnect3d(o: LaptopOptions = {}): Promise<ScenarioResult
 }
 
 export async function tenLaptops(o: { laptops?: number } = {}): Promise<ScenarioResult> {
-  const world = createWorld();
+  // Ten PEOPLE: the server's 120/min cap is per person, but the fake keeps ONE counter for every request it sees, so with ten laptops on it
+  // the cap is lifted here (each laptop is still paced by its own replica's pacer).
+  const world = createWorld({ requestsPerMinute: Number.MAX_SAFE_INTEGER });
   const count = o.laptops ?? 10;
   const laptops: SimLaptop[] = [];
   // two people per project (5 projects), each editing their own ten tasks: their edits are each other's colleague changes

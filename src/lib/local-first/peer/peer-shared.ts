@@ -11,7 +11,8 @@ import { getDeviceId } from "../outbox-shared";
 import { foreignOrg } from "../replica";
 import { getSharedReplica } from "../replica-shared";
 import { selectedProjectKey } from "../shell/context";
-import { accessToken, createSharedSyncClient, getReleaseVersion } from "../shared-client";
+import { accessToken, createSharedSyncClient, getReleaseVersion, sharedPacer } from "../shared-client";
+import { resetLocalCopy } from "./reset-copy";
 import { SYNC_BASE_URL, SYNC_PROTOCOL } from "../sync-client";
 import { createAutoSync, type AutoSync } from "./auto-sync";
 import type { RealtimeClientLike } from "./signalling";
@@ -62,9 +63,14 @@ export function startPeerSync(userId: string): void {
       ],
       localProviders: [broadcastChannelProvider()],
       openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal }),
-      // project mode (lf-e6): the open project's feed every run, the others hourly, a whole sync every six hours
+      // heads mode (FC cost:COST-03): ONE GET /heads per run, a project's feed only when its head moved, a reset when the view class
+      // or epoch changed; an older service without /heads falls back to lf-e6's project mode (the open project every run, others hourly)
       serverStep: createServerStep({
-        meta: db, changes: (r) => client.changes(r), sync: () => replica.sync(), syncProject: (projectId) => replica.syncProject(projectId),
+        meta: db, changes: (r) => client.changes(r), sync: () => replica.sync(),
+        syncProject: (projectId, opts) => replica.syncProject(projectId, undefined, undefined, opts),
+        heads: async () => { await sharedPacer().take(); return client.heads!(); },
+        resetCopy: async () => { await resetLocalCopy(db); },
+        feedCurrent: (projectId) => replica.noteFeedCurrent?.(projectId),
         activeProject: () => {
           try {
             return localStorage.getItem(selectedProjectKey(userId));

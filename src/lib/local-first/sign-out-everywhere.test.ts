@@ -189,3 +189,59 @@ describe("the shell's SIGNED_OUT reaction", () => {
     expect(shell).toEqual([]);
   });
 });
+
+// Package lf-fc (cost:COST-05, cost:TEST-10): the delete choice travels from the button to the workspace step, and the shell's
+// SIGNED_OUT reaction -- which M24Shell wires as cleanUp: finishLocalWorkspaceOnSignOut({ userId: leaving }) -- is driven here against
+// a REAL laptop database (M24Shell itself needs the private UI kit to mount, which is not installable in every environment).
+describe("the sign-out policy through signOutEverywhere and the SIGNED_OUT reaction", () => {
+  test("deleteLocalCopy reaches the workspace step only when the person chose it", async () => {
+    const seen: (boolean | undefined)[] = [];
+    const finishWorkspace = async (o?: { deleteLocalCopy?: boolean }) => { seen.push(o?.deleteLocalCopy); return nothingPending; };
+    for (const deleteLocalCopy of [undefined, false, true]) {
+      const { store } = realStore();
+      const { auth } = eventedAuth();
+      await signOutEverywhere({ auth, store, sw: { clearPerson: async () => null }, clearBrowserSession: () => {}, finishWorkspace, deleteLocalCopy });
+      resetDeliberateSignOutForTests();
+    }
+    expect(seen).toEqual([undefined, undefined, true]);
+  });
+
+  async function laptopWith(users: string[]) {
+    const { localDbNameFor, openLocalDb } = await import("./local-db");
+    const idb = new IDBFactory();
+    for (const u of users) {
+      const db = await openLocalDb(idb, localDbNameFor(u));
+      await db.setMeta("workspace", { userId: u });
+      db.close();
+    }
+    const names = async () => (await idb.databases()).map((d) => d.name).filter((n) => n?.startsWith("projexa-local:")).sort();
+    return { idb, names };
+  }
+
+  test("an 'ended' SIGNED_OUT for a known person keeps their copy (the default policy) and leaves everyone else's alone", async () => {
+    const { finishLocalWorkspaceOnSignOut } = await import("./sign-out");
+    const { idb, names } = await laptopWith(["u1", "u2"]);
+    let done: Promise<unknown> = Promise.resolve();
+    const kind = await reactToSignedOut({
+      classify: async () => "ended",
+      cleanUp: () => { done = finishLocalWorkspaceOnSignOut({ userId: "u1", idb, localFirstOn: () => true, storage: null, outbox: null }); },
+      goToLogin: () => {},
+    });
+    await done;
+    expect(kind).toBe("ended");
+    expect(await names()).toEqual(["projexa-local:u1", "projexa-local:u2"]);
+  });
+
+  test("a SIGNED_OUT before the person was known (leaving = null) touches no database at all (it used to delete every one with nothing pending)", async () => {
+    const { finishLocalWorkspaceOnSignOut } = await import("./sign-out");
+    const { idb, names } = await laptopWith(["u1", "u2", "u3"]);
+    let done: Promise<unknown> = Promise.resolve();
+    await reactToSignedOut({
+      classify: async () => "ended",
+      cleanUp: () => { done = finishLocalWorkspaceOnSignOut({ userId: null, idb, localFirstOn: () => true, storage: null, outbox: null }); },
+      goToLogin: () => {},
+    });
+    expect(await done).toEqual({ pending: 0, wiped: false, notice: null });
+    expect(await names()).toEqual(["projexa-local:u1", "projexa-local:u2", "projexa-local:u3"]);
+  });
+});

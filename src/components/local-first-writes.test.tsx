@@ -217,6 +217,20 @@ describe("RfiObjectClient: answering", () => {
     await waitFor(() => expect(h.fetched.some((f) => f.method === "PATCH")).toBe(true));
     expect(await h.outbox.listPending()).toEqual([]);
   });
+
+  // cost:TEST-10 (package lf-fc): the only "not on the laptop" case above runs with the flag ON. With the flag OFF and the RFI
+  // copied to the laptop, the screen must still do exactly the old PATCH and queue nothing.
+  test("with the flag OFF (the RFI IS on the laptop): the old PATCH is made and nothing is queued", async () => {
+    const h = await harness({ flag: false, seed: seedRfi });
+    h.setRoutes({ "/api/rfis/r1": () => OPEN });
+    const view = render(<RfiObjectClient rfiId="r1" />);
+    await view.findByText(/RFI-2/);
+    typeInto(view.getByPlaceholderText("Your answer…"), "Use oak");
+    fireEvent.click(view.getByRole("button", { name: "Submit Answer" }));
+    await waitFor(() => expect(h.fetched.some((f) => f.method === "PATCH")).toBe(true));
+    expect(await h.outbox.listPending()).toEqual([]);
+    expect(view.queryByTestId("pending-sync")).toBeNull();
+  });
 });
 
 describe("ScheduleTaskObjectClient: editing a task", () => {

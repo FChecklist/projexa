@@ -14,16 +14,31 @@ function note(r: ScenarioResult) {
 }
 
 describe("cost budget per scenario (requests per laptop, push ops counted twice: the push and its exec run)", () => {
-  // TODO(FC): the first copy must be PACED under the real cap (120 requests a minute per person, 429 + Retry-After). With the cap lifted in harness.ts createWorld this file measures
-  // the steady state; when FC lands, lift the lift and assert coldStart() completes with no 429.
-  test.todo("(c2) cold start of 5 projects under the REAL 120 requests/minute cap: paced, no 429, complete");
+  // Package lf-fc (wire:F07): the first copy is PACED (rate-pacer.ts, 100 a minute) and the harness world enforces the server's REAL cap (120 a
+  // minute per person, 429 + Retry-After) again. Before the pacer this scenario sent ~160 requests in the same simulated instant.
+  test("(c2) cold start of 5 projects under the REAL 120 requests/minute cap: paced, no 429, complete", async () => {
+    const r = await coldStart();
+    table.push(`  (c2) under the real cap: ${r.limited} answered 429, busiest minute ${r.busiestMinute} requests, ${r.storedRows} rows of the checked kinds on the laptop`);
+    expect(r.limited).toBe(0);
+    expect(r.busiestMinute).toBeLessThanOrEqual(120);
+    expect(r.complete).toBe(true);
+    expect(r.storedRows).toBe(5 * (22 + 2 + 2));
+  }, 120_000);
   test("(a) idle for 8 hours, online, tab visible", async () => {
     const r = await idle8h();
     note(r);
     expect(r.perLaptopTotal).toBeLessThanOrEqual(SCENARIO_BUDGETS.idle8h);
     expect(r.perLaptop.pull ?? 0).toBe(0); // nothing changed: not one keyset page
     expect(r.perLaptop.ids ?? 0).toBe(0);
+    expect(r.perLaptop.changes ?? 0).toBe(0); // FC cost:COST-03: nothing moved, so no feed was read -- only GET /heads
   }, 120_000);
+
+  test("(a') idle for 8 hours with 20 projects: still about one request per round (GET /heads does not grow with projects)", async () => {
+    const r = await idle8h({}, { projects: 20 });
+    note(r);
+    expect(r.perLaptopTotal).toBeLessThanOrEqual(SCENARIO_BUDGETS.idle8h20Projects);
+    expect(r.perLaptop.changes ?? 0).toBe(0);
+  }, 300_000);
 
   test("(b) a working day: 30 own edits, 30 colleague changes, 40 screens", async () => {
     const r = await workday();

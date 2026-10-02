@@ -121,3 +121,23 @@ describe("sync client", () => {
     await expect(make([json({ items: "x", has_more: false })]).client.pull({ projectId: "p", kind: "k", after: null })).rejects.toMatchObject({ kind: "bad_response" });
   });
 });
+
+// Package lf-fc (review cost:COST-04): the service's DAILY quota answer is a 429 with no Retry-After ("Try again tomorrow"). Retrying it
+// within seconds only spends more of the quota, so it is reported at once; a 429 WITH Retry-After is still waited and retried, and the
+// wait the service asked for travels on the error so the replica can pause every request until then.
+describe("sync client: 429s", () => {
+  test("a 429 WITHOUT Retry-After (the daily quota) is not retried", async () => {
+    const m = make([json({ error: "Too many requests today. Try again tomorrow." }, 429), json(goodPage)], { maxRetries: 3 });
+    await expect(m.client.pull({ projectId: "p", kind: "k", after: null })).rejects.toMatchObject({ kind: "rate_limited", status: 429 });
+    expect(m.calls.length).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
+  test("a 429 WITH Retry-After that outlasts the retries carries the uncapped wait the service asked for", async () => {
+    const m = make([json({}, 429, { "Retry-After": "60" })], { maxRetries: 1 });
+    const err = await m.client.manifest().catch((e) => e);
+    expect(err).toMatchObject({ kind: "rate_limited", retryAfterMs: 60_000 });
+    expect(m.calls.length).toBe(2);
+    expect(waits).toEqual([30_000]); // the client's own wait stays capped
+  });
+});

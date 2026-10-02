@@ -177,6 +177,8 @@ export type FakeServerOptions = {
    */
   strict?: boolean;
   keyId?: string;
+  /** GET /heads (backend 0686, package FC). false = an older service that answers it 404. Default true. */
+  heads?: boolean;
 };
 
 export type FakeSyncServer = {
@@ -208,6 +210,10 @@ export type FakeSyncServer = {
   setRelease(release: { current?: string; minCompatible?: string } | null): void;
   signedOut: boolean;
   notLinked: boolean;
+  /** The person's view class (manifest `view_class`, GET /heads `view_class`): change it to simulate a role change. */
+  viewClass: string;
+  /** The version tables' epoch (GET /heads `epoch`): change it to simulate a rollback. */
+  epoch: string;
   /** Everything the server has stored for a push op id, newest last. */
   pushedOpIds(): string[];
   // signatures
@@ -304,6 +310,8 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
     ledger: publicLedger,
     signedOut: false,
     notLinked: false,
+    viewClass: "0123456789abcdef",
+    epoch: "epoch-1",
     client: undefined as unknown as SyncClient,
     clientWith: undefined as unknown as FakeSyncServer["clientWith"],
     fetchImpl: undefined as unknown as typeof fetch,
@@ -602,7 +610,26 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
     return json({ results, server_time: serverTime() });
   }
 
-  const ROUTES: Record<string, "GET" | "POST"> = { "/manifest": "GET", "/pull": "POST", "/changes": "POST", "/ids": "POST", "/push": "POST" };
+  const ROUTES: Record<string, "GET" | "POST"> = {
+    "/manifest": "GET", "/pull": "POST", "/changes": "POST", "/ids": "POST", "/push": "POST", ...(opts.heads === false ? {} : { "/heads": "GET" as const }),
+  };
+
+  /**
+   * GET /heads (handler.ts heads(), drizzle/0686 projexa_sync_heads): every readable project's feed head (the same number /changes
+   * answers as head_seq), the organisation feed's ("__org__", always 0 here: this fake has no organisation kinds), an etag of the
+   * project list, the role, the view classes and the epoch.
+   */
+  function handleHeads(): Response {
+    const heads: Record<string, number> = {};
+    for (const p of server.projects) {
+      const mine = log.filter((c) => c.projectId === p);
+      heads[p] = mine.length ? mine[mine.length - 1]!.seq : 0;
+    }
+    heads.__org__ = 0;
+    let h = 0;
+    for (const ch of [...server.projects].sort().join(",")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return json({ heads, projects_etag: h.toString(16).padStart(8, "0"), role: opts.role ?? "member", view_class: server.viewClass, org_view_class: null, epoch: server.epoch, server_time: serverTime() });
+  }
 
   /** 426 when the laptop speaks another protocol or its release (YYYY.MM.DD-NNN) is below the floor; anything else is never blocked. */
   function updateRequired(headers: Record<string, string>): Response | null {
@@ -639,13 +666,14 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
         user: { id: veridianUserId, name: "Test User", role: opts.role ?? "member", org_id: orgId, auth_user_id: userId },
         projects: server.projects.map((id) => ({ id, name: `Project ${id}`, status: "active" })),
         kinds: kinds.map((k) => ({ kind: k.kind, project_scoped: k.project_scoped !== false, cursor_field: k.cursor_field === null ? "created_at" : "updated_at", deletes_supported: trackDeletes })),
-        view_class: "0123456789abcdef",
+        view_class: server.viewClass,
         org_kinds: [],
         org_view_class: null,
         release: { current: release?.current ?? null, min_compatible: release?.minCompatible || null, protocol: REAL_LIMITS.SERVER_PROTOCOL },
         server_time: serverTime(),
       });
     }
+    if (path === "/heads") return handleHeads();
     // Every body but a push is capped at 4 KB, a push at 256 KB (handler.ts readBody).
     const text = raw ?? "";
     if (text.length > (path === "/push" ? REAL_LIMITS.PUSH_BODY_MAX_BYTES : REAL_LIMITS.BODY_MAX_BYTES)) return json({ error: "Body too large" }, 413);

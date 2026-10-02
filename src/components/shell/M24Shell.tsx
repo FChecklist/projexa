@@ -1152,9 +1152,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             rememberSelectedProject(null);
             // The device copy of a project's BOQ goes too; the event carries no session, so every stored copy on this browser is cleared.
             void clearBoqDeviceCopiesOnSignOut();
-            // LOCAL-FIRST: this laptop's copy of the person's workspace goes too -- unless edits made on it have not reached the
-            // server yet (the session is gone, so nothing can be sent now): then it is kept and the person is told. The same
-            // work the three explicit sign-outs already did first; a repeated notice is suppressed by the helper.
+            // LOCAL-FIRST (package lf-fc, cost:COST-05): this laptop's copy of the person's workspace is KEPT (the default
+            // sign-out policy; only the explicit "Sign out and delete this laptop's copy" button deletes it). Edits not yet on the
+            // server are told about. With the flag off, or the person unknown, nothing is looked at. A repeated notice is
+            // suppressed by the helper.
             void finishLocalWorkspaceOnSignOut({ userId: leaving }).then((r) => { if (r.notice) toast.message(r.notice, { duration: 20_000 }); });
           },
         });

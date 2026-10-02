@@ -24,7 +24,7 @@
 // still in flight in ANOTHER package are kept here but skipped until that work merges:
 //   BACKEND-PENDING   runs when LF_BACKEND_HARDENED=1   (claude/lf-d1-*, d2, d3: CORS, 413 cap, transient codes, `uncertain`)
 //   CLIENT-PENDING:FB runs when LF_CLIENT_FB=1          (claude/lf-fb-outbox-safety: record_kind, server-deleted conflicts, 64 KB op, NOT_LINKED)
-//   CLIENT-PENDING:FC runs when LF_CLIENT_FC=1          (replica request budget under the 120/min cap)
+//   CLIENT-PENDING:FC runs unless LF_CLIENT_FC=0         (replica request budget under the 120/min cap; package lf-fc merged)
 // LF_RUN_PENDING=1 runs every pending test (to see what is still red). The tests share one database and one laptop and run in order.
 import { describe, test, expect, beforeAll, afterAll, setDefaultTimeout } from "bun:test";
 import { IDBFactory } from "fake-indexeddb";
@@ -48,7 +48,8 @@ const PENDING = {
   // The backend hardening (packages D1-D3) and the outbox safety (FB) are MERGED: these groups run whenever CT_ROOT is set. The switches stay for a checkout of an older backend.
   backend: { tag: "BACKEND-PENDING", on: process.env.LF_BACKEND_HARDENED !== "0" },
   FB: { tag: "CLIENT-PENDING:FB", on: process.env.LF_CLIENT_FB !== "0" },
-  FC: { tag: "CLIENT-PENDING:FC", on: env("LF_CLIENT_FC") },
+  // Package lf-fc (the request pacer + circuit breaker) is on this branch: W26 runs whenever CT_ROOT is set.
+  FC: { tag: "CLIENT-PENDING:FC", on: process.env.LF_CLIENT_FC !== "0" },
 } as const;
 
 /** A harness test: `[Wnn] [owner] title`, skipped when its owner's fix has not merged yet (see PENDING). */

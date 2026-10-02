@@ -4,10 +4,15 @@ import { createFakeSyncServer } from "./__fixtures__/fake-sync-server";
 import { localDbNameFor, openLocalDb } from "./local-db";
 import { createOutbox } from "./outbox";
 import { createReplica } from "./replica";
-import { finishLocalWorkspaceOnSignOut, forgetLastSignOutNotice, pendingNotice } from "./sign-out";
+import {
+  DELETE_FAILED_NOTICE, DELETE_UNKNOWN_PERSON_NOTICE, finishLocalWorkspaceOnSignOut, forgetLastSignOutNotice, pendingKeptNotice, pendingNotice,
+} from "./sign-out";
 
-// (viii) Sign-out: flush the outbox; with nothing pending delete the person's laptop database (and the BOQ device
-// copy, and the hints local-first leaves in localStorage); with edits still pending KEEP the database and say so.
+// Sign-out and this laptop's copy (package lf-fc, review cost:COST-05, data:F11, cost:TEST-14, cost:FLAG-16):
+//   * DEFAULT: the copy is KEPT (a re-login costs nothing and works offline); the outbox is still flushed while the session lives;
+//   * the explicit choice `deleteLocalCopy` deletes it -- never while edits or drafts wait, and a failed / blocked delete is SAID;
+//   * the BOQ hints go in every path; the "workspace ready" key goes only with a deleted copy;
+//   * flag off and no delete asked: inert (no listing, no database opened, no flush).
 
 async function names(idb: IDBFactory): Promise<string[]> {
   return (await idb.databases()).map((d) => d.name ?? "").filter((n) => n.startsWith("projexa-local")).sort();
@@ -43,58 +48,112 @@ async function laptop(opts: { users?: string[]; edit?: boolean } = {}) {
   return { idb, server, outbox };
 }
 
-const opts = (l: Awaited<ReturnType<typeof laptop>>, extra: Record<string, unknown> = {}) => ({ userId: "u1", idb: l.idb, outbox: l.outbox, clearBoqCopy: async () => {}, noticeDedupeMs: 0, storage: null, ...extra });
+const opts = (l: Awaited<ReturnType<typeof laptop>>, extra: Record<string, unknown> = {}) =>
+  ({ userId: "u1", idb: l.idb, outbox: l.outbox, clearBoqCopy: async () => {}, noticeDedupeMs: 0, storage: null, localFirstOn: () => true, ...extra });
 
-describe("sign-out with NOTHING pending", () => {
-  test("deletes the person's database, empties the BOQ device copy, removes the localStorage hints, and has nothing to say", async () => {
+const HINTS = { "px-local-first": "1", "px-local-first-boq:b1": "{}", "px-local-first-boq:b2": "{}", "px-workspace-ready-v1:u1": "1", "px-workspace-ready-v1:other": "1", unrelated: "keep" };
+
+describe("the DEFAULT sign-out keeps this laptop's copy", () => {
+  test("nothing pending: the database STAYS, the ready key stays (no re-download next time), the BOQ hints go, nothing to say", async () => {
     const l = await laptop();
-    expect(await names(l.idb)).toEqual(["projexa-local:u1"]);
-    const { map, storage } = memoryStorage({
-      "px-local-first": "1", "px-local-first-boq:b1": "{}", "px-local-first-boq:b2": "{}", "px-workspace-ready-v1:u1": "1", "px-workspace-ready-v1:other": "1", "unrelated": "keep",
-    });
+    const { map, storage } = memoryStorage(HINTS);
     let boqCleared = 0;
     const result = await finishLocalWorkspaceOnSignOut(opts(l, { storage, clearBoqCopy: async () => { boqCleared += 1; } }));
-    expect(result).toEqual({ pending: 0, wiped: true, notice: null });
-    expect(await names(l.idb)).toEqual([]);
-    expect(boqCleared).toBe(1);
-    expect([...map.keys()].sort()).toEqual(["px-local-first", "px-workspace-ready-v1:other", "unrelated"]); // theirs gone, nobody else's touched
+    expect(result).toEqual({ pending: 0, wiped: false, notice: null, kept: true });
+    expect(await names(l.idb)).toEqual(["projexa-local:u1"]);
+    expect(boqCleared).toBe(0);
+    expect([...map.keys()].sort()).toEqual(["px-local-first", "px-workspace-ready-v1:other", "px-workspace-ready-v1:u1", "unrelated"]);
   });
 
-  test("does not flush when there is nothing to send, and leaves other people's databases alone", async () => {
-    const l = await laptop({ users: ["u2"] });
-    let flushes = 0;
-    const result = await finishLocalWorkspaceOnSignOut(opts(l, { outbox: { flush: async () => { flushes += 1; return undefined as never; } } }));
-    expect(result.wiped).toBe(true);
-    expect(flushes).toBe(0);
-    expect(await names(l.idb)).toEqual(["projexa-local:u2"]);
+  test("a kept copy really is reused: signing in again syncs without pulling the rows again", async () => {
+    const l = await laptop();
+    await finishLocalWorkspaceOnSignOut(opts(l));
+    const before = l.server.requests.length;
+    const report = await createReplica({ userId: "u1", client: l.server.client, idb: l.idb, yieldFn: async () => {} }).sync();
+    expect(report.status).toBe("done");
+    const again = l.server.requests.slice(before);
+    expect(again.filter((r) => r.path === "/pull" && !Array.isArray(r.body?.ids))).toEqual([]); // no keyset re-download
   });
 
-  test("the outbox is FLUSHED first: an edit made offline reaches the server, and only then is the database deleted", async () => {
+  test("the outbox is still FLUSHED while the session lives: an offline edit reaches the server", async () => {
     const l = await laptop({ edit: true });
     const result = await finishLocalWorkspaceOnSignOut(opts(l));
-    expect(result).toEqual({ pending: 0, wiped: true, notice: null });
-    expect(l.server.requests.filter((r) => r.path === "/push")).toHaveLength(1);
-    expect(l.server.getRow("rfis", "srv-rfi-1")).toMatchObject({ data: { subject: "Made offline" } }); // the person's work is on the server
+    expect(result).toMatchObject({ pending: 0, wiped: false, notice: null, kept: true });
+    expect(l.server.getRow("rfis", "srv-rfi-1")).toMatchObject({ data: { subject: "Made offline" } });
+  });
+
+  test("edits still pending: kept, and told in words that they are safe", async () => {
+    const l = await laptop({ edit: true });
+    l.server.failNext({ status: 503, path: "/push", times: 5 });
+    const result = await finishLocalWorkspaceOnSignOut(opts(l));
+    expect(result).toMatchObject({ pending: 1, wiped: false, kept: true });
+    expect(result.notice).toBe(pendingKeptNotice(1));
+    const db = await openLocalDb(l.idb, localDbNameFor("u1"));
+    expect((await db.listOps()).map((o) => o.opId)).toEqual(["op-1"]);
+    db.close();
+  });
+
+  test("an UNKNOWN person (no session, no remembered user): nothing is looked at, deleted or flushed -- other people's copies included", async () => {
+    const l = await laptop({ users: ["u2"] });
+    let flushes = 0;
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { userId: null, outbox: { flush: async () => { flushes += 1; return undefined as never; } } }));
+    expect(result).toEqual({ pending: 0, wiped: false, notice: null });
+    expect(flushes).toBe(0);
+    expect(await names(l.idb)).toEqual(["projexa-local:u1", "projexa-local:u2"]);
+  });
+});
+
+describe("flag OFF (cost:FLAG-16)", () => {
+  test("no delete asked: inert -- no flush, no listing, nothing deleted; only the BOQ hints go", async () => {
+    const l = await laptop({ edit: true });
+    let flushes = 0;
+    let listed = 0;
+    const realDatabases = l.idb.databases.bind(l.idb);
+    (l.idb as { databases: () => Promise<IDBDatabaseInfo[]> }).databases = async () => { listed += 1; return realDatabases(); };
+    const { map, storage } = memoryStorage(HINTS);
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { localFirstOn: () => false, storage, outbox: { flush: async () => { flushes += 1; return undefined as never; } } }));
+    expect(result).toEqual({ pending: 0, wiped: false, notice: null });
+    expect(flushes).toBe(0);
+    expect(listed).toBe(0);
+    expect([...map.keys()].filter((k) => k.startsWith("px-local-first-boq:"))).toEqual([]);
+    expect(await realDatabases().then((d) => d.map((x) => x.name).filter((n) => n?.startsWith("projexa-local:")))).toEqual(["projexa-local:u1"]);
+  });
+
+  test("the explicit delete still works with the flag off (an older copy can always be removed)", async () => {
+    const l = await laptop();
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { localFirstOn: () => false, deleteLocalCopy: true }));
+    expect(result.wiped).toBe(true);
     expect(await names(l.idb)).toEqual([]);
   });
 });
 
-describe("sign-out with edits STILL pending", () => {
-  test("the database is KEPT, and the person is told in plain words (nothing lost, sign in to finish)", async () => {
-    const l = await laptop({ edit: true });
-    l.server.failNext({ status: 503, path: "/push", times: 5 }); // the service is not answering
+describe("the explicit choice: Sign out and delete this laptop's copy", () => {
+  test("nothing pending: the database, the BOQ device copy, the BOQ hints and THIS person's ready key go; nobody else's", async () => {
+    const l = await laptop({ users: ["u2"] });
+    const { map, storage } = memoryStorage(HINTS);
     let boqCleared = 0;
-    const result = await finishLocalWorkspaceOnSignOut(opts(l, { clearBoqCopy: async () => { boqCleared += 1; } }));
-    expect(result.wiped).toBe(false);
-    expect(result.pending).toBe(1);
-    expect(result.notice).toBe("1 change you made on this laptop has not reached the server yet, so this laptop kept your workspace. Nothing is lost: sign in again to finish syncing it.");
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true, storage, clearBoqCopy: async () => { boqCleared += 1; } }));
+    expect(result).toEqual({ pending: 0, wiped: true, notice: null });
+    expect(await names(l.idb)).toEqual(["projexa-local:u2"]);
+    expect(boqCleared).toBe(1);
+    expect([...map.keys()].sort()).toEqual(["px-local-first", "px-workspace-ready-v1:other", "unrelated"]);
+  });
+
+  test("an offline edit is flushed first and reaches the server; only then is the copy deleted", async () => {
+    const l = await laptop({ edit: true });
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true }));
+    expect(result).toEqual({ pending: 0, wiped: true, notice: null });
+    expect(l.server.getRow("rfis", "srv-rfi-1")).toMatchObject({ data: { subject: "Made offline" } });
+    expect(await names(l.idb)).toEqual([]);
+  });
+
+  test("edits still pending: the copy is KEPT anyway and the person is told", async () => {
+    const l = await laptop({ edit: true });
+    l.server.failNext({ status: 503, path: "/push", times: 5 });
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true }));
+    expect(result).toMatchObject({ pending: 1, wiped: false, kept: true });
+    expect(result.notice).toBe(pendingNotice(1));
     expect(await names(l.idb)).toEqual(["projexa-local:u1"]);
-    expect(boqCleared).toBe(0); // nothing was wiped, so no wipe-side effects
-    // ...and the op is still there to be sent on the next sign-in
-    const db = await openLocalDb(l.idb, localDbNameFor("u1"));
-    expect((await db.listOps()).map((o) => o.opId)).toEqual(["op-1"]);
-    expect((await db.getRecord("rfis", "local-1"))!.dirty).toBe("op-1");
-    db.close();
   });
 
   test("a conflict that waits for the person's decision counts as pending too", async () => {
@@ -106,19 +165,65 @@ describe("sign-out with edits STILL pending", () => {
       optimistic: async (tx) => { await tx.patchRecord("tasks", "t1", { data: { id: "t1", title: "Mine" } }); },
     });
     l.server.upsert({ kind: "tasks", projectId: "p1", id: "t1", data: { title: "Theirs" } });
-    const result = await finishLocalWorkspaceOnSignOut(opts(l));
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true }));
     expect(result).toMatchObject({ wiped: false, pending: 1 });
     expect(await names(l.idb)).toEqual(["projexa-local:u1"]);
   });
 
-  test("the plural reads naturally", () => {
+  test("TEST-14: a delete BLOCKED by another tab that never closes the database is SAID, and nothing claims it was wiped", async () => {
+    const l = await laptop();
+    // another tab: a raw connection with no versionchange handler, so it never lets go
+    const holder = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = l.idb.open(localDbNameFor("u1"));
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const { map, storage } = memoryStorage(HINTS);
+    const t0 = Date.now();
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true, deleteTimeoutMs: 60, storage }));
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(result).toMatchObject({ wiped: false, kept: true, deleteFailed: true, notice: DELETE_FAILED_NOTICE });
+    expect(map.has("px-workspace-ready-v1:u1")).toBe(true); // the copy is still there, so it is still "ready"
+    holder.close();
+  });
+
+  test("TEST-14: an edit joined to a flush pass that was already ending is sent by the SECOND flush, so the copy can go", async () => {
+    const l = await laptop({ edit: true });
+    let calls = 0;
+    // the first pass ends without the op (it joined too late); the second pass really sends it
+    const outbox = { flush: async () => { calls += 1; return calls === 1 ? (undefined as never) : l.outbox.flush(); } };
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true, outbox }));
+    expect(calls).toBe(2);
+    expect(result).toEqual({ pending: 0, wiped: true, notice: null });
+    expect(l.server.getRow("rfis", "srv-rfi-1")).toMatchObject({ data: { subject: "Made offline" } });
+  });
+
+  test("an unknown person: nothing is deleted, and the person is told why", async () => {
+    const l = await laptop({ users: ["u2"] });
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { userId: null, deleteLocalCopy: true }));
+    expect(result).toMatchObject({ wiped: false, notice: DELETE_UNKNOWN_PERSON_NOTICE });
+    expect(await names(l.idb)).toEqual(["projexa-local:u1", "projexa-local:u2"]);
+  });
+
+  test("no copy at all on this laptop: the ready key goes (nothing to be ready with), nothing to say", async () => {
+    const idb = new IDBFactory();
+    const { map, storage } = memoryStorage(HINTS);
+    const result = await finishLocalWorkspaceOnSignOut({ userId: "u1", idb, deleteLocalCopy: true, storage, noticeDedupeMs: 0, clearBoqCopy: async () => {} });
+    expect(result).toEqual({ pending: 0, wiped: false, notice: null });
+    expect(map.has("px-workspace-ready-v1:u1")).toBe(false);
+  });
+});
+
+describe("words, timing, and never failing", () => {
+  test("the plurals read naturally", () => {
     expect(pendingNotice(3)).toBe("3 changes you made on this laptop have not reached the server yet, so this laptop kept your workspace. Nothing is lost: sign in again to finish syncing them.");
+    expect(pendingKeptNotice(3)).toBe("3 changes you made on this laptop have not reached the server yet. They are kept safely on this laptop: sign in again to finish syncing them.");
   });
 
   test("a flush that never returns does not hold the sign-out hostage: after the timeout the edit counts as pending", async () => {
     const l = await laptop({ edit: true });
     const t0 = Date.now();
-    const result = await finishLocalWorkspaceOnSignOut(opts(l, { outbox: { flush: () => new Promise(() => {}) }, flushTimeoutMs: 40 }));
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true, outbox: { flush: () => new Promise(() => {}) }, flushTimeoutMs: 40 }));
     expect(Date.now() - t0).toBeLessThan(2_000);
     expect(result).toMatchObject({ wiped: false, pending: 1 });
     expect(await names(l.idb)).toEqual(["projexa-local:u1"]);
@@ -134,34 +239,17 @@ describe("sign-out with edits STILL pending", () => {
     expect(second.pending).toBe(1);
     expect(second.notice).toBeNull();
   });
-});
 
-describe("sign-out when the person is not known (another tab signed out, so the event carries no session)", () => {
-  test("every local database with nothing pending is deleted; one with pending edits is kept; the notice counts only what was kept", async () => {
-    const l = await laptop({ users: ["u2", "u3"], edit: true });
-    // u3 has a pending edit of its own
-    const db3 = await openLocalDb(l.idb, localDbNameFor("u3"));
-    await db3.putOp({ opId: "u3-op", functionId: "create_rfi", projectId: "p1", params: {}, clientAt: "t", status: "pending", attempts: 0, nextAttemptAt: 0 });
-    db3.close();
-    l.server.failNext({ status: 503, path: "/push", times: 5 });
-    const result = await finishLocalWorkspaceOnSignOut({ userId: null, idb: l.idb, clearBoqCopy: async () => {}, noticeDedupeMs: 0, storage: null });
-    // u1 also has its op pending; u2 had nothing
-    expect(await names(l.idb)).toEqual(["projexa-local:u1", "projexa-local:u3"]);
-    expect(result).toMatchObject({ wiped: true, pending: 2 });
-    expect(result.notice).toContain("2 changes");
-  });
-});
-
-describe("sign-out never fails", () => {
   test("no IndexedDB at all (or nothing stored): a no-op", async () => {
-    expect(await finishLocalWorkspaceOnSignOut({ userId: "u1", idb: undefined, clearBoqCopy: async () => {} })).toEqual({ pending: 0, wiped: false, notice: null });
+    expect(await finishLocalWorkspaceOnSignOut({ userId: "u1", idb: undefined, clearBoqCopy: async () => {}, localFirstOn: () => true, storage: null })).toEqual({ pending: 0, wiped: false, notice: null });
     const empty = new IDBFactory();
-    expect(await finishLocalWorkspaceOnSignOut({ userId: "u1", idb: empty, clearBoqCopy: async () => {}, storage: null })).toMatchObject({ pending: 0, notice: null });
+    expect(await finishLocalWorkspaceOnSignOut({ userId: "u1", idb: empty, clearBoqCopy: async () => {}, storage: null, localFirstOn: () => true })).toMatchObject({ pending: 0, notice: null });
+    expect(await names(empty)).toEqual([]); // looking did not create it
   });
 
   test("a throwing flush or BOQ clear is swallowed", async () => {
     const l = await laptop({ edit: true });
-    const result = await finishLocalWorkspaceOnSignOut(opts(l, { outbox: { flush: async () => { throw new Error("boom"); } }, clearBoqCopy: async () => { throw new Error("boom"); } }));
-    expect(result).toMatchObject({ wiped: false, pending: 1 }); // the edit is still pending, so kept
+    const result = await finishLocalWorkspaceOnSignOut(opts(l, { deleteLocalCopy: true, outbox: { flush: async () => { throw new Error("boom"); } }, clearBoqCopy: async () => { throw new Error("boom"); } }));
+    expect(result).toMatchObject({ wiped: false, pending: 1 });
   });
 });
