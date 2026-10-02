@@ -12,7 +12,7 @@ import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
-import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
+import { signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
@@ -167,10 +167,9 @@ export default function SettingsClient({
     rememberSelectedProject(null);
     // The device copy of a project's BOQ must not outlive the session on a shared browser.
     await clearBoqDeviceCopiesOnSignOut();
-    // LOCAL-FIRST: while the session is still alive, send what was made offline; delete this laptop's copy of the person's
-    // workspace if nothing is pending (privacy), otherwise keep it and say so. Never throws, never waits more than a few seconds.
-    const localNotice = (await finishLocalWorkspaceOnSignOut()).notice;
-    await supabase.auth.signOut();
+    // LOCAL-FIRST: the workspace step, then the deliberate sign-out (identity mirror, worker caches, Supabase session). See
+    // AccountMenu and src/lib/local-first/sign-out-everywhere.ts. Never throws, never waits more than a few seconds.
+    const { notice: localNotice } = await signOutEverywhere({ auth: supabase.auth });
     if (localNotice) toast.message(localNotice, { duration: 20_000 });
     router.push("/login");
   }

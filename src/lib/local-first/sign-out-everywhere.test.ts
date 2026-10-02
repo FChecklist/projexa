@@ -52,7 +52,7 @@ function eventedAuth(over: Partial<AuthLike> = {}) {
   };
   return { auth, calls, emit: (event: string, s: SessionLike | null) => listeners.forEach((l) => l(event, s)) };
 }
-const tick = () => new Promise((r) => setTimeout(r, 20));
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 20));
 const nothingPending: SignOutLocalResult = { pending: 0, wiped: true, notice: null };
 
 describe("signOutEverywhere: the workspace step, then THE deliberate sign-out", () => {
