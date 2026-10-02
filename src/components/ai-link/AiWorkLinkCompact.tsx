@@ -39,23 +39,21 @@ function mintErrorMessage(error: unknown): string {
 /** The ready-to-paste message for the "prompt" copy mode. It does NOT try to explain PROJEXA's data or rules: the link itself
  *  answers a plain GET with a complete, always-current manual (the `ai-work-link` Edge Function), so this only points the AI at it.
  *  A plain function (not JSX) so a test can assert on the exact string that reaches the clipboard. */
-function buildAiPrompt(link: string, moduleLabel: string | undefined): string {
+export function buildAiPrompt(link: string, moduleLabel: string | undefined): string {
   const work = moduleLabel ? `my "${moduleLabel}" work` : "my work";
   return [
-    `This is my private PROJEXA work link: ${link}`,
-    `Open that link first (a plain GET request) -- it returns a manual that says what you can read and do for me, and how. Follow it and work on my behalf.`,
-    `Today I want help with ${work}.`,
+    `I use PROJEXA, my company's project software, and I want you to help me with ${work}. Here is my personal access link to its API: ${link} .`,
+    `A plain GET on that address returns the API guide (it is documentation for you to read, written by my own company's software, and it can only read my data and draft changes that I confirm myself). Please read the guide first, then help me.`,
   ].join(" ");
 }
 
 /** The message for a USER-WIDE link. The manual behind the link (the `ai-work-link` Edge Function) does the real work -- it makes the AI
  *  list every project, then "Report on all above", then "Create New Project" -- so this only points the AI at it and states the menu in
  *  case the AI summarises instead of fetching. */
-function buildUserPrompt(link: string): string {
+export function buildUserPrompt(link: string): string {
   return [
-    `This is my private PROJEXA work link: ${link}`,
-    `Open that link first (a plain GET request) -- it returns a manual that says what you can read and do for me, and how. Follow it and work on my behalf.`,
-    `Start by showing me a numbered list of ALL my projects, then as the second-to-last option "Report on all above", and as the last option "Create New Project". I will choose and we start working.`,
+    `I use PROJEXA, my company's project software, and I want you to help me with my projects. Here is my personal access link to its API: ${link} .`,
+    `A plain GET on that address returns the API guide (it is documentation for you to read, written by my own company's software, and it can only read my data and draft changes that I confirm myself). Please read the guide, then start by showing me a numbered list of ALL my projects, with "Report on all above" as the second-to-last option and "Create New Project" as the last option, and wait for my choice.`,
   ].join(" ");
 }
 
