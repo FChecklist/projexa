@@ -100,6 +100,18 @@ export async function loadChangeOrderNew(data: ShellData, projectId: string | nu
   return { state: "ready", projectId, costHidden: read.hiddenFields.includes("cost_impact") };
 }
 
+/** What is waiting on a change order, in words; null when nothing is. The status itself stays the server's. */
+export function changeOrderPendingWord(co: Pick<ChangeOrderView, "localOnly" | "waitingOn" | "trouble">): string | null {
+  if (co.trouble === "blocked") return "Not accepted by the server";
+  if (co.trouble === "conflict") return "Changed on the server too";
+  if (co.localOnly) return "Waiting to be sent";
+  if (co.waitingOn.includes("submit_change_order_for_approval")) return "Approval request waiting to be sent";
+  return co.waitingOn.length > 0 ? "Waiting to be sent" : null;
+}
+
+/** The server's status in the online list's words ("pending approval"), or a dash for a change order the server has not accepted yet. */
+export const changeOrderStatusText = (status: string | null): string => (status ? status.replace(/_/g, " ") : "—");
+
 /** "+4d", "-2d", or the online screen's em dash for 0 / not set. */
 export function scheduleImpactText(days: number | null): string {
   if (days === null || days === 0) return "—";
