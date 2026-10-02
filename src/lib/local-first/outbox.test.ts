@@ -246,7 +246,8 @@ describe("flush: applied and duplicate", () => {
     const r = await rig({ outbox: { maxBatchBytes: 2_000 } });
     const filler = "x".repeat(700);
     for (let i = 0; i < 4; i += 1) await createRfi(r.outbox, `S${i}`, `local-${i}`, { notes: filler });
-    await createRfi(r.outbox, "HUGE", "local-huge", { notes: "y".repeat(5_000) });
+    // Not a free-text parameter (a long free text is refused before it is queued: outbox-safety.test.ts), so it is queued and stopped at send time.
+    await createRfi(r.outbox, "HUGE", "local-huge", { attachmentManifest: "y".repeat(5_000) });
     const report = await r.outbox.flush();
     expect(report.rejected).toBe(1);
     expect(report.applied).toBe(4);
@@ -498,7 +499,8 @@ describe("failed: kept and retried with the same op_id, with exponential back-of
 
   test("the back-off doubles up to its ceiling", async () => {
     const r = await rig({ outbox: { backoffBaseMs: 1_000, backoffMaxMs: 5_000 } });
-    r.server.registerFunction("always_fails", () => ({ failed: "EXECUTION_UNCERTAIN" }));
+    // A transient failure of the pipeline (retried for as long as it takes; an UNCERTAIN outcome is bounded: outbox-safety.test.ts).
+    r.server.registerFunction("always_fails", () => ({ failed: "BACKEND_UNAVAILABLE" }));
     await r.outbox.enqueue({ functionId: "always_fails", projectId: "p1", params: {} });
     const waits: number[] = [];
     for (let i = 0; i < 5; i += 1) {
@@ -507,6 +509,21 @@ describe("failed: kept and retried with the same op_id, with exponential back-of
       r.clock.now = rep.nextDueAt!;
     }
     expect(waits).toEqual([1_000, 2_000, 4_000, 5_000, 5_000]);
+  });
+
+  test("(cost:TEST-13) the PRODUCTION back-off defaults: 2 s doubling to a 5-minute ceiling, never more often", async () => {
+    // No backoff option injected: these are the numbers every laptop runs with, and they bound the cost of an outage.
+    const r = await rig();
+    r.server.registerFunction("always_fails", () => ({ failed: "BACKEND_UNAVAILABLE" }));
+    await r.outbox.enqueue({ functionId: "always_fails", projectId: "p1", params: {} });
+    const waits: number[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const rep = await r.outbox.flush();
+      waits.push(rep.nextDueAt! - r.clock.now);
+      r.clock.now = rep.nextDueAt!;
+    }
+    expect(waits).toEqual([2_000, 4_000, 8_000, 16_000, 32_000, 64_000, 128_000, 256_000, 300_000, 300_000, 300_000, 300_000]);
+    expect(r.pushes().length).toBe(12); // one request per due time, none in between
   });
 
   test("a request that never got an answer (the service is down) keeps every op, reports 'offline', and says when to try again", async () => {

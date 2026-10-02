@@ -624,7 +624,12 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
       return transact((tx) => tx.deleteOp(opId));
     },
     async listDrafts() {
-      const rows = (await req(db.transaction(STORE_DRAFTS).objectStore(STORE_DRAFTS).getAll())) as OutboxDraft[];
+      // The read transaction is awaited to its end: left to finish on its own after close(), the next open of this database
+      // (another outbox call) was observed to stall under fake-indexeddb.
+      const tx = db.transaction(STORE_DRAFTS);
+      const finished = done(tx);
+      const rows = (await req(tx.objectStore(STORE_DRAFTS).getAll())) as OutboxDraft[];
+      await finished;
       return rows.sort((a, b) => a.at - b.at);
     },
     async getDraft(opId) {
