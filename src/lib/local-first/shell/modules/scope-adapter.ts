@@ -2,7 +2,8 @@
 //
 // REUSE, not a rewrite. The reading goes through the same code the online BOQ screen uses when px-local-first is on
 // (src/lib/local-first/local-reader.ts + boq-local.ts): loadLocalFirst() (rows only when that (project, kind) was pulled to the end),
-// the `boq_lines` kind, isGatewayLine() (replica rows are untrusted input until they look like a BOQ line), and the screen's own row
+// the `boq_lines` + `boqs` kinds, linesFromReplica() (replica rows are untrusted input until they map to a BOQ line; the sync service
+// sends them in its own snake_case shape, review F09), and the screen's own row
 // mapping and ordering (toBoqLineItemRow, orderLinesForBoq, boqTotal). What differs: this adapter is not gated by the px-local-first
 // flag (the shell is only ever shown when it should be), it never falls back to the server (a screen that is not on the laptop says
 // so), and it lays the person's waiting edits over the rows (pending-edits.ts).
@@ -14,7 +15,7 @@ import type { Boq, BoqLineItemRow } from "@/lib/boq-helpers";
 import { boqTotal } from "@/lib/boq-helpers";
 import type { GatewayBoqLine } from "@/lib/boq-gateway-client";
 import { orderLinesForBoq, toBoqLineItemRow } from "@/lib/boq-read-source";
-import { BOQ_LINES_KIND, isGatewayLine } from "../../boq-local";
+import { BOQ_LINES_KIND, BOQS_KIND, linesFromReplica } from "../../boq-local";
 import { loadLocalFirst } from "../../local-reader";
 import type { ShellData } from "../context";
 import { applyPendingEdits, type PendingEdit } from "../pending-edits";
@@ -47,10 +48,17 @@ export type ScopeObjectData =
       waitingLineIds: string[];
     };
 
+/**
+ * A project's BOQ lines from the laptop, in the screen's shape. The sync service sends `boq_lines` in its own snake_case shape without the
+ * BOQ's title/version/status, which are the `boqs` kind (review F09): both kinds are read and joined by linesFromReplica (boq-local.ts).
+ * "Synced" means the lines were pulled to the end on this laptop; a line whose BOQ header row is not (yet) on the laptop is not drawn.
+ */
 async function readProjectLines(data: ShellData, projectId: string): Promise<{ lines: GatewayBoqLine[]; synced: boolean; syncedAt: number | null }> {
-  const result = await loadLocalFirst<unknown>(BOQ_LINES_KIND, projectId, async () => [], { userId: data.userId, idb: data.idb });
+  const access = { userId: data.userId, idb: data.idb };
+  const result = await loadLocalFirst<unknown>(BOQ_LINES_KIND, projectId, async () => [], access);
   if (result.state !== "local") return { lines: [], synced: false, syncedAt: null };
-  return { lines: result.rows.filter(isGatewayLine), synced: true, syncedAt: result.syncedAt };
+  const headers = await loadLocalFirst<unknown>(BOQS_KIND, projectId, async () => [], access);
+  return { lines: linesFromReplica(result.rows, headers.state === "local" ? headers.rows : []), synced: true, syncedAt: result.syncedAt };
 }
 
 /** The BOQs of one project, derived from its lines (the replica holds lines, each carrying its BOQ's title, version and status). */

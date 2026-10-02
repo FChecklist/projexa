@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SyncError, createSyncClient } from "./sync-client";
+import { SYNC_IDS_BODY_MAX_BYTES, SYNC_IDS_LIMIT, SyncError, chunkIds, createSyncClient, manifestSignInId } from "./sync-client";
 
 // The calls added for protocol 2 (CONTRACT.md sections 0-2): changes, ids, pull by ids, push, the X-Px-Client header
 // and the 426 -> update_required mapping. The original calls' tests stay in sync-client.test.ts.
@@ -45,18 +45,18 @@ describe("X-Px-Client header (protocol 2, schema 3)", () => {
     expect(calls.calls.length).toBe(6);
     for (const c of calls.calls) expect(headers(c)["X-Px-Client"]).toBe("dev; protocol=2; schema=3");
 
-    const versioned = make([json({ user: { id: "u", org_id: "o" }, projects: [], kinds: [] })], { getReleaseVersion: () => "2026.10.02-3" });
+    const versioned = make([json({ user: { id: "u", org_id: "o" }, projects: [], kinds: [] })], { getReleaseVersion: () => "2026.10.02-003" });
     await versioned.client.manifest();
-    expect(headers(versioned.calls[0]!)["X-Px-Client"]).toBe("2026.10.02-3; protocol=2; schema=3");
+    expect(headers(versioned.calls[0]!)["X-Px-Client"]).toBe("2026.10.02-003; protocol=2; schema=3");
   });
 });
 
 describe("426 update required", () => {
   test("becomes the kind update_required with what the service said, and is never retried", async () => {
-    const m = make([json({ error: "update required", current: "2026.10.05-1", min_compatible: "2026.10.03-2" }, 426)], { maxRetries: 3 });
+    const m = make([json({ error: "update required", current: "2026.10.05-001", min_compatible: "2026.10.03-002" }, 426)], { maxRetries: 3 });
     const err = await m.client.push({ deviceId: "d", ops: [] }).catch((e) => e);
     expect(err).toBeInstanceOf(SyncError);
-    expect(err).toMatchObject({ kind: "update_required", status: 426, update: { current: "2026.10.05-1", minCompatible: "2026.10.03-2" } });
+    expect(err).toMatchObject({ kind: "update_required", status: 426, update: { current: "2026.10.05-001", minCompatible: "2026.10.03-002" } });
     expect(m.calls.length).toBe(1);
   });
 
@@ -111,13 +111,31 @@ describe("pullIds", () => {
     expect(page).toMatchObject({ kid: "k1", redacted: true, hidden_fields: ["cost"], has_more: false });
   });
 
-  test("more than 200 ids are split into several calls of at most 200 and the pages merged", async () => {
+  // Changed by review F03/SYNC-06: this test used to expect chunks of 200, which the real service answers 413 (4,096-char body cap).
+  test("a long id list is split into calls of at most 80 ids (short ids: the count decides) and the pages merged in order", async () => {
     const ids = Array.from({ length: 450 }, (_, i) => `r${i}`);
     const reply = (chunk: string[]) => json({ items: chunk.map((id) => ({ id, updated_at: "t", version: 1, data: { id } })), kid: "k", next_cursor: null, has_more: false, hidden_fields: [], redacted: false });
-    const m = make([reply(ids.slice(0, 200)), reply(ids.slice(200, 400)), reply(ids.slice(400))]);
+    const chunks = chunkIds("p", "k", ids);
+    expect(chunks.map((c) => c.length)).toEqual([80, 80, 80, 80, 80, 50]);
+    const m = make(chunks.map(reply));
     const page = await m.client.pullIds({ projectId: "p", kind: "k", ids });
-    expect(m.calls.map((c) => body(c).ids.length)).toEqual([200, 200, 50]);
+    expect(m.calls.map((c) => body(c).ids.length)).toEqual([80, 80, 80, 80, 80, 50]);
     expect(page.items.map((i) => i.id)).toEqual(ids);
+  });
+
+  test("long ids are split by body size: no request body is over 3,500 characters, every id is sent exactly once (uuid, cuid, 64-char)", async () => {
+    for (const mk of [() => crypto.randomUUID(), () => "c" + crypto.randomUUID().replace(/-/g, "").slice(0, 23), (i: number) => `${"x".repeat(60)}${String(i).padStart(4, "0")}`]) {
+      const ids = Array.from({ length: 200 }, (_, i) => mk(i));
+      const m = make([json({ items: [], kid: null, next_cursor: null, has_more: false, hidden_fields: [], redacted: false })]);
+      await m.client.pullIds({ projectId: "a-project-id-of-normal-length", kind: "boq_lines", ids });
+      const sizes = m.calls.map((c) => (c.init.body as string).length);
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(SYNC_IDS_BODY_MAX_BYTES);
+      expect(m.calls.every((c) => body(c).ids.length <= SYNC_IDS_LIMIT)).toBe(true);
+      expect(m.calls.flatMap((c) => body(c).ids)).toEqual(ids);
+    }
+    // the worst case the service allows (64-char ids) still fits the deployed 4,096 cap with room for the envelope
+    expect(SYNC_IDS_LIMIT).toBeLessThanOrEqual(80);
+    expect(SYNC_IDS_BODY_MAX_BYTES).toBeLessThan(4096);
   });
 });
 
@@ -218,5 +236,23 @@ describe("push", () => {
     expect(res.results[0]!.status).toBe("duplicate");
     // the SAME body both times: the op_id never changes
     expect(body(m.calls[0]!)).toEqual(body(m.calls[1]!));
+  });
+});
+
+// Review F01 / F1: the manifest's user.id is the VERIDIAN person (compliance.users.id); the laptop knows the person by the sign-in id.
+describe("manifestSignInId (whose manifest is this)", () => {
+  test("the server's auth_user_id wins over user.id, and survives manifest parsing", async () => {
+    const m = make([json({ user: { id: "ckq1w2e3r4t5y6u7i8o9p0a1", auth_user_id: "11111111-1111-4111-8111-111111111111", org_id: "o" }, projects: [], kinds: [] })]);
+    const manifest = await m.client.manifest();
+    expect(manifest.user.auth_user_id).toBe("11111111-1111-4111-8111-111111111111");
+    expect(manifestSignInId(manifest)).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  test("an older server without auth_user_id is compared by user.id", () => {
+    expect(manifestSignInId({ user: { id: "u1", org_id: "o" } })).toBe("u1");
+  });
+
+  test("an auth_user_id that is not a string never matches anything (fails closed, never falls back to user.id)", () => {
+    expect(manifestSignInId({ user: { id: "u1", org_id: "o", auth_user_id: 42 as unknown as string } })).toBe("");
   });
 });

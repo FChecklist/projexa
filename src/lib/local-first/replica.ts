@@ -34,7 +34,7 @@
 
 import { changeCursorKey, localDbNameFor, openLocalDb, reconcileKey, type LocalDb } from "./local-db";
 import {
-  SYNC_CHANGES_LIMIT, SYNC_ID_LIST_LIMIT, SYNC_PAGE_LIMIT, SyncError,
+  SYNC_CHANGES_LIMIT, SYNC_ID_LIST_LIMIT, SYNC_PAGE_LIMIT, SyncError, manifestSignInId,
   type SyncChange, type SyncClient, type SyncCursor, type SyncErrorKind, type SyncItem, type SyncManifest, type UpdateRequiredDetails,
 } from "./sync-client";
 
@@ -124,6 +124,15 @@ export type Replica = {
 
 export const MANIFEST_KEY = "sync:manifest";
 export const LAST_SYNC_KEY = "sync:last";
+
+/**
+ * How far back the first /changes request of every run re-reads (CONTRACT.md section 1). The feed's `seq` is taken when a row is written,
+ * not when its transaction commits, so a long transaction becomes visible with seqs BELOW a position a laptop already holds; the backend
+ * documents this (drizzle/0679 header, KNOWN LIMIT) and asks laptops to re-ask from `after_seq - 200`. Re-reading is idempotent: a version
+ * the laptop already holds is skipped without a request. Set to 0 once the backend's commit-order-safe cursor (an xid visibility horizon
+ * on projexa_sync_changes) has landed. Review F08.
+ */
+export const CHANGE_FEED_OVERLAP = 200;
 export const cursorKey = (projectId: string, kind: string) => `sync:cursor:${projectId}:${kind}`;
 /** Written only when a (project, kind) has been pulled to the end at least once: the reader trusts this, not the cursor. */
 export const doneKey = (projectId: string, kind: string) => `sync:done:${projectId}:${kind}`;
@@ -327,11 +336,13 @@ export function createReplica(options: ReplicaOptions): Replica {
     const stored = await db.getMeta<{ seq: number } | null>(changeCursorKey(projectId));
     if (!stored || typeof stored.seq !== "number") return;
     let cursor = stored.seq;
+    // The first page of a run re-reads CHANGE_FEED_OVERLAP positions; the stored position itself never moves backwards.
+    let ask = Math.max(0, cursor - CHANGE_FEED_OVERLAP);
     for (let pageNo = 0; pageNo < maxPages; pageNo += 1) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
-      const page = await options.client.changes({ projectId, afterSeq: cursor, limit: SYNC_CHANGES_LIMIT }, signal);
+      const page = await options.client.changes({ projectId, afterSeq: ask, limit: SYNC_CHANGES_LIMIT }, signal);
       await applyChangePage(db, orgId, projectId, kinds, page.changes, report, signal);
-      if (page.has_more && page.next_seq <= cursor) {
+      if (page.has_more && page.next_seq <= ask) {
         throw Object.assign(new Error("The change feed said there is more but did not move."), { replicaReason: "no_progress" as const });
       }
       // The page's effects are stored: only now may the feed position move.
@@ -339,6 +350,7 @@ export function createReplica(options: ReplicaOptions): Replica {
         await db.setMeta(changeCursorKey(projectId), { seq: page.next_seq });
         cursor = page.next_seq;
       }
+      ask = Math.max(ask, page.next_seq);
       if (!page.has_more) return;
       await yieldFn();
     }
@@ -423,7 +435,8 @@ export function createReplica(options: ReplicaOptions): Replica {
         projectIds = stored.projectIds;
       } else {
         const manifest = await options.client.manifest(internal.signal);
-        if (manifest.user.id !== options.userId) {
+        // The laptop knows its person by the SIGN-IN id; the manifest says whose it is in user.auth_user_id (manifestSignInId; client review F01).
+        if (manifestSignInId(manifest) !== options.userId) {
           report.issues.push({ reason: "user_mismatch", message: "The sign-in on this laptop does not match the person this workspace belongs to." });
           return finish("error");
         }

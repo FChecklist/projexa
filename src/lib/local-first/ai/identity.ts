@@ -11,7 +11,7 @@
 // `settings.ai_act_without_asking`, `user.ai_act_without_asking`, `user.settings.ai_act_without_asking` equal to true).
 // Absent means OFF: every AI delete is a draft the person confirms with one click. The laptop never turns it on by itself.
 
-import type { SyncManifest } from "../sync-client";
+import { manifestSignInId, type SyncManifest } from "../sync-client";
 
 export const AI_IDENTITY_KEY = "ai:identity";
 
@@ -42,7 +42,7 @@ function actWithoutAsking(manifest: unknown): boolean {
 /** The identity a sync manifest describes. Pure. */
 export function identityFromManifest(manifest: SyncManifest, at: number): AiIdentity {
   return {
-    userId: manifest.user.id,
+    userId: manifestSignInId(manifest), // the sign-in id the laptop knows the person by, not compliance.users.id
     orgId: manifest.user.org_id,
     name: typeof manifest.user.name === "string" ? manifest.user.name : null,
     role: typeof manifest.user.role === "string" && manifest.user.role ? manifest.user.role : null,
@@ -56,7 +56,7 @@ type Meta = { getMeta<T = unknown>(key: string): Promise<T | undefined>; setMeta
 
 /** Stores what the service said, unless it describes a different person or organisation than the laptop copy. */
 export async function rememberIdentity(meta: Meta, manifest: SyncManifest, userId: string, at: number): Promise<AiIdentity | null> {
-  if (manifest.user.id !== userId) return null;
+  if (manifestSignInId(manifest) !== userId) return null;
   const previous = await meta.getMeta<AiIdentity>(AI_IDENTITY_KEY);
   if (previous && previous.orgId !== manifest.user.org_id) return null;
   const identity = identityFromManifest(manifest, at);
