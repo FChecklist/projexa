@@ -74,7 +74,7 @@ export async function loadReports(data: ShellData, projectId: string | null, que
   const weekStart = weekStartRaw && WEEK.test(weekStartRaw) ? weekStartRaw : null;
   const cache = snapshotCacheFor({ userId: data.userId, role: data.role, idb: data.idb });
 
-  const saved = new Map((await cache.list().catch(() => [])).map((e) => [e.key, e.fetchedAt]));
+  const saved = new Map<string, number>((await cache.list().catch(() => [])).map((e) => [e.key, e.fetchedAt] as const));
   const reports: ReportEntry[] = [];
   for (const r of REPORTS) {
     const dest = reportDestination(r.value, { projectId, weekStart: r.value === "weekly-project" ? weekStart ?? undefined : undefined });
