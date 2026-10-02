@@ -149,13 +149,17 @@ test("R7 create/update: queued with the optimistic change, shown on the person's
     // On the person's screen at once (as the pending row) or, when the push has already settled, as the server's row: the laptop never
     // loses it. A pull that was already in flight when the push settled can miss the new row until the next change-feed pass, so the
     // check nudges a sync and reopens the screen between looks instead of staring at one render.
+    const diagnose = async () => JSON.stringify({
+      tasks: (await aiValue<List>(page, "list", "tasks", { projectId: P1.id })).items.map((i) => [i.id, i.pending, i.data.title]),
+      pushed: laptop.sync.pushed.map((o) => o.function_id),
+    });
     await expect.poll(async () => {
       await page.goto(`/local/schedule?projectId=${P1.id}`);
       await expect(page.getByTestId("schedule-row").first()).toBeVisible();
       const n = await page.getByTestId("schedule-row").filter({ hasText: "Install site hoarding (AI)" }).count();
       if (n === 0) await nudge(page);
       return n;
-    }, { timeout: 60_000, intervals: [500, 1_000, 2_000], message: "the AI's new task never showed on the Schedule screen" }).toBe(1);
+    }, { timeout: 60_000, intervals: [500, 1_000, 2_000], message: "the AI's new task never showed on the Schedule screen" }).toBe(1).catch(async (e: Error) => { throw new Error(`${e.message} -- the laptop holds ${await diagnose()}`); });
     await expect.poll(() => laptop.sync.pushed.filter((o) => o.function_id === "create_schedule_task").length, { timeout: 60_000, message: "the AI's task was never sent" }).toBe(1);
     const op = laptop.sync.pushed.find((o) => o.function_id === "create_schedule_task")!;
     expect(op.params).toEqual({ projectId: P1.id, title: "Install site hoarding (AI)", startDate: "2026-10-06", dueDate: "2026-10-08", priority: "medium" });
