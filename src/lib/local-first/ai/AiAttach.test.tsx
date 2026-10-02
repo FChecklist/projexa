@@ -41,6 +41,8 @@ describe("AiDraftConfirm", () => {
     await act(async () => { await surface.api.delete("void_material_receipt", { kind: "material_receipts", id: "mr1" }, VOID); });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Confirm: Void a material receipt" })); });
     await act(async () => { (screen.getByRole("button", { name: "Confirm: Void a material receipt" }) as HTMLButtonElement).click(); });
+    // Give a confirm that wrongly ran every chance to reach the outbox before looking.
+    await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
     expect(enqueued()).toBe(0);
     expect(surface.drafts.list()).toHaveLength(1);
   });
