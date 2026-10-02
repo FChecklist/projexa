@@ -230,7 +230,10 @@ import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
 import { invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
+import { toast } from "sonner";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
+import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
+import { isLocalFirstEnabled } from "@/lib/local-first/local-reader";
 import {
   LEGACY_FALLBACK_MESSAGE,
   describeReadError,
@@ -1107,6 +1110,13 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
 
   const refreshShell = shell.refresh;
 
+  // LOCAL-FIRST: with the laptop copy switched on, a signed-in person's pending edits (made offline, or before a reload) resume
+  // sending as soon as the shell knows who they are. With the flag off nothing here runs and nothing is loaded.
+  useEffect(() => {
+    if (!userId || !isLocalFirstEnabled()) return;
+    void import("@/lib/local-first/outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
+  }, [userId]);
+
   // F_025, first half: this tab's own sign-in/sign-out.
   useEffect(() => {
     const supabase = createClient();
@@ -1128,6 +1138,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         rememberSelectedProject(null);
         // The device copy of a project's BOQ goes too; the event carries no session, so every stored copy on this browser is cleared.
         void clearBoqDeviceCopiesOnSignOut();
+        // LOCAL-FIRST: this laptop's copy of the person's workspace goes too -- unless edits made on it have not reached the
+        // server yet (the session is gone, so nothing can be sent now): then it is kept and the person is told. The same
+        // work the three explicit sign-outs already did first; a repeated notice is suppressed by the helper.
+        const leaving = userIdRef.current;
+        void finishLocalWorkspaceOnSignOut({ userId: leaving }).then((r) => { if (r.notice) toast.message(r.notice, { duration: 20_000 }); });
       }
     });
     return () => sub.subscription.unsubscribe();
