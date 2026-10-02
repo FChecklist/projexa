@@ -216,10 +216,11 @@ describe("running a job", () => {
 });
 
 describe("leases", () => {
+  const abortedAt: number[] = [];
   const slowExecutor = (clk: () => FakeClock, ms: number): JobExecutor => async (_t, _r, _p, signal) => {
     await new Promise<void>((resolve, reject) => {
       clk().setTimeout(resolve, ms);
-      signal?.addEventListener("abort", () => reject(new JobExecutionError("CANCELLED")), { once: true });
+      signal?.addEventListener("abort", () => { abortedAt.push(clk().now()); reject(new JobExecutionError("CANCELLED")); }, { once: true });
     });
     return { done: true };
   };
@@ -243,10 +244,14 @@ describe("leases", () => {
     const h = makeRunner("alice", { api, executor: slowExecutor(() => clock, 150_000) });
     await h.runner.start();
     await clock.advance(ACTIVE_POLL_MS);
+    const claimedAt = clock.now();
     await clock.advance(200_000);
     expect(server.callsBy("result").length).toBe(0);
     expect(h.runner.getIndicator().helped).toBe(0);
     expect((await alice.get({ jobId })).jobStatus).not.toBe("done");
+    // the work is stopped soon after the 60 s lease ran out, not left running for its full 150 s
+    expect(abortedAt.length).toBeGreaterThan(0);
+    expect(abortedAt[0] - claimedAt).toBeLessThanOrEqual(61_000 + 20_000);
   });
 
   test("the server says lease_expired on a heartbeat: the run is cancelled, no result is sent", async () => {
@@ -256,6 +261,19 @@ describe("leases", () => {
     await clock.advance(ACTIVE_POLL_MS);
     await clock.advance(200_000);
     expect(server.callsBy("heartbeat")[0]).toBeDefined();
+    expect(server.callsBy("result").length).toBe(0);
+    expect(h.runner.getIndicator().helped).toBe(0);
+  });
+
+  test("the server revoking the lease (heartbeat says lease_expired) while our own clock still thinks there is time: cancel, submit nothing", async () => {
+    await server.apiFor("alice").enqueue({ projectId: "p1", type: "boq_rollup", params: {} });
+    const api: JobsApi = { ...server.apiFor("alice"), heartbeat: async () => ({ outcome: "lease_expired", leaseExpiresAt: null, serverTime: null }) };
+    const h = makeRunner("alice", { api, executor: slowExecutor(() => clock, 45_000) });
+    await h.runner.start();
+    await clock.advance(ACTIVE_POLL_MS);
+    const before = abortedAt.length;
+    await clock.advance(50_000);
+    expect(abortedAt.length).toBe(before + 1);
     expect(server.callsBy("result").length).toBe(0);
     expect(h.runner.getIndicator().helped).toBe(0);
   });
