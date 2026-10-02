@@ -162,10 +162,15 @@ export default function LocalShell() {
     };
   }, [writer, boot, refresh]);
 
-  // Back online: send what waited.
+  // Back online: send what waited. The person coming back to the tab is a good moment to try again too (one try, no timer storm).
   useEffect(() => {
-    if (connectivity === "online") schedulerRef.current?.nudge();
+    if (connectivity === "online") schedulerRef.current?.nudge({ immediate: true });
   }, [connectivity]);
+  useEffect(() => {
+    const onFocus = () => schedulerRef.current?.nudge({ immediate: true });
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   const matched = useMemo(() => (location ? findShellRoute(location.path) : null), [location]);
 

@@ -214,6 +214,20 @@ describe("when to try: no polling storm", () => {
     expect(timers).toEqual([]);
   });
 
+  test("the laptop coming back online (or the tab coming into focus) tries NOW even while a retry is waiting; an ordinary nudge does not", async () => {
+    const { s, timers, state, fire } = scheduler();
+    state.pending = 1;
+    s.nudge();
+    await fire(); // fails: a one-minute retry is now waiting
+    expect(timers.map((t) => t.ms)).toEqual([60_000]);
+    s.nudge(); // a new edit: covered by the waiting retry
+    expect(timers.map((t) => t.ms)).toEqual([60_000]);
+    s.nudge({ immediate: true }); // online again / focus: now
+    expect(timers.map((t) => t.ms)).toEqual([0]);
+    await fire();
+    expect(state.flushes).toBe(2);
+  });
+
   test("stop() cancels the pending try", () => {
     const { s, timers, state } = scheduler();
     state.pending = 1;

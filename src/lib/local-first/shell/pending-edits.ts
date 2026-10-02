@@ -209,9 +209,16 @@ export function createFlushScheduler(deps: FlushSchedulerDeps) {
   }
 
   return {
-    /** Something may have changed (an edit, the network): try soon, once. */
-    nudge() {
-      if (stopped || timer !== null) return;
+    /**
+     * Something may have changed: try soon, once. A pending retry timer is kept (the edit that just came in is covered by it), unless the
+     * cause is the person or the network (`immediate`: the laptop came back online, the tab came back into focus), which tries now.
+     */
+    nudge(options: { immediate?: boolean } = {}) {
+      if (stopped) return;
+      if (timer !== null) {
+        if (!options.immediate) return;
+        clearTimer(timer);
+      }
       timer = setTimer(() => void run(), 0);
     },
     stop() {

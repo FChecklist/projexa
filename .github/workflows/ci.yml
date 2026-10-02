@@ -219,6 +219,36 @@ jobs:
             perf/perf-results.json
             perf/perf-results.md
 
+  offline-e2e:
+    # LOCAL-FIRST (owner order 2026-10-02: R1 no internet, R2 our server down, R9 stays signed in, R10 hard to lose). Runs
+    # e2e/offline-local-first.spec.ts through playwright.local-first.config.ts: a PRODUCTION build (the service worker is never
+    # registered by `next dev`) with the release bundle, a local Auth stand-in, and the sync service answered in the browser. No real
+    # session, secret, Supabase project or Vercel deployment is touched; every value is a placeholder.
+    #
+    # WHY IT IS BEHIND A REPOSITORY VARIABLE (same pattern as Perf budget above). The spec was written on a laptop that could not run a
+    # production build and a browser together, so it has been read, typechecked and listed by Playwright but never executed. A required
+    # job that had never passed once would block every pull request on a fault that may be in the spec, not the product. Set
+    #   Settings > Variables > LOCAL_FIRST_E2E_ENABLED = true
+    # to run it, read the first run's failure messages (every wait names what it was waiting for), fix the spec or the product, and
+    # then it can be made required like any other job.
+    name: Offline e2e (local-first)
+    if: ${{ vars.LOCAL_FIRST_E2E_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - name: Offline and server-down, end to end
+        run: bunx playwright test -c playwright.local-first.config.ts
+      - name: Keep the trace of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-first-e2e-traces
+          path: test-results/
+
   secret-scan:
     # R60 T9: replaces GitHub's own secret scanning/push protection, which
     # was auto-disabled when this repo went private (GitHub Free has
