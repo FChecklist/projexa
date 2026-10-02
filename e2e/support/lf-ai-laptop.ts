@@ -74,8 +74,7 @@ export async function prepareLaptop(page: Page, context: BrowserContext, key: Pe
 
   await test.step(`online: ${person.role} ${person.name} opens PROJEXA for the first time; the workspace is prepared`, async () => {
     await page.goto(`/schedule?projectId=${person.projects[0].id}`);
-    await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 });
-    await page.getByTestId("prepare-continue").click();
+    await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
     await expect
       .poll(() => personMeta(page, session.userId, `sync:done:${person.projects[0].id}:tasks`), { timeout: 120_000, message: "the tasks were never copied to the laptop" })
       .toBeTruthy();

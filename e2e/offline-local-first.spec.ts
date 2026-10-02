@@ -119,6 +119,7 @@ async function stubSyncService(page: Page, who: LocalSession, net: Net) {
     }
     if (request.method() === "POST" && path === "/release/register") return json(route, origin, { registered: true, server_time: new Date().toISOString() });
     if (request.method() === "POST" && path === "/install") return json(route, origin, { recorded: true, server_time: new Date().toISOString() });
+    if (request.method() === "POST" && path === "/prepare") return json(route, origin, { recorded: true, server_time: new Date().toISOString() });
     return json(route, origin, { error: "not part of the local stub" }, 404);
   });
   return { served };
@@ -171,8 +172,7 @@ async function prepareLaptop(page: Page, context: BrowserContext, net: Net) {
 
   await test.step("online: open the app; the first-run screen prepares the workspace and finishes", async () => {
     await page.goto(`/scope/${BOQ_ID}`);
-    await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 });
-    await page.getByTestId("prepare-continue").click();
+    await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
   });
 
   await test.step("the quiet boot leaves the release, the identity and the project names on the laptop", async () => {

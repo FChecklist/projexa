@@ -240,8 +240,7 @@ test("V1: a first install whose BUNDLE does not match the manifest's sha256 is r
   const { signIn } = await import("./support/lf-lifecycle-stub");
   const { session } = await signIn(page, context, world, A);
   await page.goto(`/scope/${A.boqId}`);
-  await expect(page.getByTestId("prepare-percent")).toHaveText("100%", { timeout: 240_000 });
-  await page.getByTestId("prepare-continue").click();
+  await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
 
   await test.step("tampered bundle: refused, no px-release cache, the failure recorded", async () => {
     await expect.poll(() => deviceMeta(page, "app:release-failure"), { timeout: 120_000 }).toMatchObject({ version: n.release_version, reason: "bundle_hash" });

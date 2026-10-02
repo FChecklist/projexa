@@ -77,6 +77,8 @@ export type ReleaseClient = {
   register(signal?: AbortSignal): Promise<boolean>;
   /** POST /install, true when the service recorded it. */
   recordInstall(record: InstallRecord, signal?: AbortSignal): Promise<boolean>;
+  /** POST /prepare: how this laptop's "Preparing your PROJEXA workspace" run is going (prepare-report.ts), true when the service recorded it. */
+  reportPrepare(report: Record<string, unknown>, signal?: AbortSignal): Promise<boolean>;
   /**
    * current(); when the registry does not know this laptop's release, asks it to register it and reads current() again.
    * Returns the latest answer, or null when the registry cannot be reached.
@@ -173,6 +175,9 @@ export function createReleaseClient(options: ReleaseClientOptions): ReleaseClien
     },
     async recordInstall(record, signal) {
       return (await call("/install", { method: "POST", body: record }, signal)).ok;
+    },
+    async reportPrepare(report, signal) {
+      return (await call("/prepare", { method: "POST", body: report }, signal)).ok;
     },
     async ensureRegistered(signal) {
       const first = await client.current(signal);

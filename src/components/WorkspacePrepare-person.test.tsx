@@ -35,7 +35,7 @@ test("the first person skipped it in this tab; the NEXT person to sign in on the
   sessionStorage.setItem(seenKey("asha"), "1");
   who.id = "omar";
   const { findByRole } = render(<WorkspacePrepare />);
-  expect(await findByRole("dialog", { name: "Preparing your workspace" })).toBeTruthy();
+  expect(await findByRole("dialog", { name: "Preparing your PROJEXA workspace" })).toBeTruthy();
 });
 
 test("the same person who skipped it in this tab is not shown it again", async () => {
@@ -43,5 +43,5 @@ test("the same person who skipped it in this tab is not shown it again", async (
   who.id = "omar";
   const { queryByRole } = render(<WorkspacePrepare />);
   await new Promise((r) => setTimeout(r, 50));
-  await waitFor(() => expect(queryByRole("dialog", { name: "Preparing your workspace" })).toBeNull());
+  await waitFor(() => expect(queryByRole("dialog", { name: "Preparing your PROJEXA workspace" })).toBeNull());
 });

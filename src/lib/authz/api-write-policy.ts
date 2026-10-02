@@ -259,6 +259,7 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // carries the same authority requirement.
   "/moms/[id]/share-links": "PM_OR_ABOVE",
   "/moms/share-links/[linkId]": "PM_OR_ABOVE",
+  "/local-first/prepare-report": "ANY_ROLE",
   "/mood-boards": "PM_OR_ABOVE",
   "/mood-boards/[id]": "PM_OR_ABOVE",
   "/mood-boards/[id]/items/[itemId]": "PM_OR_ABOVE",
