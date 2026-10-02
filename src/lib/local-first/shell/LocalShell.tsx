@@ -21,6 +21,7 @@ import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
 import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
+import { connectShellOutbox, type ShellOutbox } from "./shell-outbox";
 import type { ShellApi, ShellRoute, ShellScreenProps } from "./types";
 
 type Boot =
@@ -162,12 +163,39 @@ export default function LocalShell() {
     };
   }, [writer, boot, refresh]);
 
+  // The person's outbox (every screen's writes but the BOQ edit queue above): started as soon as the shell knows who they are, so what
+  // a reload left waiting is sent when the laptop is back online (shell-outbox.ts says why this was missing).
+  const outboxRef = useRef<ShellOutbox | null>(null);
+  useEffect(() => {
+    if (!userId) return;
+    let live: ShellOutbox | null = null;
+    let cancelled = false;
+    void import("../outbox-shared").then(({ getSharedOutbox }) => {
+      if (cancelled) return;
+      live = connectShellOutbox(userId, { getOutbox: getSharedOutbox, onSettled: refresh });
+      outboxRef.current = live;
+    }).catch(() => {
+      /* the outbox could not load: edits stay stored and are sent by the next page load */
+    });
+    return () => {
+      cancelled = true;
+      live?.stop();
+      if (outboxRef.current === live) outboxRef.current = null;
+    };
+  }, [userId, refresh]);
+
   // Back online: send what waited. The person coming back to the tab is a good moment to try again too (one try, no timer storm).
   useEffect(() => {
-    if (connectivity === "online") schedulerRef.current?.nudge({ immediate: true });
+    if (connectivity === "online") {
+      schedulerRef.current?.nudge({ immediate: true });
+      outboxRef.current?.nudge();
+    }
   }, [connectivity]);
   useEffect(() => {
-    const onFocus = () => schedulerRef.current?.nudge({ immediate: true });
+    const onFocus = () => {
+      schedulerRef.current?.nudge({ immediate: true });
+      outboxRef.current?.nudge();
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);

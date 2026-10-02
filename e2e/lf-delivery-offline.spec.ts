@@ -32,6 +32,31 @@ async function open(page: Page, path: string, testId: string) {
   await expect(page.getByTestId(testId)).toHaveAttribute("data-state", "local");
 }
 
+/** Types like a person: one real keystroke at a time (the lf-e8 crash only showed on real keystrokes, never on `fill`). */
+async function type(page: Page, label: string, text: string) {
+  const box = page.getByLabel(label, { exact: true });
+  await box.click();
+  await box.press("ControlOrMeta+a");
+  await box.press("Backspace");
+  await page.keyboard.type(text, { delay: 15 });
+  await expect(box).toHaveValue(text);
+}
+
+/** A date the way a person types it into Chromium's date box (en-US segments: month, day, year), with real keystrokes. */
+async function typeDate(page: Page, label: string, iso: string) {
+  const box = page.getByLabel(label, { exact: true });
+  const [y, m, d] = iso.split("-");
+  await box.focus();
+  await page.keyboard.type(`${m}${d}${y}`, { delay: 15 });
+  await expect(box).toHaveValue(iso);
+}
+
+/** Back online: the browser's switch, the stubs, and the person coming back to the tab. */
+async function backOnline(page: Page, context: Parameters<typeof goOnline>[0], net: Net, app: Parameters<typeof goOnline>[2]) {
+  await goOnline(context, net, app);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+}
+
 test("member, offline: work progress, labour, materials and the schedule open from the laptop with their real values", async ({ page, context }) => {
   const net: Net = { mode: "up" };
   const problems = watchConsole(page);
@@ -79,6 +104,55 @@ test("member, offline: work progress, labour, materials and the schedule open fr
     await expect(rows).toHaveCount(2);
     await expect(rows.filter({ hasText: "Partition framing" })).toContainText("2026-09-20");
     await expect(page.getByText("Old mock-up wall")).toHaveCount(0);
+    await noCrash(page, problems);
+  });
+});
+
+test("member, offline: a progress entry typed on the laptop waits, survives a reload, and is sent exactly once when the connection is back", async ({ page, context }) => {
+  const net: Net = { mode: "up" };
+  const problems = watchConsole(page);
+  const { session, sync, app } = await prepareDeliveryLaptop(page, context, net, "member", expect);
+  await goOffline(context, net, app);
+  problems.length = 0;
+
+  await test.step("offline: type the entry with real keystrokes and save it", async () => {
+    await open(page, `/work-progress${q}`, "work-progress");
+    await page.getByLabel("BOQ line").selectOption("dl-line-2");
+    await type(page, "Quantity done", "37.5");
+    await typeDate(page, "Date", TODAY);
+    await type(page, "Remarks", "Second coat, grid C-D");
+    await page.getByRole("button", { name: "Save entry" }).click();
+    await expect(page.getByTestId("save-note")).toHaveText("Saved on this laptop. It will be sent to the server when you are connected.");
+    const waiting = page.getByTestId("work-progress-row").filter({ hasText: "Second coat, grid C-D" });
+    await expect(waiting).toContainText("37.5");
+    await expect(waiting).toContainText("Worked out when sent");
+    await expect(waiting.getByTestId("waiting")).toHaveText("Waiting to sync");
+    expect(sync.pushes, "something was sent while offline").toHaveLength(0);
+    await noCrash(page, problems);
+  });
+
+  await test.step("offline: a reload keeps the entry and its op (outbox + optimistic row persisted)", async () => {
+    await page.reload();
+    await expect(page.getByTestId("work-progress-row").filter({ hasText: "Second coat, grid C-D" }).getByTestId("waiting")).toHaveText("Waiting to sync");
+    const ops = await readOutbox(page, session.userId);
+    expect(ops).toEqual([expect.objectContaining({ functionId: "record_work_progress", status: "pending" })]);
+  });
+
+  await test.step("online: sent once, with the registry's own parameter names, and the waiting mark clears", async () => {
+    await backOnline(page, context, net, app);
+    await expect.poll(() => sync.pushes.length, { timeout: 60_000, message: "the offline progress entry was never sent" }).toBe(1);
+    expect(sync.pushes[0]).toMatchObject({
+      function_id: "record_work_progress", project_id: PROJECT_ID, record_kind: "progress",
+      params: { projectId: PROJECT_ID, boqLineItemId: "dl-line-2", entryDate: TODAY, quantityDone: 37.5, remarks: "Second coat, grid C-D" },
+    });
+    expect(Object.keys(sync.pushes[0].params).sort()).toEqual(["boqLineItemId", "entryDate", "projectId", "quantityDone", "remarks"]);
+    // the server's row (its percent: 37.5 of 300 m2 = 12.5 %) replaces the laptop's guess
+    const row = page.getByTestId("work-progress-row").filter({ hasText: "Second coat, grid C-D" });
+    await expect(row).toContainText("12.5%", { timeout: 30_000 });
+    await expect(row.getByTestId("waiting")).toHaveCount(0);
+    await expect.poll(() => readOutbox(page, session.userId)).toEqual([]);
+    await page.waitForTimeout(3_000); // a second flush pass must not send it again
+    expect(sync.pushes).toHaveLength(1);
     await noCrash(page, problems);
   });
 });
