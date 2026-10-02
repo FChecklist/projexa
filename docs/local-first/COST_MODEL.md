@@ -74,6 +74,26 @@ The model is right that the id repair and the jobs poll were the two biggest fix
 
 Correctness is kept and tested: a colleague's change still arrives (by the feed, version-checked), deletes still arrive (tombstones at once, the weekly repair for untracked ones), a project taken away still leaves the laptop, a dirty row is still never overwritten (unchanged code paths). Tests: `cost/replica-cost.test.ts`, `cost/scheduler-cost.test.ts`, `jobs/runner.test.ts`, `cost/cost-budget.test.ts`.
 
+## Package lf-fc (2026-10-02): flag off, pacing, the circuit breaker, sign-out
+
+Measured with the same harness (`cost-budget.test.ts`) and the breaker tests (`cost/replica-breaker.test.ts`, P = 10 projects x 28 kinds, the real sync client
+with the app's `maxRetries: 2`):
+
+| Scenario | Before FC | After FC | Test |
+|---|---:|---:|---|
+| Local-first flag OFF, a person signs in (P=10) | 401 (first sync run by WorkspacePrepare, result never read) | **0** | `replica-shared.test.ts`, `WorkspacePrepare.flag-off.test.tsx` |
+| (a) idle 8 h | 50 | 50 | cost-budget (a) |
+| (b) working day | 209 | 209 | cost-budget (b) |
+| (c) cold start, 5 projects | 163, measured with the server's cap LIFTED | **163 under the REAL 120/min cap: 0 answered 429, busiest minute 101** | cost-budget (c), (c2) |
+| (d) reconnect after 3 days | 18 | 18 | cost-budget (d) |
+| (e) ten laptops, per laptop | 212.2 | 216.2 (the paced first copy moves each laptop's day one simulated minute later) | cost-budget (e) |
+| STORM A: every `/pull` answers 500, P=10 | 851 | **20**, then 0 until the stop ends (every tab) | replica-breaker |
+| STORM C: the per-minute cap (40/min in the test) | 639 requests, 519 answered 429 | **43**, at most 6 answered 429 | replica-breaker |
+| The daily quota (429, no Retry-After) | 3 tries per pair, every pair | **at most 2 pulls**, then nothing for at least 1 hour | replica-breaker, sync-client |
+| Sign out in the evening, sign in next morning (P=10) | 401 (the copy was wiped) | **0 for the copy** (kept by default; the morning's normal feed check only) | sign-out.test.ts "a kept copy really is reused" |
+
+The ten-laptop world keeps the fake's cap lifted: the fake counts every caller against ONE limit, while the real limit is per person.
+
 ## Vercel: what a normal navigation costs once the release is installed and local-first mode is on
 
 Read from `next.config.ts`, `vercel.json`, `src/middleware.ts`, `src/app/sw.js/route.ts`, `src/lib/local-first/release/sw-core.ts`, `src/app/local/**`.
@@ -100,5 +120,5 @@ Two Vercel costs worth an owner decision (not changed here; `vercel.json`, the m
 
 - Supabase **egress** and **Realtime** messages (peer signalling): estimated by the backend model, not measured by this harness (peers are not simulated; their rows move over WebRTC, which costs no invocation).
 - Supabase **Auth** token refreshes (`/auth/v1/token`): a separate Supabase service, not an Edge invocation.
-- The rate cap: the Edge function allows 120 requests a minute per person per isolate. The cold start sends ~160 requests as fast as the laptop can; it may meet a 429 (`Retry-After: 60`). The client retries (twice, waiting up to 30 s), and anything left is completed by the next scheduled run. The harness's fake server has no rate cap, so this was not measured.
+- The rate cap: measured since package lf-fc (see its section above): the cold start is paced at 100 a minute and completes under the real cap with no 429.
 - Jobs requests from a REQUESTER (`jobs/requester.ts`: enqueue + a get every 1.5 s for up to 8 s ≈ 6 calls per request). Neither the requester nor the claim loop is started anywhere in the app today.
