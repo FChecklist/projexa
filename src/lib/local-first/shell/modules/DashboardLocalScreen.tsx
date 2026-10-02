@@ -18,6 +18,7 @@ import { asOfLabel } from "../snapshot-cache";
 import { projectDashboardFor, projectDashboardSnapshotName, projectDashboardUrl, type DashboardData, type Fact } from "./dashboard-adapter";
 import type { StatusCount } from "./dashboard-facts";
 import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-refresh";
+import { useOverviewCatchUp } from "./overview-catch-up";
 
 function Card({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
   return (
@@ -71,6 +72,8 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
     ? [{ name: projectDashboardSnapshotName(data.projectId), url: projectDashboardUrl(data.projectId), validate: projectDashboardFor(data.projectId) }]
     : [];
   const status = useSnapshotRefresh(shell, reads);
+  // the facts below are counted from the laptop's copy: keep the open project's copy current while this is on screen
+  useOverviewCatchUp(shell, data.projectId);
   const outbox = usePeekedOutbox(shell.data.userId);
   const online = shell.connectivity === "online";
   const w = data.waiting;

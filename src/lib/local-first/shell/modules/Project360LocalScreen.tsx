@@ -12,6 +12,7 @@ import type { Fact } from "./dashboard-adapter";
 import type { StatusCount } from "./dashboard-facts";
 import { OverviewBody } from "./OverviewBody";
 import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-refresh";
+import { useOverviewCatchUp } from "./overview-catch-up";
 
 function StatusCard({ title, fact, testId }: { title: string; fact: Fact<StatusCount[]>; testId: string }) {
   return (
@@ -33,6 +34,8 @@ function StatusCard({ title, fact, testId }: { title: string; fact: Fact<StatusC
 export default function Project360LocalScreen({ shell, data }: ShellScreenProps<Project360Data>) {
   const reads: SnapshotRead[] = data.state === "local" ? [{ name: boqAnalysisSnapshotName(data.projectId), url: boqAnalysisUrl(data.projectId), validate: isBoqAnalysisBody }] : [];
   const status = useSnapshotRefresh(shell, reads);
+  // the status counts below are counted from the laptop's copy: keep the open project's copy current while this is on screen
+  useOverviewCatchUp(shell, data.state === "local" ? data.projectId : null);
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
 
   if (data.state === "no_project") {
