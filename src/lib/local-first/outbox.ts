@@ -205,6 +205,9 @@ export type OutboxOptions = {
   requestPersistence?: () => Promise<string>;
 };
 
+/** `connectivityBack`: the browser just came back online (its `online` event); ops that only failed for want of a network go at once. */
+export type FlushOptions = { connectivityBack?: boolean };
+
 export type ResolveChoice =
   /** changed: drop my change of the disagreeing fields and take the newest server row (other fields of mine still go). deleted: same as discard. */
   | "keep_theirs"
@@ -220,7 +223,7 @@ export type ResolveChoice =
 export type Outbox = {
   enqueue(input: EnqueueInput): Promise<{ opId: string }>;
   /** Sends what is due and settles every answer. Never throws; concurrent calls share one pass. */
-  flush(): Promise<FlushReport>;
+  flush(opts?: FlushOptions): Promise<FlushReport>;
   getConflicts(): Promise<OutboxConflict[]>;
   getBlocked(): Promise<OutboxBlocked[]>;
   /** Settles a conflict (see ResolveChoice). */
@@ -301,6 +304,8 @@ const ENVELOPE_BYTES = 512;
 
 /** Codes that mean "the server does not know yet whether it was done": re-ask with the same op_id, a bounded number of times. */
 const UNCERTAIN_CODES: ReadonlySet<string> = new Set(["EXECUTION_UNCERTAIN", "IN_PROGRESS", "NO_RESULT", "BAD_ANSWER"]);
+/** The request never got an answer (sync-client SyncErrorKind "network" / "timeout"): nothing reached the server. */
+const NETWORK_CODES: ReadonlySet<string> = new Set(["network", "timeout"]);
 /** Whole-request answers that will not change by themselves: counted, then the person is asked (COST-07). */
 const REFUSAL_CODES: ReadonlySet<string> = new Set(["bad_response", "not_found", "FOREIGN_ORGANISATION"]);
 
@@ -355,6 +360,8 @@ export function createOutbox(options: OutboxOptions): Outbox {
   const listeners = new Set<(event: OutboxEvent) => void>();
   let flushing: Promise<FlushReport> | null = null;
   let rerun = false;
+  /** Set by flush({connectivityBack}): the next pass first makes every op that only failed for want of a network due now. */
+  let connectivityBack = false;
   let paused: UpdateRequiredDetails | null = null;
   let notLinked = false;
   let disposed = false;
@@ -727,6 +734,15 @@ export function createOutbox(options: OutboxOptions): Outbox {
   async function onePass(report: FlushReport): Promise<void> {
     const mergesThisPass = new Map<string, number>();
     await withDb(async (db) => {
+      // lf-e11: the connection is back. An op whose last failure was only the network never reached the server, so its backoff
+      // (which grew with every try made while offline, up to 5 minutes) must not keep it waiting: it is due now. A failure the SERVER
+      // answered (5xx, 429, an uncertain outcome) keeps its backoff.
+      if (connectivityBack) {
+        connectivityBack = false;
+        for (const op of await db.listOps()) {
+          if (op.status === "pending" && op.nextAttemptAt > now() && NETWORK_CODES.has(op.lastError ?? "")) await db.updateOp(op.opId, { nextAttemptAt: 0 });
+        }
+      }
       for (let guard = 0; guard < 10_000; guard += 1) {
         const ops = await db.listOps();
         const manifest = await db.getMeta<StoredManifest>(MANIFEST_KEY);
@@ -873,7 +889,8 @@ export function createOutbox(options: OutboxOptions): Outbox {
     return ran ? (result as T) : busy();
   }
 
-  function flush(): Promise<FlushReport> {
+  function flush(opts?: FlushOptions): Promise<FlushReport> {
+    if (opts?.connectivityBack) connectivityBack = true;
     if (paused) return Promise.resolve({ ...emptyReport("update_required"), remaining: state.pending, skipped: "paused" });
     if (notLinked) return Promise.resolve({ ...emptyReport("not_linked"), remaining: state.pending, skipped: "paused" });
     // Joins the pass in flight. The pass looks at the outbox again after every request, so an edit made while it runs is

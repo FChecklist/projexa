@@ -48,7 +48,8 @@ export function getSharedOutbox(userId: string): Outbox {
     outbox = created;
     outboxes.set(userId, created);
     if (typeof window !== "undefined") {
-      const handler = () => { void created.flush(); };
+      // lf-e11: `connectivityBack` -- what was made offline goes NOW, not after the backoff its offline tries built up (up to 5 minutes).
+      const handler = () => { void created.flush({ connectivityBack: true }); };
       onlineHandlers.set(userId, handler);
       window.addEventListener("online", handler);
     }
