@@ -81,9 +81,11 @@ describe("first sync of the organisation (as per role)", () => {
 
   test("an older service (no org_kinds in the manifest) costs no organisation call at all", async () => {
     const t = setup("member");
+    // The replica wraps its client when it is created (paced, with the breaker), so the older service is in place BEFORE the replica exists.
     const base = t.server.client.manifest;
-    t.server.client.manifest = async () => { const m = await base(); delete m.org_kinds; delete m.org_view_class; return m; };
-    expect((await t.replica.sync()).status).toBe("done");
+    const older = { ...t.server.client, manifest: async (...a: Parameters<typeof base>) => { const m = await base(...a); delete m.org_kinds; delete m.org_view_class; return m; } };
+    const replica = createReplica({ userId: U, client: older, idb: t.idb, yieldFn: async () => {}, now: () => Date.parse("2026-10-02T10:00:00Z") });
+    expect((await replica.sync()).status).toBe("done");
     expect(t.server.calls.filter((c) => c.projectId === ORG_PROJECT)).toEqual([]);
   });
 });
