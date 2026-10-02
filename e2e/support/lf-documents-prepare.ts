@@ -94,7 +94,9 @@ export async function goOnline(context: BrowserContext, p: Prepared) {
 }
 
 /** Opens an app path from the on-laptop shell (the worker answers any app navigation with it while offline). */
-export async function openLocal(page: Page, path: string) {
+export async function openLocal(page: Page, path: string, options: { leavesTheShell?: boolean } = {}) {
   const sep = path.includes("?") ? "&" : "?"
-  await page.goto(`/local${path}${path.includes("projectId=") ? "" : `${sep}projectId=${PROJECT_ID}`}`)
+  // A screen that hands over to the server's page (online) replaces the location while the shell is still loading, which aborts a
+  // goto that waits for "load": there, wait only for the navigation to commit and let the caller assert where it ended up.
+  await page.goto(`/local${path}${path.includes("projectId=") ? "" : `${sep}projectId=${PROJECT_ID}`}`, options.leavesTheShell ? { waitUntil: "commit" } : undefined)
 }

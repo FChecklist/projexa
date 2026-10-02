@@ -78,7 +78,7 @@ test("change orders and the timesheet open offline with their real values; money
   expectCleanConsole(p.console)
 
   await test.step("online, cost analysis falls through to the server's own page", async () => {
-    await openLocal(page, "/design-studio/cost-analysis")
+    await openLocal(page, "/design-studio/cost-analysis", { leavesTheShell: true })
     await expect(page).toHaveURL(/\/design-studio\/cost-analysis\?(.*&)?px-server=1/, { timeout: 30_000 })
     await expect(page.getByTestId("local-shell")).toHaveCount(0)
   })

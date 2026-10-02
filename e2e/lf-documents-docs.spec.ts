@@ -110,7 +110,7 @@ test("documents: the four lists and their objects open offline from the laptop, 
   expectCleanConsole(p.console)
 
   await test.step("online, a create screen falls through to the server's own page (never read as the permit whose id is 'new')", async () => {
-    await openLocal(page, "/permits/new")
+    await openLocal(page, "/permits/new", { leavesTheShell: true })
     await expect(page).toHaveURL(/\/permits\/new\?(.*&)?px-server=1/, { timeout: 30_000 })
     expect(new URL(page.url()).searchParams.get("projectId")).toBe(PROJECT_ID)
     expect(new URL(page.url()).pathname).toBe("/permits/new")
