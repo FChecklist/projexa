@@ -64,7 +64,6 @@ describe("cost budget per scenario (requests per laptop, push ops counted twice:
     const r = await jobsIdle8h();
     note(r);
     expect(r.perLaptopTotal).toBeLessThanOrEqual(SCENARIO_BUDGETS.jobsClaimIdle8h);
-    // eslint-disable-next-line no-console
     console.log(["", "COST HARNESS (requests per laptop)", ...table].join("\n"));
   }, 120_000);
 });

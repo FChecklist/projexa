@@ -56,8 +56,10 @@ async function timeline(world: World, events: { at: number; run: () => Promise<v
 }
 
 /** One person's working day: an own edit every 16 minutes, a screen opened every 12 minutes (rotating kinds). */
-function workdayEvents(l: SimLaptop, world: World, offsetMs = 0, project = world.projects[0]): { at: number; run: () => Promise<void> }[] {
-  const events: { at: number; run: () => Promise<void> }[] = [];
+type TimedEvent = { at: number; run: () => Promise<void> | void };
+
+function workdayEvents(l: SimLaptop, world: World, offsetMs = 0, project = world.projects[0]): TimedEvent[] {
+  const events: TimedEvent[] = [];
   for (let i = 0; i < 30; i += 1) events.push({ at: offsetMs + 5 * MINUTE + i * 16 * MINUTE, run: () => l.edit(i) });
   for (let i = 0; i < 40; i += 1) events.push({ at: offsetMs + 2 * MINUTE + i * 12 * MINUTE, run: () => l.openScreen(project, SCREEN_KINDS[i % SCREEN_KINDS.length]) });
   return events;
