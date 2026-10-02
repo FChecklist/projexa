@@ -42,6 +42,11 @@ export const WARM_ROUTES = [
 ] as const;
 
 const SEEN_KEY = "px-workspace-prepare-seen";
+/**
+ * "This person skipped the screen in this tab". PER PERSON (lf-e11): it was one key for the whole tab, so after a sign-out the NEXT person
+ * to sign in on the same tab never got their workspace prepared (found by the real-browser run of two people on one laptop).
+ */
+export const seenKey = (userId: string) => `${SEEN_KEY}:${userId}`;
 
 function pause(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
@@ -218,7 +223,7 @@ export function WorkspacePrepare() {
       .then(({ data }) => {
         if (cancelled || !data.user) return;
         try {
-          if (localStorage.getItem(readyKey(data.user.id)) || sessionStorage.getItem(SEEN_KEY)) return;
+          if (localStorage.getItem(readyKey(data.user.id)) || sessionStorage.getItem(seenKey(data.user.id))) return;
         } catch {
           return; // storage blocked: do not trap the person behind a screen we cannot remember
         }
@@ -245,7 +250,7 @@ export function WorkspacePrepare() {
   }, [open, userId, router]);
 
   const close = () => {
-    try { sessionStorage.setItem(SEEN_KEY, "1"); } catch { /* ignore */ }
+    try { if (userId) sessionStorage.setItem(seenKey(userId), "1"); } catch { /* ignore */ }
     setOpen(false);
   };
 
