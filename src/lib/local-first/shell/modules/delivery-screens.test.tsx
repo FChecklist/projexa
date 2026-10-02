@@ -32,6 +32,7 @@ mock.module("../../outbox-shared", () => ({
 const realReplicaShared = await import("../../replica-shared");
 mock.module("../../replica-shared", () => ({ ...realReplicaShared, revalidateViaSharedReplica: async () => {} }));
 const { default: LocalShell } = await import("../LocalShell");
+const { Money } = await import("./DeliveryParts");
 
 process.env.NEXT_PUBLIC_SUPABASE_URL ??= "http://127.0.0.1:1";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= "test-anon-key-not-a-real-credential";
@@ -151,6 +152,11 @@ describe("the delivery screens open OFFLINE from the laptop's own copy", () => {
     const text = (await worker.findByTestId("labour-worker")).textContent!;
     expect(text).not.toMatch(/7,?777|8,?888/);
     expect(text).toContain("Hidden for your role");
+  });
+
+  test("the money cell on its own: a hidden field never prints its value, even when handed one (the adapters null it too)", () => {
+    const { container } = render(<div><Money value={7777} hidden /><Money value={null} hidden={false} /></div>);
+    expect(container.textContent).toBe("Hidden for your role—");
   });
 
   test("a project not copied yet: calm words, no dialog, nothing fetched", async () => {
