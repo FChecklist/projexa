@@ -153,8 +153,8 @@ describe("RfisClient: the 'saved on this laptop, syncing' marker", () => {
     // the server applies it; the list is read again and shows the real row
     serverRfis = [{ id: "srv-rfi-1", number: 1, subject: "Beam depth", question: "Q?", status: "open", ballInCourt: "architect", answer: null, dueDate: null }];
     await h.outbox.flush();
-    await waitFor(() => expect(view.queryByTestId("pending-sync")).toBeNull());
-    expect(view.queryByTestId("pending-rfi-row")).toBeNull();
+    await waitFor(() => expect(view.queryByTestId("pending-sync") === null).toBe(true));
+    expect(view.queryByTestId("pending-rfi-row") === null).toBe(true);
     expect(view.getByText("RFI-1")).toBeTruthy();
     expect(view.getAllByText("Beam depth")).toHaveLength(1); // not listed twice
   });
@@ -164,7 +164,7 @@ describe("RfisClient: the 'saved on this laptop, syncing' marker", () => {
     h.setRoutes({ "/api/rfis?projectId=p1": () => ({ rfis: [{ id: "a", number: 4, subject: "Door", question: "?", status: "open", ballInCourt: "architect", answer: null, dueDate: null }] }) });
     const view = render(<RfisClient projectId="p1" />);
     await view.findByText("RFI-4");
-    expect(view.queryByTestId("pending-sync")).toBeNull();
+    expect(view.queryByTestId("pending-sync") === null).toBe(true);
   });
 
   test("an answer still on its way is shown as answered, with the marker", async () => {
@@ -201,7 +201,7 @@ describe("RfiObjectClient: answering", () => {
 
     served = { ...OPEN, status: "answered", answer: "Use oak" };
     await h.outbox.flush();
-    await waitFor(() => expect(view.queryByTestId("pending-sync")).toBeNull());
+    await waitFor(() => expect(view.queryByTestId("pending-sync") === null).toBe(true));
     expect(view.getByText("Use oak")).toBeTruthy();
     expect((view.getByRole("button", { name: "Close" }) as HTMLButtonElement).disabled).toBe(false);
     expect(h.server.getRow("rfis", "r1")).toMatchObject({ data: { answer: "Use oak", status: "answered" } });
@@ -249,7 +249,7 @@ describe("ScheduleTaskObjectClient: editing a task", () => {
 
     served = { ...TASK, title: "Joinery shop drawings v2" };
     await h.outbox.flush();
-    await waitFor(() => expect(view.queryByTestId("pending-sync")).toBeNull());
+    await waitFor(() => expect(view.queryByTestId("pending-sync") === null).toBe(true));
     expect(view.getByText(/#12 Joinery shop drawings v2/)).toBeTruthy();
     expect(h.server.getRow("tasks", "t1")).toMatchObject({ version: 2, data: { title: "Joinery shop drawings v2" } });
   });
@@ -264,7 +264,7 @@ describe("ScheduleTaskObjectClient: editing a task", () => {
     // somebody with no right to rename it: the server rejects the op
     h.server.registerFunction("update_task", () => ({ rejected: "NOT_PERMITTED" }));
     await h.outbox.flush();
-    await waitFor(() => expect(view.queryByTestId("pending-sync")).toBeNull());
+    await waitFor(() => expect(view.queryByTestId("pending-sync") === null).toBe(true));
     expect(view.getByText(/#12 Joinery shop drawings$/)).toBeTruthy();
     expect(h.outbox.getState().notices[0]!.message).toBe("Your change to this task was not saved. Your role does not allow that. It was undone on this laptop.");
   });
@@ -277,6 +277,6 @@ describe("ScheduleTaskObjectClient: editing a task", () => {
     await editTitle(view, "Renamed");
     await waitFor(() => expect(h.fetched.some((f) => f.method === "PATCH")).toBe(true));
     expect(await h.outbox.listPending()).toEqual([]);
-    expect(view.queryByTestId("pending-sync")).toBeNull();
+    expect(view.queryByTestId("pending-sync") === null).toBe(true);
   });
 });

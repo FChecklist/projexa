@@ -146,6 +146,20 @@ describe("local database schema 3", () => {
     db.close();
   });
 
+  test("inside a transaction an optimistic change can look at its neighbours, and sees its own earlier writes", async () => {
+    const db = await openLocalDb(new IDBFactory(), "px-tx-reads");
+    await db.putRecords([row("a"), row("b")]);
+    await db.transact(async (tx) => {
+      await tx.putRecord(row("c"));
+      expect((await tx.listByProject("orgA", "rfis", "p1")).map((r) => r.id).sort()).toEqual(["rfis:a", "rfis:b", "rfis:c"]);
+      expect(await tx.listByProject("orgA", "rfis", "other")).toEqual([]);
+      expect((await tx.listByOrg("orgA")).length).toBe(3);
+      expect((await tx.listByOrg("orgA", "tasks")).length).toBe(0);
+      expect((await tx.listByOrg("orgB")).length).toBe(0);
+    });
+    db.close();
+  });
+
   test("a write FROM THE SERVER never overwrites a dirty row: it parks the news in serverCopy", async () => {
     const db = await openLocalDb(new IDBFactory(), "px-park");
     await db.putRecord(row("r", { data: { id: "r", subject: "my edit" }, serverVersion: 2, dirty: "op-1" }));

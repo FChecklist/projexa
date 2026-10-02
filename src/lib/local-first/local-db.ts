@@ -165,6 +165,9 @@ export type WriteOptions = {
 /** The same operations, inside ONE open transaction. Used by transact(); every call must be awaited before the callback ends. */
 export type LocalTx = {
   getRecord(type: string, id: string): Promise<LocalRecord | undefined>;
+  /** One project's rows of one kind (an optimistic change often needs to look at its neighbours). */
+  listByProject(orgId: string, type: string, projectId: string): Promise<LocalRecord[]>;
+  listByOrg(orgId: string, type?: string): Promise<LocalRecord[]>;
   putRecord(record: PutInput): Promise<LocalRecord>;
   /** Merges fields into an existing row (no revision bump). Returns undefined when there is no such row. */
   patchRecord(type: string, id: string, patch: RecordPatch): Promise<LocalRecord | undefined>;
@@ -268,6 +271,13 @@ function txApi(tx: IDBTransaction): LocalTx {
   const api: LocalTx = {
     async getRecord(type, id) {
       return (await req(records().get(`${type}:${id}`))) as LocalRecord | undefined;
+    },
+    async listByProject(orgId, type, projectId) {
+      return (await req(records().index("byOrgTypeProject").getAll([orgId, type, projectId]))) as LocalRecord[];
+    },
+    async listByOrg(orgId, type) {
+      const store = records();
+      return (await req(type ? store.index("byOrgType").getAll([orgId, type]) : store.index("byOrg").getAll(orgId))) as LocalRecord[];
     },
     async putRecord(input) {
       const store = records();
