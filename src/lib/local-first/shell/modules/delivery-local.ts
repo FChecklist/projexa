@@ -46,6 +46,12 @@ export async function readKind<T>(data: ShellData, projectId: string, kind: stri
   }
 }
 
+/** Today on this laptop's own calendar, "YYYY-MM-DD" (a site person's "today" is local, not UTC). */
+export function localDay(now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
 // ─── field readers ─────────────────────────────────────────────────────────────────────────────────────────────
 
 type Obj = Record<string, unknown>;
