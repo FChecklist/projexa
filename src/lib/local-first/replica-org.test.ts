@@ -227,6 +227,45 @@ describe("role change, cost-visibility change, epoch, reset_required", () => {
     expect(((await t.row("vendors", "ven-1"))!.data as Record<string, unknown>).supplier_name).toBe("Ace Cement Ltd");
   });
 
+  test("once an overlap re-read was refused, later runs do not reach below that position again: one feed request per run, not two", async () => {
+    const t = setup("member");
+    await t.replica.sync();
+    t.server.floors.set(ORG_PROJECT, t.server.headOf(ORG_PROJECT));
+    t.server.upsert(ORG_PROJECT, "vendors", "ven-1", { supplier_name: "x" });
+    await t.replica.sync(); // the refused overlap + the retry
+    t.server.calls.length = 0;
+    await t.replica.sync();
+    expect(t.server.calls.filter((c) => c.op === "changes" && c.projectId === ORG_PROJECT).length).toBe(1);
+  });
+
+  test("a server that answers a head BELOW its own floor (whole history pruned, quiet since): a fresh laptop syncs, and does not re-download in a loop", async () => {
+    const t = setup("member");
+    // every feed's history pruned above anything the server will name as its head
+    for (const p of [ORG_PROJECT, "p1", "p2"]) t.server.floors.set(p, t.server.headOf(p) + 50);
+    const first = await t.replica.sync();
+    expect(first.issues).toEqual([]);
+    expect(first.status).toBe("done");
+    expect(await t.ids("vendors")).toEqual(["ven-1", "ven-2"]);
+    for (let i = 0; i < 2; i++) {
+      t.server.calls.length = 0;
+      expect((await t.replica.sync()).status).toBe("done");
+      expect(t.server.calls.filter((c) => c.op === "pull")).toEqual([]);
+    }
+  });
+
+  test("... but a position older than a day is NOT trusted that way: the laptop resyncs (once a day at most), never silently skips", async () => {
+    const t = setup("member");
+    await t.replica.sync();
+    t.advance(25 * HOUR);
+    for (const p of [ORG_PROJECT, "p1", "p2"]) t.server.floors.set(p, t.server.headOf(p) + 50);
+    t.server.calls.length = 0;
+    expect((await t.replica.sync()).status).toBe("done");
+    expect(t.server.calls.filter((c) => c.op === "pull" && c.projectId === "p1").length).toBeGreaterThan(0);
+    t.server.calls.length = 0;
+    expect((await t.replica.sync()).status).toBe("done");
+    expect(t.server.calls.filter((c) => c.op === "pull")).toEqual([]);
+  });
+
   test("a laptop genuinely behind the pruned history (its own position below the floor) resyncs once, then runs normally", async () => {
     const t = setup("member");
     await t.replica.sync();

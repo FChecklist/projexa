@@ -162,6 +162,13 @@ export type StoredManifest = {
   orgNoPeerKinds?: string[];
 };
 export type DoneMarker = { at: number; redacted: boolean; hiddenFields: string[] };
+/**
+ * A project's change-feed position (meta changeCursorKey). `seq` is all an older build wrote and all other readers use. lf-e7 adds
+ * `fresh` (taken by a head read and not moved since) and `noOverlapBelow` (the server's history is pruned below this: do not re-read it).
+ */
+export type FeedPosition = { seq: number; fresh?: number; noOverlapBelow?: number };
+/** The smallest change-log retention the backend's prune accepts (drizzle/0686 projexa_prune_change_log: keep >= 1 day). */
+export const FEED_TRUST_MS = 24 * 60 * 60 * 1000;
 
 const defaultYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -306,7 +313,8 @@ export function createReplica(options: ReplicaOptions): Replica {
     try {
       const head = await options.client.changes({ projectId, afterSeq: null, limit: 1 }, signal);
       if ((await noteEpoch(db, head.epoch)) === "changed") throw classSignal("epoch_changed", { epoch: head.epoch });
-      await db.setMeta(changeCursorKey(projectId), { seq: head.head_seq });
+      // `fresh` (lf-e7): this position came from a head read taken right before a whole pull (at `fresh`, ms), not moved since
+      await db.setMeta(changeCursorKey(projectId), { seq: head.head_seq, fresh: now() } satisfies FeedPosition);
       return true;
     } catch (err) {
       if (err instanceof SyncError && err.kind === "not_found") return false;
@@ -352,11 +360,14 @@ export function createReplica(options: ReplicaOptions): Replica {
   }
 
   async function applyChanges(db: LocalDb, orgId: string, projectId: string, kinds: Set<string>, report: SyncReport, signal: AbortSignal) {
-    const stored = await db.getMeta<{ seq: number } | null>(changeCursorKey(projectId));
+    const stored = await db.getMeta<FeedPosition | null>(changeCursorKey(projectId));
     if (!stored || typeof stored.seq !== "number") return;
     let cursor = stored.seq;
+    let fresh = typeof stored.fresh === "number" ? stored.fresh : null;
+    // lf-e7: below this the server's history is known to be pruned (an earlier overlap re-read was refused there), so it is not asked again
+    let noOverlapBelow = typeof stored.noOverlapBelow === "number" ? stored.noOverlapBelow : 0;
     // The first page of a run re-reads CHANGE_FEED_OVERLAP positions; the stored position itself never moves backwards.
-    let ask = Math.max(0, cursor - CHANGE_FEED_OVERLAP);
+    let ask = Math.min(cursor, Math.max(0, cursor - CHANGE_FEED_OVERLAP, noOverlapBelow));
     for (let pageNo = 0; pageNo < maxPages; pageNo += 1) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
       const page = await options.client.changes({ projectId, afterSeq: ask, limit: SYNC_CHANGES_LIMIT }, signal);
@@ -365,9 +376,20 @@ export function createReplica(options: ReplicaOptions): Replica {
       if ((await noteEpoch(db, page.epoch)) === "changed") throw classSignal("epoch_changed", { epoch: page.epoch });
       if (page.reset_required) {
         // The overlap re-read (ask below our own position) can reach under the server's pruned history (its floor) when our position
-        // sits just above it: that is not a stale laptop. Ask again from our own position first; only a refusal THERE is a real reset
-        // (without this, every run after a prune would re-download the project).
-        if (ask < cursor) { ask = cursor; continue; }
+        // sits just above it: that is not a stale laptop. Ask again from our own position first, and remember not to reach below it
+        // again; only a refusal THERE is a real reset (without this, every run after a prune would re-download the project).
+        if (ask < cursor) {
+          ask = cursor;
+          noOverlapBelow = cursor;
+          await db.setMeta(changeCursorKey(projectId), { seq: cursor, noOverlapBelow, ...(fresh !== null ? { fresh } : {}) } satisfies FeedPosition);
+          continue;
+        }
+        // A position taken by a head read less than FEED_TRUST_MS ago (right before a whole pull, never moved since), with nothing on
+        // the server after it: a resync would land exactly here again. The prune only removes history older than its retention (at
+        // least one day, drizzle/0686), so nothing after this position can have been pruned: this is the server answering a head BELOW
+        // its own floor (a feed whose whole history was pruned and that has been quiet since; reported to the backend), not a stale
+        // laptop. Carry on. An older position is reset as usual (at most one such resync a day).
+        if (fresh !== null && now() - fresh < FEED_TRUST_MS && page.head_seq <= cursor) return;
         throw classSignal("reset_required", { projectId });
       }
       await applyChangePage(db, orgId, projectId, kinds, page.changes, report, signal);
@@ -376,8 +398,9 @@ export function createReplica(options: ReplicaOptions): Replica {
       }
       // The page's effects are stored: only now may the feed position move.
       if (page.next_seq > cursor) {
-        await db.setMeta(changeCursorKey(projectId), { seq: page.next_seq });
+        await db.setMeta(changeCursorKey(projectId), { seq: page.next_seq, ...(noOverlapBelow > 0 ? { noOverlapBelow } : {}) } satisfies FeedPosition);
         cursor = page.next_seq;
+        fresh = null;
       }
       ask = Math.max(ask, page.next_seq);
       if (!page.has_more) return;
