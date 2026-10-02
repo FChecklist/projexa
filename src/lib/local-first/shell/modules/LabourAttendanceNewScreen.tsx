@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
 import { ATTENDANCE_STATUSES, markAttendanceOffline, type AttendanceStatus } from "./delivery-writes";
-import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, ReadOnlyNote, SaveNote, Screen, StateMessage, fieldClass, mayWrite, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import type { LabourData } from "./labour-adapter";
 import { statusWord } from "./LabourScreen";
 
@@ -35,7 +35,9 @@ export default function LabourAttendanceNewScreen({ shell, query, data }: ShellS
   return (
     <Screen testId="labour-attendance-new" state="local" title={`Mark attendance${name ? ` / ${name}` : ""}`}>
       <CopyNote testId="labour-attendance-new-copy-note" syncedAt={data.syncedAt} />
-      {active.length === 0 ? (
+      {!mayWrite(shell) ? (
+        <ReadOnlyNote />
+      ) : active.length === 0 ? (
         <p className="mt-4 text-sm text-px-muted">There is no active worker on this project&apos;s roster on this laptop.</p>
       ) : (
         <form onSubmit={submit} className="mt-4 max-w-xl rounded-lg border border-black/10 bg-white p-4" data-testid="labour-attendance-form">

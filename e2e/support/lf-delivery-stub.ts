@@ -352,6 +352,55 @@ export async function goOnline(context: BrowserContext, net: Net, app: AppStub) 
   await context.setOffline(false)
 }
 
+// ─── a person at the screen ─────────────────────────────────────────────────────────────────────
+
+type Expect = typeof import("@playwright/test").expect
+
+/**
+ * Next.js mounts ONE empty role="alert" (its route announcer, id __next-route-announcer__), and the outbox card (OutboxAttention) says a
+ * turned-down change with role="alert" ON PURPOSE; any other alert or dialog is an error.
+ */
+export async function noCrash(page: Page, problems: string[], expect: Expect) {
+  await expect(
+    page.locator('[role="dialog"], [role="alertdialog"], [role="alert"]:not(#__next-route-announcer__):not([data-testid="outbox-attention"] [role="alert"])'),
+    "an error or dialog appeared"
+  ).toHaveCount(0)
+  await expect(page.getByText(/Application error|Something went wrong|Unhandled Runtime Error/i)).toHaveCount(0)
+  await expect(page.getByTestId("local-shell-error"), "the shell could not read this screen").toHaveCount(0)
+  expect(problems, "page errors / console errors").toEqual([])
+}
+
+/** Opens a shell path and waits for its screen in the given state. */
+export async function openScreen(page: Page, path: string, testId: string, expect: Expect, state = "local") {
+  await page.goto(`/local${path}`)
+  await expect(page.getByTestId(testId)).toHaveAttribute("data-state", state)
+}
+
+/** Types like a person: one real keystroke at a time (the lf-e8 crash only showed on real keystrokes, never on `fill`). */
+export async function typeInto(page: Page, label: string, text: string, expect: Expect) {
+  const box = page.getByLabel(label, { exact: true })
+  await box.click()
+  await box.press("ControlOrMeta+a")
+  await box.press("Backspace")
+  await page.keyboard.type(text, { delay: 15 })
+  await expect(box).toHaveValue(text)
+}
+
+/** A date the way a person types it into Chromium's date box (en-US segments: month, day, year), with real keystrokes. */
+export async function typeDate(page: Page, label: string, iso: string, expect: Expect) {
+  const box = page.getByLabel(label, { exact: true })
+  const [y, m, d] = iso.split("-")
+  await box.focus()
+  await page.keyboard.type(`${m}${d}${y}`, { delay: 15 })
+  await expect(box).toHaveValue(iso)
+}
+
+/** Back online: the browser's switch, the stubs, and the person coming back to the tab. */
+export async function backOnline(page: Page, context: BrowserContext, net: Net, app: AppStub) {
+  await goOnline(context, net, app)
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+}
+
 // ─── console hygiene ────────────────────────────────────────────────────────────────────────────
 
 /**

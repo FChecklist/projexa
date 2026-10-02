@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import {
-  LONG_LINE_TEXT, PROJECT_ID, PROJECT_NAME, goOffline, goOnline, prepareDeliveryLaptop, readOutbox, setNetwork, today, watchConsole,
-  type Net,
+  LONG_LINE_TEXT, PROJECT_ID, PROJECT_NAME, backOnline, goOffline, noCrash as checkNoCrash, openScreen, prepareDeliveryLaptop, readOutbox, today,
+  typeDate as typeDateInto, typeInto, watchConsole, type Net,
 } from "./support/lf-delivery-stub";
 
 // LOCAL-FIRST, package lf-e10a: the delivery modules (work progress, labour, materials, schedule) on the laptop with NO internet, in a real
@@ -19,43 +19,10 @@ import {
 const q = `?projectId=${PROJECT_ID}`;
 const TODAY = today();
 
-// Next.js mounts ONE empty role="alert" (its route announcer, id __next-route-announcer__); any other alert or dialog is a crash/error.
-async function noCrash(page: Page, problems: string[]) {
-  await expect(page.locator('[role="dialog"], [role="alertdialog"], [role="alert"]:not(#__next-route-announcer__)'), "an error or dialog appeared").toHaveCount(0);
-  await expect(page.getByText(/Application error|Something went wrong|Unhandled Runtime Error/i)).toHaveCount(0);
-  expect(problems, "page errors / console errors").toEqual([]);
-}
-
-/** Opens a shell path offline and waits for its screen. */
-async function open(page: Page, path: string, testId: string) {
-  await page.goto(`/local${path}`);
-  await expect(page.getByTestId(testId)).toHaveAttribute("data-state", "local");
-}
-
-/** Types like a person: one real keystroke at a time (the lf-e8 crash only showed on real keystrokes, never on `fill`). */
-async function type(page: Page, label: string, text: string) {
-  const box = page.getByLabel(label, { exact: true });
-  await box.click();
-  await box.press("ControlOrMeta+a");
-  await box.press("Backspace");
-  await page.keyboard.type(text, { delay: 15 });
-  await expect(box).toHaveValue(text);
-}
-
-/** A date the way a person types it into Chromium's date box (en-US segments: month, day, year), with real keystrokes. */
-async function typeDate(page: Page, label: string, iso: string) {
-  const box = page.getByLabel(label, { exact: true });
-  const [y, m, d] = iso.split("-");
-  await box.focus();
-  await page.keyboard.type(`${m}${d}${y}`, { delay: 15 });
-  await expect(box).toHaveValue(iso);
-}
-
-/** Back online: the browser's switch, the stubs, and the person coming back to the tab. */
-async function backOnline(page: Page, context: Parameters<typeof goOnline>[0], net: Net, app: Parameters<typeof goOnline>[2]) {
-  await goOnline(context, net, app);
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-}
+const noCrash = (page: Page, problems: string[]) => checkNoCrash(page, problems, expect);
+const open = (page: Page, path: string, testId: string) => openScreen(page, path, testId, expect);
+const type = (page: Page, label: string, text: string) => typeInto(page, label, text, expect);
+const typeDate = (page: Page, label: string, iso: string) => typeDateInto(page, label, iso, expect);
 
 test("member, offline: work progress, labour, materials and the schedule open from the laptop with their real values", async ({ page, context }) => {
   const net: Net = { mode: "up" };

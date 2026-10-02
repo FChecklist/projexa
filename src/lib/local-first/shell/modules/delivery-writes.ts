@@ -26,6 +26,7 @@
 // holds more than one activity (`several_activities`), and the screen says that the entry needs the server today. It accepts when the
 // project has exactly one activity (the server's choice is that one) or none (the server makes the default one, as online).
 
+import { rankOf } from "../../ai/registry";
 import { localDbNameFor, openLocalDb } from "../../local-db";
 import type { Outbox } from "../../outbox";
 import { MANIFEST_KEY, type StoredManifest } from "../../replica";
@@ -219,6 +220,18 @@ export async function recordProgressOffline(data: ShellData, input: ProgressInpu
     }),
   });
 }
+
+/**
+ * Whether the delivery screens OFFER a write to this role. Every write here needs rank 2 in the AI work link (registry min_role_rank;
+ * compliance-tracker ai_work_link__role_rank); the roles of rank 1 (viewer, client_viewer, external_auditor, stage_0) are read-only, so
+ * no form, link or mark button is shown to them (lf-e10a found every one offered to a viewer). This only DECLINES to offer: it never
+ * grants anything, and the server decides every op again under the person's live role. A role the laptop does not know (or none yet)
+ * is offered the screen as before -- the server's answer then reaches the person through the outbox card.
+ */
+export function canOfferWrites(role: string | null): boolean {
+  return rankOf(role) !== READ_ONLY_RANK;
+}
+const READ_ONLY_RANK = 1;
 
 /** The person-facing sentence for a refusal (the screens show it under the form; never a dialog). */
 export function refusalText(reason: WriteRefusal): string {
