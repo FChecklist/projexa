@@ -6,6 +6,7 @@ import { getLocale, getMessages } from "next-intl/server";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import { LocalFirstBoot } from "@/components/local-first/LocalFirstBoot";
 import { pickClientMessages, type MessageTree } from "@/i18n/client-messages";
 import "./globals.css";
 
@@ -105,6 +106,7 @@ export default async function RootLayout({
           </ThemeProvider>
           <Toaster position="top-right" richColors />
           <ServiceWorkerRegister />
+          <LocalFirstBoot />
         </NextIntlClientProvider>
       </body>
     </html>

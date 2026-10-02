@@ -73,6 +73,10 @@ export const TASK_ERROR_CODES = [
   "BACKEND_UNAVAILABLE",
   "UPSTREAM_TIMEOUT",
   "INTERNAL_ERROR",
+  // LOCAL-FIRST review F11 (2026-10-02): two permanent refusals of the sync service's push (compliance-tracker drizzle/0681
+  // projexa_sync_push_begin) that no code above describes honestly. The service's other refusal codes are ALIASES (SERVER_CODE_ALIASES).
+  "NOT_SAVABLE_FROM_LAPTOP",
+  "DAILY_LIMIT_REACHED",
   // R67 merge (D-11): WS-C's own fallback code. Nothing outside this file
   // ever names it by string literal (checked: no other src/ file references
   // "UNKNOWN"), so adding it is additive and cannot collide with anything WS-B
@@ -291,6 +295,12 @@ const ENTRIES: Readonly<Record<TaskErrorCode, Entry>> = {
   BACKEND_UNAVAILABLE: { message: () => "The construction data service didn't answer — nothing was saved", ...RETRY_STEP },
   UPSTREAM_TIMEOUT: { message: () => "The construction data service took too long — nothing was saved", ...RETRY_STEP },
   INTERNAL_ERROR: { message: () => "Something went wrong on our side — nothing was saved", ...RETRY_STEP },
+
+  // ---- what the sync service refused for a change made on the laptop copy (review F11) --------------------
+  // FUNCTION_NOT_ALLOWED: the write is not one the laptop may send (not a registered write on the AI link). Sending it again cannot help.
+  NOT_SAVABLE_FROM_LAPTOP: { message: () => "This change cannot be saved from the laptop copy — make it on its screen while online", ...openRoute("Open Home", "/dashboard") },
+  // CAP_DAY: a per-person daily cap (e.g. 5 new projects a day).
+  DAILY_LIMIT_REACHED: { message: () => "You have reached today's limit for this — try again tomorrow", ...openRoute("Open Home", "/dashboard") },
 
   // ---- WS-C's own fallback, kept for resolveTaskError() ------------------
   UNKNOWN: { message: () => "Something went wrong", ...RETRY_STEP },
@@ -516,6 +526,14 @@ const SERVER_CODE_ALIASES: Readonly<Record<string, TaskErrorCode>> = {
   INFRA_UNAVAILABLE: "BACKEND_UNAVAILABLE",
   CONNECT_TIMEOUT: "BACKEND_UNAVAILABLE",
   SERVICE_UNAVAILABLE: "BACKEND_UNAVAILABLE",
+  // LOCAL-FIRST review F11: the sync service's push refusals (compliance-tracker drizzle/0681, handler.ts push()), each to the code
+  // whose sentence is true for it. Without these every one of them read "The server did not accept it".
+  ROLE_TOO_LOW: "NOT_PERMITTED",
+  PROJECT_NOT_READABLE: "PROJECT_NOT_REACHABLE",
+  FUNCTION_NOT_ALLOWED: "NOT_SAVABLE_FROM_LAPTOP",
+  CAP_DAY: "DAILY_LIMIT_REACHED",
+  BAD_OP: "REQUEST_REJECTED",
+  OP_ID_REUSED: "REQUEST_REJECTED",
 };
 
 /** A code string from the server, narrowed to the closed set. */

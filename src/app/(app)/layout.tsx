@@ -4,6 +4,9 @@ import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
 import M24Shell from "@/components/shell/M24Shell";
 import { ShellScreenProvider } from "@/components/shell/shell-screen-context";
 import { WorkspacePrepare } from "@/components/WorkspacePrepare";
+import { OutboxAttention } from "@/components/OutboxAttention";
+import { AiAttach } from "@/lib/local-first/ai/AiAttach";
+import { LocalFirstDefault } from "@/components/local-first/LocalFirstDefault";
 
 // R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
 // cc_spec point 187). It is the ONE place that governs all 53 app routes, so
@@ -50,9 +53,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // second, independent answer of its own and disagreeing with the pane.
   return (
     <VeriChatProvider>
+      {/* LOCAL-FIRST: a signed-in person is on the laptop-first path by default (renders nothing; first, so it runs before any effect reads the flag). */}
+      <LocalFirstDefault />
       <ShellScreenProvider>
         <M24Shell>{children}</M24Shell>
         <WorkspacePrepare />
+        {/* LOCAL-FIRST: renders nothing unless the flag is on and a change made on this laptop needs the person (a conflict, a refusal, ...). */}
+        <OutboxAttention />
+        {/* LOCAL-FIRST browser AI (R11): window.projexa.ai, WebMCP tools, the in-page manual and the
+            one-click confirmation of an AI's delete, on every signed-in page. See docs/local-first/BROWSER_AI.md. */}
+        <AiAttach />
       </ShellScreenProvider>
     </VeriChatProvider>
   );

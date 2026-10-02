@@ -217,6 +217,10 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/disclaimer",
   "/login",
   "/signup",
+  // LOCAL-FIRST: the static on-laptop shell. It is not a module: it is the whole app drawn from the laptop's own database, served by the
+  // service worker when the laptop is offline, our server is down, or local-first mode is on. A sidebar entry would point the app at itself.
+  "/local",
+  "/local/[...path]",
   // G-08. The password recovery route. /forgot-password is reached from
   // /login (which is the only screen a locked-out user can see) and
   // /reset-password only from the emailed link, via /auth/callback. Neither

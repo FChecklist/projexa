@@ -230,7 +230,11 @@ import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
 import { invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
+import { toast } from "sonner";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
+import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
+import { reactToSignedOut } from "@/lib/local-first/sign-out-everywhere";
+import { isLocalFirstEnabled } from "@/lib/local-first/local-reader";
 import {
   LEGACY_FALLBACK_MESSAGE,
   describeReadError,
@@ -1107,8 +1111,16 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
 
   const refreshShell = shell.refresh;
 
+  // LOCAL-FIRST: with the laptop copy switched on, a signed-in person's pending edits (made offline, or before a reload) resume
+  // sending as soon as the shell knows who they are. With the flag off nothing here runs and nothing is loaded.
+  useEffect(() => {
+    if (!userId || !isLocalFirstEnabled()) return;
+    void import("@/lib/local-first/outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
+  }, [userId]);
+
   // F_025, first half: this tab's own sign-in/sign-out.
   useEffect(() => {
+    let live = true;
     const supabase = createClient();
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN") {
@@ -1120,18 +1132,40 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         // here, for all six answers rather than one.
         void refreshShell();
       } else if (event === "SIGNED_OUT") {
-        setInfo(null);
-        setUserId(null);
-        // Covers the sign-out that happened in ANOTHER tab as well as this
-        // one's own: the cookie is shared by every tab, so whichever tab sees
-        // the event first must clear it.
-        rememberSelectedProject(null);
-        // The device copy of a project's BOQ goes too; the event carries no session, so every stored copy on this browser is cleared.
-        void clearBoqDeviceCopiesOnSignOut();
+        // LOCAL-FIRST R9: "logged in until the person logs out". A SIGNED_OUT event is NOT always the person's choice (a lost
+        // cookie, a refresh that failed offline). reactToSignedOut tells the cases apart WITHOUT touching the identity:
+        //   deliberate (this tab's Sign out click) / ended (the mirror is empty: another tab's click, or a revoked token)
+        //     -> the cleanup below, then /login;
+        //   restoring (unexpected, and the durable identity mirror still holds the session)
+        //     -> nothing is cleared and the page stays: the mirror boot.ts started rebuilds the session
+        //        (restoreSessionIfMissing). This shell does not do the mirror's job.
+        const leaving = userIdRef.current;
+        void reactToSignedOut({
+          stillRelevant: () => live && userIdRef.current === leaving,
+          goToLogin: () => router.push("/login"),
+          cleanUp: () => {
+            setInfo(null);
+            setUserId(null);
+            // Covers the sign-out that happened in ANOTHER tab as well as this
+            // one's own: the cookie is shared by every tab, so whichever tab sees
+            // the event first must clear it.
+            rememberSelectedProject(null);
+            // The device copy of a project's BOQ goes too; the event carries no session, so every stored copy on this browser is cleared.
+            void clearBoqDeviceCopiesOnSignOut();
+            // LOCAL-FIRST (package lf-fc, cost:COST-05): this laptop's copy of the person's workspace is KEPT (the default
+            // sign-out policy; only the explicit "Sign out and delete this laptop's copy" button deletes it). Edits not yet on the
+            // server are told about. With the flag off, or the person unknown, nothing is looked at. A repeated notice is
+            // suppressed by the helper.
+            void finishLocalWorkspaceOnSignOut({ userId: leaving }).then((r) => { if (r.notice) toast.message(r.notice, { duration: 20_000 }); });
+          },
+        });
       }
     });
-    return () => sub.subscription.unsubscribe();
-  }, [refreshShell]);
+    return () => {
+      live = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [refreshShell, router]);
 
   // A-16 -- THE CACHE FOLLOWS THE IDENTITY. Once the user is known, the strip
   // is repainted from THEIR cached ranking; if this browser has none for them,

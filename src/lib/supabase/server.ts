@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createDurableAuthFetch } from "./durable-auth";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -8,6 +9,9 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // LOCAL-FIRST R9: a refresh that fails for any reason other than "revoked" must not delete the session
+      // cookie from a Route Handler either (see durable-auth.ts).
+      global: { fetch: createDurableAuthFetch((input, init) => fetch(input, init)) },
       cookies: {
         getAll() {
           return cookieStore.getAll();
