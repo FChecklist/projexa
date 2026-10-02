@@ -108,6 +108,14 @@ test("documents: the four lists and their objects open offline from the laptop, 
   expect(await readOutbox(page, p.session.userId), "reading must not queue anything").toEqual([])
   await goOnline(context, p)
   expectCleanConsole(p.console)
+
+  await test.step("online, a create screen falls through to the server's own page (never read as the permit whose id is 'new')", async () => {
+    await openLocal(page, "/permits/new")
+    await expect(page).toHaveURL(/\/permits\/new\?(.*&)?px-server=1/, { timeout: 30_000 })
+    expect(new URL(page.url()).searchParams.get("projectId")).toBe(PROJECT_ID)
+    expect(new URL(page.url()).pathname).toBe("/permits/new")
+    await expect(page.getByTestId("local-shell")).toHaveCount(0)
+  })
 })
 
 /** Replaces an input's whole text with real keystrokes (select all, then type), the way a person edits a field. */

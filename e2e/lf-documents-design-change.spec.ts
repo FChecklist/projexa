@@ -76,6 +76,12 @@ test("change orders and the timesheet open offline with their real values; money
   expect(await readOutbox(page, p.session.userId)).toEqual([])
   await goOnline(context, p)
   expectCleanConsole(p.console)
+
+  await test.step("online, cost analysis falls through to the server's own page", async () => {
+    await openLocal(page, "/design-studio/cost-analysis")
+    await expect(page).toHaveURL(/\/design-studio\/cost-analysis\?(.*&)?px-server=1/, { timeout: 30_000 })
+    await expect(page.getByTestId("local-shell")).toHaveCount(0)
+  })
 })
 
 test("a change order raised offline by typing waits, survives a reload, and is sent once as create_change_order; sending one for approval too", async ({ page, context }) => {
@@ -207,6 +213,42 @@ test("design studio: a time entry logged offline (New Timesheet Entry) waits, su
     await expect.poll(() => readOutbox(page, p.session.userId)).toEqual([])
     await page.waitForTimeout(3_000)
     expect(p.sync.pushed).toHaveLength(1)
+  })
+  expectCleanConsole(p.console)
+})
+
+test("timesheet decisions offline: I submit my own entry, I approve a colleague's day; each sent once; the status stays the server's until it answers", async ({ page, context }) => {
+  const p = await prepareLaptop(page, context, "manager")
+  await goOffline(context, p)
+
+  await test.step("offline: Submit on my synced draft row", async () => {
+    await openLocal(page, "/design-studio")
+    const mine = page.locator('[data-testid="ds-row"][data-entry-id="lf-ts-1"]')
+    await mine.getByTestId("ds-submit-row").click()
+    await expect(mine).toContainText("Submit waiting to be sent")
+    await expect(mine.getByTestId("ds-submit-row")).toHaveCount(0)
+  })
+
+  await test.step("offline: approve the colleague's submitted day on the review screen", async () => {
+    await openLocal(page, "/design-studio/review")
+    const group = page.getByTestId("ds-review-group")
+    await expect(group).toHaveCount(1)
+    await group.getByTestId("ds-review-approve").click()
+    await expect(page.getByTestId("dc-note")).toContainText("1 entry to approve")
+  })
+
+  await test.step("online: one submit_timesheet and one approve_timesheet, in the registry's names", async () => {
+    await page.reload()
+    await goOnline(context, p)
+    await expect.poll(() => p.sync.pushed.length, { timeout: 90_000, message: "the timesheet decisions were never sent" }).toBe(2)
+    const byFn = Object.fromEntries(p.sync.pushed.map((o) => [o.function_id, o]))
+    expect(byFn.submit_timesheet.params).toEqual({ projectId: PROJECT_ID, timeEntryId: "lf-ts-1" })
+    expect(byFn.submit_timesheet.record).toEqual({ kind: "timesheets", id: "lf-ts-1", base_version: 2 })
+    expect(byFn.approve_timesheet.params).toEqual({ timeEntryId: "lf-ts-2" })
+    expect(byFn.approve_timesheet.record).toEqual({ kind: "timesheets", id: "lf-ts-2", base_version: 1 })
+    await expect.poll(() => readOutbox(page, p.session.userId)).toEqual([])
+    await page.waitForTimeout(3_000)
+    expect(p.sync.pushed).toHaveLength(2)
   })
   expectCleanConsole(p.console)
 })
