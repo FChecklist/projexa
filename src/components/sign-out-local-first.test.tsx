@@ -8,7 +8,7 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { IDBFactory } from "fake-indexeddb";
 import { createFakeSyncServer, type FakeSyncServer } from "@/lib/local-first/__fixtures__/fake-sync-server";
@@ -70,8 +70,10 @@ async function laptop(withPendingEdit: boolean): Promise<{ idb: IDBFactory; serv
   return { idb, server };
 }
 
+// The PERSON's databases (`projexa-local:<userId>`). The device database (`projexa-local`, no suffix: the installed release and the
+// durable identity mirror) is opened by the sign-out's identity step since signOutEverywhere, and is not the person's workspace.
 async function dbNames(idb: IDBFactory) {
-  return (await idb.databases()).map((d) => d.name).filter((n) => n?.startsWith("projexa-local"));
+  return (await idb.databases()).map((d) => d.name).filter((n) => n?.startsWith("projexa-local:"));
 }
 
 beforeEach(() => {
@@ -138,23 +140,56 @@ describe("SettingsClient's Sign Out", () => {
 describe("every sign-out path calls the local-first sign-out", () => {
   const ROOT = join(import.meta.dir, "..", "..");
   const EXPLICIT = ["src/components/shell/AccountMenu.tsx", "src/components/AppTopbar.tsx", "src/components/SettingsClient.tsx"];
+  // The ONE place allowed to end a Supabase session in the app's code: signOutDeliberately (reached through signOutEverywhere).
+  const MAY_CALL_AUTH_SIGN_OUT = ["src/lib/local-first/identity.ts"];
+  /** Code only: comments mention signOut() in prose and must not count. */
+  const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+  const sources = (dir: string): string[] =>
+    readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) return e.name === "node_modules" || e.name === "__fixtures__" ? [] : sources(rel);
+      return /\.(ts|tsx)$/.test(e.name) && !/\.test\.(ts|tsx)$/.test(e.name) && !e.name.endsWith(".d.ts") ? [rel] : [];
+    });
 
   for (const rel of EXPLICIT) {
-    test(`${rel} flushes and clears the laptop copy BEFORE signOut(), and shows the notice`, () => {
-      const source = readFileSync(join(ROOT, rel), "utf8");
-      expect(source).toContain('from "@/lib/local-first/sign-out"');
-      const localAt = source.indexOf("await finishLocalWorkspaceOnSignOut()");
-      const signOutAt = source.indexOf("await supabase.auth.signOut()");
-      expect(localAt).toBeGreaterThan(-1);
-      expect(localAt).toBeLessThan(signOutAt);
-      expect(source.slice(signOutAt, signOutAt + 200)).toContain("toast.message(localNotice");
+    test(`${rel} signs out through signOutEverywhere (workspace step, then the identity) and shows the notice`, () => {
+      const source = code(readFileSync(join(ROOT, rel), "utf8"));
+      expect(source).toContain('from "@/lib/local-first/sign-out-everywhere"');
+      const at = source.indexOf("await signOutEverywhere({ auth: supabase.auth })");
+      expect(at).toBeGreaterThan(-1);
+      expect(source.slice(at, at + 200)).toContain("toast.message(localNotice");
+      // The cookie and the BOQ copy are still cleared first, and the person still lands on /login.
+      expect(source.indexOf("rememberSelectedProject(null)")).toBeLessThan(at);
+      expect(source.indexOf("await clearBoqDeviceCopiesOnSignOut()")).toBeLessThan(at);
+      expect(source.indexOf('router.push("/login")')).toBeGreaterThan(at);
     });
   }
 
-  test("M24Shell does it on a SIGNED_OUT event too (another tab's sign-out carries no session)", () => {
-    const source = readFileSync(join(ROOT, "src/components/shell/M24Shell.tsx"), "utf8");
+  test("a FIFTH sign-out path cannot forget it: no app code outside identity.ts ends the Supabase session itself", () => {
+    const offenders = sources("src").filter((rel) => !MAY_CALL_AUTH_SIGN_OUT.includes(rel) && /\bauth\s*\.\s*signOut\s*\(/.test(code(readFileSync(join(ROOT, rel), "utf8"))));
+    expect(offenders).toEqual([]);
+  });
+
+  test("the workspace step is only ever reached through signOutEverywhere, or by M24Shell's SIGNED_OUT reaction", () => {
+    const users = sources("src").filter((rel) => /\bfinishLocalWorkspaceOnSignOut\b/.test(code(readFileSync(join(ROOT, rel), "utf8")).replace(/^\s*import[\s\S]*?from\s+["'][^"']+["'];?/gm, "")));
+    expect(users.sort()).toEqual(["src/components/shell/M24Shell.tsx", "src/lib/local-first/sign-out-everywhere.ts", "src/lib/local-first/sign-out.ts"]);
+  });
+
+  test("M24Shell's SIGNED_OUT reaction: classified by reactToSignedOut, cleanup + /login only when it was not an unexpected sign-out", () => {
+    const source = code(readFileSync(join(ROOT, "src/components/shell/M24Shell.tsx"), "utf8"));
+    expect(source).toContain('import { reactToSignedOut } from "@/lib/local-first/sign-out-everywhere"');
     const branch = source.slice(source.indexOf('event === "SIGNED_OUT"'));
-    expect(branch.slice(0, 1800)).toContain("finishLocalWorkspaceOnSignOut({ userId: leaving })");
-    expect(branch.slice(0, 1800)).toContain("toast.message(r.notice");
+    const body = branch.slice(0, branch.indexOf("return () =>"));
+    expect(body).toContain("reactToSignedOut({");
+    expect(body).toContain('goToLogin: () => router.push("/login")');
+    const cleanUp = body.slice(body.indexOf("cleanUp:"));
+    expect(cleanUp).toContain("finishLocalWorkspaceOnSignOut({ userId: leaving })");
+    expect(cleanUp).toContain("toast.message(r.notice");
+    expect(cleanUp).toContain("rememberSelectedProject(null)");
+    // Nothing happens before the classification: an unexpected event must leave the page, the cookie and the data alone.
+    const before = body.slice(0, body.indexOf("reactToSignedOut({"));
+    for (const step of ["setUserId(null)", "rememberSelectedProject(null)", "clearBoqDeviceCopiesOnSignOut", "finishLocalWorkspaceOnSignOut", "router.push"]) expect(before).not.toContain(step);
+    // The shell never clears the identity itself: that is signOutDeliberately's job alone.
+    for (const forbidden of ["signOutDeliberately", "signOutEverywhere", "IDENTITY_STORAGE_KEY", ".clear()"]) expect(body).not.toContain(forbidden);
   });
 });

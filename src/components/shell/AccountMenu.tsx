@@ -8,8 +8,9 @@
 // dropdown) and are reused as-is. Account did not exist as a standalone
 // component -- it was inline in AppTopbar, which the M24 shell no longer
 // mounts. This is that control lifted out so the behaviour survives the shell
-// change: Profile, Settings, Sign Out, with the same routes and the same
-// supabase.auth.signOut() call. Nothing about it is new.
+// change: Profile, Settings, Sign Out, with the same routes. Sign Out ends the
+// session through signOutEverywhere (LOCAL-FIRST R9: the workspace step, then
+// the durable identity, the worker's caches and the Supabase session).
 //
 // Kept deliberately compact: the top rail is ~36px and is the one band the
 // composer never covers, so it must not grow.
@@ -21,7 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
-import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
+import { signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import { InstallMenuItem } from "@/components/local-first/InstallMenuItem";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -49,9 +50,10 @@ export default function AccountMenu({ email }: { email?: string }) {
     // The device copy of a project's BOQ must not outlive the session on a shared browser.
     await clearBoqDeviceCopiesOnSignOut();
     // LOCAL-FIRST: while the session is still alive, send what was made offline; delete this laptop's copy of the person's
-    // workspace if nothing is pending (privacy), otherwise keep it and say so. Never throws, never waits more than a few seconds.
-    const localNotice = (await finishLocalWorkspaceOnSignOut()).notice;
-    await supabase.auth.signOut();
+    // workspace if nothing is pending (privacy), otherwise keep it and say so. THEN the deliberate sign-out (R9): the durable
+    // identity mirror is cleared (so nothing signs the person back in), the worker drops their release caches, and the Supabase
+    // session ends (by hand when the server cannot be reached). Never throws, never waits more than a few seconds.
+    const { notice: localNotice } = await signOutEverywhere({ auth: supabase.auth });
     if (localNotice) toast.message(localNotice, { duration: 20_000 });
     router.push("/login");
   }
