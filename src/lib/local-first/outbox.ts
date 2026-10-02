@@ -834,6 +834,13 @@ export function createOutbox(options: OutboxOptions): Outbox {
               break;
             }
             case "conflict": {
+              // A create has no base version, so the real service never calls it a conflict (drizzle/0681). If one ever does, leaving
+              // the op as it is would re-send it in a tight loop (lf-e10a measured 502 pushes in 5 s): settle it as a rejection instead
+              // -- undone here, said in words, what the person typed kept as a draft.
+              if (!op.record) {
+                if (await rejectOp(db, op, rejectionMessage(op, { code: "CONFLICT_ON_CREATE" }), "CONFLICT_ON_CREATE")) report.rejected += 1;
+                break;
+              }
               const settled = await settleConflict(db, op, result, orgId, mergesThisPass);
               if (settled.refetch) refetches.push(settled.refetch);
               if (settled.outcome === "card" || settled.outcome === "deleted") report.conflicts += 1;

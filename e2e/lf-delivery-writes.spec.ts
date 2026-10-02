@@ -1,6 +1,6 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import {
-  PROJECT_ID, backOnline, goOffline, noCrash as checkNoCrash, openScreen, prepareDeliveryLaptop, readOutbox, today, typeDate as typeDateInto,
+  PROJECT_ID, backOnline, goOffline, noCrash as checkNoCrash, openScreen, prepareDeliveryLaptop, readOutbox, setNetwork, today, typeDate as typeDateInto,
   typeInto, watchConsole, type Net, type Prepared,
 } from "./support/lf-delivery-stub";
 
@@ -227,6 +227,73 @@ test("a change the server turns down reaches the person on the screen they are o
     expect(await readOutbox(page, l.session.userId)).toEqual([]);
     await page.waitForTimeout(2_000);
     expect(l.sync.pushes, "a turned-down change was sent again").toHaveLength(1);
+    await noCrash(page, l.problems);
+  });
+});
+
+test("internet up but OUR server down: a progress entry waits on the laptop and is sent once when the server is back", async ({ page, context }) => {
+  const net: Net = { mode: "up" };
+  const problems = watchConsole(page);
+  const l = await prepareDeliveryLaptop(page, context, net, "member", expect);
+  setNetwork(net, l.app, "down"); // the browser is online; the sync service and every /api call are refused
+  problems.length = 0;
+
+  await test.step("server down: the screen opens from the laptop and the entry is kept", async () => {
+    await open(page, `/work-progress${q}`, "work-progress");
+    await page.getByLabel("BOQ line").selectOption("dl-line-1");
+    await page.getByRole("radio", { name: "% complete" }).check();
+    const percentBox = page.getByRole("textbox", { name: "% complete" });
+    await percentBox.click();
+    await page.keyboard.type("22.5", { delay: 15 });
+    await expect(percentBox).toHaveValue("22.5");
+    await type(page, "Remarks", "West wing boards up");
+    await page.getByRole("button", { name: "Save entry" }).click();
+    await expect(page.getByTestId("save-note")).toHaveAttribute("data-ok", "1");
+    await expect(page.getByTestId("work-progress-row").filter({ hasText: "West wing boards up" }).getByTestId("waiting")).toHaveText("Waiting to sync");
+    await page.waitForTimeout(3_000);
+    expect(l.sync.pushes, "nothing can reach a server that is down").toHaveLength(0);
+    expect(await readOutbox(page, l.session.userId)).toEqual([expect.objectContaining({ functionId: "record_work_progress" })]);
+  });
+
+  await test.step("the server is back: the person coming back to the tab sends it, once", async () => {
+    setNetwork(net, l.app, "up");
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    const op = await sentExactlyOnce(page, l, "record_work_progress");
+    expect(op.params).toEqual({ projectId: PROJECT_ID, boqLineItemId: "dl-line-1", entryDate: TODAY, percent: 22.5, remarks: "West wing boards up" });
+    await expect(page.getByTestId("work-progress-row").filter({ hasText: "West wing boards up" }).getByTestId("waiting")).toHaveCount(0, { timeout: 30_000 });
+    // only the deliberate refusals of the down server may have been logged
+    expect(problems.filter((p) => !/status of 50[23]|ERR_CONNECTION_REFUSED/.test(p))).toEqual([]);
+  });
+});
+
+test("a conflict answer to a create is never resent for ever nor lost: the person is told, the text kept", async ({ page, context }) => {
+  // The real service never answers `conflict` to a create (drizzle/0681: conflict needs a base version, and a create has none); this is
+  // the robustness check the package asks for: if it ever did, the laptop must neither loop nor drop what the person typed.
+  const l = await offlineLaptop(page, context);
+  l.sync.answers.set("record_material_issue", { status: "conflict" });
+
+  await test.step("offline: issue 5 sheets", async () => {
+    await open(page, `/materials/issues/new${q}`, "material-issue-new");
+    await page.getByLabel("Material").selectOption("mat-1");
+    await type(page, "Quantity", "5");
+    await type(page, "Issued to", "Joseph");
+    await page.getByRole("button", { name: "Save issue" }).click();
+    await expect(page.getByTestId("save-note")).toHaveAttribute("data-ok", "1");
+  });
+
+  await test.step("online: answered `conflict` -> not sent again and again, and the person sees it", async () => {
+    await open(page, `/materials${q}&tab=issues`, "materials");
+    await backOnline(page, context, l.net, l.app);
+    await expect.poll(() => l.sync.pushes.length, { timeout: 60_000 }).toBeGreaterThanOrEqual(1);
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await page.waitForTimeout(1_500);
+    }
+    expect(l.sync.pushes.length, "a create answered `conflict` was resent on every pass").toBe(1);
+    const card = page.getByTestId("outbox-attention");
+    await expect(card.getByTestId("outbox-draft")).toContainText("Material issue was not saved.", { timeout: 30_000 });
+    await expect(card.getByTestId("outbox-draft-text")).toHaveText("Quantity: 5\n\nJoseph");
+    expect(await readOutbox(page, l.session.userId)).toEqual([]);
     await noCrash(page, l.problems);
   });
 });
