@@ -37,6 +37,8 @@ export type SwCoreConfig = {
   /** Page paths that never need a session (exact), and prefixes; from src/lib/authz/page-access.ts. */
   publicExact: string[];
   publicPrefixes: string[];
+  /** A page request carrying this query parameter wants the SERVER's page even in local-first mode (the shell's fallback for a module it does not have). */
+  serverPageParam: string;
   /** Cache name prefixes of earlier worker generations, deleted on activate. */
   legacyCachePrefixes: string[];
 };
@@ -153,12 +155,13 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
     return scope.fetch(request);
   }
 
-  async function navigation(request: Request, path: string): Promise<Response> {
+  async function navigation(request: Request, path: string, wantsServerPage: boolean): Promise<Response> {
     const pointer = await readPointer();
     const app = isLocalPath(path) || !isPublicPage(path);
     const shell = await shellFor(pointer);
 
-    if (app && shell && pointer && pointer.localFirst) return shell; // served first: no request leaves the laptop
+    // Served first, so no request leaves the laptop -- unless the shell itself sent the person here for a screen it does not have.
+    if (app && shell && pointer && pointer.localFirst && !wantsServerPage) return shell;
     if (isOffline()) return shell ?? offlinePage();
 
     let response: Response;
@@ -290,7 +293,7 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
       if (path === "/sw.js" || path === "/_release/release.json") return;
 
       if (request.mode === "navigate") {
-        event.respondWith(navigation(request, path).catch(() => scope.fetch(request)));
+        event.respondWith(navigation(request, path, url.searchParams.has(config.serverPageParam)).catch(() => scope.fetch(request)));
         return;
       }
       if (isStaticAsset(path)) {

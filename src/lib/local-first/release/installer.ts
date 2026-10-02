@@ -15,7 +15,7 @@
 // Everything with a side effect is injected (fetch, Cache Storage, the meta store, the clock, the switch request, the
 // registry call), so the whole thing is tested with fakes. The browser wiring is in persistence.ts / LocalFirstBoot.
 
-import { readBundle, type Gunzip } from "./bundle";
+import { readBundle, type Gunzip, type TarEntry } from "./bundle";
 import { canonicalJson, sha256Hex } from "./canonical";
 import {
   META_KEYS,
@@ -300,13 +300,13 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
       if (bundleBytes.length !== manifest.bundle.size || (await sha256Hex(bundleBytes)) !== manifest.bundle.sha256) {
         throw new InstallError("bundle_hash", "The release bundle does not match the manifest (size or sha256).");
       }
-      let entries;
+      let entries: TarEntry[];
       try {
         entries = await readBundle(bundleBytes, deps.gunzip);
       } catch (err) {
         throw new InstallError("bundle_unreadable", errText(err));
       }
-      const byPath = new Map(entries.map((e) => [e.path, e.bytes]));
+      const byPath = new Map<string, Uint8Array>(entries.map((e): [string, Uint8Array] => [e.path, e.bytes]));
       const listed = new Set(manifest.files.map((f) => f.path));
       for (const entry of entries) {
         if (!listed.has(entry.path)) throw new InstallError("file_unexpected", `The bundle holds a file the manifest does not list: ${entry.path}`);

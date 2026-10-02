@@ -147,6 +147,16 @@ describe("the install-as-an-app prompt is captured and offered as ONE calm actio
     expect(followUps).toBe(1);
   });
 
+  test("an event that fired BEFORE the controller existed is adopted (the browser fires it once, early)", async () => {
+    const prompt = createInstallPrompt();
+    const { event, calls } = installEvent("accepted");
+    prompt.adopt(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(prompt.get().canInstall).toBe(true);
+    expect(await prompt.install()).toBe("accepted");
+    expect(calls.prompt).toBe(1);
+  });
+
   test("already running as an installed app: never offered", () => {
     const target = new EventTarget();
     const prompt = createInstallPrompt({ isStandalone: () => true });

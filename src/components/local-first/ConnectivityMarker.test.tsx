@@ -25,8 +25,8 @@ describe("the connectivity marker", () => {
       expect(marker.getAttribute("aria-live")).toBe("polite");
       expect(marker.textContent).toBe(WORKING_LOCALLY_TEXT);
       expect(marker.textContent).toBe("Working on this laptop; will sync when connected");
-      expect(document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"], dialog')).toBeNull();
-      expect(marker.querySelector("button, a, input")).toBeNull(); // asks nothing of the person
+      expect(document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"], dialog') === null).toBe(true);
+      expect(marker.querySelector("button, a, input") === null).toBe(true); // asks nothing of the person
       expect(marker.className).toContain("pointer-events-none"); // never in the way of a click
     }
   });

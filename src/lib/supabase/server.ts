@@ -11,7 +11,7 @@ export async function createClient() {
     {
       // LOCAL-FIRST R9: a refresh that fails for any reason other than "revoked" must not delete the session
       // cookie from a Route Handler either (see durable-auth.ts).
-      global: { fetch: createDurableAuthFetch((...args) => fetch(...args)) },
+      global: { fetch: createDurableAuthFetch((input, init) => fetch(input, init)) },
       cookies: {
         getAll() {
           return cookieStore.getAll();

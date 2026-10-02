@@ -97,6 +97,8 @@ export type InstallPromptState = { canInstall: boolean; installed: boolean };
 export type InstallPromptController = {
   get(): InstallPromptState;
   subscribe(listener: () => void): () => void;
+  /** Takes over a beforeinstallprompt event that fired before this controller existed (see LocalFirstBoot.tsx's early listener). */
+  adopt(event: Event): void;
   /** Shows the browser's own install dialog (the person clicked the one calm action). */
   install(): Promise<"accepted" | "dismissed" | "unavailable">;
   /** Starts capturing the browser's events. Idempotent per target. */
@@ -147,6 +149,11 @@ export function createInstallPrompt(deps: {
         return "unavailable";
       }
     },
+    adopt(event) {
+      event.preventDefault();
+      deferred = event as InstallEvent;
+      notify();
+    },
     attach(target) {
       const onPrompt = (event: Event) => {
         event.preventDefault(); // keep the browser's own mini-infobar quiet; the offer is ours, and it is one small action
@@ -179,7 +186,12 @@ export function sharedInstallPrompt(deps: Parameters<typeof createInstallPrompt>
       isStandalone: () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches,
       ...deps,
     });
-    if (typeof window !== "undefined") sharedPrompt.attach(window);
+    if (typeof window !== "undefined") {
+      sharedPrompt.attach(window);
+      // The browser fires beforeinstallprompt once, early. The root layout's tiny listener keeps it until this controller exists.
+      const early = (window as unknown as { __pxInstallEvent?: Event }).__pxInstallEvent;
+      if (early) sharedPrompt.adopt(early);
+    }
   }
   return sharedPrompt;
 }

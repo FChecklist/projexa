@@ -29,10 +29,14 @@ export function ConnectivityMarker({ state, className }: { state?: Connectivity;
   return <ConnectivityMarkerView state={state ?? live} className={className} />;
 }
 
-/** The same marker pinned small in a corner of every screen, mounted once by LocalFirstBoot. */
+/**
+ * The same marker pinned small in a corner of every screen, mounted once by LocalFirstBoot. The on-laptop shell shows its own marker in
+ * its header and says so by setting data-px-shell on <html>, so the two never appear together.
+ */
 export function FloatingConnectivityMarker() {
   const live = useConnectivity();
   if (live === "online") return null;
+  if (typeof document !== "undefined" && document.documentElement.dataset.pxShell === "1") return null;
   return (
     <div className="pointer-events-none fixed bottom-2 right-3 z-40">
       <ConnectivityMarkerView state={live} />

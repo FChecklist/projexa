@@ -4,6 +4,7 @@ import { PUBLIC_PAGE_PATHS_FOR_TEST, PUBLIC_PAGE_PREFIXES_FOR_TEST } from "../..
 import { buildSwScript, createSwCore, type SwCore, type SwCoreConfig, type SwScopeLike } from "./sw-core";
 import { RELEASE_CACHE_PREFIX, SHELL_URL, SW_META_CACHE, SW_POINTER_URL, releaseCacheName } from "./release-constants";
 import { FakeCacheStorage } from "./__fixtures__/fakes";
+import { SERVER_PAGE_PARAM } from "../shell/paths";
 
 // The worker's brain, every branch of its fetch strategy. Each behaviour runs TWICE: against createSwCore() directly, and against
 // the TEXT the service worker route serves (buildSwScript, evaluated in an isolated context that has only the worker's own
@@ -20,6 +21,7 @@ const CONFIG: SwCoreConfig = {
   shellUrl: SHELL_URL,
   publicExact: [...PUBLIC_PAGE_PATHS_FOR_TEST],
   publicPrefixes: [...PUBLIC_PAGE_PREFIXES_FOR_TEST],
+  serverPageParam: SERVER_PAGE_PARAM,
   legacyCachePrefixes: ["projexa-shell-"],
 };
 
@@ -302,6 +304,26 @@ for (const [label, make] of MODES) {
         expect(fetched).toEqual([]);
       });
 
+      test("local-first on, but the shell sent the person to the SERVER's page (?px-server=1): network-first, shell only as the fallback", async () => {
+        const online = makeScope(() => new Response("server page"));
+        await installRelease(online.caches);
+        const a = make(online.scope).core;
+        await message(a, { type: "USE_RELEASE", version: V1, localFirst: true });
+        const r = await fire(a, request(`/rfis/42?projectId=p1&${SERVER_PAGE_PARAM}=1`));
+        expect(await r.response!.text()).toBe("server page");
+        expect(online.fetched).toEqual([`/rfis/42?projectId=p1&${SERVER_PAGE_PARAM}=1`]);
+        // and the same request when the server is down still ends in the shell, never in a browser error
+        const down = makeScope(() => new Response("boom", { status: 503 }));
+        await installRelease(down.caches);
+        const b = make(down.scope).core;
+        await message(b, { type: "USE_RELEASE", version: V1, localFirst: true });
+        expect(await (await fire(b, request(`/rfis/42?${SERVER_PAGE_PARAM}=1`))).response!.text()).toBe(`<html>shell ${V1}</html>`);
+        // without the marker the same URL is served from the laptop with no request
+        down.fetched.length = 0;
+        expect(await (await fire(b, request("/rfis/42"))).response!.text()).toBe(`<html>shell ${V1}</html>`);
+        expect(down.fetched).toEqual([]);
+      });
+
       test("every answer is a fresh copy: the shell can be served again and again", async () => {
         const { scope, caches } = makeScope();
         await installRelease(caches);
@@ -559,8 +581,8 @@ describe("the worker survives minification", () => {
     expect(code).not.toContain("pointerMemo"); // the inner names really were renamed
     const exported = /export\s*\{([^}]*)\}/.exec(code)!;
     const table = Object.fromEntries(exported[1]!.split(",").map((part) => { const [from, to] = part.trim().split(/\s+as\s+/); return [to ?? from, from]; }));
-    const module = runInNewContext(`${code.replace(/export\s*\{[^}]*\}\s*;?/, "")};({ buildSwScript: ${table.buildSwScript} })`, { Response, URL, JSON, Promise, Date, String, Number, Object, Error, Array }) as { buildSwScript: typeof buildSwScript };
-    const script = module.buildSwScript(CONFIG, "minified");
+    const minified = runInNewContext(`${code.replace(/export\s*\{[^}]*\}\s*;?/, "")};({ buildSwScript: ${table.buildSwScript} })`, { Response, URL, JSON, Promise, Date, String, Number, Object, Error, Array }) as { buildSwScript: typeof buildSwScript };
+    const script = minified.buildSwScript(CONFIG, "minified");
     expect(script).not.toContain("pointerMemo");
 
     const { scope, caches, fetched, state } = makeScope();

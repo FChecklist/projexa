@@ -138,7 +138,7 @@ export async function middleware(request: NextRequest) {
       {
         // A refresh that fails for any reason except "this refresh token is revoked" must not make auth-js drop the
         // session, and with it the Set-Cookie that deletes it from the browser (see lib/supabase/durable-auth.ts).
-        global: { fetch: createDurableAuthFetch((...args) => fetch(...args)) },
+        global: { fetch: createDurableAuthFetch((input, init) => fetch(input, init)) },
         cookies: {
           getAll() {
             return request.cookies.getAll();

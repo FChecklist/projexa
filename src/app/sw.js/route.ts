@@ -38,6 +38,7 @@ import { NextResponse } from "next/server"
 import { PUBLIC_PAGE_PATHS_FOR_TEST, PUBLIC_PAGE_PREFIXES_FOR_TEST } from "@/lib/authz/page-access"
 import { RELEASE_CACHE_PREFIX, SHELL_URL, SW_META_CACHE, SW_POINTER_URL } from "@/lib/local-first/release/release-constants"
 import { buildSwScript, type SwCoreConfig } from "@/lib/local-first/release/sw-core"
+import { SERVER_PAGE_PARAM } from "@/lib/local-first/shell/paths"
 
 export const dynamic = "force-dynamic"
 
@@ -51,6 +52,7 @@ const CONFIG: SwCoreConfig = {
   // The page gate's own lists, so the worker and the middleware cannot disagree about which pages need a session.
   publicExact: [...PUBLIC_PAGE_PATHS_FOR_TEST],
   publicPrefixes: [...PUBLIC_PAGE_PREFIXES_FOR_TEST],
+  serverPageParam: SERVER_PAGE_PARAM,
   legacyCachePrefixes: ["projexa-shell-"],
 }
 
