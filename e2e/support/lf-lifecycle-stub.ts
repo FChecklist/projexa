@@ -89,7 +89,7 @@ export function routeName(path: string, body: unknown): string {
   if (p === "/pull") return body && typeof body === "object" && Array.isArray((body as { ids?: unknown }).ids) ? "pull_ids" : "pull";
   const map: Record<string, string> = {
     "/manifest": "manifest", "/heads": "heads", "/changes": "changes", "/ids": "ids", "/push": "push", "/attest": "attest",
-    "/release/current": "release_current", "/release/register": "release_register", "/install": "install",
+    "/release/current": "release_current", "/release/register": "release_register", "/install": "install", "/prepare": "prepare",
     "/jobs/claim": "jobs_claim", "/jobs/heartbeat": "jobs_heartbeat", "/jobs/result": "jobs_result", "/jobs/enqueue": "jobs_enqueue", "/jobs/get": "jobs_get",
   };
   return map[p] ?? `other:${p}`;
@@ -101,7 +101,7 @@ export function countByRoute(hits: Hit[]): Record<string, number> {
   return out;
 }
 
-const RELEASE_ROUTES = new Set(["release_current", "release_register", "install"]);
+const RELEASE_ROUTES = new Set(["release_current", "release_register", "install", "prepare"]);
 
 const CORS = (origin: string | undefined) => ({
   "access-control-allow-origin": origin ?? "*",

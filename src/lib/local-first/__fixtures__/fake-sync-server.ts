@@ -376,6 +376,16 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
       data: { id, projectId, number: idCounter, subject: params.subject, question: params.question, status: "open", ballInCourt: params.ballInCourt ?? "architect", answer: null, dueDate: params.dueDate ?? null },
     };
   });
+  handlers.set("create_schedule_task", ({ params, projectId }) => {
+    const bad = need(params, "title", "startDate");
+    if (bad) return bad;
+    idCounter += 1;
+    const id = `srv-task-${idCounter}`;
+    return {
+      ok: true, kind: "tasks", id, route: `/schedule/tasks/${id}`,
+      data: { id, projectId, number: idCounter, title: params.title, startDate: params.startDate, dueDate: params.dueDate ?? null, priority: params.priority ?? null },
+    };
+  });
   handlers.set("answer_rfi", ({ params, target }) => {
     if (!target) return { rejected: "RECORD_NOT_FOUND" };
     const bad = need(params, "answer");

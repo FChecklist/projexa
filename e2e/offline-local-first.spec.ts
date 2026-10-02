@@ -119,6 +119,7 @@ async function stubSyncService(page: Page, who: LocalSession, net: Net) {
     }
     if (request.method() === "POST" && path === "/release/register") return json(route, origin, { registered: true, server_time: new Date().toISOString() });
     if (request.method() === "POST" && path === "/install") return json(route, origin, { recorded: true, server_time: new Date().toISOString() });
+    if (request.method() === "POST" && path === "/prepare") return json(route, origin, { recorded: true, server_time: new Date().toISOString() });
     return json(route, origin, { error: "not part of the local stub" }, 404);
   });
   return { served };

@@ -120,6 +120,8 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
   // What the server would hold after the applied pushes: a real pull returns the person's own created/changed rows, so the stub must too
   // (otherwise the next pull puts the fixture back over a change the server had accepted, and the screen loses the AI's work).
   const applied = new Map<string, Map<string, Row>>();
+  /** op_id -> what the first run of that op produced (the push ledger's memory). */
+  const ledger = new Map<string, { id: string; version: number }>();
   // The change feed of those pushes (seq per project): a pull or reconcile that was already in flight when a push settled can miss the new
   // row; the real service's feed hands it over on the next pass, so the stub's must too.
   const feed = new Map<string, { seq: number; kind: string; id: string; version: number; op: "I" | "U" }[]>();
@@ -198,7 +200,9 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
         const first = stub.pushed.find((p) => p.op_id === op.op_id && p.by === sub);
         if (first) {
           stub.resent.push({ ...op, by: sub });
-          return { op_id: op.op_id, status: "duplicate", record_id: first.record?.id ?? null, route: null, version: (first.record?.base_version ?? 0) + 1 };
+          // The real ledger answers a repeat with the record the FIRST run made (for a create: its new id), so the laptop can fetch it.
+          const made = ledger.get(op.op_id);
+          return { op_id: op.op_id, status: "duplicate", record_id: made?.id ?? first.record?.id ?? null, route: null, version: made?.version ?? (first.record?.base_version ?? 0) + 1 };
         }
         stub.pushed.push({ ...op, by: sub });
         // The handler's own shape check (handler.ts checkOp): a project the person may not read is refused, nothing runs.
@@ -217,6 +221,7 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
           log.push({ seq: log.length + 1, kind, id, version: (op.record?.base_version ?? 0) + 1, op: op.record ? "U" : "I" });
           feed.set(op.project_id, log);
         }
+        ledger.set(op.op_id, { id, version: (op.record?.base_version ?? 0) + 1 });
         return {
           op_id: op.op_id, status: "applied", record_id: id, route: null, version: (op.record?.base_version ?? 0) + 1,
           ...(kind ? { server: { kind, id, version: (op.record?.base_version ?? 0) + 1, updated_at: now, data: { id, ...op.params } } } : {}),
@@ -227,6 +232,7 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
     if (request.method() === "GET" && path === "/release/current") return json(route, origin, { registered: true, current: null, min_compatible: null, protocol: 2, server_time: now });
     if (request.method() === "POST" && path === "/release/register") return json(route, origin, { registered: true, server_time: now });
     if (request.method() === "POST" && path === "/install") return json(route, origin, { recorded: true, server_time: now });
+    if (request.method() === "POST" && path === "/prepare") return json(route, origin, { recorded: true, server_time: now });
     return json(route, origin, { error: "not part of the local stub" }, 404);
   });
   return stub;
