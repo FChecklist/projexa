@@ -279,7 +279,7 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
           const reply = await deps.sw.useRelease(version, deps.personId, deps.localFirstOn());
           if (!reply || !reply.ok) throw new Error(reply ? String(reply.error ?? "refused") : "the worker did not answer");
         },
-        registry: registry ? async () => (await registry.ensureRegistered())?.current ?? null : undefined,
+        registry: registry ? async (wanted) => (await registry.ensureRegistered(undefined, wanted))?.current ?? null : undefined,
         recordInstall: registry ? (record) => registry.recordInstall(record) : undefined,
       });
       if (report.release.status !== "failed") await deps.meta.setMeta(LAST_CHECK_KEY, now()).catch(() => {});

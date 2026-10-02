@@ -116,6 +116,29 @@ describe("ensureRegistered", () => {
     expect(result!.registered).toBe(true);
   });
 
+  test("the registry holds SOME release but not the one being installed: it is registered and read again (the install record needs it)", async () => {
+    let newOne = false;
+    const sync = fakeSync((call) => {
+      if (call.url.endsWith("/release/register")) {
+        newOne = true;
+        return ok({ ok: true });
+      }
+      const base = current({ registered: true }) as { current: Record<string, unknown> };
+      return ok(newOne ? { ...base, current: { ...base.current, release_version: "2026.10.03-002", manifest_sha256: "c".repeat(64) } } : base);
+    });
+    const wanted = { release_version: "2026.10.03-002", manifest_sha256: "c".repeat(64) };
+    const result = await client(sync.fetchImpl).ensureRegistered(undefined, wanted);
+    expect(sync.calls.map((c) => `${c.method} ${c.url.replace(BASE, "")}`)).toEqual(["GET /release/current", "POST /release/register", "GET /release/current"]);
+    expect(result!.current!.manifest_sha256).toBe(wanted.manifest_sha256);
+  });
+
+  test("the registry already holds the release being installed: one call, nothing registered", async () => {
+    const sync = fakeSync(() => ok(current({ registered: true })));
+    const wanted = { release_version: "2026.10.02-001", manifest_sha256: "a".repeat(64) };
+    await client(sync.fetchImpl).ensureRegistered(undefined, wanted);
+    expect(sync.calls.map((c) => c.url.replace(BASE, ""))).toEqual(["/release/current"]);
+  });
+
   test("when registering fails the first answer is still returned, and nothing throws", async () => {
     const sync = fakeSync((call) => (call.url.endsWith("/release/register") ? new Response("", { status: 500 }) : ok(current({ registered: false }))));
     const result = await client(sync.fetchImpl).ensureRegistered();

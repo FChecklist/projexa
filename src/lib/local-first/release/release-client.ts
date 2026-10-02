@@ -83,7 +83,7 @@ export type ReleaseClient = {
    * current(); when the registry does not know this laptop's release, asks it to register it and reads current() again.
    * Returns the latest answer, or null when the registry cannot be reached.
    */
-  ensureRegistered(signal?: AbortSignal): Promise<CurrentRelease | null>;
+  ensureRegistered(signal?: AbortSignal, wanted?: { release_version: string; manifest_sha256: string }): Promise<CurrentRelease | null>;
 };
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -179,10 +179,13 @@ export function createReleaseClient(options: ReleaseClientOptions): ReleaseClien
     async reportPrepare(report, signal) {
       return (await call("/prepare", { method: "POST", body: report }, signal)).ok;
     },
-    async ensureRegistered(signal) {
+    async ensureRegistered(signal, wanted) {
       const first = await client.current(signal);
       if (!first) return null;
-      if (first.registered) return first;
+      // `wanted` is the release this laptop has just downloaded and is about to install. The registry knowing SOME release is not enough: when
+      // its current one is a different build, the new one is asked to be registered, or the install record for it is refused (400). Seen live.
+      const holdsWanted = !wanted || (first.current !== null && first.current.manifest_sha256 === wanted.manifest_sha256);
+      if (first.registered && holdsWanted) return first;
       if (!(await client.register(signal))) return first;
       return (await client.current(signal)) ?? first;
     },
