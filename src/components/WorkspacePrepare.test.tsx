@@ -35,12 +35,12 @@ describe("WorkspacePrepareView", () => {
     expect(getByTestId("prepare-step-app").getAttribute("data-state")).toBe("running");
   });
 
-  test("the person can always skip while it is running", () => {
-    let clicked = 0;
-    const { getByTestId } = render(<WorkspacePrepareView progress={base} onContinue={() => { clicked += 1; }} />);
-    expect(getByTestId("prepare-continue").textContent).toBe("Skip for now");
-    fireEvent.click(getByTestId("prepare-continue"));
-    expect(clicked).toBe(1);
+  test("MANDATORY: while it runs there is no skip and no way in, only a wait note", () => {
+    const { queryByTestId, queryByText, getByTestId } = render(<WorkspacePrepareView progress={base} onContinue={() => {}} />);
+    expect(queryByText("Skip for now")).toBeNull();
+    expect(queryByTestId("prepare-continue")).toBeNull();
+    expect(queryByTestId("prepare-retry")).toBeNull();
+    expect(getByTestId("prepare-wait").textContent).toContain("keep this page open");
   });
 
   test("when finished it says Done and offers to open PROJEXA", () => {
@@ -56,15 +56,26 @@ describe("WorkspacePrepareView", () => {
     expect(getByTestId("prepare-continue").textContent).toBe("Open PROJEXA");
   });
 
-  test("a failed step is named and the person is told PROJEXA still works", () => {
+  test("a failed step is named, there is NO way in, and Try again runs it again", () => {
     const failed: PrepareProgress = {
       ...base,
       finished: true,
       steps: [{ id: "worker", label: "Install PROJEXA on this laptop", state: "failed", error: "no service worker" }, ...base.steps.slice(1)],
     };
-    const { getByText } = render(<WorkspacePrepareView progress={failed} onContinue={() => {}} />);
+    let retried = 0;
+    const { getByText, getByTestId, queryByTestId } = render(<WorkspacePrepareView progress={failed} onContinue={() => {}} onRetry={() => { retried += 1; }} />);
     expect(getByText("no service worker")).toBeDefined();
-    expect(getByText(/still works/i)).toBeDefined();
+    expect(getByTestId("prepare-retry-note").textContent).toContain("tries again by itself");
+    expect(queryByTestId("prepare-continue"), "a half-prepared laptop must not be let in").toBeNull();
+    fireEvent.click(getByTestId("prepare-retry"));
+    expect(retried).toBe(1);
+  });
+
+  test("a finished run that timed out is not complete either: no way in", () => {
+    const timedOut: PrepareProgress = { ...base, finished: true, timedOut: true, steps: base.steps.map((s) => ({ ...s, state: "done" as const })) };
+    const { queryByTestId, getByTestId } = render(<WorkspacePrepareView progress={timedOut} onContinue={() => {}} onRetry={() => {}} />);
+    expect(queryByTestId("prepare-continue")).toBeNull();
+    expect(getByTestId("prepare-retry")).toBeDefined();
   });
 
   test("it never says VERIDIAN or shows Hindi, and warms real screens", () => {

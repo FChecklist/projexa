@@ -41,6 +41,9 @@ export const WARM_ROUTES = [
   "/settings",
 ] as const;
 
+/** After an incomplete run the screen starts again by itself after this long. */
+export const RETRY_AFTER_MS = 15_000;
+
 const SEEN_KEY = "px-workspace-prepare-seen";
 /**
  * "This person skipped the screen in this tab". PER PERSON (lf-e11): it was one key for the whole tab, so after a sign-out the NEXT person
@@ -138,14 +141,20 @@ export function buildSteps(
 export function WorkspacePrepareView({
   progress,
   onContinue,
+  onRetry,
   lastSyncedAt,
 }: {
   progress: PrepareProgress;
   onContinue: () => void;
+  /** Runs the steps again after a failure. */
+  onRetry?: () => void;
   /** When the projects were last copied to this laptop (ms since epoch); null when never. Omit to hide the line. */
   lastSyncedAt?: number | null;
 }) {
   const icon = (s: string) => (s === "done" ? "✓" : s === "failed" ? "!" : s === "running" ? "…" : "·");
+  // MANDATORY (owner directive 2026-10-03): every file is on the laptop before the person starts work. There is no skip. The way in
+  // opens only when every step finished; after a failure the screen retries by itself and offers "Try again".
+  const allDone = progress.finished && !progress.timedOut && progress.steps.every((s) => s.state === "done");
   return (
     <div
       role="dialog"
@@ -179,9 +188,9 @@ export function WorkspacePrepareView({
             </li>
           ))}
         </ul>
-        {progress.finished && (progress.timedOut || progress.steps.some((s) => s.state === "failed")) ? (
-          <p className="mt-4 text-xs text-px-muted">
-            Some of this could not finish. PROJEXA still works; it will try again next time you sign in.
+        {progress.finished && !allDone ? (
+          <p data-testid="prepare-retry-note" className="mt-4 text-xs text-px-muted">
+            Not everything is on this laptop yet. PROJEXA tries again by itself; you can also press Try again. You can start as soon as it is complete.
           </p>
         ) : null}
         {progress.finished && lastSyncedAt !== undefined ? (
@@ -189,14 +198,27 @@ export function WorkspacePrepareView({
             {lastSyncedAt ? `Last synced ${formatDateTime(lastSyncedAt)}` : "Projects not copied to this laptop yet"}
           </p>
         ) : null}
-        <button
-          type="button"
-          onClick={onContinue}
-          data-testid="prepare-continue"
-          className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-px-ink hover:opacity-90"
-        >
-          {progress.finished ? "Open PROJEXA" : "Skip for now"}
-        </button>
+        {allDone ? (
+          <button
+            type="button"
+            onClick={onContinue}
+            data-testid="prepare-continue"
+            className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-px-ink hover:opacity-90"
+          >
+            Open PROJEXA
+          </button>
+        ) : progress.finished ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            data-testid="prepare-retry"
+            className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-px-ink hover:opacity-90"
+          >
+            Try again
+          </button>
+        ) : (
+          <p data-testid="prepare-wait" className="mt-6 text-center text-sm text-px-muted">Please keep this page open. It opens by itself when everything is ready.</p>
+        )}
       </div>
     </div>
   );
@@ -213,6 +235,7 @@ export function WorkspacePrepare() {
   const [progress, setProgress] = useState<PrepareProgress | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null | undefined>(undefined);
   const started = useRef(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,6 +260,7 @@ export function WorkspacePrepare() {
   useEffect(() => {
     if (!open || !userId || started.current) return;
     started.current = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     prepareWorkspace({
       steps: buildSteps(userId, (href) => router.prefetch(href)),
       budgetMs: PREPARE_BUDGET_MS,
@@ -246,8 +270,13 @@ export function WorkspacePrepare() {
       try {
         if (result.ready) localStorage.setItem(readyKey(userId), String(Date.now()));
       } catch { /* ignore */ }
+      // Not complete: try again by itself (after a short wait), never let the person in half-prepared.
+      if (!result.ready) timer = setTimeout(() => { started.current = false; setAttempt((n) => n + 1); }, RETRY_AFTER_MS);
     });
-  }, [open, userId, router]);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [open, userId, router, attempt]);
+
+  const retryNow = () => { started.current = false; setAttempt((n) => n + 1); };
 
   const close = () => {
     try { if (userId) sessionStorage.setItem(seenKey(userId), "1"); } catch { /* ignore */ }
@@ -255,5 +284,5 @@ export function WorkspacePrepare() {
   };
 
   if (!open || !progress) return null;
-  return <WorkspacePrepareView progress={progress} onContinue={close} lastSyncedAt={lastSyncedAt} />;
+  return <WorkspacePrepareView progress={progress} onContinue={close} onRetry={retryNow} lastSyncedAt={lastSyncedAt} />;
 }
