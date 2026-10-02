@@ -29,7 +29,7 @@ export const realShellSignOut: ShellSignOutAction = async (deleteLocalCopy) => {
   return { notice };
 };
 
-export function ShellSignOut({ signOut = realShellSignOut, goToLogin = () => window.location.assign("/login") }: { signOut?: ShellSignOutAction; goToLogin?: () => void }) {
+export function ShellSignOut({ signOut = realShellSignOut, goToLogin = () => window.location.replace("/login") }: { signOut?: ShellSignOutAction; goToLogin?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
