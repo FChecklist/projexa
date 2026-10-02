@@ -13,6 +13,7 @@ import { createSyncScheduler, type SchedulerClock, type StepResult, type SyncSch
 import { createSignalHub, type SignalProvider } from "./signalling";
 import { setPeerStatus } from "./status";
 import type { LocalDb } from "../local-db";
+import { MANIFEST_KEY, type StoredManifest } from "../replica";
 
 export type AutoSyncDeps = {
   userId: string;
@@ -47,10 +48,17 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
   const attestation = createAttestationSource({ meta: d.db, fetchAttest: d.fetchAttest, now, userId: d.userId });
   let net: PeerNetwork | null = null;
   let netOrg: string | null = null;
+  let noPeer: readonly string[] = [];
   let stopped = false;
 
   /** Builds the network the first time a valid attestation exists (or again if the organisation changed). */
   async function ensureNetwork(): Promise<PeerNetwork | null> {
+    // lf-e9: the manifest's never-share organisation kinds (peer_shareable: false), refreshed on every run; each new link reads them
+    try {
+      noPeer = (await d.db.getMeta<StoredManifest>(MANIFEST_KEY))?.orgNoPeerKinds ?? [];
+    } catch {
+      /* keep the last known list */
+    }
     const self = await attestation.current();
     if (!self) return net;
     if (net && netOrg === self.claims.org) return net;
@@ -59,7 +67,7 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
     const hub = createSignalHub({ channel: self.channel, selfId: d.selfId, remote: d.remoteProviders, local: d.localProviders });
     net = createPeerNetwork({
       selfId: d.selfId, hub, keys: attestation.keys, store: createLocalDbPeerStore(d.db, self.claims.org), openLink: d.openLink, now,
-      getSelf: () => attestation.current(), foreignOrg: d.foreignOrg, allowedKinds: d.allowedKinds,
+      getSelf: () => attestation.current(), foreignOrg: d.foreignOrg, allowedKinds: d.allowedKinds, noPeerKinds: () => noPeer,
       onChange: (peers) => setPeerStatus({ peers }),
       onPeerVerified: () => { void scheduler.trigger("peer"); },
       onRows: () => setPeerStatus({ lastPeerSyncAt: now() }),

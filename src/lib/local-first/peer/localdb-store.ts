@@ -14,7 +14,7 @@ function rawId(r: LocalRecord): string {
 
 function toSigned(r: LocalRecord): SignedRow | null {
   if (!isShareable(r) || r.projectId === null || r.serverVersion === undefined || !r.serverUpdatedAt) return null;
-  return { project: r.projectId, kind: r.type, id: rawId(r), version: r.serverVersion, updated_at: r.serverUpdatedAt, data: r.data, sig: r.sig!, kid: r.kid! };
+  return { project: r.projectId, kind: r.type, id: rawId(r), version: r.serverVersion, updated_at: r.serverUpdatedAt, data: r.data, sig: r.sig!, kid: r.kid!, ...(r.sig3 ? { sig3: r.sig3 } : {}) };
 }
 
 export function createLocalDbPeerStore(db: LocalDb, orgId: string): PeerStore {
@@ -56,7 +56,7 @@ export function createLocalDbPeerStore(db: LocalDb, orgId: string): PeerStore {
         rows.map((r) => ({
           id: `${r.kind}:${r.id}`, type: r.kind, orgId, projectId: r.project, data: r.data,
           updatedAt: Date.parse(r.updated_at) || Date.now(),
-          serverUpdatedAt: r.updated_at, serverVersion: r.version, sig: r.sig, kid: r.kid,
+          serverUpdatedAt: r.updated_at, serverVersion: r.version, sig: r.sig, kid: r.kid, ...(r.sig3 ? { sig3: r.sig3 } : {}),
         })),
         { fromServer: true },
       );
