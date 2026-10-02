@@ -166,8 +166,14 @@ function serverRowFor(op: PushedOp, rows: Kinds, id: string, at: string): Row | 
   }
 }
 
-/** Answers the sync service for ONE project from `rows`; `role` decides the redaction. */
-export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, role: string, rows: Kinds = deliveryFixtures()): Promise<DeliverySync> {
+/**
+ * More projects of the same person: "empty" holds every kind with no row (the screens' empty states); "unsynced" never finishes copying
+ * (every pull of it answers 503, as a server under load would), so its screens must say "not finished copying" instead of an empty list.
+ */
+export type ExtraProject = { id: string; name: string; mode: "empty" | "unsynced" }
+
+/** Answers the sync service for the main project from `rows` (and any extra projects); `role` decides the redaction. */
+export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, role: string, rows: Kinds = deliveryFixtures(), extra: ExtraProject[] = []): Promise<DeliverySync> {
   const sync: DeliverySync = { served: [], pushes: [], answers: new Map(), rows }
   const versions = new Map<string, number>()
   let made = 0
@@ -191,7 +197,7 @@ export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, 
     if (request.method() === "GET" && path === "/manifest") {
       return json(route, origin, {
         user: { id: VERIDIAN_PERSON_ID, auth_user_id: who.userId, name: "Asha Rao", role, org_id: ORG_ID },
-        projects: [{ id: PROJECT_ID, name: PROJECT_NAME, status: "active" }],
+        projects: [{ id: PROJECT_ID, name: PROJECT_NAME, status: "active" }, ...extra.map((p) => ({ id: p.id, name: p.name, status: "active" }))],
         kinds: Object.keys(rows).map((kind) => ({ kind, project_scoped: true, cursor_field: "created_at", deletes_supported: true })),
         view_class: redact ? "deliveryviewer01" : "deliverymember01",
         org_kinds: [], org_view_class: null,
@@ -201,12 +207,17 @@ export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, 
     }
     if (request.method() === "GET" && path === "/heads") {
       return json(route, origin, {
-        heads: { [PROJECT_ID]: 0, __org__: 0 }, projects_etag: "lf-dl-projects-1", role, view_class: redact ? "deliveryviewer01" : "deliverymember01", org_view_class: null,
+        heads: { [PROJECT_ID]: 0, ...Object.fromEntries(extra.map((p) => [p.id, 0])), __org__: 0 }, projects_etag: "lf-dl-projects-1", role, view_class: redact ? "deliveryviewer01" : "deliverymember01", org_view_class: null,
         epoch: EPOCH, server_time: now,
       })
     }
     if (request.method() === "POST" && path === "/pull") {
       const body = request.postDataJSON() as { project_id?: string; kind?: string; ids?: string[] }
+      const other = extra.find((p) => p.id === body.project_id)
+      if (other?.mode === "unsynced") return json(route, origin, { error: "Service unavailable. Try again in a minute." }, 503)
+      if (other && body.kind && body.kind in rows) {
+        return json(route, origin, { items: [], kid: null, next_cursor: null, has_more: false, hidden_fields: [], redacted: false, server_time: now })
+      }
       const list = body.kind ? rows[body.kind] : undefined
       if (body.project_id !== PROJECT_ID || !list) return json(route, origin, { error: "not found" }, 404)
       const chosen = body.ids ? list.filter((r) => body.ids!.includes(r.id)) : list
@@ -220,7 +231,9 @@ export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, 
     }
     if (request.method() === "POST" && path === "/ids") {
       const body = request.postDataJSON() as { project_id?: string; kind?: string }
-      const list = (body.kind && rows[body.kind]) || []
+      const other = extra.find((p) => p.id === body.project_id)
+      if (other?.mode === "unsynced") return json(route, origin, { error: "Service unavailable. Try again in a minute." }, 503)
+      const list = other ? [] : (body.kind && rows[body.kind]) || []
       const ids = list.map((r) => r.id)
       return json(route, origin, { ids, has_more: false, next_id: null, versions: list.map((r) => versions.get(`${body.kind}:${r.id}`) ?? 1), head_seq: 0, epoch: EPOCH, server_time: now })
     }
@@ -311,13 +324,26 @@ export function readOutbox(page: Page, userId: string): Promise<Array<{ opId: st
 
 export type Prepared = { session: LocalSession; sync: DeliverySync; app: AppStub }
 
+/** How long the first-run screen took to finish when a project could not be copied (ms), for the spec to assert on. */
+export const prepareFinishedAfterMs: number[] = []
+
 /** Signs in, opens the app online once (the first-run screen copies everything), and waits until every delivery kind is on the laptop. */
-export async function prepareDeliveryLaptop(page: Page, context: BrowserContext, net: Net, role: string, expect: typeof import("@playwright/test").expect): Promise<Prepared> {
+export async function prepareDeliveryLaptop(
+  page: Page, context: BrowserContext, net: Net, role: string, expect: typeof import("@playwright/test").expect, extra: ExtraProject[] = []
+): Promise<Prepared> {
   const session = await signInLocally(context, "delivery-spec@example.invalid")
-  const sync = await stubDeliverySync(page, session, net, role)
+  const sync = await stubDeliverySync(page, session, net, role, deliveryFixtures(), extra)
   const app = await stubAppApis(page, PREPARE_FIXTURE, session)
   await page.goto(`/scope/${BOQ_ID}`)
-  await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 })
+  if (extra.some((p) => p.mode === "unsynced")) {
+    // a project that cannot be copied: by design the screen never says 100% then (prepare-workspace.ts), it FINISHES and says so
+    const started = Date.now()
+    await expect(page.getByTestId("prepare-continue"), "the 'Preparing your workspace' screen never finished").toHaveText("Open PROJEXA", { timeout: 240_000 })
+    await expect(page.getByTestId("prepare-step-projects")).toHaveAttribute("data-state", "failed")
+    prepareFinishedAfterMs.push(Date.now() - started)
+  } else {
+    await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 })
+  }
   await page.getByTestId("prepare-continue").click()
   await expect
     .poll(() => readMeta(page, "projexa-local", "app:release"), { timeout: 240_000, message: "the release was never installed (meta app:release)" })
@@ -329,7 +355,7 @@ export async function prepareDeliveryLaptop(page: Page, context: BrowserContext,
   }
   await expect
     .poll(() => readMeta(page, "projexa-local", `shell:manifest:${session.userId}`), { timeout: 60_000, message: "the project names were never cached" })
-    .toMatchObject({ projects: [{ id: PROJECT_ID, name: PROJECT_NAME }] })
+    .toMatchObject({ projects: expect.arrayContaining([expect.objectContaining({ id: PROJECT_ID, name: PROJECT_NAME }), ...extra.map((p) => expect.objectContaining({ id: p.id, name: p.name }))]) })
   await page.reload()
   await expect
     .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" })
