@@ -71,7 +71,9 @@ export function findFunction(functionId: string): RegistryFunction | undefined {
 // The registry has no "action" column, so it is read from the verb the id starts with. A delete is a function that
 // REMOVES or VOIDS a record; everything that starts a new record is a create; the rest change an existing record.
 // The registry has no general delete today (only void_material_receipt): that is a backend gap (R7), not hidden here.
-const DELETE_VERBS = ["delete_", "remove_", "void_", "archive_", "cancel_"];
+// lf-e11: dispose_ joined when the registry copy was refreshed (dispose_document marks a document disposed: a removal the
+// person confirms, not an update an AI may send by itself). registry-contract.test.ts checks every live label for this.
+const DELETE_VERBS = ["delete_", "remove_", "void_", "archive_", "cancel_", "dispose_"];
 const CREATE_VERBS = ["create_", "add_", "record_", "capture_", "apply_", "place_", "log_", "link_"];
 
 export function actionOf(functionId: string): WriteAction {

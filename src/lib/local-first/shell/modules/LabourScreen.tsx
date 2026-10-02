@@ -6,7 +6,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
-import { CopyNote, DASH, Money, Num, Screen, StateMessage, Tabs, Waiting, projectName, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Money, Num, Screen, StateMessage, Tabs, Waiting, mayWrite, projectName, withProject } from "./DeliveryParts";
 import type { LabourData } from "./labour-adapter";
 
 const TABS = [
@@ -33,7 +33,7 @@ export default function LabourScreen({ shell, query, data }: ShellScreenProps<La
         </p>
       ) : null}
       <p className="mt-2 flex gap-3 text-sm">
-        <a className="text-px-ink underline underline-offset-2" href={withProject("/labour/attendance/new", data.projectId)}>Mark attendance</a>
+        {mayWrite(shell) ? <a className="text-px-ink underline underline-offset-2" href={withProject("/labour/attendance/new", data.projectId)}>Mark attendance</a> : null}
         <a className="text-px-ink underline underline-offset-2" href={withProject(`/labour/attendance/${today}`, data.projectId)}>Today&apos;s sheet</a>
       </p>
       <Tabs tabs={TABS} active={tab} base="/labour" projectId={data.projectId} />

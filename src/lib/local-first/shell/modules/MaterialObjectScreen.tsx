@@ -4,10 +4,10 @@
 // master (unit, cost, reorder level) is done online: unit cost is money.
 
 import type { ShellScreenProps } from "../types";
-import { CopyNote, DASH, Money, Num, Screen, StateMessage, Waiting, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Money, Num, Screen, StateMessage, Waiting, mayWrite, withProject } from "./DeliveryParts";
 import type { MaterialData } from "./materials-adapter";
 
-export default function MaterialObjectScreen({ data }: ShellScreenProps<MaterialData>) {
+export default function MaterialObjectScreen({ shell, data }: ShellScreenProps<MaterialData>) {
   if (data.state !== "local") return <StateMessage testId="material" title="Material" state={data.state} what="material" back={{ href: "/materials", label: "Back to Materials" }} />;
   const m = data.material;
   const p = data.projectId;
@@ -23,10 +23,12 @@ export default function MaterialObjectScreen({ data }: ShellScreenProps<Material
         <dt className="text-px-muted">Unit</dt><dd>{m.unit ?? DASH}</dd>
         <dt className="text-px-muted">Unit Cost</dt><dd><Money value={m.unitCost} hidden={data.costHidden} /></dd>
       </dl>
-      <p className="mt-3 flex gap-3 text-sm">
-        <a className="text-px-ink underline underline-offset-2" href={withProject(`/materials/receipts/new?materialId=${encodeURIComponent(m.id)}`, p)}>Record receipt</a>
-        <a className="text-px-ink underline underline-offset-2" href={withProject(`/materials/issues/new?materialId=${encodeURIComponent(m.id)}`, p)}>Issue material</a>
-      </p>
+      {mayWrite(shell) ? (
+        <p className="mt-3 flex gap-3 text-sm">
+          <a className="text-px-ink underline underline-offset-2" href={withProject(`/materials/receipts/new?materialId=${encodeURIComponent(m.id)}`, p)}>Record receipt</a>
+          <a className="text-px-ink underline underline-offset-2" href={withProject(`/materials/issues/new?materialId=${encodeURIComponent(m.id)}`, p)}>Issue material</a>
+        </p>
+      ) : null}
       <h2 className="mt-6 font-heading text-lg text-px-ink">Movements</h2>
       {data.receipts === null || data.issues === null ? (
         <p className="mt-2 text-sm text-px-muted">Receipts or issues have not finished copying to this laptop yet.</p>

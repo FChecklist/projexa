@@ -344,6 +344,8 @@ export function createReplica(options: ReplicaOptions): Replica {
             ...(item.version !== undefined ? { serverVersion: item.version } : {}),
             ...(item.sig ? { sig: item.sig } : {}),
             ...(item.sig && kid ? { kid } : {}),
+            // lf-e9: the px3 signature travels on to peers with the row (only next to a px2 one: a peer needs both)
+            ...(item.sig && kid && item.sig3 ? { sig3: item.sig3 } : {}),
           });
         }
       }

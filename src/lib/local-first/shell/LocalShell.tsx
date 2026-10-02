@@ -12,6 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker";
+import { OutboxAttention } from "@/components/OutboxAttention";
+import type { Outbox } from "../outbox";
+import { AiAttach } from "../ai/AiAttach";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -21,6 +24,7 @@ import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
 import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
+import { connectShellOutbox, shellShowsOutboxCard, type ShellOutbox } from "./shell-outbox";
 import type { ShellApi, ShellRoute, ShellScreenProps } from "./types";
 
 type Boot =
@@ -103,6 +107,14 @@ export default function LocalShell() {
     }
   }, [userId]);
 
+  // lf-e11: the person's OUTBOX resumes here too, as in the (app) shell (M24Shell). Changes made offline -- by the person's screens or by
+  // their AI -- and then a reload or a page opened offline left their ops in IndexedDB with nothing to send them: the outbox was only
+  // created by the next write, so its `online` handler never ran and the work stayed on the laptop after the connection came back.
+  useEffect(() => {
+    if (!userId) return;
+    void import("../outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
+  }, [userId]);
+
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
   useEffect(() => {
     if (boot.status !== "signed_out" || !location || connectivity !== "online") return;
@@ -162,12 +174,42 @@ export default function LocalShell() {
     };
   }, [writer, boot, refresh]);
 
+  // The person's outbox (every screen's writes but the BOQ edit queue above): started as soon as the shell knows who they are, so what
+  // a reload left waiting is sent when the laptop is back online (shell-outbox.ts says why this was missing).
+  const outboxRef = useRef<ShellOutbox<Outbox> | null>(null);
+  const [outbox, setOutbox] = useState<Outbox | null>(null);
+  useEffect(() => {
+    if (!userId) return;
+    let live: ShellOutbox<Outbox> | null = null;
+    let cancelled = false;
+    void import("../outbox-shared").then(({ getSharedOutbox }) => {
+      if (cancelled) return;
+      live = connectShellOutbox(userId, { getOutbox: getSharedOutbox, onSettled: refresh });
+      outboxRef.current = live;
+      setOutbox(live.outbox);
+    }).catch(() => {
+      /* the outbox could not load: edits stay stored and are sent by the next page load */
+    });
+    return () => {
+      cancelled = true;
+      live?.stop();
+      if (outboxRef.current === live) outboxRef.current = null;
+      setOutbox(null);
+    };
+  }, [userId, refresh]);
+
   // Back online: send what waited. The person coming back to the tab is a good moment to try again too (one try, no timer storm).
   useEffect(() => {
-    if (connectivity === "online") schedulerRef.current?.nudge({ immediate: true });
+    if (connectivity === "online") {
+      schedulerRef.current?.nudge({ immediate: true });
+      outboxRef.current?.nudge();
+    }
   }, [connectivity]);
   useEffect(() => {
-    const onFocus = () => schedulerRef.current?.nudge({ immediate: true });
+    const onFocus = () => {
+      schedulerRef.current?.nudge({ immediate: true });
+      outboxRef.current?.nudge();
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
@@ -222,6 +264,9 @@ export default function LocalShell() {
 
   return (
     <Chrome navigate={navigate} data={data} shell={shell} locationPath={location.path}>
+      {/* LOCAL-FIRST browser AI (R11, lf-e11): the same doors as every signed-in (app) page, for the person kept on this laptop -- this
+          shell is what opens with no internet, so without it a person's AI could not work offline at all. */}
+      <AiAttach userId={data.userId} />
       {location.path === "/" ? (
         <Home shell={shell} />
       ) : matched ? (
@@ -229,6 +274,7 @@ export default function LocalShell() {
       ) : (
         <NotInShell location={location} online={connectivity === "online"} />
       )}
+      {outbox && shellShowsOutboxCard(matched?.route.pattern ?? null) ? <OutboxAttention key={data.userId} outbox={outbox} /> : null}
     </Chrome>
   );
 }
@@ -367,7 +413,7 @@ function ScreenHost({ route, params, search, shell, refreshKey, projectKey }: { 
 function NotInShell({ location, online }: { location: ShellLocation; online: boolean }) {
   const serverUrl = serverPageUrl(location);
   useEffect(() => {
-    if (online) window.location.replace(serverUrl);
+    if (online && navigator.onLine !== false) window.location.replace(serverUrl);
   }, [online, serverUrl]);
   return (
     <section data-testid="local-shell-not-here" data-online={online ? "1" : "0"}>

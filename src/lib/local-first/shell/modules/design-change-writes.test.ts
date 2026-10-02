@@ -64,6 +64,17 @@ describe("a new change order, made with the network off", () => {
     expect(pendingView(await r.ops(), CHANGE_ORDERS_KIND).created.has(result.tempId!)).toBe(true);
   });
 
+  test("lf-e10b: for a role whose copy has the cost HIDDEN, no costImpact is sent at all (no write for a hidden field), even a typed one", async () => {
+    const r = await rig();
+    await createChangeOrderOffline({ projectId: "p1", title: "Extra power points", scheduleImpactDays: "2", costHidden: true }, r.access);
+    await createChangeOrderOffline({ projectId: "p1", title: "Typed anyway", costImpact: "900", costHidden: true }, r.access);
+    const [a, b] = await r.ops();
+    expect(a!.params).toEqual({ projectId: "p1", title: "Extra power points", scheduleImpactDays: 2 });
+    expect(b!.params).toEqual({ projectId: "p1", title: "Typed anyway", scheduleImpactDays: 0 });
+    const tempId = (b!.creates as { id: string }).id;
+    expect((await r.row(CHANGE_ORDERS_KIND, tempId))?.data).toMatchObject({ cost_impact: null });
+  });
+
   test("empty cost and schedule are sent as 0, exactly as the online screen does", async () => {
     const r = await rig();
     await createChangeOrderOffline({ projectId: "p1", title: "X" }, r.access);

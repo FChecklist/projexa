@@ -14,6 +14,8 @@
 //     view class as ours; anything else is a bye and NOTHING of ours is ever sent (have/items wait for a verified hello);
 //   * a row is accepted only when its server signature verifies for OUR org, its project is in both tokens, it is not a
 //     tombstone, its version is strictly higher than the local serverVersion, and the local record is not dirty;
+//   * lf-e9: a row that carries the px3 signature (`sig3`, it commits to the view class the row was cut for) must verify for OUR
+//     view class, or it is refused as `wrong_view` (px3.test.ts); a row with only px2 is still accepted until every server sends px3;
 //   * the sender hands over only rows with a valid server signature and no pending local edit (local-db.ts isShareable),
 //     and never a version or a deletion of its own (a signed row cannot be altered: its version is inside the signature);
 //   * every message is size-capped; an oversized or unparseable message ends the session;
@@ -23,7 +25,7 @@
 //
 // Pure apart from WebCrypto: the link, the store, the keys and the clock are all injected.
 
-import { canonicalize, sha256Hex, verifyRow, verifyToken, type KeyRing, type PeerClaims, type SignedRow } from "./verify";
+import { canonicalize, sha256Hex, verifyRow, verifyRowV3, verifyToken, type KeyRing, type PeerClaims, type SignedRow } from "./verify";
 import type { PeerLink } from "./transport";
 import { ORG_PROJECT } from "../sync-client";
 import { NEVER_PEER_KINDS } from "../replica-org";
@@ -31,6 +33,8 @@ import { NEVER_PEER_KINDS } from "../replica-org";
 export const MAX_MESSAGE_BYTES = 512 * 1024;
 export const DEFAULT_BATCH_BYTES = 64 * 1024;
 export const KNOWN_PER_MESSAGE = 2000;
+/** lf-e9: how often a session asks for a lost hello again, and how often it answers such an ask (bounded: never a loop). */
+export const MAX_HELLO_RESENDS = 3;
 
 export type PairSummary = { n: number; digest: string };
 export type ProjectSummary = Record<string, PairSummary>;
@@ -49,7 +53,7 @@ export type PeerStore = {
   apply(rows: SignedRow[]): Promise<number>;
 };
 
-export type RejectReason = "bad_signature" | "not_shared" | "tombstone" | "not_newer" | "dirty" | "foreign_org" | "malformed";
+export type RejectReason = "bad_signature" | "wrong_view" | "not_shared" | "tombstone" | "not_newer" | "dirty" | "foreign_org" | "malformed";
 
 export type SessionState = "connecting" | "verified" | "closed";
 
@@ -69,6 +73,11 @@ export type PeerSessionOptions = {
   allowedKinds?: readonly string[];
   /** lf-e7: organisation kinds that never move between laptops (manifest `peer_shareable: false`); org_people always among them. */
   noPeerKinds?: readonly string[];
+  /**
+   * lf-e9 review: a row WITHOUT `sig3` is refused (reason wrong_view). px2 alone does not commit to the view class, so a peer could strip
+   * sig3 from a row cut for another class and have it accepted. The server signs px3 on every row that has a view; the real network sets this.
+   */
+  requirePx3?: boolean;
   /** A data field naming another organisation (replica.ts foreignOrg). */
   foreignOrg?: (data: unknown, org: string) => boolean;
   onVerified?: (peer: PeerClaims) => void;
@@ -91,7 +100,7 @@ export type PeerSession = {
 };
 
 type Msg =
-  | { t: "hello"; token: string }
+  | { t: "hello"; token: string; ask?: boolean }
   | { t: "have"; projects: Record<string, ProjectSummary>; reply?: boolean }
   | { t: "want"; project: string; kind: string; known: Array<[string, number]>; done: boolean }
   | { t: "items"; rows: SignedRow[] }
@@ -133,6 +142,8 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
   let readyResolve!: () => void;
   const ready = new Promise<void>((r) => (readyResolve = r));
   let firstHaveSeen = false;
+  let helloAsks = 0;
+  let helloResends = 0;
   // Messages are handled strictly one after another: a batch of rows is stored before the next message is looked at.
   let chain: Promise<void> = Promise.resolve();
 
@@ -180,8 +191,12 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     send({ t: "have", projects, reply });
   }
 
-  async function onHello(token: unknown) {
-    if (peer) return; // a second hello changes nothing
+  async function onHello(token: unknown, ask: boolean) {
+    if (peer) {
+      // a second hello changes nothing; one that ASKS means the peer never got ours (lf-e9: lost in a real browser), so it is sent again
+      if (ask && helloResends < MAX_HELLO_RESENDS) { helloResends += 1; send({ t: "hello", token: self.token }); }
+      return;
+    }
     const check = await verifyToken(token, keys, now());
     if (!check.ok) return refuse(check.reason);
     if (check.claims.org !== self.claims.org) return refuse("wrong_org");
@@ -194,7 +209,8 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     if (self.claims.orgView && peer.orgView && self.claims.orgView === peer.orgView) shared.add(ORG_PROJECT);
     state = "verified";
     options.onVerified?.(peer);
-    await sendHave(false);
+    // when we had to ask for this hello, the peer's own `have` arrived before it and was dropped: ask it to send that again
+    await sendHave(helloAsks > 0);
   }
 
   async function onHave(m: Extract<Msg, { t: "have" }>) {
@@ -262,8 +278,14 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       if (!isRowShape(raw)) { reject("malformed"); continue; }
       if ((raw as { deleted?: unknown }).deleted !== undefined) { reject("tombstone"); continue; }
       if (!shared.has(raw.project) || !kindOk(raw.kind)) { reject("not_shared"); continue; }
-      const row: SignedRow = { project: raw.project, kind: raw.kind, id: raw.id, version: raw.version, updated_at: raw.updated_at, data: raw.data, sig: raw.sig, kid: raw.kid };
+      const sig3 = (raw as { sig3?: unknown }).sig3;
+      if (sig3 !== undefined && (typeof sig3 !== "string" || sig3 === "")) { reject("malformed"); continue; }
+      const row: SignedRow = { project: raw.project, kind: raw.kind, id: raw.id, version: raw.version, updated_at: raw.updated_at, data: raw.data, sig: raw.sig, kid: raw.kid, ...(sig3 ? { sig3 } : {}) };
       if (!(await verifyRow(row, self.claims.org, keys))) { reject("bad_signature"); continue; }
+      // lf-e9 (px3): a row that carries the view-class signature must carry it for OUR view class; one cut for another class is refused
+      // (the server signs an ORGANISATION row's px3 with the organisation view class, handler.ts `isOrgKind(kind) ? orgView : view`)
+      const v3View = row.project === ORG_PROJECT ? self.claims.orgView : self.claims.view;
+      if ((row.sig3 || options.requirePx3) && !(v3View && row.sig3 && (await verifyRowV3(row, self.claims.org, v3View, keys)))) { reject("wrong_view"); continue; }
       if (options.foreignOrg?.(row.data, self.claims.org)) { reject("foreign_org"); continue; }
       const local = await store.local(row.kind, row.id);
       if (local?.dirty) { reject("dirty"); continue; }
@@ -288,9 +310,14 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     }
     if (typeof m !== "object" || m === null || typeof (m as { t?: unknown }).t !== "string") return refuse("protocol");
     if (m.t === "bye") return close("bye");
-    if (m.t === "hello") return onHello(m.token);
-    // Nothing but hello is looked at before the peer proved who it is.
-    if (!peer) return;
+    if (m.t === "hello") return onHello(m.token, m.ask === true);
+    // Nothing but hello is looked at before the peer proved who it is. But traffic from a peer whose hello we never saw means the peer
+    // verified US and its own hello was lost on the way (lf-e9: seen in Chromium when the answering side sends it the instant its data
+    // channel opens): ask for it again, a bounded number of times, instead of both sides waiting forever on a half-open session.
+    if (!peer) {
+      if (helloAsks < MAX_HELLO_RESENDS) { helloAsks += 1; send({ t: "hello", token: self.token, ask: true }); }
+      return;
+    }
     if (m.t === "have") return onHave(m);
     if (m.t === "want") return onWant(m);
     if (m.t === "items") return onItems(m);

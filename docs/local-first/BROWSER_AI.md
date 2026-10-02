@@ -10,7 +10,8 @@ Code: `src/lib/local-first/ai/`. Tests: `bun test --isolate src/lib/local-first/
 ## How each kind of browser agent finds PROJEXA
 
 All four doors open by themselves on every signed-in page of the app shell (`src/app/(app)/layout.tsx` mounts
-`AiAttach`). Nothing is installed, configured, pasted or approved by the person.
+`AiAttach`) and of the on-laptop `/local` shell (`LocalShell.tsx` mounts it with the person kept on the laptop, so the
+doors are there with no internet: lf-e11). Nothing is installed, configured, pasted or approved by the person.
 
 | Agent kind | Door | What it gets |
 |---|---|---|
@@ -56,7 +57,9 @@ Every refusal is a `ProjexaAiError` with a `code` and a `message` in plain words
   "Requests from your AI" box (`AiDraftConfirm`). The confirm is deliberately not on `window.projexa.ai` (the AI could
   call it) and only reacts to a trusted user event. The role is checked again at confirm time. If the person has
   "let my AI act without asking" switched on (sent by the sync service's `/manifest` as `settings.ai_act_without_asking`
-  or `user.ai_act_without_asking`; default **off**), the delete is queued at once.
+  or `user.ai_act_without_asking`; default **off**), the delete is queued at once -- except a **money-sensitive** one
+  (`money_sensitive: true` in the registry, e.g. `void_material_receipt`, `delete_boq`, `delete_attendance`), which is a
+  draft the person confirms whatever the setting (lf-e11).
 * **Who the person is** (role, project names, the setting) is fetched from the sync service's `/manifest` when online
   (at most every 6 hours) and kept in the local database (`ai:identity`), so it works offline. Until it has been fetched
   once, the AI may read but not write.
@@ -66,7 +69,9 @@ Every refusal is a `ProjexaAiError` with a `code` and a `message` in plain words
 * The surface has no function that writes code, files, the service worker, the release bundle, the cache or the
   configuration, and no eval-like entry point. `immutability.test.ts` enumerates every exposed name (methods, WebMCP
   tools, manual tools, registry functions) against a deny-list and scans the surface's source for `eval`/`new Function`.
-* `window.projexa` and `window.projexa.ai` are read-only properties; the API object is frozen.
+* `window.projexa` is a non-configurable accessor with no setter (assignment, `delete` and `Object.defineProperty` all fail;
+  lf-e11 -- it was a configurable value, which `defineProperty` could swap); `window.projexa.ai` is read-only and the API
+  object is frozen.
 * Before the first answer, `integrity.ts` re-hashes every installed release file in Cache Storage
   (`px-release-<version>`) against the file table the installer recorded (`app:release`, `app:files` in the device
   database). Any missing / resized / changed file switches the whole surface off (`SOFTWARE_TAMPERED`) and reports it.
@@ -91,19 +96,33 @@ Guarded by `aria-contract.test.ts`:
 * An agent with full browser control (debugger / CDP) can produce trusted clicks, so it could press "Confirm" itself.
   The confirm protects against scripts in the page, not against an agent that already controls the browser; the server
   remains the authority on what the role may do.
-* The registry has no general delete and no generic update today (backend gap R7): `delete()` covers
-  `void_material_receipt` only; `update()` covers the registry's named updates. `create_project` is refused offline
-  (a project-less op cannot go through the outbox): it is done online.
+* The registry has no general delete and no generic update (backend gap R7): `delete()` covers the registry's removals
+  (`delete_*`, `remove_*`, `void_*`, `dispose_*`, `archive_*`, `cancel_*`: 17 on compliance-tracker main, 2026-10-02);
+  `update()` covers the registry's named updates. `create_project` is never run by this surface (a project-less op cannot
+  go through the outbox): it is done online, and no manual offers it (lf-e11).
+* `update()` / `delete()` work only on a record this laptop holds (a kind the sync service copies). The manual lists every
+  registry function the role may use, including updates of kinds the laptop does not copy (vendors, customers, ...): such
+  a call is refused `NOT_FOUND` in plain words. (Not narrowed in the manual: the registry has no function -> kind map.)
+* The registry copy (`function-registry.json`) must equal the live registry's writes: `registry-contract.test.ts` fails
+  when it drifts (it was 45 writes behind on 2026-10-02) and checks every laptop writer's parameter names against it.
 * `update()` changes locally only fields the row already has with the same name as a parameter; the server's row
   replaces it once applied.
 * Drafts live in memory: a reload drops an unconfirmed draft (nothing was written).
+* The release check runs once per page (when the doors open). A release put back while the page is open (the installer's
+  repair) switches the AI back on at the next page load, not on the open page.
+
+## Real-browser proof (package lf-e11)
+
+`e2e/lf-ai-discovery.spec.ts`, `e2e/lf-ai-data.spec.ts`, `e2e/lf-ai-software.spec.ts` (stub: `e2e/support/lf-ai-stub.ts`,
+helpers: `e2e/support/lf-ai-laptop.ts`) run through `playwright.local-first.config.ts` (add `/lf-ai-.*\.spec\.ts/` to its
+`testMatch`): discovery, role-redacted reads, isolation, create/update through the outbox, delete drafts and the person's
+confirm, "act without asking", offline, the R5 attacks, the release check off/on, and a second person on one laptop.
 
 ## Integration steps still open
 
 1. **Release check.** `origin/feat/lf-pwa-offline` is not merged into this branch. `integrity.ts` mirrors its
    `app:release` / `app:files` meta keys and `px-release-<version>` cache name. After merging, keep the key names in
    step (or import them from `release/release-constants.ts`).
-2. **`/local` static shell.** That shell does not exist yet on `origin/feat/lf-pwa-offline`. When it does, mount
-   `<AiAttach />` in it the same way as in `src/app/(app)/layout.tsx`.
+2. ~~**`/local` static shell.**~~ Done (lf-e11): `LocalShell.tsx` mounts `<AiAttach userId=... />`.
 3. **The setting.** The sync service's `/manifest` must send `settings.ai_act_without_asking` (backend); until it does,
    every AI delete is a draft (the safe default).

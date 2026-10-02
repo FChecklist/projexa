@@ -16,7 +16,7 @@ export default function DesignChangeServerOnlyScreen({ shell, data }: ShellScree
   const online = shell.connectivity === "online";
   const serverUrl = serverPageUrl({ path: data.path, search: data.search });
   useEffect(() => {
-    if (online) window.location.replace(serverUrl);
+    if (online && navigator.onLine !== false) window.location.replace(serverUrl);
   }, [online, serverUrl]);
   return (
     <section data-testid="dc-server-only" data-online={online ? "1" : "0"}>

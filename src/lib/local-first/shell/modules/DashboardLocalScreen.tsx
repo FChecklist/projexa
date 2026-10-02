@@ -7,17 +7,15 @@
 // Money, budgets, valuation and progress-by-value are the SERVER's figures only: shown from the snapshot "As of ..., from this laptop",
 // or "worked out by the server when you are online" when there is none. Nothing on this screen computes one.
 
-import { useEffect, useState } from "react";
-import { OutboxAttention } from "@/components/OutboxAttention";
 import { formatAmount } from "@/lib/boq-helpers";
 import { formatDateTime } from "@/lib/format-date";
 import { WORKING_LOCALLY_TEXT } from "../../connectivity";
-import type { Outbox } from "../../outbox";
 import type { ShellScreenProps } from "../types";
 import { asOfLabel } from "../snapshot-cache";
 import { projectDashboardFor, projectDashboardSnapshotName, projectDashboardUrl, type DashboardData, type Fact } from "./dashboard-adapter";
 import type { StatusCount } from "./dashboard-facts";
 import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-refresh";
+import { useOverviewCatchUp } from "./overview-catch-up";
 
 function Card({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
   return (
@@ -52,18 +50,7 @@ function StatusList({ rows, none }: { rows: StatusCount[]; none: string }) {
 const figure = (n: number | null, kind: "percent" | "amount" | "count") =>
   n === null ? "Not set" : kind === "percent" ? `${Math.round(n * 10) / 10}%` : kind === "amount" ? formatAmount(n) : String(n);
 
-/** The outbox of this person, only if this tab already has one (peek never creates one, so nothing is sent from here). */
-function usePeekedOutbox(userId: string): Outbox | null {
-  const [outbox, setOutbox] = useState<Outbox | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void import("../../outbox-shared").then((m) => {
-      if (!cancelled) setOutbox(m.peekSharedOutbox(userId));
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [userId]);
-  return outbox;
-}
+// The card that says a change needs the person (OutboxAttention) is the shell's own, on every screen (LocalShell.tsx, lf-e10a/e10b); this screen no longer mounts a second copy.
 
 export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<DashboardData>) {
   const project = shell.data.projects.find((p) => p.id === data.projectId);
@@ -71,7 +58,8 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
     ? [{ name: projectDashboardSnapshotName(data.projectId), url: projectDashboardUrl(data.projectId), validate: projectDashboardFor(data.projectId) }]
     : [];
   const status = useSnapshotRefresh(shell, reads);
-  const outbox = usePeekedOutbox(shell.data.userId);
+  // the facts below are counted from the laptop's copy: keep the open project's copy current while this is on screen
+  useOverviewCatchUp(shell, data.projectId);
   const online = shell.connectivity === "online";
   const w = data.waiting;
   const waitingTotal = w.outbox + w.shellEdits;
@@ -133,13 +121,21 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
                 <p className="text-xs" data-testid="overview-dashboard-asof">{asOfLabel(snap.fetchedAt)}</p>
                 <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-4">
                   <dt>Progress</dt><dd className="text-px-ink">{figure(snap.body.progressPercent, "percent")}</dd>
-                  <dt>% complete by BOQ value</dt><dd className="text-px-ink">{figure(snap.body.percentByValue, "percent")}</dd>
-                  <dt>Contract value</dt><dd className="text-px-ink">{figure(snap.body.contractValue, "amount")}</dd>
-                  <dt>Budget</dt><dd className="text-px-ink">{figure(snap.body.budget, "amount")}</dd>
-                  <dt>Spent</dt><dd className="text-px-ink">{figure(snap.body.expenses, "amount")}</dd>
+                  {/* Hidden money is left out, never drawn as "Not set" (that would say the project HAS no budget). */}
+                  {snap.body.financialsRedacted === true ? null : (
+                    <>
+                      <dt>% complete by BOQ value</dt><dd className="text-px-ink">{figure(snap.body.percentByValue, "percent")}</dd>
+                      <dt>Contract value</dt><dd className="text-px-ink">{figure(snap.body.contractValue, "amount")}</dd>
+                      <dt>Budget</dt><dd className="text-px-ink">{figure(snap.body.budget, "amount")}</dd>
+                      <dt>Spent</dt><dd className="text-px-ink">{figure(snap.body.expenses, "amount")}</dd>
+                    </>
+                  )}
                   <dt>Delayed tasks</dt><dd className="text-px-ink">{figure(snap.body.delayedTaskCount, "count")}</dd>
                   <dt>Permits expiring</dt><dd className="text-px-ink">{figure(snap.body.permitsExpiringCount, "count")}</dd>
                 </dl>
+                {snap.body.financialsRedacted === true ? (
+                  <p className="mt-2 text-xs" data-testid="overview-dashboard-money-hidden">Money figures are shown to managers and above.</p>
+                ) : null}
               </div>
             ) : (
               <p data-state="none">Money, budgets and progress by value are worked out by the server. {online ? "" : "They will be shown here once the laptop is connected."}</p>
@@ -170,8 +166,6 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
           <p className="text-xs text-px-muted">Counted on this laptop from what is saved here. The schedule's critical path and approvals are decided by the server.</p>
         </>
       ) : null}
-
-      {outbox ? <OutboxAttention outbox={outbox} /> : null}
     </section>
   );
 }

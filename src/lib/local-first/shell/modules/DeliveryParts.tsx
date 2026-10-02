@@ -9,7 +9,17 @@ import { formatAmount } from "@/lib/boq-helpers";
 import { formatDateTime } from "@/lib/format-date";
 import { serverPageUrl } from "../paths";
 import type { ShellApi } from "../types";
-import { refusalText, type WriteResult } from "./delivery-writes";
+import { canOfferWrites, refusalText, type WriteResult } from "./delivery-writes";
+
+/** Whether this person is offered the delivery writes (see canOfferWrites: a read-only role is not). */
+export function mayWrite(shell: ShellApi): boolean {
+  return canOfferWrites(shell.data.role);
+}
+
+/** What a read-only role sees where a form or a write control would be. */
+export function ReadOnlyNote() {
+  return <p className="mt-4 text-sm text-px-muted" data-testid="delivery-read-only">Your role can see this but not change it.</p>;
+}
 
 export const DASH = "—";
 

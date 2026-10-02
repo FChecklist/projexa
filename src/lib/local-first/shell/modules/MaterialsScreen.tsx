@@ -6,7 +6,7 @@
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ShellScreenProps } from "../types";
-import { CopyNote, DASH, Money, Num, Screen, ServerOnly, StateMessage, Tabs, Waiting, projectName, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Money, Num, Screen, ServerOnly, StateMessage, Tabs, Waiting, mayWrite, projectName, withProject } from "./DeliveryParts";
 import type { MaterialsData } from "./materials-adapter";
 
 const TABS = [
@@ -25,10 +25,12 @@ export default function MaterialsScreen({ shell, query, data }: ShellScreenProps
   return (
     <Screen testId="materials" state="local" title={`Materials${name ? ` / ${name}` : ""}`}>
       <CopyNote testId="materials-copy-note" syncedAt={data.syncedAt} />
-      <p className="mt-2 flex gap-3 text-sm">
-        <a className="text-px-ink underline underline-offset-2" href={withProject("/materials/receipts/new", p)}>Record receipt</a>
-        <a className="text-px-ink underline underline-offset-2" href={withProject("/materials/issues/new", p)}>Issue material</a>
-      </p>
+      {mayWrite(shell) ? (
+        <p className="mt-2 flex gap-3 text-sm">
+          <a className="text-px-ink underline underline-offset-2" href={withProject("/materials/receipts/new", p)}>Record receipt</a>
+          <a className="text-px-ink underline underline-offset-2" href={withProject("/materials/issues/new", p)}>Issue material</a>
+        </p>
+      ) : null}
       <Tabs tabs={TABS} active={tab} base="/materials" projectId={p} />
 
       {tab === "master" ? (

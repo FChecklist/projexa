@@ -39,8 +39,12 @@ export type PeerClaims = {
   orgView?: string;
 };
 
-/** A signed row as one laptop hands it to another. Nothing else travels: no tombstones, no local fields. */
-export type SignedRow = { project: string; kind: string; id: string; version: number; updated_at: string; data: unknown; sig: string; kid: string };
+/**
+ * A signed row as one laptop hands it to another. Nothing else travels: no tombstones, no local fields.
+ * `sig3` (lf-e9): the server's px3 signature, which also commits to the VIEW CLASS the row was redacted for (sign.ts itemMessageV3).
+ * Sent whenever the laptop holds one; a receiver that gets it verifies it with its OWN view class, so a row cut for another class is refused.
+ */
+export type SignedRow = { project: string; kind: string; id: string; version: number; updated_at: string; data: unknown; sig: string; kid: string; sig3?: string };
 
 const te = new TextEncoder();
 const td = new TextDecoder();
@@ -78,6 +82,12 @@ export async function sha256Hex(text: string): Promise<string> {
 
 export function itemMessage(parts: { org: string; project: string; kind: string; id: string; version: number; updatedAt: string; dataHash: string }): string {
   return [ITEM_MESSAGE_PREFIX, parts.org, parts.project, parts.kind, parts.id, String(parts.version), parts.updatedAt, parts.dataHash].join("|");
+}
+
+/** px3 (byte-for-byte compliance-tracker sign.ts itemMessageV3): JSON-encoded fields, and the view class the row was redacted for. */
+export const ITEM_MESSAGE_PREFIX_V3 = "px3";
+export function itemMessageV3(parts: { org: string; project: string; kind: string; view: string; id: string; version: number; updatedAt: string; dataHash: string }): string {
+  return ITEM_MESSAGE_PREFIX_V3 + JSON.stringify([parts.org, parts.project, parts.kind, parts.view, parts.id, String(parts.version), parts.updatedAt, parts.dataHash]);
 }
 
 async function verifyRaw(pub: CryptoKey, message: string, sigB64url: string): Promise<boolean> {
@@ -193,4 +203,16 @@ export async function verifyRow(row: SignedRow, org: string, keys: KeyRing): Pro
   if (!pub) return false;
   const dataHash = await sha256Hex(canonicalize(row.data));
   return verifyRaw(pub, itemMessage({ org, project: row.project, kind: row.kind, id: row.id, version: row.version, updatedAt: row.updated_at, dataHash }), row.sig);
+}
+
+/**
+ * lf-e9: true only when `row.sig3` is a valid px3 signature for organisation `org` AND view class `view` (the RECEIVER's own) under the
+ * same key as `row.kid`. A row the server cut for another view class carries a sig3 over that other class and fails here.
+ */
+export async function verifyRowV3(row: SignedRow, org: string, view: string, keys: KeyRing): Promise<boolean> {
+  if (typeof row.sig3 !== "string" || row.sig3 === "" || typeof row.kid !== "string" || !Number.isInteger(row.version) || row.version < 0 || typeof row.updated_at !== "string") return false;
+  const pub = await keys.get(row.kid);
+  if (!pub) return false;
+  const dataHash = await sha256Hex(canonicalize(row.data));
+  return verifyRaw(pub, itemMessageV3({ org, project: row.project, kind: row.kind, view, id: row.id, version: row.version, updatedAt: row.updated_at, dataHash }), row.sig3);
 }

@@ -11,7 +11,7 @@ import { CURRENCY_FALLBACK_LABEL } from "@/lib/currency";
 import type { ShellScreenProps } from "../types";
 import type { ChangeOrderNewData } from "./design-change-adapter";
 import { createChangeOrderOffline, notQueuedMessage, validateNewChangeOrder } from "./design-change-writes";
-import { NOT_SYNCED, NO_PROJECT, Note, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
+import { COST_HIDDEN, NOT_SYNCED, NO_PROJECT, Note, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 
 const BACK = { href: "/change-orders", label: "Back to Change Orders" };
 type Field = "title" | "costImpact" | "scheduleImpactDays";
@@ -27,13 +27,13 @@ export default function ChangeOrderNewScreen({ shell, data }: ShellScreenProps<C
 
   if (data.state === "no_project") return <StateMessage testId="co-new-screen" state="no_project" title="New Change Order" back={BACK}>{NO_PROJECT}</StateMessage>;
   if (data.state === "not_synced") return <StateMessage testId="co-new-screen" state="not_synced" title="New Change Order" back={BACK}>{NOT_SYNCED}</StateMessage>;
-  const { projectId } = data;
+  const { projectId, costHidden } = data;
   if (!mayOffer(shell.data.role, "create_change_order")) {
     return <StateMessage testId="co-new-screen" state="role" title="New Change Order" back={{ href: `/change-orders${projectQuery(projectId)}`, label: BACK.label }}>Your role can read change orders but not raise them.</StateMessage>;
   }
 
   async function save() {
-    const input = { projectId, title, reason, costImpact, scheduleImpactDays };
+    const input = { projectId, title, reason, costImpact, scheduleImpactDays, costHidden };
     const errs = validateNewChangeOrder(input);
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
@@ -63,10 +63,15 @@ export default function ChangeOrderNewScreen({ shell, data }: ShellScreenProps<C
         {field("title")}
         <label className="block text-sm">Reason (optional)<textarea className={input} rows={2} data-testid="co-new-reason" value={reason} {...textInput(setReason)} /></label>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm">Cost Impact{CURRENCY_FALLBACK_LABEL ? ` (${CURRENCY_FALLBACK_LABEL.trim()})` : ""}<input className={input} data-testid="co-new-cost" inputMode="decimal" placeholder="+/- amount" value={costImpact} {...textInput(setCostImpact)} /></label>
-            {field("costImpact")}
-          </div>
+          {costHidden ? (
+            // This role does not see change-order money (hidden by the sync service), so it is not offered a money field either (lf-e10b).
+            <p className="text-sm text-px-muted" data-testid="co-new-cost-hidden">Cost Impact: {COST_HIDDEN.toLowerCase()}; it is set by someone who can see it.</p>
+          ) : (
+            <div>
+              <label className="block text-sm">Cost Impact{CURRENCY_FALLBACK_LABEL ? ` (${CURRENCY_FALLBACK_LABEL.trim()})` : ""}<input className={input} data-testid="co-new-cost" inputMode="decimal" placeholder="+/- amount" value={costImpact} {...textInput(setCostImpact)} /></label>
+              {field("costImpact")}
+            </div>
+          )}
           <div>
             <label className="block text-sm">Schedule Impact (days)<input className={input} data-testid="co-new-days" inputMode="numeric" placeholder="+/- days" value={scheduleImpactDays} {...textInput(setScheduleImpactDays)} /></label>
             {field("scheduleImpactDays")}

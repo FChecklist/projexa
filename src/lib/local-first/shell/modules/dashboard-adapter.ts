@@ -53,6 +53,12 @@ export type ProjectDashboardSnapshot = {
   delayedTaskCount: number | null;
   taskCount: number | null;
   permitsExpiringCount: number | null;
+  /**
+   * True when the server hid the money from this person (below the manager rank, compliance-tracker
+   * src/app/api/v1/projexa/dashboard/[projectId]/route.ts): the money fields are then null because they are HIDDEN, not because they are
+   * unset, and the screen leaves them out (lf-e10c, found in a real browser).
+   */
+  financialsRedacted?: boolean;
 };
 
 export type DashboardData = {

@@ -5,11 +5,11 @@
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ShellScreenProps } from "../types";
-import { CopyNote, DASH, Money, Num, Screen, StateMessage, Waiting, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Money, Num, Screen, StateMessage, Waiting, mayWrite, withProject } from "./DeliveryParts";
 import type { WorkerData } from "./labour-adapter";
 import { statusWord } from "./LabourScreen";
 
-export default function LabourWorkerScreen({ data }: ShellScreenProps<WorkerData>) {
+export default function LabourWorkerScreen({ shell, data }: ShellScreenProps<WorkerData>) {
   const back = { href: "/labour", label: "Back to Labour" };
   if (data.state !== "local") return <StateMessage testId="labour-worker" title="Worker" state={data.state} what="worker" back={back} />;
   const w = data.worker;
@@ -24,7 +24,7 @@ export default function LabourWorkerScreen({ data }: ShellScreenProps<WorkerData
         <dt className="text-px-muted">Status</dt><dd>{w.isActive ? "Active" : "Inactive"}</dd>
       </dl>
       <p className="mt-3 text-sm">
-        <a className="text-px-ink underline underline-offset-2" href={withProject(`/labour/attendance/new?rosterId=${encodeURIComponent(w.id)}`, data.projectId)}>Mark attendance</a>
+        {mayWrite(shell) ? <a className="text-px-ink underline underline-offset-2" href={withProject(`/labour/attendance/new?rosterId=${encodeURIComponent(w.id)}`, data.projectId)}>Mark attendance</a> : null}
       </p>
       <h2 className="mt-6 font-heading text-lg text-px-ink">Attendance</h2>
       {data.attendance === null ? (

@@ -16,7 +16,8 @@ export default function DeliveryServerOnlyScreen({ shell, query, data }: ShellSc
   const search = query.toString();
   const url = serverPageUrl({ path: data.path, search: search ? `?${search}` : "" });
   useEffect(() => {
-    if (online) window.location.replace(url);
+    // navigator.onLine too: the first render counts as online (server snapshot), and a redirect fired then races the next navigation when the laptop is really offline.
+    if (online && navigator.onLine !== false) window.location.replace(url);
   }, [online, url]);
   return (
     <section data-testid="delivery-server-only" data-online={online ? "1" : "0"}>

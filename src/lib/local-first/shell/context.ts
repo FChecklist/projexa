@@ -13,6 +13,11 @@ export type ShellProject = { id: string; name: string };
 /** What every shell screen is handed. */
 export type ShellData = {
   userId: string;
+  /**
+   * The same person's VERIDIAN id (compliance.users.id), when the cached manifest holds it: the id the server writes into a row's
+   * user_id. A row is the person's own when its user_id is EITHER id (lf-e10b). Null/absent: not known on this laptop yet.
+   */
+  personId?: string | null;
   name: string | null;
   email: string | null;
   role: string | null;
@@ -45,6 +50,7 @@ export function buildShellData(input: {
   const orgId = replicaMatches?.orgId ?? namesMatch?.user.org_id ?? identity.orgId;
   return {
     userId: identity.userId,
+    personId: namesMatch?.user.personId ?? null,
     name: identity.name ?? namesMatch?.user.name ?? null,
     email: identity.email,
     role: identity.role ?? namesMatch?.user.role ?? null,

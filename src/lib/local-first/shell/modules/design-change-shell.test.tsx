@@ -156,6 +156,21 @@ describe("Change Orders with NO network", () => {
     expect(fetchCalls).toEqual([]);
   });
 
+  test("lf-e10b: New Change Order for a role whose cost is hidden offers NO cost field and sends no costImpact", async () => {
+    await seedLaptop({ costHidden: true, role: "member" });
+    setOnline(false);
+    go("/local/change-orders/new?projectId=p1");
+    const { findByTestId, getByTestId, queryByTestId } = render(<LocalShell />);
+    expect((await findByTestId("co-new-screen")).getAttribute("data-state")).toBe("ready");
+    expect(queryByTestId("co-new-cost")).toBeNull();
+    fireEvent.input(getByTestId("co-new-title"), { target: { value: "Extra power points" } });
+    fireEvent.input(getByTestId("co-new-days"), { target: { value: "2" } });
+    fireEvent.click(getByTestId("co-new-save"));
+    await findByTestId("co-object");
+    const [op] = await ops();
+    expect(op!.params).toEqual({ projectId: "p1", title: "Extra power points", scheduleImpactDays: 2 });
+  });
+
   test("Send for Approval offline is RECORDED; the status stays the server's 'draft', marked as waiting", async () => {
     await seedLaptop();
     setOnline(false);

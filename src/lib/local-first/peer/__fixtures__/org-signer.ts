@@ -13,6 +13,8 @@ export type OrgSigner = {
   token(c: { sub: string; org: string; view: string; projects: string[]; orgView?: string }, nowMs: number): Promise<string>;
   row(org: string, row: Omit<SignedRow, "sig" | "kid">): Promise<SignedRow>;
   makeLaptop(o: { userId: string; org: string; view: string; orgView?: string; projects: string[]; nowMs: number }): Promise<Laptop>;
+  /** lf-e9: an ES256 signature of any message with the same key (px3 rows). */
+  signRaw(message: string): Promise<string>;
 };
 
 export async function createOrgSigner(kid = "korg1"): Promise<OrgSigner> {
@@ -21,6 +23,7 @@ export async function createOrgSigner(kid = "korg1"): Promise<OrgSigner> {
   const publicKey = { kid, alg: "ES256", jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }, active: true };
   const sign = async (message: string) => b64url(new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, te.encode(message))));
   const s: OrgSigner = {
+    signRaw: sign,
     async token(c, nowMs) {
       const iat = Math.floor(nowMs / 1000);
       const payload = { typ: "px-peer", v: 1, sub: c.sub, org: c.org, projects: c.projects, view: c.view, iat, exp: iat + 86_400, ...(c.orgView ? { org_view: c.orgView } : {}) };

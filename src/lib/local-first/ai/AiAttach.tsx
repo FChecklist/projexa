@@ -91,13 +91,19 @@ export function AiDraftConfirm({ surface }: { surface: Pick<AiSurface, "drafts" 
   );
 }
 
-export function AiAttach() {
+/**
+ * `userId`: the person, when the caller already knows them WITHOUT a network call -- the /local shell passes the identity kept on the
+ * laptop (lf-e11: the shell opened offline never mounted this, so a page opened with no internet had no AI at all, and asking Supabase
+ * who is signed in cannot answer offline either). Absent: asked from the browser's Supabase session, as the (app) layout does.
+ */
+export function AiAttach({ userId: knownUserId }: { userId?: string | null } = {}) {
   const [surface, setSurface] = useState<AiSurface | null>(null);
   useEffect(() => {
     let cancelled = false;
     let detach: (() => void) | null = null;
+    setSurface(null);
     (async () => {
-      const userId = await resolveLocalUserId();
+      const userId = knownUserId ?? (await resolveLocalUserId());
       if (!userId || cancelled || typeof window === "undefined" || typeof indexedDB === "undefined") return;
       const [{ attachAi }, { createSharedSyncClient }] = await Promise.all([import("./attach"), import("../shared-client")]);
       const attached = await attachAi({
@@ -119,7 +125,7 @@ export function AiAttach() {
       cancelled = true;
       detach?.();
     };
-  }, []);
+  }, [knownUserId]);
   return (
     <>
       <AiManualScript />
