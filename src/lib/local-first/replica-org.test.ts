@@ -226,17 +226,22 @@ describe("the organisation's share of a scheduler round (cost)", () => {
   test("within the hour a one-project run sends nothing for the organisation; after it, ONE /heads and no /changes when its head did not move", async () => {
     const t = setup("member");
     await t.replica.sync();
+    const MIN3 = 3 * 60_000; // past the replica's own "this project was just checked" window, so every round really runs
+    t.advance(MIN3);
     t.server.calls.length = 0;
     await t.replica.syncProject("p1");
+    expect(t.server.calls.filter((c) => c.op === "changes" && c.projectId === "p1").length).toBe(1); // the round ran
     expect(t.server.calls.filter((c) => c.op === "heads" || c.projectId === ORG_PROJECT)).toEqual([]);
-    t.advance(HOUR + 1);
+    t.advance(HOUR);
     t.server.calls.length = 0;
     await t.replica.syncProject("p1");
     expect(t.server.calls.filter((c) => c.op === "heads").length).toBe(1);
     expect(t.server.calls.filter((c) => c.projectId === ORG_PROJECT)).toEqual([]);
     // checked: the next round within the hour is free again
+    t.advance(MIN3);
     t.server.calls.length = 0;
     await t.replica.syncProject("p1");
+    expect(t.server.calls.filter((c) => c.op === "changes" && c.projectId === "p1").length).toBe(1);
     expect(t.server.calls.filter((c) => c.op === "heads")).toEqual([]);
   });
 
