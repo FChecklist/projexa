@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { FAKE_BASE_URL, canonicalJson, createFakeSyncServer, sha256Hex } from "./fake-sync-server";
+import { LOCAL_DB_VERSION } from "../local-db";
 
 // The fake is the yardstick three other test files are measured against, so it gets its own tests: each
 // behaviour the contract promises is asserted here once, against the REAL sync client talking to the fake.
@@ -251,7 +252,7 @@ describe("fake sync server: knobs", () => {
     await expect(s.client.manifest()).rejects.toMatchObject({ kind: "update_required", update: { current: "2026.10.05-1", minCompatible: "2026.10.04-1" } });
     s.requireUpdate(null);
     await s.client.manifest();
-    expect(s.requests.at(-1)!.headers["x-px-client"]).toBe("2026.10.02-3; protocol=2; schema=3");
+    expect(s.requests.at(-1)!.headers["x-px-client"]).toBe(`2026.10.02-3; protocol=2; schema=${LOCAL_DB_VERSION}`);
     expect(s.requests.at(-1)!.path).toBe("/manifest");
     expect(FAKE_BASE_URL).toContain("fake.sync.test");
   });

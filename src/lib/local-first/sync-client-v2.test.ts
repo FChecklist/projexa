@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SyncError, createSyncClient } from "./sync-client";
+import { LOCAL_DB_VERSION } from "./local-db";
 
 // The calls added for protocol 2 (CONTRACT.md sections 0-2): changes, ids, pull by ids, push, the X-Px-Client header
 // and the 426 -> update_required mapping. The original calls' tests stay in sync-client.test.ts.
@@ -43,11 +44,11 @@ describe("X-Px-Client header (protocol 2, schema 3)", () => {
     await calls.client.ids({ projectId: "p", kind: "k", afterId: null });
     await calls.client.push({ deviceId: "d", ops: [] });
     expect(calls.calls.length).toBe(6);
-    for (const c of calls.calls) expect(headers(c)["X-Px-Client"]).toBe("dev; protocol=2; schema=3");
+    for (const c of calls.calls) expect(headers(c)["X-Px-Client"]).toBe(`dev; protocol=2; schema=${LOCAL_DB_VERSION}`);
 
     const versioned = make([json({ user: { id: "u", org_id: "o" }, projects: [], kinds: [] })], { getReleaseVersion: () => "2026.10.02-3" });
     await versioned.client.manifest();
-    expect(headers(versioned.calls[0]!)["X-Px-Client"]).toBe("2026.10.02-3; protocol=2; schema=3");
+    expect(headers(versioned.calls[0]!)["X-Px-Client"]).toBe(`2026.10.02-3; protocol=2; schema=${LOCAL_DB_VERSION}`);
   });
 });
 
