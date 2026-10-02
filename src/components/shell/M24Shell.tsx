@@ -228,7 +228,7 @@ import { getFromDocumentClient } from "@/lib/project-from-document-client";
 import AccountMenu from "@/components/shell/AccountMenu";
 import { ProjectScopeProvider } from "@/components/shell/project-context";
 import { createClient } from "@/lib/supabase/client";
-import { invalidateShell, useShell } from "@/lib/shell-store";
+import { dropShellIfNotFor, invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { toast } from "sonner";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
@@ -1186,6 +1186,19 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       return mine;
     });
   }, [userId, persistRanking]);
+
+  // lf-e11: the bootstrap follows the identity too. The shell store outlives a sign-out in this tab, so the next person to sign in was
+  // shown the previous person's organisation and projects until the store revalidated (5 minutes). Once THIS person is known, an answer
+  // held for somebody else is dropped and theirs is loaded.
+  useEffect(() => {
+    if (!userId) return;
+    if (dropShellIfNotFor(userId)) {
+      setInfo(null);
+      setProjects([]);
+      setProjectsLoaded(false);
+      void refreshShell();
+    }
+  }, [userId, refreshShell]);
 
   // F_025, second half of the fix: onAuthStateChange above only catches a
   // session change that THIS tab's own GoTrueClient instance initiated or

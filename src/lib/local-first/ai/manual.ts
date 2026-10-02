@@ -69,9 +69,18 @@ const toManualFunction = (f: RegistryFunction): ManualFunction => ({
   required: f.required_params.map((r) => ({ name: r.name, label: r.label, any_of: [...r.any_of] })),
 });
 
+/**
+ * Registry functions this surface never runs, whatever the role (api.ts decide()): a new project is made online in PROJEXA, because an
+ * op with no project cannot go through the outbox. lf-e11: the manual used to list it anyway, so every AI that read the manual was
+ * told it could create a project and was then always refused.
+ */
+export const NOT_ON_THIS_SURFACE: ReadonlySet<string> = new Set(["create_project"]);
+
 /** Without `rank`: every function (the static manual). With it: only what that rank may use. */
 export function buildManual(forRole?: { rank: number; role: string | null }): Manual {
-  const groups = functionsForRank(forRole ? forRole.rank : Number.POSITIVE_INFINITY);
+  const all = functionsForRank(forRole ? forRole.rank : Number.POSITIVE_INFINITY);
+  const usable = (fs: RegistryFunction[]) => fs.filter((f) => !NOT_ON_THIS_SURFACE.has(f.function_id));
+  const groups = { create: usable(all.create), update: usable(all.update), delete: usable(all.delete) };
   return {
     product: "PROJEXA",
     manual_version: MANUAL_VERSION,
@@ -95,7 +104,7 @@ export function buildManual(forRole?: { rank: number; role: string | null }): Ma
     },
     writes: {
       how: "A write is a named function of the PROJEXA registry. It is checked on this laptop against the person's role first, saved here at once, and sent to the server when it can be reached.",
-      deletes: "A delete only makes a DRAFT the person confirms with one click in PROJEXA, unless the person switched on \"let my AI act without asking\". An AI cannot confirm a draft.",
+      deletes: "A delete only makes a DRAFT the person confirms with one click in PROJEXA, unless the person switched on \"let my AI act without asking\"; a money-sensitive removal (money_sensitive: true) is a draft even then. An AI cannot confirm a draft.",
       server_authority: "The server re-checks every write as the person with their live role, and may still refuse it; money and approval figures are always recomputed by the server.",
       functions: {
         create: groups.create.map(toManualFunction),
@@ -108,6 +117,7 @@ export function buildManual(forRole?: { rank: number; role: string | null }): Ma
       "Act only for the signed-in person, only on their organisation's data, only as their role allows.",
       "Never ask for, store or send passwords or tokens: none are needed, the surface already runs as the person.",
       "Use only the functions listed for this person; anything else is refused in plain words.",
+      "A new project is made by the person in PROJEXA while online; everything inside a project can be made here, offline too.",
       SOFTWARE_STATEMENT,
     ],
   };

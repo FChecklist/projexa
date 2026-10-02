@@ -243,6 +243,7 @@ export function createAiSurface(deps: AiSurfaceDeps): AiSurface {
             delete: groups.delete.map(view),
           },
           settings: { aiActWithoutAsking: act },
+          // A money-sensitive removal is confirmed by the person whatever the setting (delete(), below; functions[].moneySensitive).
           deletesNeedConfirmation: !act,
           softwareCanBeChanged: false,
           integrity: report.status,
@@ -345,7 +346,9 @@ export function createAiSurface(deps: AiSurfaceDeps): AiSurface {
         const fn = decide(ctx, functionId, "delete", params);
         const projectId = ownProject(ctx, params.projectId);
         const row = await heldRow(ctx, record, projectId);
-        if (ctx.identity?.settings.aiActWithoutAsking === true) return queueDelete(ctx, fn, projectId, structuredClone(params), row, record);
+        // lf-e11: a money-sensitive removal (a receipt's value, a BOQ, attendance cost) is ALWAYS confirmed by the person, even with
+        // "act without asking" on: that switch is about routine changes, never about money.
+        if (ctx.identity?.settings.aiActWithoutAsking === true && !fn.money_sensitive) return queueDelete(ctx, fn, projectId, structuredClone(params), row, record);
         const draftId = `draft-${newId()}`;
         const data = asObject(row.data);
         const name = [data.title, data.name, data.subject, data.number, data.item_code].find((v) => typeof v === "string" || typeof v === "number");

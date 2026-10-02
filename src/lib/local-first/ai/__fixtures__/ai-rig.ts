@@ -18,7 +18,7 @@ export type AiRig = {
   setIdentity: (patch: Partial<AiIdentity> | null) => Promise<void>;
 };
 
-export const KINDS = [{ kind: "tasks" }, { kind: "rfis" }, { kind: "boq_lines" }, { kind: "boqs" }, { kind: "material_receipts" }];
+export const KINDS = [{ kind: "tasks" }, { kind: "rfis" }, { kind: "boq_lines" }, { kind: "boqs" }, { kind: "material_receipts" }, { kind: "documents" }];
 
 export function seed(s: FakeSyncServer) {
   s.upsert({ kind: "tasks", projectId: "p1", id: "t1", data: { title: "Pour slab", statusId: "s1", priority: "medium", completionPercentage: 10 } });
@@ -26,6 +26,8 @@ export function seed(s: FakeSyncServer) {
   s.upsert({ kind: "rfis", projectId: "p1", id: "r1", data: { subject: "Door hardware", question: "Which hinge?", status: "open", answer: null } });
   s.upsert({ kind: "boqs", projectId: "p1", id: "b1", data: { status: "draft", version: 1 } });
   s.upsert({ kind: "material_receipts", projectId: "p1", id: "mr1", data: { number: "GRN-7", quantity: 40 } });
+  // lf-e11: a removal that is NOT money-sensitive (dispose_document), so "act without asking" can be tested both ways.
+  s.upsert({ kind: "documents", projectId: "p1", id: "d1", data: { name: "Old survey", category: "survey" } });
 }
 
 export async function makeRig(opts: { role?: string | null; actWithoutAsking?: boolean; sync?: boolean; deps?: Partial<AiSurfaceDeps> } = {}): Promise<AiRig> {

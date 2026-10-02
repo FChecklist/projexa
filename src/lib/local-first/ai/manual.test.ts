@@ -16,7 +16,9 @@ describe("the static manual", () => {
   test("lists every usable write with its lowest role, and every tool", () => {
     const m = buildManual();
     const listed = (["create", "update", "delete"] as const).flatMap((a) => m.writes.functions[a].map((f) => [f.id, a, f.min_role_rank]));
-    expect(listed.sort()).toEqual(WRITE_FUNCTIONS.map((f) => [f.function_id, actionOf(f.function_id), f.min_role_rank]).sort());
+    // lf-e11: every usable write EXCEPT create_project, which this surface always refuses (made online): the manual must not offer it
+    expect(listed.sort()).toEqual(WRITE_FUNCTIONS.filter((f) => f.function_id !== "create_project").map((f) => [f.function_id, actionOf(f.function_id), f.min_role_rank]).sort());
+    expect(listed.map(([id]) => id)).not.toContain("create_project");
     expect(m.tools.map((t) => t.name)).toEqual(TOOLS.map((t) => t.name));
     expect(m.for_role).toBeNull();
   });

@@ -192,6 +192,20 @@ export function getShellUserId(): string | null {
 }
 
 /**
+ * lf-e11: the store is module-level and outlives a sign-out in the same tab (sign-out and the next sign-in are client navigations), so
+ * the NEXT person to sign in was shown the previous person's organisation name and project list until the 5-minute revalidation.
+ * Called by the shell once it knows who is signed in: when the held answer is somebody else's, it is dropped at once (and the screen
+ * shows "loading" rather than another person's data). True when something was dropped.
+ */
+export function dropShellIfNotFor(userId: string): boolean {
+  const held = snapshot.data?.userId;
+  if (!held || held === userId) return false;
+  resetShellStore();
+  emit();
+  return true;
+}
+
+/**
  * getShellUserId() as a hook, re-rendering when the bootstrap lands.
  *
  * Starts at null rather than at the current snapshot ON PURPOSE: these are

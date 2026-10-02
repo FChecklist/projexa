@@ -19,6 +19,7 @@ import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectiv
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
 import { BOQ_LINES_KIND } from "../boq-local";
+import { AiAttach } from "../ai/AiAttach";
 import { chooseProject, readShellData, selectedProjectKey, type ShellData } from "./context";
 import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
@@ -105,6 +106,14 @@ export default function LocalShell() {
     } catch {
       setRemembered(null);
     }
+  }, [userId]);
+
+  // lf-e11: the person's OUTBOX resumes here too, as in the (app) shell (M24Shell). Changes made offline -- by the person's screens or by
+  // their AI -- and then a reload or a page opened offline left their ops in IndexedDB with nothing to send them: the outbox was only
+  // created by the next write, so its `online` handler never ran and the work stayed on the laptop after the connection came back.
+  useEffect(() => {
+    if (!userId) return;
+    void import("../outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
   }, [userId]);
 
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
@@ -256,6 +265,9 @@ export default function LocalShell() {
 
   return (
     <Chrome navigate={navigate} data={data} shell={shell} locationPath={location.path}>
+      {/* LOCAL-FIRST browser AI (R11, lf-e11): the same doors as every signed-in (app) page, for the person kept on this laptop -- this
+          shell is what opens with no internet, so without it a person's AI could not work offline at all. */}
+      <AiAttach userId={data.userId} />
       {location.path === "/" ? (
         <Home shell={shell} />
       ) : matched ? (
