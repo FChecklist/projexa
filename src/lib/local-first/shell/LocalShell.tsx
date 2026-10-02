@@ -104,6 +104,14 @@ export default function LocalShell() {
     }
   }, [userId]);
 
+  // lf-e11: the person's OUTBOX resumes here too, as in the (app) shell (M24Shell). Changes made offline -- by the person's screens or by
+  // their AI -- and then a reload or a page opened offline left their ops in IndexedDB with nothing to send them: the outbox was only
+  // created by the next write, so its `online` handler never ran and the work stayed on the laptop after the connection came back.
+  useEffect(() => {
+    if (!userId) return;
+    void import("../outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
+  }, [userId]);
+
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
   useEffect(() => {
     if (boot.status !== "signed_out" || !location || connectivity !== "online") return;

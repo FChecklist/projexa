@@ -79,3 +79,18 @@ test("offline, the /local shell publishes window.projexa.ai for the person kept 
   // and nothing went to Supabase or anywhere else to find out who the person is
   expect(fetchCalls.filter((u) => u.includes("/auth/v1/"))).toEqual([]);
 });
+
+test("the /local shell starts the person's outbox, so changes waiting on the laptop are sent when the connection comes back", async () => {
+  // Found by the real-browser run (lf-e11): an AI's offline change, then a reload, left the op in IndexedDB with no outbox running in
+  // this shell -- its `online` handler never existed, and nothing was sent after the laptop was back online.
+  const { peekSharedOutbox, releaseSharedOutbox } = await import("../outbox-shared");
+  releaseSharedOutbox("u1"); // the test above rendered the shell in this same module graph
+  await seedLaptop((globalThis as unknown as { indexedDB: IDBFactory }).indexedDB);
+  setOnline(false);
+  (window as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM.setURL("https://px.test/local/scope?projectId=p1");
+  expect(peekSharedOutbox("u1")).toBeNull();
+  const { findByTestId } = render(<LocalShell />);
+  await findByTestId("scope-list");
+  await waitFor(() => expect(peekSharedOutbox("u1")).not.toBeNull(), { timeout: 5_000 });
+  releaseSharedOutbox("u1");
+});
