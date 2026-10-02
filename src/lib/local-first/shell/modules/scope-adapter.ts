@@ -1,0 +1,113 @@
+// LOCAL-FIRST shell, the first module: Scope of Work (BOQ), read from the laptop's own database.
+//
+// REUSE, not a rewrite. The reading goes through the same code the online BOQ screen uses when px-local-first is on
+// (src/lib/local-first/local-reader.ts + boq-local.ts): loadLocalFirst() (rows only when that (project, kind) was pulled to the end),
+// the `boq_lines` kind, isGatewayLine() (replica rows are untrusted input until they look like a BOQ line), and the screen's own row
+// mapping and ordering (toBoqLineItemRow, orderLinesForBoq, boqTotal). What differs: this adapter is not gated by the px-local-first
+// flag (the shell is only ever shown when it should be), it never falls back to the server (a screen that is not on the laptop says
+// so), and it lays the person's waiting edits over the rows (pending-edits.ts).
+//
+// WHAT STAYS ON THE SERVER, as in boq-local.ts: submit/approve, revisions, and the money grid. Local rows are for reading, display and
+// the person's own category edits; the server's role gate and rules decide every write when it is sent.
+
+import type { Boq, BoqLineItemRow } from "@/lib/boq-helpers";
+import { boqTotal } from "@/lib/boq-helpers";
+import type { GatewayBoqLine } from "@/lib/boq-gateway-client";
+import { orderLinesForBoq, toBoqLineItemRow } from "@/lib/boq-read-source";
+import { BOQ_LINES_KIND, isGatewayLine } from "../../boq-local";
+import { loadLocalFirst } from "../../local-reader";
+import type { ShellData } from "../context";
+import { applyPendingEdits, type PendingEdit } from "../pending-edits";
+
+export type BoqListRow = {
+  id: string;
+  title: string;
+  version: number;
+  status: string;
+  lineCount: number;
+  total: number;
+};
+
+export type ScopeListData =
+  | { state: "no_project" }
+  | { state: "not_synced"; projectId: string }
+  | { state: "local"; projectId: string; rows: BoqListRow[]; syncedAt: number | null };
+
+export type ScopeObjectData =
+  | { state: "no_project" }
+  | { state: "not_synced"; projectId: string | null }
+  | { state: "not_found"; projectId: string | null }
+  | {
+      state: "local";
+      boq: Boq;
+      lines: BoqLineItemRow[];
+      total: number;
+      syncedAt: number | null;
+      /** Ids of lines whose category edit is waiting to be sent. */
+      waitingLineIds: string[];
+    };
+
+async function readProjectLines(data: ShellData, projectId: string): Promise<{ lines: GatewayBoqLine[]; synced: boolean; syncedAt: number | null }> {
+  const result = await loadLocalFirst<unknown>(BOQ_LINES_KIND, projectId, async () => [], { userId: data.userId, idb: data.idb });
+  if (result.state !== "local") return { lines: [], synced: false, syncedAt: null };
+  return { lines: result.rows.filter(isGatewayLine), synced: true, syncedAt: result.syncedAt };
+}
+
+/** The BOQs of one project, derived from its lines (the replica holds lines, each carrying its BOQ's title, version and status). */
+export function groupBoqs(lines: readonly GatewayBoqLine[]): BoqListRow[] {
+  const byBoq = new Map<string, GatewayBoqLine[]>();
+  for (const line of lines) {
+    const list = byBoq.get(line.boqId) ?? [];
+    list.push(line);
+    byBoq.set(line.boqId, list);
+  }
+  const rows: BoqListRow[] = [];
+  for (const [id, own] of byBoq) {
+    const first = own[0]!;
+    rows.push({ id, title: first.boqTitle, version: first.boqVersion, status: first.boqStatus, lineCount: own.length, total: boqTotal(own.map(toBoqLineItemRow)) });
+  }
+  return rows.sort((a, b) => a.title.localeCompare(b.title) || b.version - a.version);
+}
+
+export async function loadScopeList(data: ShellData, projectId: string | null): Promise<ScopeListData> {
+  if (!projectId) return { state: "no_project" };
+  const { lines, synced, syncedAt } = await readProjectLines(data, projectId);
+  if (!synced) return { state: "not_synced", projectId };
+  return { state: "local", projectId, rows: groupBoqs(lines), syncedAt };
+}
+
+/**
+ * One BOQ with its lines. `projectId` is where the URL said it lives (?projectId=); without it every project this person has on the
+ * laptop is searched, in order, until one holds the BOQ.
+ */
+export async function loadScopeObject(
+  data: ShellData,
+  boqId: string,
+  projectId: string | null,
+  edits: readonly PendingEdit[] = []
+): Promise<ScopeObjectData> {
+  const candidates = projectId ? [projectId] : data.projects.map((p) => p.id);
+  if (candidates.length === 0) return { state: "no_project" };
+
+  let anySynced = false;
+  for (const candidate of candidates) {
+    const { lines, synced, syncedAt } = await readProjectLines(data, candidate);
+    if (!synced) continue;
+    anySynced = true;
+    const own = lines.filter((l) => l.boqId === boqId);
+    if (own.length === 0) continue;
+    const first = own[0]!;
+    const boq: Boq = {
+      id: boqId,
+      projectId: candidate,
+      version: first.boqVersion,
+      title: first.boqTitle,
+      status: first.boqStatus,
+      parentBoqId: null,
+      createdAt: first.createdAt ?? "",
+    };
+    const mine = applyPendingEdits(orderLinesForBoq(own).map(toBoqLineItemRow), edits);
+    return { state: "local", boq, lines: mine, total: boqTotal(mine), syncedAt, waitingLineIds: edits.filter((e) => e.boqId === boqId).map((e) => e.lineId) };
+  }
+  return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };
+}

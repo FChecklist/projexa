@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
+import { InstallMenuItem } from "@/components/local-first/InstallMenuItem";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -86,6 +87,8 @@ export default function AccountMenu({ email }: { email?: string }) {
           <Settings className="size-4" />
           Settings
         </DropdownMenuItem>
+        {/* LOCAL-FIRST R10: renders nothing unless the browser has offered installation (one calm action, never a popup). */}
+        <InstallMenuItem />
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 text-red-600 focus:text-red-600"

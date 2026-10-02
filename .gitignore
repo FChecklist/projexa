@@ -34,3 +34,6 @@ tsconfig.tsbuildinfo
 # artifact, never a repo file.
 /perf/perf-results.json
 /perf/perf-results.md
+
+# LOCAL-FIRST: the release bundle and manifest are build output (scripts/make-release.mjs), never committed
+/public/_release/

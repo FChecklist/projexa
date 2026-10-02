@@ -157,6 +157,10 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/labour/attendance/new",
   "/labour/import",
   "/labour/new",
+  // LOCAL-FIRST: the static on-laptop shell (src/app/local). Not a module of the app: it is the same app drawn from the laptop's own
+  // database, opened by the service worker, never from the sidebar -- see nav-routes.test.ts's ROUTES_INTENTIONALLY_NOT_IN_NAV entry.
+  "/local",
+  "/local/[...path]",
   "/login",
   "/materials",
   "/materials/[id]",
