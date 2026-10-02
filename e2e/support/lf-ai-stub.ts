@@ -120,6 +120,9 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
   // What the server would hold after the applied pushes: a real pull returns the person's own created/changed rows, so the stub must too
   // (otherwise the next pull puts the fixture back over a change the server had accepted, and the screen loses the AI's work).
   const applied = new Map<string, Map<string, Row>>();
+  // The change feed of those pushes (seq per project): a pull or reconcile that was already in flight when a push settled can miss the new
+  // row; the real service's feed hands it over on the next pass, so the stub's must too.
+  const feed = new Map<string, { seq: number; kind: string; id: string; version: number; op: "I" | "U" }[]>();
   const serverRows = (person: Person, projectId: string, kind: Kind): { items: Row[]; hidden: string[] } => {
     const base = rowsFor(person, projectId, kind);
     const extra = applied.get(`${projectId}|${kind}`);
@@ -174,13 +177,18 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
       });
     }
     if (request.method() === "POST" && path === "/changes") {
-      return json(route, origin, { changes: [], next_seq: 0, has_more: false, head_seq: 0, reset_required: false, epoch: EPOCH, server_time: now });
+      const body = request.postDataJSON() as { project_id?: string; after_seq?: number | null };
+      const log = feed.get(body.project_id ?? "") ?? [];
+      const after = typeof body.after_seq === "number" ? body.after_seq : 0;
+      const changes = log.filter((c) => c.seq > after);
+      const head = log.length ? log[log.length - 1]!.seq : 0;
+      return json(route, origin, { changes, next_seq: Math.max(after, head), has_more: false, head_seq: head, reset_required: false, epoch: EPOCH, server_time: now });
     }
     if (request.method() === "POST" && path === "/ids") {
       const body = request.postDataJSON() as { project_id?: string; kind?: string };
       if (!readable.has(body.project_id ?? "")) return json(route, origin, { error: "Not found" }, 404);
       const ids = (serverRows(person, body.project_id!, body.kind as Kind).items).map((r) => r.id);
-      return json(route, origin, { ids, has_more: false, next_id: null, versions: ids.map(() => 1), head_seq: 0, epoch: EPOCH, server_time: now });
+      return json(route, origin, { ids, has_more: false, next_id: null, versions: ids.map(() => 1), head_seq: (feed.get(body.project_id!) ?? []).length, epoch: EPOCH, server_time: now });
     }
     if (request.method() === "POST" && path === "/push") {
       const body = request.postDataJSON() as { device_id: string; ops: PushedOp[] };
@@ -205,6 +213,9 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
           const before = bucket.get(id);
           bucket.set(id, { id, data: { ...(before?.data ?? {}), ...(op.record ? {} : { id }), ...changed } });
           applied.set(key, bucket);
+          const log = feed.get(op.project_id) ?? [];
+          log.push({ seq: log.length + 1, kind, id, version: (op.record?.base_version ?? 0) + 1, op: op.record ? "U" : "I" });
+          feed.set(op.project_id, log);
         }
         return {
           op_id: op.op_id, status: "applied", record_id: id, route: null, version: (op.record?.base_version ?? 0) + 1,
