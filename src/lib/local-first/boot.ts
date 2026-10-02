@@ -115,18 +115,44 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
 
 /** Starts the boot: the always-on parts at once, then a pass, then again whenever the laptop comes back online. */
 export function startBoot(wiring: BootWiring): BootHandle {
-  const stopMirror = startIdentityMirror(wiring.auth, wiring.identityStore, { isOffline: () => !wiring.isOnline(), now: wiring.now });
   let stopped = false;
   let current: Promise<unknown> = Promise.resolve();
   let lastPassAt = Number.NEGATIVE_INFINITY;
+  /** The person the last FINISHED pass ran for (null: it found nobody); undefined until one finished. */
+  let lastPassPerson: string | null | undefined;
   const clock = wiring.now ?? (() => Date.now());
 
+  // FIRST SIGN-IN (lf-e8, found by e2e/offline-local-first.spec.ts in a real browser): on the very first page load after a sign-in the
+  // identity mirror has not written the identity yet when the first pass reads it (auth-js delivers INITIAL_SESSION asynchronously and the
+  // mirror writes after it), so that pass found nobody and returned, and nothing ran again on that page: no persistent storage asked, no
+  // release installed, until the person happened to load another page fully. So the mirror's writes go through this wrapper: when the
+  // mirror keeps an identity whose person the last pass did not run for, one more pass runs after the current one (a token refresh of
+  // the same person writes too, but changes nothing here, so it costs nothing).
+  const mirrorStore: IdentityStore = {
+    read: () => wiring.identityStore.read(),
+    clear: () => wiring.identityStore.clear(),
+    async write(identity) {
+      await wiring.identityStore.write(identity);
+      if (stopped) return;
+      current = current.then(() => {
+        if (stopped || lastPassPerson === identity.userId) return;
+        return runPass();
+      });
+    },
+  };
+  const stopMirror = startIdentityMirror(wiring.auth, mirrorStore, { isOffline: () => !wiring.isOnline(), now: wiring.now });
+
+  const runPass = async () => {
+    lastPassAt = clock();
+    const result = await runBootPass(wiring).catch(() => null);
+    lastPassPerson = result ? result.personId : lastPassPerson;
+  };
   const pass = () => {
     lastPassAt = clock();
     current = (async () => {
       // A lost cookie is rebuilt from the mirror before anything needs the session.
       await restoreSessionIfMissing(wiring.auth, wiring.identityStore, { isOffline: () => !wiring.isOnline() }).catch(() => null);
-      if (!stopped) await runBootPass(wiring).catch(() => null);
+      if (!stopped) await runPass();
     })();
   };
   pass();

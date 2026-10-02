@@ -161,6 +161,36 @@ describe("startBoot", () => {
     handle.stop();
   });
 
+  test("FIRST sign-in (lf-e8): the identity arrives from the auth client AFTER the first pass found nobody -- the release is still installed on this page load", async () => {
+    // Nothing is mirrored yet (a fresh sign-in); auth-js delivers INITIAL_SESSION a moment later, which is what a real browser does.
+    const h = harness();
+    let deliver: ((event: string, session: unknown) => void) | null = null;
+    h.wiring.auth = {
+      ...h.wiring.auth,
+      getSession: async () => ({ data: { session: { access_token: "a", refresh_token: "r", user: { id: "person-1", email: "asha@example.com" } } as never } }),
+      onAuthStateChange: (cb) => { deliver = cb as never; return { data: { subscription: { unsubscribe: () => {} } } }; },
+    };
+    const handle = startBoot(h.wiring);
+    await handle.settled();
+    expect(await h.caches.has(releaseCacheName(V1))).toBe(false); // the first pass ran for nobody
+    deliver!("INITIAL_SESSION", { access_token: "a", refresh_token: "r", expires_at: 1, user: { id: "person-1", email: "asha@example.com" } });
+    for (let i = 0; i < 50 && !(await h.caches.has(releaseCacheName(V1))); i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+      await handle.settled();
+    }
+    expect((await h.identityStore.read())?.userId).toBe("person-1");
+    expect(await h.caches.has(releaseCacheName(V1))).toBe(true);
+    expect(h.sw.pointer).toMatchObject({ version: V1, personId: "person-1" });
+    expect(h.calls.persist).toBe(1);
+    // a token refresh of the same person afterwards does not run the pass again
+    const manifestCalls = h.calls.manifest;
+    deliver!("TOKEN_REFRESHED", { access_token: "b", refresh_token: "r2", expires_at: 2, user: { id: "person-1", email: "asha@example.com" } });
+    await new Promise((r) => setTimeout(r, 20));
+    await handle.settled();
+    expect(h.calls.manifest).toBe(manifestCalls);
+    handle.stop();
+  });
+
   test("coming back online runs another pass, but never more than once a minute", async () => {
     const h = harness();
     await h.signIn();
