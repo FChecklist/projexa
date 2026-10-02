@@ -8,6 +8,7 @@
 import { defineShellRoute, type ShellApi, type ShellRoute } from "../types";
 import { loadDashboard } from "../modules/dashboard-adapter";
 import { loadReports } from "../modules/reports-adapter";
+import { loadAnalysisHub, loadExceptions, loadProject360 } from "../modules/analysis-adapter";
 
 const dashboardAdapter = async (shell: ShellApi) =>
   loadDashboard(shell.data, shell.projectId, { shellEdits: (await shell.writer.list().catch(() => [])).length });
@@ -33,5 +34,24 @@ export const ROUTES: readonly ShellRoute[] = [
     nav: { label: "Reports", order: 80 },
     load: () => import("../modules/ReportsLocalScreen"),
     adapter: (shell, _params, query) => loadReports(shell.data, shell.projectId, query),
+  }),
+  defineShellRoute({
+    pattern: "/analysis",
+    title: "Analysis",
+    nav: { label: "Analysis", order: 81 },
+    load: () => import("../modules/AnalysisHubScreen"),
+    adapter: async (shell) => loadAnalysisHub(shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/analysis/exceptions",
+    title: "Exceptions",
+    load: () => import("../modules/ExceptionsLocalScreen"),
+    adapter: (shell) => loadExceptions(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/analysis/project-360",
+    title: "Project 360 Analysis",
+    load: () => import("../modules/Project360LocalScreen"),
+    adapter: (shell) => loadProject360(shell.data, shell.projectId),
   }),
 ];
