@@ -41,6 +41,7 @@ import { BOQ_READ_FLAGS_OFF, type BoqReadFlags } from "@/lib/boq-read-flags";
 import { createBoqFilterClient, type BoqFilterClient } from "@/lib/boq-filter-client";
 import { BoqLoadSuperseded, loadBoqForScreen, readBoqCompare, readProjectBoqs, screenStateAfter, type BoqScreenState } from "@/lib/boq-read-source";
 import BoqLineExplorer from "@/components/BoqLineExplorer";
+import { loadBoqFromReplica, rememberBoq, revalidateBoq } from "@/lib/local-first/boq-local";
 import {
   type Boq, type BoqLineItemRow, type Vendor,
   boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
@@ -139,8 +140,11 @@ export default function ScopeObjectClient({
       // that function makes exactly the GET this line used to make. afterWrite
       // reads the BOQ back through the proxy right after a submit or approve.
       const filter = readFlags.browserFirst ? (filterRef.current ??= createBoqFilterClient()) : null;
+      // LOCAL-FIRST (flag px-local-first=1, see src/lib/local-first/boq-local.ts): this BOQ's lines from the laptop's own copy when it
+      // has them, otherwise the loader below exactly as before. A reload right after a write always reads through the server.
+      const fromLaptop = opts.afterWrite ? null : await loadBoqFromReplica(boqId);
       const [loaded, vendorsData] = await Promise.all([
-        loadBoqForScreen({ boqId, flags: readFlags, filter, afterWrite: opts.afterWrite, isCurrent }),
+        fromLaptop ?? loadBoqForScreen({ boqId, flags: readFlags, filter, afterWrite: opts.afterWrite, isCurrent }),
         fetchJson<{ vendors: Vendor[] }>(`/api/vendors`).catch(() => ({ vendors: [] })),
       ]);
       // A newer load started while this one was running: its answer is the one the screen shows.
@@ -152,6 +156,9 @@ export default function ScopeObjectClient({
       // A reload after a write does not refill the search index, so the index and the device copy keep what the last load left in them.
       setScreenLoad((prev) => screenStateAfter(prev, loaded, opts.afterWrite === true));
       setLoadError(null);
+      // LOCAL-FIRST: remember where this BOQ lives and bring the laptop's copy of its project up to date in the background.
+      rememberBoq(loaded.boq);
+      void revalidateBoq(loaded.boq);
       // The revision banners are network reads and none of them is needed to read the scope: skipped when the lines came from the device.
       if (loaded.source !== "device-copy") void loadRevisionContext(loaded.boq);
     } catch (err) {
@@ -481,6 +488,9 @@ export default function ScopeObjectClient({
         // U-33: the browser-first states a person needs named, never left to be inferred from a table that looks normal.
         ...(screenLoad?.source === "device-copy"
           ? [{ level: "info" as const, text: `Offline: showing the ${rows.length} line${rows.length === 1 ? "" : "s"} of this BOQ saved on this device${screenLoad.copySavedAt ? ` on ${formatDateTime(screenLoad.copySavedAt)}` : ""}. Use Refresh lines when you are back online.` }]
+          : []),
+        ...(screenLoad?.source === "local-replica"
+          ? [{ level: "info" as const, text: `Showing the ${rows.length} line${rows.length === 1 ? "" : "s"} of this BOQ from this laptop's copy${screenLoad.copySavedAt ? `, last synced ${formatDateTime(screenLoad.copySavedAt)}` : ""}. Changes you save still go to the server.` }]
           : []),
         ...(screenLoad?.source === "rest-fallback"
           ? [{ level: "info" as const, text: "The line gateway is switched off, so this BOQ was read the usual way." }]
