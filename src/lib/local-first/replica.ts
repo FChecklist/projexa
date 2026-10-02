@@ -132,7 +132,11 @@ export const doneKey = (projectId: string, kind: string) => `sync:done:${project
  * `feedKinds` (absent in what an older build stored): the kinds whose every change, tombstones included, the change feed
  * carries (manifest `deletes_supported: true`). A pulled-to-the-end pair of such a kind is kept current by the feed alone.
  */
-export type StoredManifest = { userId: string; orgId: string; projectIds: string[]; kinds: string[]; at: number; feedKinds?: string[] };
+export type StoredManifest = {
+  userId: string; orgId: string; projectIds: string[]; kinds: string[]; at: number; feedKinds?: string[];
+  /** The manifest said PROJEXA's own AI is on (ai-off/internal-ai.ts). Absent or false: off. */
+  internalAi?: boolean;
+};
 export type DoneMarker = { at: number; redacted: boolean; hiddenFields: string[] };
 
 const defaultYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -411,6 +415,7 @@ export function createReplica(options: ReplicaOptions): Replica {
       let kinds: string[];
       let feedKinds: Set<string>;
       let projectIds: string[];
+      let internalAi = false;
       if (stored) {
         orgId = stored.orgId;
         kinds = stored.kinds;
@@ -430,6 +435,7 @@ export function createReplica(options: ReplicaOptions): Replica {
         kinds = manifest.kinds.filter(isProjectScoped).map((k) => k.kind);
         feedKinds = new Set(manifest.kinds.filter((k) => isProjectScoped(k) && k.deletes_supported === true).map((k) => k.kind));
         projectIds = manifest.projects.map((p) => p.id);
+        internalAi = manifest.internal_ai === true;
       }
 
       // Projects this person no longer belongs to leave the laptop (only on a full run: a partial one has no full list to compare).
@@ -466,7 +472,7 @@ export function createReplica(options: ReplicaOptions): Replica {
         await db.setMeta(MANIFEST_KEY, {
           userId: options.userId, orgId,
           projectIds: wholeRun ? projectIds : [...new Set([...(previous?.projectIds ?? []), ...targetProjects])],
-          kinds, at: now(), feedKinds: [...feedKinds],
+          kinds, at: now(), feedKinds: [...feedKinds], ...(internalAi ? { internalAi: true } : {}),
         } satisfies StoredManifest);
       }
 
