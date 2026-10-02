@@ -34,6 +34,7 @@ import { usePathname } from "next/navigation";
 import { Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutoGrowTextarea } from "@/lib/use-autogrow-textarea";
+import { OWN_AI_SENTENCE, callServerAi } from "@/lib/local-first/ai-off/internal-ai";
 import {
   useVeriChat, FIXED_MODES, HOME_ROUTE, CONSTRUCTION_CHAIN_MODE_KEY, type CapabilityNode, type PathSegment,
 } from "./veri-chat-context";
@@ -130,8 +131,10 @@ export default function VeriComposer() {
     });
   }
 
-  async function dispatchLeaf(item: { codeReference: string; fixedInputs: Record<string, string>; label: string; display: string }) {
-    const res = await fetch("/api/assistant", {
+  // "own_ai": PROJEXA's own AI is off and this codeReference would run a model on our server, so nothing was sent
+  // (src/lib/local-first/ai-off/internal-ai.ts, package lf-e6); the caller shows the one calm sentence instead.
+  async function dispatchLeaf(item: { codeReference: string; fixedInputs: Record<string, string>; label: string; display: string }): Promise<"sent" | "own_ai"> {
+    const answer = await callServerAi({ route: "assistant", codeReference: item.codeReference }, () => fetch("/api/assistant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -139,7 +142,9 @@ export default function VeriComposer() {
         breadcrumb: item.display,
         inputs: item.fixedInputs,
       }),
-    });
+    }));
+    if (answer.kind === "own_ai") return "own_ai";
+    const res = answer.res;
     // R38 (R-90/TC-70): the real backend message (e.g. "codeReference must
     // be one of: ...") was being discarded here -- throw new Error() carried
     // nothing, so every failure showed the same generic toast below
@@ -147,9 +152,10 @@ export default function VeriComposer() {
     // ScopeClient.tsx already does (data.error, falling back only when the
     // response truly isn't JSON or has no error field).
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      const data = (answer.body ?? {}) as { error?: string };
       throw new Error(data.error || "Couldn't reach the construction assistant");
     }
+    return "sent";
   }
 
   function resetChainForMode() {
@@ -160,12 +166,17 @@ export default function VeriComposer() {
     if (!completedLeaf?.codeReference) return;
     setSending(true);
     try {
-      await dispatchLeaf({
+      const outcome = await dispatchLeaf({
         codeReference: completedLeaf.codeReference,
         fixedInputs: completedLeaf.fixedInputs ?? {},
         label: completedLeaf.label,
         display: pathDisplayString(selectedPath),
       });
+      if (outcome === "own_ai") {
+        toast(OWN_AI_SENTENCE);
+        resetChainForMode();
+        return;
+      }
       toast.success(`Done — ${completedLeaf.label}`);
       setValue("");
       resetChainForMode();
@@ -200,21 +211,25 @@ export default function VeriComposer() {
     const items = queue;
     setQueue([]);
     let failCount = 0;
+    let ownAiCount = 0;
     let firstFailureMessage: string | null = null;
     for (const item of items) {
       try {
-        await dispatchLeaf(item);
+        if ((await dispatchLeaf(item)) === "own_ai") ownAiCount += 1;
       } catch (err) {
         if (!firstFailureMessage && err instanceof Error && err.message) firstFailureMessage = err.message;
         failCount += 1;
       }
     }
-    if (failCount === 0) toast.success(`Done — ${items.length} ${items.length === 1 ? "query" : "queries"}`);
+    // Items that need PROJEXA's own AI were not sent (it is off): one calm sentence, never counted as a failure.
+    if (ownAiCount > 0) toast(OWN_AI_SENTENCE);
+    const sentCount = items.length - ownAiCount;
+    if (sentCount > 0 && failCount === 0) toast.success(`Done — ${sentCount} ${sentCount === 1 ? "query" : "queries"}`);
     // R38 (R-90/TC-70): surface the real backend message from the first
     // failure alongside the count, instead of only a generic "check Queries"
     // pointer -- a batch of one still reads naturally ("1 of 1 queries
     // failed: <real reason>").
-    else toast.error(`${failCount} of ${items.length} queries failed${firstFailureMessage ? `: ${firstFailureMessage}` : " — check Queries for details"}`);
+    else if (failCount > 0) toast.error(`${failCount} of ${sentCount} queries failed${firstFailureMessage ? `: ${firstFailureMessage}` : " — check Queries for details"}`);
     bumpRefresh();
     setSending(false);
   }
@@ -226,13 +241,18 @@ export default function VeriComposer() {
     setValue("");
     appendDiscussMessage({ role: "user", content: text });
     try {
-      const res = await fetch("/api/discuss", {
+      // PROJEXA's own AI is off (package lf-e6): answer here, with the way that works, and send nothing to the server.
+      const answer = await callServerAi({ route: "discuss" }, () => fetch("/api/discuss", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: discussMessages }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
+      }));
+      if (answer.kind === "own_ai") {
+        appendDiscussMessage({ role: "assistant", content: answer.sentence });
+        return;
+      }
+      const data = answer.body as { reply?: string } | null;
+      if (!answer.res.ok || !data || typeof data.reply !== "string") throw new Error();
       appendDiscussMessage({ role: "assistant", content: data.reply });
     } catch {
       toast.error("VERI AI didn't reply — try again");

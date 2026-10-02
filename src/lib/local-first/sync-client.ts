@@ -40,6 +40,8 @@ export type SyncManifest = {
   kinds: { kind: string; project_scoped?: boolean; cursor_field?: string; deletes_supported?: boolean }[];
   view_class?: string;
   release?: { current?: string; min_compatible?: string; protocol?: number };
+  /** Whether PROJEXA's own AI is switched on (ai-off/internal-ai.ts). Absent = the backend does not say = OFF on the laptop. */
+  internal_ai?: boolean;
   server_time?: string;
 };
 
@@ -192,10 +194,13 @@ function parseManifest(body: unknown): SyncManifest {
   const projects = body.projects.filter((p): p is { id: string } => isObject(p) && typeof p.id === "string") as SyncManifest["projects"];
   const kinds = body.kinds.filter((k): k is { kind: string } => isObject(k) && typeof k.kind === "string") as SyncManifest["kinds"];
   const release = isObject(body.release) ? (body.release as SyncManifest["release"]) : undefined;
+  const internalAi = typeof body.internal_ai === "boolean" ? body.internal_ai
+    : isObject(body.features) && typeof body.features.internal_ai === "boolean" ? body.features.internal_ai : undefined;
   return {
     user: body.user as SyncManifest["user"], projects, kinds,
     ...(typeof body.view_class === "string" ? { view_class: body.view_class } : {}),
     ...(release ? { release } : {}),
+    ...(internalAi !== undefined ? { internal_ai: internalAi } : {}),
     server_time: typeof body.server_time === "string" ? body.server_time : undefined,
   };
 }

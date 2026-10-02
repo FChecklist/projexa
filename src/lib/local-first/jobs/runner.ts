@@ -1,7 +1,8 @@
 // The claim loop: this laptop helps another request by running a job on its own RAM and CPU.
 //
 // COST RULE (the owner's first priority): one tiny POST /jobs/claim per interval per IDLE, VISIBLE laptop, and the
-// interval adapts: 20 s when there was recent activity, 120 s otherwise, and NO request at all when the tab is hidden,
+// interval adapts: 20 s when there was recent activity, 120 s otherwise, DOUBLED after every empty claim up to 15 minutes
+// (reset by the person's activity or a job that ran; package lf-e6), and NO request at all when the tab is hidden,
 // the device is offline, on low battery or in data-saver, the person opted out, or the session ended. Failures back off
 // (doubling, 10 min at most). When polling is paused nothing is scheduled; `refresh()` (called on visibility / online /
 // battery events) starts it again.
@@ -20,6 +21,12 @@ import type { JobInput } from "./job-input";
 export const ACTIVE_POLL_MS = 20_000;
 export const IDLE_POLL_MS = 120_000;
 export const MAX_BACKOFF_MS = 600_000;
+/**
+ * COST (package lf-e6): every claim that comes back empty doubles the wait before the next one (20 s -> 40 s -> 80 s ...),
+ * up to this ceiling; the person's activity or a job that ran starts again from the base interval. Measured by the cost
+ * harness: 252 claims in 8 idle visible hours before, about 35 after.
+ */
+export const MAX_QUIET_MS = 15 * 60_000;
 export const RECENT_ACTIVITY_MS = 5 * 60_000;
 export const HEARTBEAT_MS = 20_000;
 export const MAX_RESULT_CHARS = 262_144;
@@ -91,6 +98,9 @@ export function createJobRunner(opts: RunnerOptions): JobRunner {
   let backoff = 0;
   let running: { abort: AbortController } | null = null;
   let lastJobAt = 0;
+  /** Empty claims in a row since the last activity (each doubles the wait), and the activity moment that streak started from. */
+  let quietStreak = 0;
+  let quietSince = Number.NEGATIVE_INFINITY;
   let helped = 0;
   let indicator: HelperIndicator = { state: "off", reason: "stopped", jobType: null, forYou: null, helped: 0 };
   const listeners = new Set<(i: HelperIndicator) => void>();
@@ -112,8 +122,11 @@ export function createJobRunner(opts: RunnerOptions): JobRunner {
   }
 
   function interval(): number {
-    const recent = env.now() - Math.max(env.lastActivityAt(), lastJobAt) < RECENT_ACTIVITY_MS;
-    return (recent ? ACTIVE_POLL_MS : IDLE_POLL_MS) + backoff;
+    const activity = Math.max(env.lastActivityAt(), lastJobAt);
+    if (activity > quietSince) { quietStreak = 0; quietSince = activity; } // the person (or a job) did something: start fresh
+    const recent = env.now() - activity < RECENT_ACTIVITY_MS;
+    const base = recent ? ACTIVE_POLL_MS : IDLE_POLL_MS;
+    return Math.min(base * 2 ** quietStreak, Math.max(base, MAX_QUIET_MS)) + backoff;
   }
 
   function clearPoll() {
@@ -216,6 +229,7 @@ export function createJobRunner(opts: RunnerOptions): JobRunner {
       const { job, serverTime } = await opts.api.claim({ deviceId: opts.deviceId, types: [...JOB_TYPES] });
       backoff = 0;
       outcome = job ? await runJob(job, serverTime) : "no_job";
+      quietStreak = outcome === "no_job" ? Math.min(quietStreak + 1, 16) : 0;
     } catch (err) {
       opts.onError?.(err);
       outcome = "error";

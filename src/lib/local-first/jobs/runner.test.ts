@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createFakeClock, settle, type FakeClock } from "./__fixtures__/fake-clock";
 import { createFakeJobsServer, type FakeJobsServer } from "./__fixtures__/fake-jobs-server";
-import { ACTIVE_POLL_MS, IDLE_POLL_MS, createJobRunner, type JobRunner, type RunnerEnv } from "./runner";
+import { ACTIVE_POLL_MS, IDLE_POLL_MS, MAX_QUIET_MS, createJobRunner, type JobRunner, type RunnerEnv } from "./runner";
 import { JobsError, type ClaimedJob, type JobsApi } from "./jobs-api";
 import { JobExecutionError, createInProcessExecutor, type JobExecutor } from "./worker";
 
@@ -99,17 +99,36 @@ describe("cost rule: no request unless this laptop is visible, online, idle and 
     expect(server.callsBy("claim").length).toBe(0);
   });
 
-  test("adaptive interval: 20 s with recent activity, 120 s once quiet; one tiny request each", async () => {
+  // package lf-e6 (cost): an empty claim doubles the next wait, up to MAX_QUIET_MS; activity starts again from the base.
+  test("adaptive interval: 20 s with recent activity, doubling after every empty claim; activity resets it; one tiny request each", async () => {
     const h = makeRunner("alice");
     await h.runner.start();
     await clock.advance(10 * 60_000);
     const at = server.callsBy("claim").map((c) => c.at);
     const gaps = at.slice(1).map((t, i) => t - at[i]);
-    expect(gaps[0]).toBe(ACTIVE_POLL_MS);
-    expect(gaps[gaps.length - 1]).toBe(IDLE_POLL_MS);
-    expect(gaps.filter((g) => g === ACTIVE_POLL_MS).length).toBeGreaterThan(5);
-    // 10 minutes: ~15 fast polls for the first 5 minutes, then ~3 slow ones. Never one per second.
-    expect(at.length).toBeLessThan(25);
+    expect(at[0] - Date.parse("2026-10-02T09:00:00.000Z")).toBe(ACTIVE_POLL_MS); // the first wait is the base
+    expect(gaps[0]).toBe(2 * ACTIVE_POLL_MS);
+    for (let i = 1; i < gaps.length; i += 1) expect(gaps[i]).toBeGreaterThanOrEqual(gaps[i - 1]);
+    // 10 minutes: 20 s, 40 s, 80 s, 160 s, 320 s -- five claims, where a fixed 20 s interval sent ~18.
+    expect(at.length).toBeLessThanOrEqual(5);
+
+    env.activity = clock.now(); // the person does something: back to the base interval
+    h.runner.refresh();
+    const before = server.callsBy("claim").length;
+    await clock.advance(ACTIVE_POLL_MS);
+    expect(server.callsBy("claim").length).toBe(before + 1);
+  });
+
+  test("a quiet visible laptop never waits longer than MAX_QUIET_MS between claims, and sends ~35 in 8 idle hours, not ~250", async () => {
+    const h = makeRunner("alice");
+    env.activity = clock.now() - 60 * 60_000; // nothing recent: the idle base
+    await h.runner.start();
+    await clock.advance(8 * 60 * 60_000);
+    const at = server.callsBy("claim").map((c) => c.at);
+    const gaps = at.slice(1).map((t, i) => t - at[i]);
+    expect(Math.max(...gaps)).toBe(MAX_QUIET_MS);
+    expect(gaps[0]).toBe(2 * IDLE_POLL_MS);
+    expect(at.length).toBeLessThan(40);
   });
 
   test("errors back off instead of hammering the server; a signed-out session stops polling", async () => {

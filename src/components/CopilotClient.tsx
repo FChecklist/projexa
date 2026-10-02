@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { callServerAi } from "@/lib/local-first/ai-off/internal-ai";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,16 +73,22 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
   async function runTool(tool: Tool) {
     setRunning(tool.codeReference);
     try {
-      const res = await fetch("/api/assistant", {
+      // PROJEXA's own AI is off (package lf-e6): a tool that would run a model on our server is not sent; one calm sentence instead.
+      const answer = await callServerAi({ route: "assistant", codeReference: tool.codeReference }, () => fetch("/api/assistant", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           codeReference: tool.codeReference,
           breadcrumb: tool.label,
           inputs: tool.needsProject ? { projectId } : {},
         }),
-      });
-      const row = await res.json();
-      if (!res.ok) throw new Error(row?.error);
+      }));
+      if (answer.kind === "own_ai") {
+        toast(answer.sentence);
+        return;
+      }
+      const res = answer.res;
+      const row = answer.body as { error?: string; result?: unknown } | null;
+      if (!res.ok || !row) throw new Error(row?.error);
       toast.success(`Done — ${tool.label}`);
       setLastResult({ tool, result: row.result });
       bumpRefresh(); // keeps the docked Queries panel in sync with this page's dispatch
