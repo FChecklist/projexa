@@ -4,7 +4,10 @@ import { defineShellRoute } from "./types";
 
 describe("the route table", () => {
   test("the BOQ module is registered: the list and the object screen, with the object route carrying an :id", () => {
-    expect(SHELL_ROUTES.map((r) => r.pattern)).toEqual(["/scope", "/scope/:id"]);
+    const patterns = SHELL_ROUTES.map((r) => r.pattern);
+    expect(patterns).toEqual(expect.arrayContaining(["/scope", "/scope/:id"]));
+    // every other module cluster adds its own routes: a pattern must never be registered twice (the first would shadow the second)
+    expect(new Set(patterns).size).toBe(patterns.length);
     expect(findShellRoute("/scope")!.route.title).toBe("Scope of Work (BOQ)");
     const object = findShellRoute("/scope/abc-123");
     expect(object!.route.pattern).toBe("/scope/:id");
@@ -12,7 +15,7 @@ describe("the route table", () => {
   });
 
   test("a path the shell has no screen for is not matched (the shell falls back to the server's page)", () => {
-    for (const path of ["/rfis", "/dashboard", "/scope/abc/extra", "/", "/scope-of-work"]) expect(findShellRoute(path)).toBeNull();
+    for (const path of ["/not-a-module", "/not-a-module/42", "/scope/abc/extra", "/", "/scope-of-work"]) expect(findShellRoute(path)).toBeNull();
   });
 
   test("every route can load its screen: a function component is the default export", async () => {
@@ -23,7 +26,13 @@ describe("the route table", () => {
   });
 
   test("only parameterless routes with a nav entry are links in the header, in order", () => {
-    expect(navRoutes()).toEqual([{ href: "/scope", label: "Scope (BOQ)" }]);
+    const links = navRoutes();
+    expect(links).toContainEqual({ href: "/scope", label: "Scope (BOQ)" });
+    for (const link of links) expect(link.href.includes(":")).toBe(false);
+    // the header order is the routes' own `nav.order`
+    const order = (href: string) => SHELL_ROUTES.find((r) => r.pattern === href)!.nav!.order;
+    const orders = links.map((l) => order(l.href));
+    expect(orders).toEqual([...orders].sort((a, b) => a - b));
     const routes = [
       defineShellRoute({ pattern: "/b", title: "B", nav: { label: "B", order: 20 }, load: async () => ({ default: () => null }) }),
       defineShellRoute({ pattern: "/a", title: "A", nav: { label: "A", order: 10 }, load: async () => ({ default: () => null }) }),
