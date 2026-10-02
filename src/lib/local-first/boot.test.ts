@@ -105,15 +105,23 @@ describe("a boot pass", () => {
 
   test("signed in and online: persistence asked, the release installed for this person, the project names and role cached, the data checked", async () => {
     const h = harness();
+    h.state.flag = true; // the data check (a whole replica sync when the data is gone) runs only with local-first mode on
     await h.signIn();
     expect(await runBootPass(h.wiring)).toEqual({ personId: "person-1" });
     expect(h.calls.persist).toBe(1);
-    expect(h.sw.pointer).toEqual({ version: V1, personId: "person-1", localFirst: false });
+    expect(h.sw.pointer).toEqual({ version: V1, personId: "person-1", localFirst: true });
     expect(await h.caches.has(releaseCacheName(V1))).toBe(true);
     expect(h.calls.manifest).toBe(1);
     expect(h.deviceMeta.data.get(shellManifestKey("person-1"))).toMatchObject({ projects: [{ id: "p1", name: "Cedar Heights Villa" }] });
     expect(await h.identityStore.read()).toMatchObject({ orgId: "org-1", role: "pm", name: "Asha Rao" });
     expect(h.calls.redownload).toBe(1); // prepared before, no data in IndexedDB: the existing workspace download runs again
+  });
+
+  test("COST (FC, cost:COST-02): local-first mode OFF -- the lost-data check never runs the whole replica sync", async () => {
+    const h = harness(); // flag off, prepared before, IndexedDB empty: exactly the case that WOULD re-download with the flag on
+    await h.signIn();
+    expect(await runBootPass(h.wiring)).toEqual({ personId: "person-1" });
+    expect(h.calls.redownload).toBe(0);
   });
 
   test("signed in and OFFLINE: no network request of any kind, but the worker's pointer is still repaired", async () => {

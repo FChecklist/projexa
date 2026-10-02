@@ -5,7 +5,8 @@
 //   always            keep the identity mirror in step with the Supabase session; rebuild a lost session from the mirror
 //   signed in         ask for persistent storage (once), capture the install prompt, make sure the release is installed (silently
 //                     re-installed when its cache went missing), keep the worker's person/mode right, refresh the cached project
-//                     names and the person's role once a day, bring the data back if IndexedDB lost it
+//                     names and the person's role once a day, bring the data back if IndexedDB lost it (local-first mode on only:
+//                     that is a whole replica sync, package FC / cost:COST-02)
 //   laptop back online  the same checks again (at most once a minute)
 //
 // Nothing here shows anything. The only visible results are the calm connectivity marker and the one optional "Install" action.
@@ -106,8 +107,9 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
     await updateIdentityProfile(wiring.identityStore, { orgId: refreshed.manifest.user.org_id, role: refreshed.manifest.user.role ?? undefined, name: refreshed.manifest.user.name ?? undefined }).catch(() => null);
   }
 
-  // R10: the person's data is back if IndexedDB lost it.
-  await ensureWorkspaceData(wiring.workspace(personId)).catch(() => null);
+  // R10: the person's data is back if IndexedDB lost it. COST (package FC, review cost:COST-02): that is a WHOLE replica sync, the most
+  // expensive thing the client does, so it runs only for a person who has local-first mode on: with it off nothing reads the copy.
+  if (wiring.localFirstOn()) await ensureWorkspaceData(wiring.workspace(personId)).catch(() => null);
   return { personId };
 }
 
