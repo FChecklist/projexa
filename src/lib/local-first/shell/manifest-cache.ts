@@ -6,7 +6,7 @@
 // (`shell:manifest:<userId>`). Cost: one cheap Edge call a day; value: a project switcher that reads "Cedar Heights Villa", not an id.
 
 import type { MetaStore } from "../release/installer";
-import type { SyncClient, SyncManifest } from "../sync-client";
+import { manifestSignInId, type SyncClient, type SyncManifest } from "../sync-client";
 
 export const shellManifestKey = (userId: string) => `shell:manifest:${userId}`;
 
@@ -22,7 +22,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export function toShellManifest(manifest: SyncManifest, at: number): ShellManifest {
   return {
     at,
-    user: { id: manifest.user.id, name: manifest.user.name ?? null, role: manifest.user.role ?? null, org_id: manifest.user.org_id },
+    // the person's SIGN-IN id (what the shell and its key are named by), not the VERIDIAN id: see manifestSignInId
+    user: { id: manifestSignInId(manifest), name: manifest.user.name ?? null, role: manifest.user.role ?? null, org_id: manifest.user.org_id },
     projects: manifest.projects.map((p) => ({ id: p.id, name: p.name ?? null, status: p.status ?? null })),
   };
 }

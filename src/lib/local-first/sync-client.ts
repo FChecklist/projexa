@@ -3,7 +3,7 @@
 //   GET  <base>/manifest -> { user:{id,name,role,org_id}, projects:[{id,name,status}],
 //                             kinds:[{kind,project_scoped,cursor_field?,deletes_supported?}], release?, view_class?, server_time }
 //   POST <base>/pull     {project_id, kind, after: cursor|null, limit<=500}   (keyset)
-//                    or  {project_id, kind, ids:[<=200]}                      (exact rows)
+//                    or  {project_id, kind, ids:[<=200]}                      (exact rows; this client sends <=80 ids and <=3,500 chars)
 //        -> { items:[{id,updated_at,version?,data,sig?,deleted?}], kid?, next_cursor|null, has_more, hidden_fields[], redacted, server_time }
 //        404 for an unknown or unreadable project or kind.
 //   POST <base>/changes  {project_id, after_seq: int|null, limit<=1000}
@@ -27,15 +27,26 @@ export const SYNC_BASE_URL = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions
 
 /** The service's own page maximum. */
 export const SYNC_PAGE_LIMIT = 500;
-/** The most ids one `pull {ids}` call may name (larger lists are split by this client). */
-export const SYNC_IDS_LIMIT = 200;
+/**
+ * The most ids one `pull {ids}` call may name (larger lists are split by this client). The service ACCEPTS up to 200 ids, but it refuses
+ * any non-push body over 4,096 characters with 413 (handler.ts BODY_MAX_BYTES): 200 uuid ids are ~7.8 KB. So a request is cut at 80 ids
+ * AND at SYNC_IDS_BODY_MAX_BYTES of JSON, whichever comes first (review SYNC-06 / F03: a 200-id chunk was a 413 that wedged a project's
+ * change feed for good).
+ */
+export const SYNC_IDS_LIMIT = 80;
+/** The largest `pull {ids}` body this client sends, in characters of JSON: well under the deployed service's 4,096 cap. */
+export const SYNC_IDS_BODY_MAX_BYTES = 3500;
 export const SYNC_CHANGES_LIMIT = 1000;
 export const SYNC_ID_LIST_LIMIT = 5000;
 /** The sync protocol this client speaks (CONTRACT.md section 0), sent with every call. */
 export const SYNC_PROTOCOL = 2;
 
 export type SyncManifest = {
-  user: { id: string; name?: string; role?: string; org_id: string };
+  /**
+   * `id` is the VERIDIAN person (compliance.users.id, a cuid); `auth_user_id` is the verified token subject, the SIGN-IN id the laptop
+   * knows the person by (supabase.auth.getUser().id). They are different strings: compare a laptop's person with manifestSignInId().
+   */
+  user: { id: string; auth_user_id?: string; name?: string; role?: string; org_id: string };
   projects: { id: string; name?: string; status?: string }[];
   kinds: { kind: string; project_scoped?: boolean; cursor_field?: string; deletes_supported?: boolean }[];
   view_class?: string;
@@ -198,6 +209,40 @@ function parseManifest(body: unknown): SyncManifest {
     ...(release ? { release } : {}),
     server_time: typeof body.server_time === "string" ? body.server_time : undefined,
   };
+}
+
+/**
+ * Splits an id list into `pull {ids}` requests of at most SYNC_IDS_LIMIT ids and SYNC_IDS_BODY_MAX_BYTES characters of JSON body each
+ * (the body measured exactly as it is sent). An id is never split or dropped; a single id too long to fit alone still travels on its own
+ * (the service then answers for it). Pure.
+ */
+export function chunkIds(projectId: string, kind: string, ids: readonly string[]): string[][] {
+  const envelope = JSON.stringify({ project_id: projectId, kind, ids: [] }).length;
+  const out: string[][] = [];
+  let current: string[] = [];
+  let size = envelope;
+  for (const id of ids) {
+    const cost = JSON.stringify(id).length; // the id as sent, quotes and escapes included
+    if (current.length && (current.length >= SYNC_IDS_LIMIT || size + 1 + cost > SYNC_IDS_BODY_MAX_BYTES)) {
+      out.push(current);
+      current = [];
+      size = envelope;
+    }
+    size += cost + (current.length ? 1 : 0); // and its comma
+    current.push(id);
+  }
+  if (current.length) out.push(current);
+  return out;
+}
+
+/**
+ * The sign-in id a manifest belongs to: `user.auth_user_id` (the token subject the server verified) whenever the server sends it; an
+ * older server that answers without it is compared by `user.id`. A laptop stores a manifest only when this equals its own sign-in id.
+ * (Review F01: comparing the sign-in id with `user.id` made every real sync end in user_mismatch.) Pure.
+ */
+export function manifestSignInId(manifest: Pick<SyncManifest, "user">): string {
+  const sub = (manifest.user as { auth_user_id?: unknown }).auth_user_id;
+  return sub !== undefined && sub !== null ? (typeof sub === "string" ? sub : "") : manifest.user.id;
 }
 
 function parsePage(body: unknown): SyncPage {
@@ -411,8 +456,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
     },
     async pullIds(req, signal) {
       const merged: SyncPage = { items: [], kid: null, next_cursor: null, has_more: false, hidden_fields: [], redacted: false };
-      for (let i = 0; i < req.ids.length; i += SYNC_IDS_LIMIT) {
-        const chunk = req.ids.slice(i, i + SYNC_IDS_LIMIT);
+      for (const chunk of chunkIds(req.projectId, req.kind, req.ids)) {
         const page = parsePage(await request("/pull", { method: "POST", body: { project_id: req.projectId, kind: req.kind, ids: chunk } }, signal));
         merged.items.push(...page.items);
         merged.kid = page.kid ?? merged.kid;
