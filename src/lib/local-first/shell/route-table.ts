@@ -7,6 +7,10 @@
 import { defineShellRoute, type ShellRoute } from "./types";
 import { loadScopeList, loadScopeObject } from "./modules/scope-adapter";
 import { matchRoute } from "./paths";
+import { ROUTES as DELIVERY } from "./clusters/delivery";
+import { ROUTES as DOCUMENTS } from "./clusters/documents";
+import { ROUTES as DESIGN_CHANGE } from "./clusters/design-change";
+import { ROUTES as OVERVIEW } from "./clusters/overview";
 
 export const SHELL_ROUTES: readonly ShellRoute[] = [
   // Scope of Work (BOQ): the first module in the shell.
@@ -23,6 +27,11 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     load: () => import("./modules/ScopeObjectScreen"),
     adapter: async (shell, params, query) => loadScopeObject(shell.data, params.id!, query.get("projectId"), await shell.writer.list()),
   }),
+  // One file per cluster of modules, filled by separate engineers (see clusters/*.ts).
+  ...OVERVIEW,
+  ...DELIVERY,
+  ...DOCUMENTS,
+  ...DESIGN_CHANGE,
 ];
 
 /** The screen for an app path, with its parameters; null when the shell does not have one. */
