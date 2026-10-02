@@ -291,8 +291,7 @@ export async function signIn(page: Page, context: BrowserContext, world: SyncWor
 export async function prepareLaptop(page: Page, context: BrowserContext, world: SyncWorld, person: Person): Promise<Prepared> {
   const prepared = await signIn(page, context, world, person);
   await page.goto(`/scope/${person.boqId}`);
-  await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 });
-  await page.getByTestId("prepare-continue").click();
+  await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
   await expect
     .poll(() => deviceMeta(page, "app:release"), { timeout: 240_000, message: "the release was never installed (meta app:release)" })
     .toMatchObject({ version: expect.stringMatching(/^\d{4}\.\d{2}\.\d{2}-\d{3}$/) });

@@ -3,14 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { formatDateTime } from "@/lib/format-date";
 import { localDbNameFor, openLocalDb } from "@/lib/local-first/local-db";
 import { getSharedReplica } from "@/lib/local-first/replica-shared";
 import { isLocalFirstEnabled } from "@/lib/local-first/local-reader";
 import type { Replica } from "@/lib/local-first/replica";
 import {
   PREPARE_BUDGET_MS,
-  formatCountdown,
   prepareWorkspace,
   readyKey,
   type PrepareProgress,
@@ -130,7 +128,11 @@ export function buildSteps(
         // deployed yet fails this one step (reported on the screen); PROJEXA keeps working from the server.
         const report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
         if (signal.aborted) return;
-        if (report.status !== "done") throw new Error(syncFailureMessage(report));
+        if (report.status === "done") return;
+        // A project that cannot be read is a matter of that project's data, not of the laptop being ready: the person is let in once the
+        // service answered and every project it could copy is copied. Anything else (service unreachable, signed out) keeps the screen up.
+        const onlyProjectIssues = report.status === "partial" && report.issues.length > 0 && report.issues.every((i) => i.projectId);
+        if (!onlyProjectIssues) throw new Error(syncFailureMessage(report));
       },
     },
   ];
@@ -138,90 +140,36 @@ export function buildSteps(
   return localFirstOn() ? steps : steps.filter((s) => s.id !== "projects");
 }
 
-export function WorkspacePrepareView({
-  progress,
-  onContinue,
-  onRetry,
-  lastSyncedAt,
-}: {
-  progress: PrepareProgress;
-  onContinue: () => void;
-  /** Runs the steps again after a failure. */
-  onRetry?: () => void;
-  /** When the projects were last copied to this laptop (ms since epoch); null when never. Omit to hide the line. */
-  lastSyncedAt?: number | null;
-}) {
-  const icon = (s: string) => (s === "done" ? "✓" : s === "failed" ? "!" : s === "running" ? "…" : "·");
-  // MANDATORY (owner directive 2026-10-03): every file is on the laptop before the person starts work. There is no skip. The way in
-  // opens only when every step finished; after a failure the screen retries by itself and offers "Try again".
-  const allDone = progress.finished && !progress.timedOut && progress.steps.every((s) => s.state === "done");
+export function WorkspacePrepareView({ progress }: { progress: PrepareProgress; lastSyncedAt?: number | null }) {
+  // MANDATORY and QUIET (owner directive 2026-10-03): the title, one sentence and the percentage. No step list, no errors, no buttons:
+  // nothing to skip and nothing to press. It opens PROJEXA by itself at 100% (WorkspacePrepare); after a failure it simply tries again.
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Preparing your workspace"
+      aria-label="Preparing your PROJEXA workspace"
       data-testid="workspace-prepare"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-px-concrete p-6"
     >
       <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white p-8 shadow-lg">
-        <h2 className="font-heading text-2xl text-px-ink">Preparing your workspace</h2>
+        <h2 className="font-heading text-2xl text-px-ink">Preparing your PROJEXA workspace</h2>
         <p className="mt-2 text-sm text-px-muted">
-          PROJEXA is being set up on this laptop so your projects open fast. This takes up to 3 minutes the first time only.
+          PROJEXA workspace is being set up on this laptop so your projects open fast. This takes up to 3 minutes the first time only.
         </p>
-        <div className="mt-6 flex items-baseline justify-between">
+        <div className="mt-6">
           <span data-testid="prepare-percent" className="text-3xl font-semibold text-px-ink">{progress.percent}%</span>
-          <span data-testid="prepare-countdown" className="text-sm text-px-muted">
-            {progress.finished ? "Done" : `${formatCountdown(progress.remainingMs)} left at most`}
-          </span>
         </div>
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-px-concrete" role="progressbar" aria-valuenow={progress.percent} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-px-orange transition-all" style={{ width: `${progress.percent}%` }} />
         </div>
-        <ul className="mt-5 space-y-2 text-sm">
-          {progress.steps.map((s) => (
-            <li key={s.id} data-testid={`prepare-step-${s.id}`} data-state={s.state} className="flex gap-2 text-px-ink">
-              <span aria-hidden className="w-4 text-center">{icon(s.state)}</span>
-              <span>
-                {s.label}
-                {s.state === "failed" && s.error ? <span className="block text-xs text-red-700">{s.error}</span> : null}
-              </span>
-            </li>
-          ))}
-        </ul>
-        {progress.finished && !allDone ? (
-          <p data-testid="prepare-retry-note" className="mt-4 text-xs text-px-muted">
-            Not everything is on this laptop yet. PROJEXA tries again by itself; you can also press Try again. You can start as soon as it is complete.
-          </p>
-        ) : null}
-        {progress.finished && lastSyncedAt !== undefined ? (
-          <p data-testid="prepare-last-synced" className="mt-3 text-xs text-px-muted">
-            {lastSyncedAt ? `Last synced ${formatDateTime(lastSyncedAt)}` : "Projects not copied to this laptop yet"}
-          </p>
-        ) : null}
-        {allDone ? (
-          <button
-            type="button"
-            onClick={onContinue}
-            data-testid="prepare-continue"
-            className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-px-ink hover:opacity-90"
-          >
-            Open PROJEXA
-          </button>
-        ) : progress.finished ? (
-          <button
-            type="button"
-            onClick={onRetry}
-            data-testid="prepare-retry"
-            className="mt-6 w-full rounded-lg bg-px-orange px-4 py-2.5 font-medium text-px-ink hover:opacity-90"
-          >
-            Try again
-          </button>
-        ) : (
-          <p data-testid="prepare-wait" className="mt-6 text-center text-sm text-px-muted">Please keep this page open. It opens by itself when everything is ready.</p>
-        )}
       </div>
     </div>
   );
+}
+
+/** True only when every step finished within the budget: the one condition that opens PROJEXA. */
+export function isPrepared(progress: PrepareProgress): boolean {
+  return progress.finished && !progress.timedOut && progress.steps.every((s) => s.state === "done");
 }
 
 /**
@@ -276,13 +224,17 @@ export function WorkspacePrepare() {
     return () => { if (timer) clearTimeout(timer); };
   }, [open, userId, router, attempt]);
 
-  const retryNow = () => { started.current = false; setAttempt((n) => n + 1); };
-
   const close = () => {
     try { if (userId) sessionStorage.setItem(seenKey(userId), "1"); } catch { /* ignore */ }
     setOpen(false);
   };
 
+  const prepared = progress ? isPrepared(progress) : false;
+  useEffect(() => {
+    if (prepared) close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepared]);
+
   if (!open || !progress) return null;
-  return <WorkspacePrepareView progress={progress} onContinue={close} onRetry={retryNow} lastSyncedAt={lastSyncedAt} />;
+  return <WorkspacePrepareView progress={progress} lastSyncedAt={lastSyncedAt} />;
 }

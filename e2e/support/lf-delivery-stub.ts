@@ -338,13 +338,11 @@ export async function prepareDeliveryLaptop(
   if (extra.some((p) => p.mode === "unsynced")) {
     // a project that cannot be copied: by design the screen never says 100% then (prepare-workspace.ts), it FINISHES and says so
     const started = Date.now()
-    await expect(page.getByTestId("prepare-continue"), "the 'Preparing your workspace' screen never finished").toHaveText("Open PROJEXA", { timeout: 240_000 })
-    await expect(page.getByTestId("prepare-step-projects")).toHaveAttribute("data-state", "failed")
+    await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 })
     prepareFinishedAfterMs.push(Date.now() - started)
   } else {
-    await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 })
+    await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
   }
-  await page.getByTestId("prepare-continue").click()
   await expect
     .poll(() => readMeta(page, "projexa-local", "app:release"), { timeout: 240_000, message: "the release was never installed (meta app:release)" })
     .toMatchObject({ version: expect.stringMatching(/^\d{4}\.\d{2}\.\d{2}-\d{3}$/) })

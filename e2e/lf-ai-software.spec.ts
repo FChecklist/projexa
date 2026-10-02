@@ -208,8 +208,7 @@ test("isolation on one laptop: after a sign-out and ANOTHER person's sign-in, th
     await page.locator("form button[type=submit]").click();
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 });
     // the second person's own workspace is prepared (lf-e11 fix: the "skipped in this tab" marker is per person)
-    await expect(page.getByTestId("prepare-percent")).toHaveText("100%", { timeout: 240_000 });
-    await page.getByTestId("prepare-continue").click();
+    await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
     await expect.poll(() => personMeta(page, made.userId, `sync:done:${Q1.id}:tasks`), { timeout: 120_000, message: "the second person's tasks never reached the laptop" }).toBeTruthy();
     return made;
   });

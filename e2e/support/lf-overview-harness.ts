@@ -39,8 +39,7 @@ export async function prepareLaptop(page: Page, context: BrowserContext, world: 
 
   await test.step("online: the first-run screen prepares the workspace and finishes", async () => {
     await page.goto("/scope")
-    await expect(page.getByTestId("prepare-percent"), "the 'Preparing your workspace' screen never reached 100%").toHaveText("100%", { timeout: 240_000 })
-    await page.getByTestId("prepare-continue").click()
+    await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
   })
 
   await test.step("every readable (project, kind) is on the laptop, and the project names are cached", async () => {
