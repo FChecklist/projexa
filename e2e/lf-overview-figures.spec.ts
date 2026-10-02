@@ -183,3 +183,76 @@ test("manager: offline, every dashboard / report / analysis figure is the seeded
   await expectNoSecret(page, world)
   consoleWatch.check("on the overview screens")
 })
+
+test("client viewer: offline, money is absent (never shown as 'Not set'), counts are the same, and no money reaches the laptop's rows", async ({ page, context }) => {
+  const consoleWatch = watchConsole(page)
+  const world = createWorld({ role: "client_viewer" })
+  const prepared = await prepareLaptop(page, context, world, "overview-viewer@example.invalid")
+
+  await test.step("online: the dashboard and project 360 keep the server's REDACTED answer", async () => {
+    await page.goto(`/local/dashboard?projectId=${P1.id}`)
+    await expect(page.getByTestId("overview-dashboard-figures").locator("[data-state=snapshot]")).toBeVisible()
+    await page.goto(`/local/analysis/project-360?projectId=${P1.id}`)
+    await expect(page.getByTestId("overview-project360-margin").locator("[data-state=snapshot]")).toBeVisible()
+  })
+
+  await goOffline(context, prepared)
+
+  await test.step("offline: the dashboard shows the non-money figures and NO money row at all, with a plain reason", async () => {
+    await page.goto(`/dashboard?projectId=${P1.id}`)
+    await expectDashboardFacts(page, world, P1.id)
+    const f = SERVER_FIGURES[P1.id]!
+    const shown = await dashboardFigures(page)
+    expect(shown["Progress"]).toBe(percent(f.progressPercent))
+    expect(shown["Delayed tasks"]).toBe(String(f.delayedTaskCount))
+    expect(shown["Permits expiring"]).toBe(String(f.permitsExpiringCount))
+    for (const label of ["Contract value", "Budget", "Spent", "% complete by BOQ value"]) expect(Object.keys(shown), `${label} is shown to a client viewer`).not.toContain(label)
+    await expect(page.getByTestId("overview-dashboard-money-hidden")).toHaveText("Money figures are shown to managers and above.")
+    const card = page.getByTestId("overview-dashboard-figures")
+    for (const n of [f.contractValue, f.budget, f.expenses]) await expect(card).not.toContainText(money(n))
+    await expect(card).not.toContainText("Not set")
+  })
+
+  await test.step("offline: project 360 shows the server's redacted margin (dashes), never a figure", async () => {
+    await page.goto(`/analysis/project-360?projectId=${P1.id}`)
+    const margin = page.getByTestId("overview-project360-margin")
+    await expect(margin.locator("[data-state=snapshot]")).toBeVisible()
+    const f = SERVER_FIGURES[P1.id]!
+    for (const n of [f.contractValue, f.expenses, f.contractValue - f.expenses]) await expect(margin).not.toContainText(n.toLocaleString("en-US"))
+  })
+
+  await test.step("the BOQ lines on the laptop carry no rate or amount (the server hid them; the laptop never had them)", async () => {
+    // Every record of every store is read (a local-db record is {id: "<kind>:<id>", type: <kind>, orgId, projectId, data}).
+    const lines = await page.evaluate(
+      ({ db, projectId }) =>
+        new Promise<Array<{ id: string; keys: string[] }>>((resolve) => {
+          const open = indexedDB.open(db)
+          open.onsuccess = () => {
+            const names = [...open.result.objectStoreNames]
+            const out: Array<{ id: string; keys: string[] }> = []
+            const tx = open.result.transaction(names, "readonly")
+            for (const name of names) {
+              if (name === "meta") continue
+              const all = tx.objectStore(name).getAll()
+              all.onsuccess = () => {
+                for (const rec of all.result as Array<{ type?: string; projectId?: string; data?: Record<string, unknown> }>) {
+                  if (rec?.type === "boq_lines" && rec.projectId === projectId && rec.data) out.push({ id: String(rec.data.id), keys: Object.keys(rec.data) })
+                }
+              }
+            }
+            tx.oncomplete = () => { open.result.close(); resolve(out) }
+          }
+          open.onerror = () => resolve([])
+        }),
+      { db: `projexa-local:${prepared.session.userId}`, projectId: P1.id }
+    )
+    // both lines ARE on the laptop (so this checks something), and neither carries a money field
+    expect(lines.map((l) => l.id).sort()).toEqual(world.current(P1.id, "boq_lines").map((r) => r.id).sort())
+    for (const l of lines) expect(l.keys, `BOQ line ${l.id} on the laptop`).not.toEqual(expect.arrayContaining(["rate"]))
+    for (const l of lines) expect(l.keys, `BOQ line ${l.id} on the laptop`).not.toEqual(expect.arrayContaining(["amount"]))
+    expect(lines[0]!.keys).toEqual(expect.arrayContaining(["description", "quantity"]))
+  })
+
+  await expectNoSecret(page, world)
+  consoleWatch.check("for a client viewer")
+})

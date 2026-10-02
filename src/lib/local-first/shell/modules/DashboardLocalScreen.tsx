@@ -133,13 +133,21 @@ export default function DashboardLocalScreen({ shell, data }: ShellScreenProps<D
                 <p className="text-xs" data-testid="overview-dashboard-asof">{asOfLabel(snap.fetchedAt)}</p>
                 <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-4">
                   <dt>Progress</dt><dd className="text-px-ink">{figure(snap.body.progressPercent, "percent")}</dd>
-                  <dt>% complete by BOQ value</dt><dd className="text-px-ink">{figure(snap.body.percentByValue, "percent")}</dd>
-                  <dt>Contract value</dt><dd className="text-px-ink">{figure(snap.body.contractValue, "amount")}</dd>
-                  <dt>Budget</dt><dd className="text-px-ink">{figure(snap.body.budget, "amount")}</dd>
-                  <dt>Spent</dt><dd className="text-px-ink">{figure(snap.body.expenses, "amount")}</dd>
+                  {/* Hidden money is left out, never drawn as "Not set" (that would say the project HAS no budget). */}
+                  {snap.body.financialsRedacted === true ? null : (
+                    <>
+                      <dt>% complete by BOQ value</dt><dd className="text-px-ink">{figure(snap.body.percentByValue, "percent")}</dd>
+                      <dt>Contract value</dt><dd className="text-px-ink">{figure(snap.body.contractValue, "amount")}</dd>
+                      <dt>Budget</dt><dd className="text-px-ink">{figure(snap.body.budget, "amount")}</dd>
+                      <dt>Spent</dt><dd className="text-px-ink">{figure(snap.body.expenses, "amount")}</dd>
+                    </>
+                  )}
                   <dt>Delayed tasks</dt><dd className="text-px-ink">{figure(snap.body.delayedTaskCount, "count")}</dd>
                   <dt>Permits expiring</dt><dd className="text-px-ink">{figure(snap.body.permitsExpiringCount, "count")}</dd>
                 </dl>
+                {snap.body.financialsRedacted === true ? (
+                  <p className="mt-2 text-xs" data-testid="overview-dashboard-money-hidden">Money figures are shown to managers and above.</p>
+                ) : null}
               </div>
             ) : (
               <p data-state="none">Money, budgets and progress by value are worked out by the server. {online ? "" : "They will be shown here once the laptop is connected."}</p>
