@@ -18,6 +18,7 @@ import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIde
 import { BOQ_LINES_KIND } from "../boq-local";
 import { chooseProject, readShellData, selectedProjectKey, type ShellData } from "./context";
 import { serverPageUrl, type ShellLocation } from "./paths";
+import { ShellSignOut } from "./ShellSignOut";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
 import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
@@ -280,6 +281,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         <div className="ml-auto flex items-center gap-3 text-xs text-px-muted">
           <ConnectivityMarker />
           {data?.email ? <span data-testid="local-shell-person">{data.email}</span> : null}
+          {data?.email ? <ShellSignOut /> : null}
         </div>
       </header>
       <main className="mx-auto max-w-6xl p-4">{children}</main>
