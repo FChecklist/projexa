@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
 import { recordIssueOffline } from "./delivery-writes";
-import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import type { MaterialsData } from "./materials-adapter";
 
 export default function MaterialIssueNewScreen({ shell, query, data }: ShellScreenProps<MaterialsData>) {
@@ -64,11 +64,11 @@ export default function MaterialIssueNewScreen({ shell, query, data }: ShellScre
           </label>
           <label className="mt-3 block text-sm">
             Quantity{chosen?.unit ? ` (${chosen.unit})` : ""}
-            <input aria-label="Quantity" className={fieldClass} inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+            <input aria-label="Quantity" className={fieldClass} inputMode="decimal" value={quantity} {...textHandlers(setQuantity)} required />
           </label>
           <label className="mt-3 block text-sm">
             Issued on
-            <input aria-label="Issued on" type="date" className={fieldClass} value={date} onChange={(e) => setDate(e.target.value)} required />
+            <input aria-label="Issued on" type="date" className={fieldClass} value={date} {...textHandlers(setDate)} required />
           </label>
           {data.lines && data.lines.length > 0 ? (
             <label className="mt-3 block text-sm">
@@ -81,11 +81,11 @@ export default function MaterialIssueNewScreen({ shell, query, data }: ShellScre
           ) : null}
           <label className="mt-3 block text-sm">
             Issued to
-            <input aria-label="Issued to" className={fieldClass} value={issuedTo} onChange={(e) => setIssuedTo(e.target.value)} />
+            <input aria-label="Issued to" className={fieldClass} value={issuedTo} {...textHandlers(setIssuedTo)} />
           </label>
           <label className="mt-3 block text-sm">
             Note
-            <input aria-label="Note" className={fieldClass} value={noteText} onChange={(e) => setNoteText(e.target.value)} />
+            <input aria-label="Note" className={fieldClass} value={noteText} {...textHandlers(setNoteText)} />
           </label>
           <Button type="submit" className="mt-4" disabled={saving}>{saving ? "Saving…" : "Save issue"}</Button>
           {tooMuch ? <p role="status" className="mt-2 text-sm text-red-800" data-testid="material-issue-too-much">{tooMuch}</p> : null}

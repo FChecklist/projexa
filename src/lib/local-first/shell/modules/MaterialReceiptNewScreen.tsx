@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
 import { recordReceiptOffline } from "./delivery-writes";
-import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import type { MaterialsData } from "./materials-adapter";
 
 export default function MaterialReceiptNewScreen({ shell, query, data }: ShellScreenProps<MaterialsData>) {
@@ -52,19 +52,19 @@ export default function MaterialReceiptNewScreen({ shell, query, data }: ShellSc
           </label>
           <label className="mt-3 block text-sm">
             Quantity{unit ? ` (${unit})` : ""}
-            <input aria-label="Quantity" className={fieldClass} inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+            <input aria-label="Quantity" className={fieldClass} inputMode="decimal" value={quantity} {...textHandlers(setQuantity)} required />
           </label>
           <label className="mt-3 block text-sm">
             Received on
-            <input aria-label="Received on" type="date" className={fieldClass} value={date} onChange={(e) => setDate(e.target.value)} required />
+            <input aria-label="Received on" type="date" className={fieldClass} value={date} {...textHandlers(setDate)} required />
           </label>
           <label className="mt-3 block text-sm">
             Reference (delivery note)
-            <input aria-label="Reference" className={fieldClass} value={reference} onChange={(e) => setReference(e.target.value)} />
+            <input aria-label="Reference" className={fieldClass} value={reference} {...textHandlers(setReference)} />
           </label>
           <label className="mt-3 block text-sm">
             Notes
-            <input aria-label="Notes" className={fieldClass} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <input aria-label="Notes" className={fieldClass} value={notes} {...textHandlers(setNotes)} />
           </label>
           <p className="mt-3 text-xs text-px-muted">The unit cost and the vendor are set by the server and can be changed online.</p>
           <Button type="submit" className="mt-4" disabled={saving}>{saving ? "Saving…" : "Save receipt"}</Button>

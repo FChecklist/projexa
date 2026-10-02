@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { ShellScreenProps } from "../types";
 import { recordProgressOffline } from "./delivery-writes";
 import { localDay } from "./delivery-local";
-import { CopyNote, DASH, Num, SaveNote, Screen, ServerOnly, StateMessage, Tabs, Waiting, fieldClass, projectName, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Num, SaveNote, Screen, ServerOnly, StateMessage, Tabs, Waiting, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import { progressCsv, type WorkProgressData } from "./work-progress-adapter";
 
 const TABS = [
@@ -100,15 +100,15 @@ function EntryForm({ shell, projectId, form }: { shell: ShellScreenProps["shell"
       </fieldset>
       <label className="mt-3 block text-sm">
         {by === "quantity" ? "Quantity done" : "% complete"}
-        <input aria-label={by === "quantity" ? "Quantity done" : "% complete"} className={fieldClass} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} required />
+        <input aria-label={by === "quantity" ? "Quantity done" : "% complete"} className={fieldClass} inputMode="decimal" value={value} {...textHandlers(setValue)} required />
       </label>
       <label className="mt-3 block text-sm">
         Date
-        <input aria-label="Date" type="date" className={fieldClass} value={date} onChange={(e) => setDate(e.target.value)} required />
+        <input aria-label="Date" type="date" className={fieldClass} value={date} {...textHandlers(setDate)} required />
       </label>
       <label className="mt-3 block text-sm">
         Remarks
-        <input aria-label="Remarks" className={fieldClass} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+        <input aria-label="Remarks" className={fieldClass} value={remarks} {...textHandlers(setRemarks)} />
       </label>
       <Button type="submit" className="mt-4" disabled={saving}>{saving ? "Saving…" : "Save entry"}</Button>
       <SaveNote note={note} />

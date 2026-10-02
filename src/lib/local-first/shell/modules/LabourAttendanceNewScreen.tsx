@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
 import { ATTENDANCE_STATUSES, markAttendanceOffline, type AttendanceStatus } from "./delivery-writes";
-import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import type { LabourData } from "./labour-adapter";
 import { statusWord } from "./LabourScreen";
 
@@ -50,7 +50,7 @@ export default function LabourAttendanceNewScreen({ shell, query, data }: ShellS
           </label>
           <label className="mt-3 block text-sm">
             Date
-            <input aria-label="Date" type="date" className={fieldClass} value={date} onChange={(e) => setDate(e.target.value)} required />
+            <input aria-label="Date" type="date" className={fieldClass} value={date} {...textHandlers(setDate)} required />
           </label>
           <label className="mt-3 block text-sm">
             Status
@@ -60,7 +60,7 @@ export default function LabourAttendanceNewScreen({ shell, query, data }: ShellS
           </label>
           <label className="mt-3 block text-sm">
             Hours (optional)
-            <input aria-label="Hours" className={fieldClass} inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} />
+            <input aria-label="Hours" className={fieldClass} inputMode="decimal" value={hours} {...textHandlers(setHours)} />
           </label>
           <Button type="submit" className="mt-4" disabled={saving}>{saving ? "Saving…" : "Save attendance"}</Button>
           <SaveNote note={note} />

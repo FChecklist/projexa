@@ -144,4 +144,15 @@ export function SaveNote({ note }: { note: { ok: boolean; text: string } | null 
   );
 }
 
-export const fieldClass = "mt-1 block w-full rounded-md border border-black/15 bg-white px-2 py-1.5 text-sm";
+/**
+ * The handlers for a controlled text/date input: the same setter on change AND input. A real keystroke raises both (the second is a
+ * no-op); onInput is what the repo's test environment can drive (see ScopeObjectScreen.tsx and src/lib/mom-form.ts's header).
+ */
+export function textHandlers(set: (value: string) => void) {
+  return {
+    onChange: (e: { currentTarget: { value: string } }) => set(e.currentTarget.value),
+    onInput: (e: { currentTarget: { value: string } }) => set(e.currentTarget.value),
+  };
+}
+
+export const fieldClass ="mt-1 block w-full rounded-md border border-black/15 bg-white px-2 py-1.5 text-sm";
