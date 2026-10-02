@@ -10,6 +10,18 @@ export function createClient() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { fetch: createDurableAuthFetch((...args) => fetch(...args), { isOffline: browserIsOffline }) } }
+    {
+      global: {
+        fetch: createDurableAuthFetch((...args) => fetch(...args), {
+          isOffline: browserIsOffline,
+          // A refresh that failed while the browser HAS a network says our auth service is struggling: tell the connectivity
+          // state (a few in a row make it 'server_down'; the tiny "working on this laptop" marker, never a dialog).
+          onTransientFailure: (info) => {
+            if (info.reason === "offline") return;
+            void import("@/lib/local-first/connectivity").then((m) => m.reportServerFailure()).catch(() => {});
+          },
+        }),
+      },
+    }
   );
 }
