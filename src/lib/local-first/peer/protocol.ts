@@ -16,12 +16,17 @@
 //     tombstone, its version is strictly higher than the local serverVersion, and the local record is not dirty;
 //   * the sender hands over only rows with a valid server signature and no pending local edit (local-db.ts isShareable),
 //     and never a version or a deletion of its own (a signed row cannot be altered: its version is inside the signature);
-//   * every message is size-capped; an oversized or unparseable message ends the session.
+//   * every message is size-capped; an oversized or unparseable message ends the session;
+//   * lf-e7: ORGANISATION rows (project "__org__") are shared only when BOTH tokens carry the server-attested organisation view class
+//     (claim `org_view`) and it is equal -- today's /attest does not send it, so they do not move yet; a token project named "__org__"
+//     is never the organisation; org_people (and any `peer_shareable: false` kind) never moves, either way (org-peer.test.ts).
 //
 // Pure apart from WebCrypto: the link, the store, the keys and the clock are all injected.
 
 import { canonicalize, sha256Hex, verifyRow, verifyToken, type KeyRing, type PeerClaims, type SignedRow } from "./verify";
 import type { PeerLink } from "./transport";
+import { ORG_PROJECT } from "../sync-client";
+import { NEVER_PEER_KINDS } from "../replica-org";
 
 export const MAX_MESSAGE_BYTES = 512 * 1024;
 export const DEFAULT_BATCH_BYTES = 64 * 1024;
@@ -62,6 +67,8 @@ export type PeerSessionOptions = {
   maxBatchBytes?: number;
   /** Kinds that may move at all (default: every kind). */
   allowedKinds?: readonly string[];
+  /** lf-e7: organisation kinds that never move between laptops (manifest `peer_shareable: false`); org_people always among them. */
+  noPeerKinds?: readonly string[];
   /** A data field naming another organisation (replica.ts foreignOrg). */
   foreignOrg?: (data: unknown, org: string) => boolean;
   onVerified?: (peer: PeerClaims) => void;
@@ -110,6 +117,9 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
   const now = options.now ?? (() => Date.now());
   const maxBatch = Math.max(1024, options.maxBatchBytes ?? DEFAULT_BATCH_BYTES);
   const allowed = options.allowedKinds ? new Set(options.allowedKinds) : null;
+  // lf-e7: a kind moves only when allowed AND not one that must never leave its laptop (org_people: the person's own unmasked email)
+  const noPeer = new Set([...NEVER_PEER_KINDS, ...(options.noPeerKinds ?? [])]);
+  const kindOk = (kind: string) => (!allowed || allowed.has(kind)) && !noPeer.has(kind);
 
   let state: SessionState = "connecting";
   let peer: PeerClaims | null = null;
@@ -165,7 +175,7 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     const projects: Record<string, ProjectSummary> = {};
     for (const p of shared) {
       const s = await store.summary(p);
-      projects[p] = allowed ? Object.fromEntries(Object.entries(s).filter(([k]) => allowed.has(k))) : s;
+      projects[p] = Object.fromEntries(Object.entries(s).filter(([k]) => kindOk(k)));
     }
     send({ t: "have", projects, reply });
   }
@@ -178,7 +188,10 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     if (check.claims.view !== self.claims.view) return refuse("wrong_view");
     peer = check.claims;
     const theirs = new Set(peer.projects);
-    shared = new Set(self.claims.projects.filter((p) => theirs.has(p)));
+    shared = new Set(self.claims.projects.filter((p) => theirs.has(p) && p !== ORG_PROJECT));
+    // lf-e7: the organisation's rows move only between two laptops whose server-attested ORGANISATION view class is the same (both
+    // tokens carry `org_view` and it is equal); otherwise a laptop could hand a lower role vendor rows the server never gave it.
+    if (self.claims.orgView && peer.orgView && self.claims.orgView === peer.orgView) shared.add(ORG_PROJECT);
     state = "verified";
     options.onVerified?.(peer);
     await sendHave(false);
@@ -191,7 +204,7 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       if (!shared.has(project) || typeof kinds !== "object" || kinds === null) continue;
       const mine = await store.summary(project);
       for (const [kind, summary] of Object.entries(kinds)) {
-        if (allowed && !allowed.has(kind)) continue;
+        if (!kindOk(kind)) continue;
         if (!summary || typeof summary.digest !== "string" || summary.n === 0) continue;
         if (mine[kind]?.digest === summary.digest) continue;
         const key = `${project}|${kind}`;
@@ -217,7 +230,7 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     if (!m.done) return;
     incomingKnown.delete(key);
     // Only projects in both tokens, only allowed kinds; otherwise answer an empty end so the peer is not left waiting.
-    if (shared.has(m.project) && (!allowed || allowed.has(m.kind))) {
+    if (shared.has(m.project) && kindOk(m.kind)) {
       const rows = await store.shareable(m.project, m.kind);
       let batch: SignedRow[] = [];
       let size = 0;
@@ -248,7 +261,7 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     for (const raw of m.rows) {
       if (!isRowShape(raw)) { reject("malformed"); continue; }
       if ((raw as { deleted?: unknown }).deleted !== undefined) { reject("tombstone"); continue; }
-      if (!shared.has(raw.project) || (allowed && !allowed.has(raw.kind))) { reject("not_shared"); continue; }
+      if (!shared.has(raw.project) || !kindOk(raw.kind)) { reject("not_shared"); continue; }
       const row: SignedRow = { project: raw.project, kind: raw.kind, id: raw.id, version: raw.version, updated_at: raw.updated_at, data: raw.data, sig: raw.sig, kid: raw.kid };
       if (!(await verifyRow(row, self.claims.org, keys))) { reject("bad_signature"); continue; }
       if (options.foreignOrg?.(row.data, self.claims.org)) { reject("foreign_org"); continue; }

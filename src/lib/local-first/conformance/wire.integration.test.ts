@@ -52,7 +52,7 @@ const PENDING = {
 } as const;
 
 /** A harness test: `[Wnn] [owner] title`, skipped when its owner's fix has not merged yet (see PENDING). */
-function wt(id: string, owner: "client:FA" | "client:FB" | "client:FC" | "backend", title: string, fn: () => Promise<void>, pending?: keyof typeof PENDING) {
+function wt(id: string, owner: "client:FA" | "client:FB" | "client:FC" | "client:E7" | "backend", title: string, fn: () => Promise<void>, pending?: keyof typeof PENDING) {
   const p = pending ? PENDING[pending] : null;
   const name = `[${id}] [${owner}]${p ? ` ${p.tag}` : ""} ${title}`;
   if (p && !p.on) test.skip(name, fn);
@@ -828,4 +828,244 @@ suite("G. failure classes the backend and the client must agree on", () => {
     // package FB: a whole-batch 403 NOT_LINKED PAUSES the outbox with its own status (one message, no retry storm)
     expect(state.status === "not_linked" || state.status === "signed_out" || state.notices.length > 0 || state.blocked.length > 0 || state.attention.length > 0).toBe(true);
   }, "FB");
+});
+
+// =====================================================================================================================================================
+// O. ORGANISATION KINDS AND "AS PER ROLE" (package lf-e7). A SEPARATE backend database built like the backend's projexa-sync-chain.pglite.test.ts
+// (0618, 0677, 0678..0686 with the organisation master tables created before 0684, and its organisation fixture with decoys of another organisation),
+// so sections A-G above are untouched. Every laptop here is the REAL replica over the REAL handler.
+suite("O. organisation kinds and role re-evaluation (lf-e7)", () => {
+  let odb, orpc, okey, osigning, odeps, orgFix;
+  const OSUBS = {};
+  let oclock = Date.parse("2026-10-02T12:00:00Z");
+  const ORG = "__org__";
+  const oseen = [];
+  const oClient = (who) => syncClientMod.createSyncClient({
+    getAccessToken: async () => `tok:${OSUBS[who]}`, baseUrl: BASE, sleep: async () => {}, maxRetries: 0,
+    fetchImpl: async (input, init = {}) => {
+      const url = String(input);
+      const rec = { method: init.method ?? "GET", path: url.slice(BASE.length), body: init.body === undefined ? undefined : JSON.parse(init.body), who };
+      oseen.push(rec);
+      const res = await handler.handleSync(new Request(url, { method: rec.method, headers: new Headers(init.headers), body: init.body }), odeps);
+      rec.status = res.status;
+      return res;
+    },
+  });
+  /** One laptop of a person: its own IndexedDB, the real replica on the real handler. */
+  const laptop = (who) => {
+    const factory = idb();
+    const r = replicaMod.createReplica({ userId: OSUBS[who], client: oClient(who), idb: factory, yieldFn: noYield, now: () => oclock });
+    const open = () => localDbMod.openLocalDb(factory, localDbMod.localDbNameFor(OSUBS[who]));
+    const use = async (fn) => { const l = await open(); try { return await fn(l); } finally { l.close(); } };
+    return {
+      who, factory, replica: r, use,
+      ids: (kind, project = ORG) => use(async (l) => (await l.listByProject("org-a", kind, project)).map((x) => x.id.slice(kind.length + 1)).sort()),
+      row: (kind, id) => use((l) => l.getRecord(kind, id)),
+    };
+  };
+  const requestsOf = (who, from) => oseen.slice(from).filter((r) => r.who === who);
+  const MEMBER_KINDS = ["vendors", "customers", "companies", "boq_categories", "currencies", "exchange_rates", "departments", "org_people", "cost_visibility"];
+  let mem, mgr, view;
+
+  beforeAll(async () => {
+    if (!CT) return;
+    orgFix = await import(`${CT}/src/lib/services/__test-helpers__/projexa-org-fixture`);
+    Object.assign(OSUBS, orgFix.SUBS);
+    odb = await userLink.createUserLinkDb();
+    await odb.exec(awl.forwardSql("0618_build001_projexa_gateway"));
+    await odb.exec(awl.forwardSql("0677_projexa_sync_read"));
+    for (const m of ["0678_projexa_sync_keys_ids", "0679_projexa_record_versions", "0680_projexa_release_registry", "0681_projexa_sync_push", "0682_projexa_work_jobs", "0683_projexa_sync_more_kinds", "0684_projexa_sync_org_masters", "0686_projexa_sync_hardening"]) {
+      if (m.startsWith("0684")) await odb.exec(orgFix.MASTER_TABLES);
+      await odb.exec(awl.forwardSql(m));
+    }
+    await odb.exec(orgFix.FIXTURE);
+    await odb.exec(recs.insert("pms_issues", [task("ot1", { number: 1 }), task("ot2", { number: 2 })]));
+    orpc = recs.pgRpc(odb);
+    okey = await signMod.generateKeyRecord();
+    await orpc("projexa_sync_key_put", { p_kid: okey.kid, p_public: okey.public_jwk, p_private: okey.private_jwk });
+    osigning = await signMod.createSigning(okey);
+    odeps = { rpc: orpc, session, signing: async () => osigning, publicKeys: async () => [{ kid: okey.kid, alg: "ES256", jwk: okey.public_jwk, active: true }], limiter: new handler.RateLimiter(1_000_000) };
+    mem = laptop("u-mem");
+    mgr = laptop("u-mgr");
+    view = laptop("u-view");
+  }, 900_000);
+  afterAll(async () => {
+    await odb?.close();
+  });
+
+  wt("W40", "client:E7", "manifest: the client reads org_kinds and org_view_class as the real handler sends them (member: all 9, viewer: cost_visibility)", async () => {
+    const m = await oClient("u-mem").manifest();
+    expect(m.org_kinds.map((k) => k.kind)).toEqual(MEMBER_KINDS);
+    expect(m.org_kinds.every((k) => k.project_scoped === false && k.deletes_supported === true)).toBe(true);
+    expect(m.org_kinds.find((k) => k.kind === "org_people").peer_shareable).toBe(false);
+    expect(m.org_view_class).toMatch(/^[0-9a-f]{16}$/);
+    const v = await oClient("u-view").manifest();
+    expect(v.org_kinds.map((k) => k.kind)).toEqual(["cost_visibility"]);
+    expect(v.org_view_class).not.toBe(m.org_view_class);
+    const h = await oClient("u-mem").heads();
+    expect(typeof h.heads[ORG]).toBe("number");
+    expect(h.org_view_class).toBe(m.org_view_class);
+    expect(typeof h.epoch).toBe("string");
+  });
+
+  wt("W41", "client:E7", "first sync of the masters: member and manager get every organisation kind of THEIR organisation, signed with project __org__; a viewer gets cost_visibility only and never asks for more", async () => {
+    for (const lap of [mem, mgr]) {
+      const from = oseen.length;
+      const report = await lap.replica.sync();
+      expect(report.issues).toEqual([]);
+      expect(report.status).toBe("done");
+      for (const kind of MEMBER_KINDS) expect(await lap.ids(kind)).toEqual(orgFix.OWN_A[kind]);
+      expect(requestsOf(lap.who, from).every((r) => r.status === 200)).toBe(true);
+      const all = await lap.use((l) => l.listByOrg("org-a"));
+      expect(JSON.stringify(all)).not.toContain("SECRET");
+    }
+    // money: credit_limit is null below rank 3 (member), present for a manager (0684 hidden columns)
+    expect((await mem.row("vendors", "ven-1")).data.credit_limit).toBeNull();
+    expect(Number((await mgr.row("vendors", "ven-1")).data.credit_limit)).toBe(500000);
+    // every organisation row's signature verifies over px2 with the sentinel project, from the laptop's own copy
+    const pub = await signMod.importPublic(okey.public_jwk);
+    for (const kind of ["vendors", "departments", "currencies"]) {
+      for (const r of await mem.use((l) => l.listByProject("org-a", kind, ORG))) {
+        const id = r.id.slice(kind.length + 1);
+        const message = await fakeMod.signedMessage({ org: "org-a", project: ORG, kind, id, version: r.serverVersion, updated_at: r.serverUpdatedAt, data: r.data });
+        expect(await signMod.verifyMessage(pub, message, r.sig)).toBe(true);
+        expect(r.kid).toBe(okey.kid);
+      }
+    }
+    const from = oseen.length;
+    expect((await view.replica.sync()).status).toBe("done");
+    expect(await view.ids("cost_visibility")).toEqual(orgFix.OWN_A.cost_visibility);
+    expect(await view.ids("vendors")).toEqual([]);
+    const orgAsks = requestsOf("u-view", from).filter((r) => r.body && (r.body.project_id === ORG || (r.body.kind && MEMBER_KINDS.includes(r.body.kind))));
+    expect(orgAsks.filter((r) => r.body.kind && r.body.kind !== "cost_visibility")).toEqual([]);
+    expect(requestsOf("u-view", from).every((r) => r.status === 200)).toBe(true);
+    const words = await import("../org-local");
+    expect(await words.loadOrgLocal("vendors", { userId: OSUBS["u-view"], idb: view.factory })).toEqual({ state: "not_allowed" });
+    expect((await words.loadOrgLocal("vendors", { userId: OSUBS["u-mem"], idb: mem.factory })).state).toBe("local");
+  });
+
+  wt("W42", "client:E7", "an update and a delete of organisation masters reach the laptop through the organisation feed (no keyset sweep), and through a scheduler round's hourly /heads check", async () => {
+    await odb.exec(`update compliance.erp_suppliers set supplier_name = 'Ace Cement Ltd' where id = 'ven-1'; delete from compliance.construction_boq_categories where id = 'cat-2';`);
+    const from = oseen.length;
+    expect((await mem.replica.sync()).status).toBe("done");
+    expect((await mem.row("vendors", "ven-1")).data.supplier_name).toBe("Ace Cement Ltd");
+    expect(await mem.ids("boq_categories")).toEqual(["cat-1"]);
+    expect(requestsOf("u-mem", from).filter((r) => r.path === "/pull" && r.body.after !== undefined && MEMBER_KINDS.includes(r.body.kind))).toEqual([]);
+    // the scheduler's one-project round: within the hour nothing for the organisation, after it ONE /heads and one /changes only because the head moved
+    await odb.exec(`update compliance.departments set name = 'Site Execution & QA' where id = 'dep-1'`);
+    oclock += 3 * 60_000;
+    let f2 = oseen.length;
+    await mem.replica.syncProject("proj-a");
+    expect(requestsOf("u-mem", f2).filter((r) => r.path === "/heads" || r.body?.project_id === ORG)).toEqual([]);
+    oclock += 61 * 60_000;
+    f2 = oseen.length;
+    await mem.replica.syncProject("proj-a");
+    expect(requestsOf("u-mem", f2).filter((r) => r.path === "/heads").length).toBe(1);
+    expect(requestsOf("u-mem", f2).filter((r) => r.path === "/changes" && r.body.project_id === ORG).length).toBe(1);
+    expect((await mem.row("departments", "dep-1")).data.name).toBe("Site Execution & QA");
+    console.log("[W42] one-project round after an hour, requests:", JSON.stringify(requestsOf("u-mem", f2).map((r) => `${r.method} ${r.path} ${r.body?.project_id ?? ""}`)));
+  });
+
+  wt("W43", "client:E7", "role change member -> viewer: vendor (and every member-only) rows leave the laptop, a pending edit of one stays with its outbox op, and nothing is asked that a viewer may not read", async () => {
+    await mem.use(async (l) => l.transact(async (tx) => {
+      const r = await tx.getRecord("vendors", "ven-2");
+      await tx.putRecord({ id: r.id, type: "vendors", orgId: r.orgId, projectId: r.projectId, data: { ...r.data, supplier_name: "Bright Paints (my edit)" }, dirty: "op-e7-mine", serverVersion: r.serverVersion, serverUpdatedAt: r.serverUpdatedAt, sig: r.sig, kid: r.kid });
+      await tx.putOp({ opId: "op-e7-mine", functionId: "update_vendor", projectId: "proj-a", params: { name: "x" }, record: { kind: "vendors", id: "ven-2", baseVersion: r.serverVersion }, clientAt: "2026-10-02T12:00:00Z", status: "pending", attempts: 0, nextAttemptAt: 0 });
+    }));
+    await odb.exec(`update compliance.users set role = 'viewer' where id = 'u-mem'`);
+    try {
+      const from = oseen.length;
+      const report = await mem.replica.sync();
+      expect(report.status).toBe("done");
+      expect(await mem.ids("vendors")).toEqual(["ven-2"]);
+      expect((await mem.row("vendors", "ven-2")).data.supplier_name).toBe("Bright Paints (my edit)");
+      for (const kind of MEMBER_KINDS.filter((k) => k !== "vendors" && k !== "cost_visibility")) expect(await mem.ids(kind)).toEqual([]);
+      expect(await mem.ids("cost_visibility")).toEqual(orgFix.OWN_A.cost_visibility);
+      expect((await mem.use((l) => l.listOps())).map((o) => o.opId)).toContain("op-e7-mine");
+      expect(requestsOf("u-mem", from).filter((r) => r.status !== 200)).toEqual([]); // not even a 404: the laptop never asked for what the role lost
+    } finally {
+      await odb.exec(`update compliance.users set role = 'member' where id = 'u-mem'`);
+    }
+    // the role comes back: so do the masters, and the pending edit is still the person's
+    expect((await mem.replica.sync()).status).toBe("done");
+    expect(await mem.ids("vendors")).toEqual(["ven-1", "ven-2"]);
+    expect((await mem.row("vendors", "ven-2")).dirty).toBe("op-e7-mine");
+  });
+
+  wt("W44", "client:E7", "cost-visibility change: the manager's class changes on the server, the laptop drops the rows cut for the old class and pulls them again; the new cost_visibility row arrives", async () => {
+    expect((await mgr.replica.sync()).status).toBe("done");
+    const before = await oClient("u-mgr").manifest();
+    await odb.exec(`update compliance.cost_visibility_config set can_see_cost = false where id = 'cv1'`);
+    try {
+      const after = await oClient("u-mgr").manifest();
+      console.log("[W44] manager classes before/after the cost-visibility change:", JSON.stringify({ view: [before.view_class, after.view_class], org: [before.org_view_class, after.org_view_class] }));
+      const classChanged = before.view_class !== after.view_class || before.org_view_class !== after.org_view_class;
+      expect(classChanged).toBe(true);
+      const from = oseen.length;
+      expect((await mgr.replica.sync()).status).toBe("done");
+      const pulls = requestsOf("u-mgr", from).filter((r) => r.path === "/pull" && r.body.after === null);
+      if (before.view_class !== after.view_class) expect(pulls.some((r) => r.body.project_id === "proj-a")).toBe(true);
+      if (before.org_view_class !== after.org_view_class) expect(pulls.some((r) => MEMBER_KINDS.includes(r.body.kind))).toBe(true);
+      expect((await mgr.row("cost_visibility", "cv1")).data.can_see_cost).toBe(false);
+      expect(await mgr.use((l) => l.getMeta("sync:class:proj-a"))).toMatchObject({ view: after.view_class });
+    } finally {
+      await odb.exec(`update compliance.cost_visibility_config set can_see_cost = true where id = 'cv1'`);
+    }
+  });
+
+  wt("W45", "client:E7", "a new epoch (the version tables re-created): the laptop resets everything and pulls again, the row with a pending edit and its op stay", async () => {
+    expect((await mem.replica.sync()).status).toBe("done");
+    await odb.exec(`update platform.projexa_sync_epoch set epoch = 'e7-restored-epoch'`);
+    const from = oseen.length;
+    const report = await mem.replica.sync();
+    expect(report.status).toBe("done");
+    const pulls = requestsOf("u-mem", from).filter((r) => r.path === "/pull" && r.body.after === null);
+    expect(pulls.some((r) => r.body.project_id === "proj-a")).toBe(true);
+    expect(pulls.some((r) => r.body.kind === "vendors")).toBe(true);
+    expect(await mem.use((l) => l.getMeta("sync:epoch"))).toBe("e7-restored-epoch");
+    expect((await mem.row("vendors", "ven-2")).dirty).toBe("op-e7-mine");
+    expect(await mem.ids("vendors")).toEqual(["ven-1", "ven-2"]);
+    // and the next run is a normal one
+    const f2 = oseen.length;
+    expect((await mem.replica.sync()).status).toBe("done");
+    expect(requestsOf("u-mem", f2).filter((r) => r.path === "/pull" && r.body.after === null)).toEqual([]);
+  });
+
+  wt("W46", "client:E7", "reset_required (the change log was pruned past the laptop's position): the organisation is resynced once, the next run is normal (the overlap re-read never loops on the real floor)", async () => {
+    expect((await mem.replica.sync()).status).toBe("done");
+    // what the laptop misses, then the daily prune runs over it (aged so the real 90-day retention takes it), then one more change
+    await odb.exec(`update compliance.erp_suppliers set supplier_name = 'Ace Cement (while away)' where id = 'ven-1'`);
+    await odb.exec(`update platform.projexa_change_log set at = at - interval '100 days' where project_id = '__org__'`);
+    const pruned = Number((await odb.query(`select platform.projexa_prune_change_log(interval '90 days', 100000) n`)).rows[0].n);
+    expect(pruned).toBeGreaterThan(0);
+    await odb.exec(`update compliance.erp_customers set customer_name = 'Villa Owner (after the prune)' where id = 'cus-1'`);
+    const from = oseen.length;
+    expect((await mem.replica.sync()).status).toBe("done");
+    const orgFeed = requestsOf("u-mem", from).filter((r) => r.path === "/changes" && r.body.project_id === ORG);
+    console.log("[W46] organisation feed requests around the prune:", JSON.stringify(orgFeed.map((r) => r.body.after_seq)));
+    expect(requestsOf("u-mem", from).some((r) => r.path === "/pull" && r.body.kind === "vendors" && r.body.after === null)).toBe(true);
+    expect((await mem.row("vendors", "ven-1")).data.supplier_name).toBe("Ace Cement (while away)");
+    expect((await mem.row("customers", "cus-1")).data.customer_name).toBe("Villa Owner (after the prune)");
+    for (let i = 0; i < 2; i++) {
+      const f2 = oseen.length;
+      expect((await mem.replica.sync()).status).toBe("done");
+      expect(requestsOf("u-mem", f2).filter((r) => r.path === "/pull" && r.body.after === null)).toEqual([]);
+      // the refused overlap is remembered: ONE organisation feed request per run on the real floor, not a refused one plus a retry
+      expect(requestsOf("u-mem", f2).filter((r) => r.path === "/changes" && r.body.project_id === ORG).length).toBe(1);
+    }
+  });
+
+  // W47 runs AFTER W46's prune, which also emptied organisation B's organisation feed: the real server then names a head BELOW its own floor
+  // (projexa_sync__feed: head = the newest REMAINING change, 0 here). A fresh laptop must still finish (replica.ts FEED_TRUST_MS guard).
+  wt("W47", "client:E7", "isolation: organisation B's manager syncs only B's masters; nothing of A reaches B's laptop and nothing of B reaches A's", async () => {
+    const b = laptop("u-b");
+    const report = await b.replica.sync();
+    if (report.status !== "done") console.log("[W47] org B report:", JSON.stringify(report.issues));
+    expect(report.status).toBe("done");
+    const bRows = await b.use((l) => l.listByOrg("org-b"));
+    expect(bRows.length).toBeGreaterThan(0);
+    expect(bRows.every((r) => r.orgId === "org-b")).toBe(true);
+    expect(await b.use((l) => l.countRecords("org-a"))).toBe(0);
+    expect(JSON.stringify(await mem.use((l) => l.listByOrg("org-a")))).not.toContain("SECRET");
+  });
 });
