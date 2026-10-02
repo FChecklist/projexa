@@ -38,8 +38,10 @@ import { MobileSidebarTrigger } from "@/components/AppSidebar";
 import { SearchTrigger } from "@/components/search-command";
 import { NotificationBell } from "@/components/NotificationBell";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
+import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
 import Image from "next/image";
 
 type OrganizationInfo = { email: string; organization: { name: string } };
@@ -71,7 +73,11 @@ export function AppTopbar({
     rememberSelectedProject(null);
     // The device copy of a project's BOQ must not outlive the session on a shared browser.
     await clearBoqDeviceCopiesOnSignOut();
+    // LOCAL-FIRST: while the session is still alive, send what was made offline; delete this laptop's copy of the person's
+    // workspace if nothing is pending (privacy), otherwise keep it and say so. Never throws, never waits more than a few seconds.
+    const localNotice = (await finishLocalWorkspaceOnSignOut()).notice;
     await supabase.auth.signOut();
+    if (localNotice) toast.message(localNotice, { duration: 20_000 });
     router.push("/login");
   }
 

@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { answerRfiLocally } from "@/lib/local-first/local-writes";
+import { useLocalWrites } from "@/lib/local-first/use-local-writes";
+import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
 type Rfi = {
   id: string; projectId: string; number: number; subject: string; question: string; status: string;
@@ -40,10 +43,21 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
   }
   useEffect(() => { load(); }, [rfiId]);
 
+  // LOCAL-FIRST: an answer made on this laptop that the server has not confirmed yet. Flag off = an empty view.
+  const pending = useLocalWrites("rfis", rfi?.projectId, { onApplied: () => { void load(); } });
+
   async function submitAnswer() {
     if (!answerText.trim()) { toast.error("An answer is required"); return; }
     setBusy("answer");
     try {
+      // LOCAL-FIRST (see src/lib/local-first/local-writes.ts): with this RFI on the laptop, the answer is written there at once and
+      // sent by the outbox; anything else returns null and the request below runs as it always did.
+      const queued = rfi ? await answerRfiLocally({ projectId: rfi.projectId, rfiId, answer: answerText }) : null;
+      if (queued) {
+        toast.success("Answer saved on this laptop. It is being sent to the server.");
+        setAnswerText("");
+        return;
+      }
       const res = await fetch(`/api/rfis/${rfiId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "answer", answer: answerText }),
@@ -88,43 +102,48 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
   }
   if (!rfi) return <p className="p-6 text-[13px] text-ct-muted">Loading…</p>;
 
+  // The server's row with this laptop's waiting answer laid over it.
+  const waiting = pending.edits.get(rfiId);
+  const shown: Rfi = typeof waiting?.answer === "string" ? { ...rfi, answer: waiting.answer, status: "answered" } : rfi;
+
   return (
     <ObjectScreen
       breadcrumb="RFIs / RFI"
-      title={`RFI-${rfi.number} — ${rfi.subject}`}
+      title={`RFI-${shown.number} — ${shown.subject}`}
       mode="display"
       hasDraft={false}
-      headerStatus={{ tone: STATUS_TONE[rfi.status] ?? "neutral", label: rfi.status }}
+      headerStatus={{ tone: STATUS_TONE[shown.status] ?? "neutral", label: shown.status }}
       facets={[
-        { label: "Ball in Court", value: rfi.ballInCourt },
-        { label: "Due Date", value: rfi.dueDate ? formatDate(rfi.dueDate) : "—" },
+        { label: "Ball in Court", value: shown.ballInCourt },
+        { label: "Due Date", value: shown.dueDate ? formatDate(shown.dueDate) : "—" },
       ]}
-      onBack={() => router.push(`/rfis?projectId=${rfi.projectId}`)}
+      onBack={() => router.push(`/rfis?projectId=${shown.projectId}`)}
       messages={[]}
     >
       <div className="space-y-4 px-4 py-3">
+        {waiting ? <div><PendingSyncMarker /></div> : null}
         <div>
           <h4 className="mb-1 text-sm font-semibold text-ct-navy">Question</h4>
-          <p className="whitespace-pre-wrap text-sm text-ct-muted">{rfi.question}</p>
+          <p className="whitespace-pre-wrap text-sm text-ct-muted">{shown.question}</p>
         </div>
 
-        {rfi.answer && (
+        {shown.answer && (
           <div>
             <h4 className="mb-1 text-sm font-semibold text-ct-navy">Answer</h4>
-            <p className="whitespace-pre-wrap text-sm text-ct-muted">{rfi.answer}</p>
+            <p className="whitespace-pre-wrap text-sm text-ct-muted">{shown.answer}</p>
           </div>
         )}
 
-        {rfi.status === "open" && (
+        {shown.status === "open" && (
           <div className="space-y-2 border-t border-ct-border pt-3">
             <h4 className="text-sm font-semibold text-ct-navy">Answer this RFI</h4>
             <Textarea value={answerText} onChange={(e) => setAnswerText(e.target.value)} rows={4} placeholder="Your answer…" />
             <Button size="sm" disabled={busy !== null} onClick={submitAnswer}>{busy === "answer" ? "Submitting…" : "Submit Answer"}</Button>
           </div>
         )}
-        {rfi.status === "answered" && (
+        {shown.status === "answered" && (
           <div className="border-t border-ct-border pt-3">
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={closeRfi}>{busy === "close" ? "Closing…" : "Close"}</Button>
+            <Button size="sm" variant="outline" disabled={busy !== null || !!waiting} onClick={closeRfi}>{busy === "close" ? "Closing…" : "Close"}</Button>
           </div>
         )}
       </div>

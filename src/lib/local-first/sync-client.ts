@@ -1,34 +1,66 @@
 // LOCAL-FIRST slice 2: the typed fetch client for the PROJEXA sync service (a Supabase Edge Function,
-// never a Vercel function). The contract:
+// never a Vercel function). The contract is docs/local-first/CONTRACT.md; in short:
 //   GET  <base>/manifest -> { user:{id,name,role,org_id}, projects:[{id,name,status}],
-//                             kinds:[{kind,project_scoped,cursor_field?,deletes_supported?}], server_time }
-//   POST <base>/pull {project_id, kind, after: cursor|null, limit<=500}
-//        -> { items:[{id,updated_at,data,deleted?}], next_cursor|null, has_more, hidden_fields[], redacted, server_time }
+//                             kinds:[{kind,project_scoped,cursor_field?,deletes_supported?}], release?, view_class?, server_time }
+//   POST <base>/pull     {project_id, kind, after: cursor|null, limit<=500}   (keyset)
+//                    or  {project_id, kind, ids:[<=200]}                      (exact rows)
+//        -> { items:[{id,updated_at,version?,data,sig?,deleted?}], kid?, next_cursor|null, has_more, hidden_fields[], redacted, server_time }
 //        404 for an unknown or unreadable project or kind.
+//   POST <base>/changes  {project_id, after_seq: int|null, limit<=1000}
+//        -> { changes:[{seq,kind,id,version,op:"I"|"U"|"D"}], next_seq, has_more, head_seq, server_time }
+//   POST <base>/ids      {project_id, kind, after_id, limit<=5000} -> { ids, has_more, next_id }
+//   POST <base>/push     {device_id, ops:[{op_id,function_id,project_id,params,record?,resolution?,client_at}]}
+//        -> { results:[{op_id,status,record_id?,route?,version?,server?,error?}], server_time }
 // Auth: `Authorization: Bearer <PROJEXA Supabase access token>`; no cookie is sent (credentials omitted).
+// Every call also sends `X-Px-Client: <release>; protocol=2; schema=3`. A laptop whose release is below the
+// service's minimum gets 426, which this client turns into the SyncError kind "update_required" (never retried).
 //
-// This client throws a typed SyncError and nothing else; the sync engine (replica.ts) catches it and turns it
-// into a status, so an error here never reaches a screen as an exception.
+// An OLDER service answers without versions, signatures or the new endpoints: every new field is optional here
+// and every parser tolerates its absence.
+//
+// This client throws a typed SyncError and nothing else; the sync engine (replica.ts) and the outbox
+// (outbox.ts) catch it and turn it into a status, so an error here never reaches a screen as an exception.
+
+import { LOCAL_DB_VERSION } from "./local-db";
 
 export const SYNC_BASE_URL = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-sync";
 
 /** The service's own page maximum. */
 export const SYNC_PAGE_LIMIT = 500;
+/** The most ids one `pull {ids}` call may name (larger lists are split by this client). */
+export const SYNC_IDS_LIMIT = 200;
+export const SYNC_CHANGES_LIMIT = 1000;
+export const SYNC_ID_LIST_LIMIT = 5000;
+/** The sync protocol this client speaks (CONTRACT.md section 0), sent with every call. */
+export const SYNC_PROTOCOL = 2;
 
 export type SyncManifest = {
   user: { id: string; name?: string; role?: string; org_id: string };
   projects: { id: string; name?: string; status?: string }[];
   kinds: { kind: string; project_scoped?: boolean; cursor_field?: string; deletes_supported?: boolean }[];
+  view_class?: string;
+  release?: { current?: string; min_compatible?: string; protocol?: number };
   server_time?: string;
 };
 
-export type SyncItem = { id: string; updated_at: string; data: unknown; deleted?: boolean };
+export type SyncItem = {
+  id: string;
+  updated_at: string;
+  data: unknown;
+  deleted?: boolean;
+  /** The record version the backend holds (CONTRACT.md section 0). Absent from an older service. */
+  version?: number;
+  /** ES256 signature over px2|org|project|kind|id|version|updated_at|sha256(canonical data). Absent = unsigned. */
+  sig?: string;
+};
 
 /** Opaque to the client: whatever the service handed back is passed back unchanged. */
 export type SyncCursor = string | number;
 
 export type SyncPage = {
   items: SyncItem[];
+  /** The key id that signed this page's items; null/absent = unsigned (never pass such rows to a peer). */
+  kid?: string | null;
   next_cursor: SyncCursor | null;
   has_more: boolean;
   hidden_fields: string[];
@@ -36,9 +68,59 @@ export type SyncPage = {
   server_time?: string;
 };
 
+export type SyncChange = { seq: number; kind: string; id: string; version: number; op: "I" | "U" | "D" };
+
+export type ChangesPage = {
+  changes: SyncChange[];
+  next_seq: number;
+  has_more: boolean;
+  head_seq: number;
+  server_time?: string;
+};
+
+export type IdsPage = { ids: string[]; has_more: boolean; next_id: string | null };
+
+/** One row as the push endpoint returns it (a conflict's current server row, or the row an op produced). */
+export type SyncServerRow = {
+  kind: string;
+  id: string;
+  version: number;
+  updated_at: string;
+  data: unknown;
+  sig?: string;
+  kid?: string;
+};
+
+export type PushOp = {
+  op_id: string;
+  function_id: string;
+  project_id: string;
+  params: Record<string, unknown>;
+  record?: { kind: string; id: string; base_version: number };
+  resolution?: "overwrite";
+  client_at: string;
+};
+
+export type PushStatus = "applied" | "duplicate" | "conflict" | "rejected" | "failed" | "needs_server";
+
+export type PushResult = {
+  op_id: string;
+  status: PushStatus;
+  record_id?: string;
+  route?: string;
+  /** The record's new head version (applied / duplicate). */
+  version?: number;
+  /** conflict: the current signed server row. applied/duplicate: the row as it now is, when the service sends it. */
+  server?: SyncServerRow;
+  error?: { code: string; missing?: string[]; message?: string };
+};
+
+export type PushResponse = { results: PushResult[]; server_time?: string };
+
 export type SyncErrorKind =
   | "signed_out" // 401, or no access token at all: stop everything and tell the person to sign in again
   | "not_found" // 404: the project or kind is unknown or no longer readable by this person
+  | "update_required" // 426: this release is below the service's minimum; the app must update before it syncs
   | "rate_limited" // 429 that outlasted the retries
   | "server" // 5xx that outlasted the retries
   | "network" // the request never got an answer
@@ -46,14 +128,19 @@ export type SyncErrorKind =
   | "aborted"
   | "bad_response"; // the service answered with something that is not the contract
 
+export type UpdateRequiredDetails = { current: string | null; minCompatible: string | null };
+
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;
   readonly status: number;
-  constructor(kind: SyncErrorKind, message: string, status = 0) {
+  /** Only for kind "update_required": what the service said about the newest and the oldest allowed release. */
+  readonly update?: UpdateRequiredDetails;
+  constructor(kind: SyncErrorKind, message: string, status = 0, update?: UpdateRequiredDetails) {
     super(message);
     this.name = "SyncError";
     this.kind = kind;
     this.status = status;
+    if (update) this.update = update;
   }
 }
 
@@ -61,6 +148,8 @@ export type SyncClientOptions = {
   getAccessToken: () => Promise<string | null>;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  /** The release of the downloaded app, sent as X-Px-Client. Defaults to "dev". */
+  getReleaseVersion?: () => string;
   /** One attempt's ceiling. */
   timeoutMs?: number;
   /** Retries after the first attempt, for 429, 5xx, timeouts and network failures. */
@@ -74,6 +163,11 @@ export type SyncClientOptions = {
 export type SyncClient = {
   manifest(signal?: AbortSignal): Promise<SyncManifest>;
   pull(req: { projectId: string; kind: string; after: SyncCursor | null; limit?: number }, signal?: AbortSignal): Promise<SyncPage>;
+  /** Exact rows by id (the way a row of a table without updated_at is refreshed). More than 200 ids are split into several calls. */
+  pullIds(req: { projectId: string; kind: string; ids: string[] }, signal?: AbortSignal): Promise<SyncPage>;
+  changes(req: { projectId: string; afterSeq: number | null; limit?: number }, signal?: AbortSignal): Promise<ChangesPage>;
+  ids(req: { projectId: string; kind: string; afterId: string | null; limit?: number }, signal?: AbortSignal): Promise<IdsPage>;
+  push(req: { deviceId: string; ops: PushOp[] }, signal?: AbortSignal): Promise<PushResponse>;
 };
 
 const defaultSleep = (ms: number, signal?: AbortSignal) =>
@@ -86,6 +180,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function asVersion(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
+
 function parseManifest(body: unknown): SyncManifest {
   if (!isObject(body) || !isObject(body.user) || typeof body.user.id !== "string" || typeof body.user.org_id !== "string"
     || !Array.isArray(body.projects) || !Array.isArray(body.kinds)) {
@@ -93,7 +191,13 @@ function parseManifest(body: unknown): SyncManifest {
   }
   const projects = body.projects.filter((p): p is { id: string } => isObject(p) && typeof p.id === "string") as SyncManifest["projects"];
   const kinds = body.kinds.filter((k): k is { kind: string } => isObject(k) && typeof k.kind === "string") as SyncManifest["kinds"];
-  return { user: body.user as SyncManifest["user"], projects, kinds, server_time: typeof body.server_time === "string" ? body.server_time : undefined };
+  const release = isObject(body.release) ? (body.release as SyncManifest["release"]) : undefined;
+  return {
+    user: body.user as SyncManifest["user"], projects, kinds,
+    ...(typeof body.view_class === "string" ? { view_class: body.view_class } : {}),
+    ...(release ? { release } : {}),
+    server_time: typeof body.server_time === "string" ? body.server_time : undefined,
+  };
 }
 
 function parsePage(body: unknown): SyncPage {
@@ -109,15 +213,113 @@ function parsePage(body: unknown): SyncPage {
     if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.updated_at !== "string") {
       throw new SyncError("bad_response", "The sync service sent a malformed item.");
     }
-    items.push({ id: raw.id, updated_at: raw.updated_at, data: raw.data, deleted: raw.deleted === true });
+    const item: SyncItem = { id: raw.id, updated_at: raw.updated_at, data: raw.data, deleted: raw.deleted === true };
+    const version = asVersion(raw.version);
+    if (version !== undefined) item.version = version;
+    if (typeof raw.sig === "string" && raw.sig.length > 0) item.sig = raw.sig;
+    items.push(item);
   }
   return {
     items,
+    kid: typeof body.kid === "string" ? body.kid : null,
     next_cursor: cursor ?? null,
     has_more: body.has_more,
     hidden_fields: Array.isArray(body.hidden_fields) ? body.hidden_fields.filter((f): f is string => typeof f === "string") : [],
     redacted: body.redacted === true,
     server_time: typeof body.server_time === "string" ? body.server_time : undefined,
+  };
+}
+
+function parseChanges(body: unknown, afterSeq: number | null): ChangesPage {
+  if (!isObject(body) || !Array.isArray(body.changes)) {
+    throw new SyncError("bad_response", "The sync service sent a change list this version does not understand.");
+  }
+  const head = typeof body.head_seq === "number" && Number.isFinite(body.head_seq) ? body.head_seq : null;
+  if (head === null) throw new SyncError("bad_response", "The sync service sent a change list without its head position.");
+  const changes: SyncChange[] = [];
+  for (const raw of body.changes) {
+    if (!isObject(raw) || typeof raw.seq !== "number" || typeof raw.kind !== "string" || typeof raw.id !== "string"
+      || (raw.op !== "I" && raw.op !== "U" && raw.op !== "D")) {
+      throw new SyncError("bad_response", "The sync service sent a malformed change.");
+    }
+    changes.push({ seq: raw.seq, kind: raw.kind, id: raw.id, version: asVersion(raw.version) ?? 0, op: raw.op });
+  }
+  const next = typeof body.next_seq === "number" && Number.isFinite(body.next_seq) ? body.next_seq : (afterSeq ?? head);
+  return {
+    changes, next_seq: next, has_more: body.has_more === true, head_seq: head,
+    server_time: typeof body.server_time === "string" ? body.server_time : undefined,
+  };
+}
+
+function parseIds(body: unknown): IdsPage {
+  if (!isObject(body) || !Array.isArray(body.ids) || typeof body.has_more !== "boolean") {
+    throw new SyncError("bad_response", "The sync service sent an id list this version does not understand.");
+  }
+  const next = body.next_id;
+  if (next !== null && next !== undefined && typeof next !== "string") {
+    throw new SyncError("bad_response", "The sync service sent an id cursor this version does not understand.");
+  }
+  return { ids: body.ids.filter((i): i is string => typeof i === "string"), has_more: body.has_more, next_id: next ?? null };
+}
+
+function parseServerRow(raw: unknown): SyncServerRow | undefined {
+  if (!isObject(raw) || typeof raw.kind !== "string" || typeof raw.id !== "string") return undefined;
+  const version = asVersion(raw.version);
+  if (version === undefined) return undefined;
+  return {
+    kind: raw.kind, id: raw.id, version,
+    updated_at: typeof raw.updated_at === "string" ? raw.updated_at : "",
+    data: raw.data,
+    ...(typeof raw.sig === "string" && raw.sig ? { sig: raw.sig } : {}),
+    ...(typeof raw.kid === "string" && raw.kid ? { kid: raw.kid } : {}),
+  };
+}
+
+const PUSH_STATUSES: readonly PushStatus[] = ["applied", "duplicate", "conflict", "rejected", "failed", "needs_server"];
+
+function parsePush(body: unknown): PushResponse {
+  if (!isObject(body) || !Array.isArray(body.results)) {
+    throw new SyncError("bad_response", "The sync service sent a push answer this version does not understand.");
+  }
+  const results: PushResult[] = [];
+  for (const raw of body.results) {
+    if (!isObject(raw) || typeof raw.op_id !== "string" || typeof raw.status !== "string") {
+      throw new SyncError("bad_response", "The sync service sent a malformed push result.");
+    }
+    const known = (PUSH_STATUSES as readonly string[]).includes(raw.status);
+    const result: PushResult = {
+      op_id: raw.op_id,
+      // A status this version has never heard of is a transient failure: keep the op, ask again later (a newer server, a partial deploy).
+      status: known ? (raw.status as PushStatus) : "failed",
+    };
+    if (typeof raw.record_id === "string") result.record_id = raw.record_id;
+    if (typeof raw.route === "string") result.route = raw.route;
+    const version = asVersion(raw.version);
+    if (version !== undefined) result.version = version;
+    const server = parseServerRow(raw.server);
+    if (server) result.server = server;
+    if (isObject(raw.error) && typeof raw.error.code === "string") {
+      result.error = {
+        code: raw.error.code,
+        ...(Array.isArray(raw.error.missing) ? { missing: raw.error.missing.filter((m): m is string => typeof m === "string") } : {}),
+        ...(typeof raw.error.message === "string" ? { message: raw.error.message } : {}),
+      };
+    } else if (!known) {
+      result.error = { code: "UNKNOWN_STATUS" };
+    }
+    results.push(result);
+  }
+  return { results, server_time: typeof body.server_time === "string" ? body.server_time : undefined };
+}
+
+/** What a 426 body says about releases. Every field is optional: the service may send little or nothing. */
+function parseUpdateRequired(body: unknown): UpdateRequiredDetails {
+  const o = isObject(body) ? body : {};
+  const nested = isObject(o.release) ? o.release : {};
+  const text = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : null);
+  return {
+    current: text(o.current) ?? text(nested.current),
+    minCompatible: text(o.min_compatible) ?? text(o.minCompatible) ?? text(nested.min_compatible),
   };
 }
 
@@ -128,8 +330,9 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
   const maxRetries = options.maxRetries ?? 3;
   const backoffMs = options.backoffMs ?? 500;
   const sleep = options.sleep ?? defaultSleep;
+  const release = options.getReleaseVersion ?? (() => "dev");
 
-  async function request(path: string, init: { method: "GET" | "POST"; body?: unknown }, outer?: AbortSignal): Promise<unknown> {
+  async function request(path: string, init: { method: "GET" | "POST"; body?: unknown; timeoutMs?: number }, outer?: AbortSignal): Promise<unknown> {
     let attempt = 0;
     for (;;) {
       if (outer?.aborted) throw new SyncError("aborted", "The sync was cancelled.");
@@ -138,7 +341,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
 
       const controller = new AbortController();
       let timedOut = false;
-      const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+      const timer = setTimeout(() => { timedOut = true; controller.abort(); }, init.timeoutMs ?? timeoutMs);
       const onOuterAbort = () => controller.abort();
       outer?.addEventListener("abort", onOuterAbort, { once: true });
 
@@ -150,6 +353,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: "application/json",
+            "X-Px-Client": `${release()}; protocol=${SYNC_PROTOCOL}; schema=${LOCAL_DB_VERSION}`,
             ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
           },
           body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
@@ -159,6 +363,10 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
         });
         if (res.status === 401) {
           throw new SyncError("signed_out", "Your sign-in is no longer valid. Sign in again to copy your projects to this laptop.", res.status);
+        }
+        if (res.status === 426) {
+          const details = parseUpdateRequired(await res.json().catch(() => null));
+          throw new SyncError("update_required", "PROJEXA on this laptop must be updated before it can sync.", res.status, details);
         }
         if (res.status === 404) throw new SyncError("not_found", "That project or data kind is not available to you.", 404);
         if (res.status === 429 || res.status >= 500) {
@@ -175,7 +383,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
           }
         }
       } catch (err) {
-        if (err instanceof SyncError && (err.kind === "signed_out" || err.kind === "not_found" || err.kind === "bad_response")) throw err;
+        if (err instanceof SyncError && (err.kind === "signed_out" || err.kind === "not_found" || err.kind === "bad_response" || err.kind === "update_required")) throw err;
         if (outer?.aborted) throw new SyncError("aborted", "The sync was cancelled.");
         failure = err instanceof SyncError
           ? err
@@ -200,6 +408,32 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
     async pull(req, signal) {
       const limit = Math.min(Math.max(1, req.limit ?? SYNC_PAGE_LIMIT), SYNC_PAGE_LIMIT);
       return parsePage(await request("/pull", { method: "POST", body: { project_id: req.projectId, kind: req.kind, after: req.after, limit } }, signal));
+    },
+    async pullIds(req, signal) {
+      const merged: SyncPage = { items: [], kid: null, next_cursor: null, has_more: false, hidden_fields: [], redacted: false };
+      for (let i = 0; i < req.ids.length; i += SYNC_IDS_LIMIT) {
+        const chunk = req.ids.slice(i, i + SYNC_IDS_LIMIT);
+        const page = parsePage(await request("/pull", { method: "POST", body: { project_id: req.projectId, kind: req.kind, ids: chunk } }, signal));
+        merged.items.push(...page.items);
+        merged.kid = page.kid ?? merged.kid;
+        merged.redacted = merged.redacted || page.redacted;
+        for (const f of page.hidden_fields) if (!merged.hidden_fields.includes(f)) merged.hidden_fields.push(f);
+        merged.server_time = page.server_time ?? merged.server_time;
+      }
+      return merged;
+    },
+    async changes(req, signal) {
+      const limit = Math.min(Math.max(1, req.limit ?? SYNC_CHANGES_LIMIT), SYNC_CHANGES_LIMIT);
+      return parseChanges(await request("/changes", { method: "POST", body: { project_id: req.projectId, after_seq: req.afterSeq, limit } }, signal), req.afterSeq);
+    },
+    async ids(req, signal) {
+      const limit = Math.min(Math.max(1, req.limit ?? SYNC_ID_LIST_LIMIT), SYNC_ID_LIST_LIMIT);
+      return parseIds(await request("/ids", { method: "POST", body: { project_id: req.projectId, kind: req.kind, after_id: req.afterId, limit } }, signal));
+    },
+    async push(req, signal) {
+      // The service runs every op through the real pipeline, one after another: allow it longer than a read. A timeout
+      // is safe -- the same op_id sent again is answered "duplicate", never applied twice.
+      return parsePush(await request("/push", { method: "POST", body: { device_id: req.deviceId, ops: req.ops }, timeoutMs: Math.max(timeoutMs, 60_000) }, signal));
     },
   };
 }

@@ -2,24 +2,18 @@
 // the person's own Supabase session. Kept apart from replica.ts so the engine itself stays free of the
 // browser client (and so its tests need no environment variables).
 
-import { createClient } from "@/lib/supabase/client";
 import { createReplica, type Replica } from "./replica";
-import { createSyncClient } from "./sync-client";
+import { createSharedSyncClient } from "./shared-client";
 import { setActiveLocalUser } from "./local-reader";
 
 const replicas = new Map<string, Replica>();
-
-async function accessToken(): Promise<string | null> {
-  const { data } = await createClient().auth.getSession();
-  return data.session?.access_token ?? null;
-}
 
 /** The (memoised) replica for this person. Calling it also marks them as the laptop's active local user. */
 export function getSharedReplica(userId: string): Replica {
   setActiveLocalUser(userId);
   let replica = replicas.get(userId);
   if (!replica) {
-    replica = createReplica({ userId, client: createSyncClient({ getAccessToken: accessToken, timeoutMs: 15_000, maxRetries: 2 }) });
+    replica = createReplica({ userId, client: createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 2 }) });
     replicas.set(userId, replica);
   }
   return replica;

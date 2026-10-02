@@ -46,6 +46,11 @@ async function defaultUserId(): Promise<string | null> {
   return activeUserId;
 }
 
+/** The signed-in person this laptop is working for, or null when nobody is (or the browser client cannot say). */
+export async function resolveLocalUserId(): Promise<string | null> {
+  return defaultUserId();
+}
+
 export type LocalAccess = {
   /** An open database (not closed by these functions), or ... */
   db?: LocalDb;

@@ -14,6 +14,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Plus } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { useLocalWrites } from "@/lib/local-first/use-local-writes";
+import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
 type Rfi = {
   id: string; number: number; subject: string; question: string; status: string; ballInCourt: string;
@@ -43,6 +45,10 @@ export default function RfisClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { load(); }, [projectId]);
 
+  // LOCAL-FIRST: RFIs made on this laptop that the server has not confirmed yet, and edits (an answer) still on their way.
+  // With the flag off this is an empty view and nothing below changes. When one is applied the list is read again.
+  const pending = useLocalWrites<Rfi>("rfis", projectId, { onApplied: () => { void load(); } });
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -55,7 +61,7 @@ export default function RfisClient({ projectId }: { projectId: string }) {
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
-          ) : rfis.length === 0 ? (
+          ) : rfis.length === 0 && pending.created.length === 0 ? (
             <p className="py-10 text-center text-sm text-px-muted">No RFIs yet.</p>
           ) : (
             <Table>
@@ -68,14 +74,30 @@ export default function RfisClient({ projectId }: { projectId: string }) {
               <TableBody>
                 {/* Real screen navigation (2026-08-30) -- rows open the
                     real Object Page, where Answer/Close now live. */}
-                {rfis.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/rfis/${r.id}`)}>
-                    <TableCell className="font-mono text-xs">RFI-{r.number}</TableCell>
-                    <TableCell className="font-medium">{r.subject}</TableCell>
-                    <TableCell className="capitalize text-px-muted">{r.ballInCourt}</TableCell>
-                    <TableCell><Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge></TableCell>
+                {pending.created.map((p) => (
+                  <TableRow key={p.id} data-testid="pending-rfi-row">
+                    <TableCell className="font-mono text-xs">RFI-…</TableCell>
+                    <TableCell className="font-medium">{p.data.subject} <PendingSyncMarker className="ml-2" /></TableCell>
+                    <TableCell className="capitalize text-px-muted">—</TableCell>
+                    <TableCell><Badge variant={STATUS_VARIANT.open}>open</Badge></TableCell>
                   </TableRow>
                 ))}
+                {rfis.map((r) => {
+                  // An answer made on this laptop that the server has not confirmed yet is shown as made.
+                  const edit = pending.edits.get(r.id);
+                  const status = typeof edit?.answer === "string" ? "answered" : r.status;
+                  return (
+                    <TableRow key={r.id} className="cursor-pointer hover:bg-px-cloud/40" onClick={() => router.push(`/rfis/${r.id}`)}>
+                      <TableCell className="font-mono text-xs">RFI-{r.number}</TableCell>
+                      <TableCell className="font-medium">{r.subject}</TableCell>
+                      <TableCell className="capitalize text-px-muted">{r.ballInCourt}</TableCell>
+                      <TableCell>
+                        <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>
+                        {edit ? <PendingSyncMarker className="ml-2" /> : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
