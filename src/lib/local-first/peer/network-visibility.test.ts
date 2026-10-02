@@ -113,7 +113,7 @@ describe("network + auto-sync: the manifest's never-share organisation kinds are
       userId: L.userId, selfId: L.userId, db: L.db,
       fetchAttest: async () => { throw new Error("our server is down"); }, // the cached attestation below carries it
       remoteProviders: [supabaseRealtimeProvider(d.rt.client), ntfyProvider({ fetchImpl: d.nt.fetchImpl, EventSourceImpl: d.nt.EventSourceImpl })],
-      openLink: d.rtc.openLink, isVisible: () => true, isOnline: () => true, locks: null, foreignOrg, now: () => NOW,
+      openLink: d.rtc.openLink, isVisible: () => true, isOnline: () => true, locks: null, foreignOrg, requirePx3: false /* px2-only fixtures; px3 is tested in px3.test.ts */, now: () => NOW,
     });
     for (const L of [A, B]) {
       await L.db.setMeta("peer:attest", { token: L.self.token, expiresAt: now + 86_400_000, orgId: "o1", userId: L.userId, viewClass: "v1", projects: ["p1"], channel: "chan", fetchedAt: now });
