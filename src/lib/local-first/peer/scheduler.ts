@@ -7,7 +7,8 @@
 //     NOT AT ALL unless a peer is connected -- a forgotten background tab costs nothing.
 // What one run does: the server step (sync from Supabase; it starts with a cheap /changes head check and pulls only when a head
 // moved, see server-step.ts) and the peer step (ask connected laptops for anything new), IN PARALLEL, so a peer still helps while
-// our server is down and the server still helps when there is no peer.
+// our server is down and the server still helps when there is no peer. While a peer IS connected the server step runs at most
+// every `serverWithPeersMs` (30 minutes; always on open / online / manual): peers first, the server for what only it knows.
 // Never a storm: one run at a time across tabs (Web Locks, `ifAvailable`: a second tab simply skips), at most one run per
 // `minGapMs` from triggers, and every trigger that arrives during a run is folded into it.
 //
@@ -40,6 +41,8 @@ export type SchedulerOptions = {
   hiddenMs?: number;
   hiddenLongMs?: number;
   minGapMs?: number;
+  /** While a peer is connected, the server step runs at most this often (except on open / online / manual). Default 30 minutes. */
+  serverWithPeersMs?: number;
   onRun?: (info: { reason: TriggerReason; server: "ok" | "failed" | "skipped"; peers: "ok" | "failed" | "skipped"; changed: boolean }) => void;
 };
 
@@ -54,7 +57,7 @@ export type SyncScheduler = {
   readonly runs: number;
 };
 
-export const DEFAULTS = { baseMs: 5 * 60_000, idleMaxMs: 30 * 60_000, hiddenMs: 30 * 60_000, hiddenLongMs: 60 * 60_000, minGapMs: 30_000 } as const;
+export const DEFAULTS = { baseMs: 5 * 60_000, idleMaxMs: 30 * 60_000, hiddenMs: 30 * 60_000, hiddenLongMs: 60 * 60_000, minGapMs: 30_000, serverWithPeersMs: 30 * 60_000 } as const;
 
 const realClock: SchedulerClock = {
   now: () => Date.now(),
@@ -76,6 +79,8 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
   let due: number | null = null;
   let running: Promise<void> | null = null;
   let lastRunAt = -Infinity;
+  let lastServerAt = -Infinity;
+  const serverWithPeersMs = o.serverWithPeersMs ?? DEFAULTS.serverWithPeersMs;
   let idleStreak = 0;
   let hiddenSince: number | null = o.isVisible() ? null : clock.now();
   let stopped = true;
@@ -111,15 +116,22 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
     lastRunAt = clock.now();
     const online = o.isOnline();
     const peers = o.peersConnected();
+    // PEERS FIRST (package lf-e6, R14): while a verified laptop of the same organisation and view class is connected, rows come
+    // from it, and the server is asked at most once per `serverWithPeersMs` -- still regularly, because only the server
+    // delivers tombstones, redaction changes and projects that were taken away. Opening the app, coming back online and a
+    // manual sync always ask the server.
+    const forced = reason === "open" || reason === "online" || reason === "manual";
+    const serverDue = online && (peers === 0 || forced || clock.now() - lastServerAt >= serverWithPeersMs);
+    if (serverDue) lastServerAt = clock.now();
     const [s, p] = await Promise.allSettled([
-      online ? o.serverStep() : Promise.resolve("skipped" as const),
+      serverDue ? o.serverStep() : Promise.resolve("skipped" as const),
       peers > 0 ? o.peerStep() : Promise.resolve("skipped" as const),
     ]);
     const changedOf = (r: PromiseSettledResult<unknown>) => r.status === "fulfilled" && typeof r.value === "object" && r.value !== null && (r.value as { changed?: boolean }).changed === true;
     const changed = changedOf(s) || changedOf(p);
     idleStreak = changed ? 0 : Math.min(idleStreak + 1, 8);
     const word = (r: PromiseSettledResult<unknown>, ran: boolean) => (!ran ? "skipped" : r.status === "fulfilled" ? "ok" : "failed") as "ok" | "failed" | "skipped";
-    o.onRun?.({ reason, server: word(s, online), peers: word(p, peers > 0), changed });
+    o.onRun?.({ reason, server: word(s, serverDue), peers: word(p, peers > 0), changed });
   }
 
   async function trigger(reason: TriggerReason): Promise<void> {

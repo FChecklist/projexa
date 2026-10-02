@@ -115,7 +115,7 @@ export function createWorld(o: { projects?: number; rowsPerKind?: number } = {})
     for (const k of BACKEND_KINDS) {
       for (let i = 0; i < (o.rowsPerKind ?? 2); i += 1) server.upsert({ kind: k.kind, projectId: p, id: `${p}-${k.kind}-${i}`, data: { name: `${k.kind} ${i}` } });
     }
-    for (let i = 0; i < 10; i += 1) server.upsert({ kind: "tasks", projectId: p, id: `${p}-task-${i}`, data: { title: `Task ${i}` } });
+    for (let i = 0; i < 20; i += 1) server.upsert({ kind: "tasks", projectId: p, id: `${p}-task-${i}`, data: { title: `Task ${i}` } });
   }
   return { clock, server, jobs: createFakeJobsServer(clock.now), projects };
 }
@@ -136,6 +136,10 @@ export type LaptopOptions = {
   jobs?: boolean;
   /** The project the person has open (the shell's remembered selection). */
   activeProject?: string;
+  /** Wire the server step in its original head-check mode instead of peer-shared.ts's project mode (comparison only). */
+  headMode?: boolean;
+  /** This person edits tasks offset..offset+9 of the open project (two people on one project edit different tasks). */
+  taskOffset?: number;
 };
 
 export type SimLaptop = {
@@ -248,7 +252,11 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
           return { token: "t", expires_at: new Date(clock.now() + DAY).toISOString(), org_id: server.orgId, user_id: userId, view_class: "v", projects: world.projects, channel: "c", public_keys: [], server_time: new Date(clock.now()).toISOString() };
         },
       });
-      const serverStep = createServerStep({ meta: d, changes: (r) => client.changes(r), sync: () => replica.sync() });
+      // peer-shared.ts's wiring: project mode, the open project every run (o.headMode: the original head-check mode, for comparison)
+      const serverStep = createServerStep({
+        meta: d, changes: (r) => client.changes(r), sync: () => replica.sync(), now: clock.now,
+        ...(o.headMode ? {} : { syncProject: (projectId: string) => replica.syncProject(projectId), activeProject: () => env.active }),
+      });
       const att = attestation;
       scheduler = createSyncScheduler({
         clock, locks: null,
@@ -283,7 +291,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
     async edit(i) {
       env.lastActivity = clock.now();
       const p = env.active;
-      const id = `${p}-task-${i % 10}`;
+      const id = `${p}-task-${(o.taskOffset ?? 0) + (i % 10)}`;
       const d = await db();
       const row = await d.getRecord("tasks", id);
       const title = `My edit ${i}`;

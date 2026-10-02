@@ -10,6 +10,7 @@ import { LOCAL_DB_VERSION, localDbNameFor, openLocalDb } from "../local-db";
 import { getDeviceId } from "../outbox-shared";
 import { foreignOrg } from "../replica";
 import { getSharedReplica } from "../replica-shared";
+import { selectedProjectKey } from "../shell/context";
 import { accessToken, createSharedSyncClient, getReleaseVersion } from "../shared-client";
 import { SYNC_BASE_URL, SYNC_PROTOCOL } from "../sync-client";
 import { createAutoSync, type AutoSync } from "./auto-sync";
@@ -61,7 +62,17 @@ export function startPeerSync(userId: string): void {
       ],
       localProviders: [broadcastChannelProvider()],
       openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal }),
-      serverStep: createServerStep({ meta: db, changes: (r) => client.changes(r), sync: () => replica.sync() }),
+      // project mode (lf-e6): the open project's feed every run, the others hourly, a whole sync every six hours
+      serverStep: createServerStep({
+        meta: db, changes: (r) => client.changes(r), sync: () => replica.sync(), syncProject: (projectId) => replica.syncProject(projectId),
+        activeProject: () => {
+          try {
+            return localStorage.getItem(selectedProjectKey(userId));
+          } catch {
+            return null;
+          }
+        },
+      }),
       isVisible: () => document.visibilityState === "visible",
       isOnline: () => navigator.onLine !== false,
       foreignOrg,

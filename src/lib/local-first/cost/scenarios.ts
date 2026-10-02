@@ -56,10 +56,10 @@ async function timeline(world: World, events: { at: number; run: () => Promise<v
 }
 
 /** One person's working day: an own edit every 16 minutes, a screen opened every 12 minutes (rotating kinds). */
-function workdayEvents(l: SimLaptop, world: World, offsetMs = 0): { at: number; run: () => Promise<void> }[] {
+function workdayEvents(l: SimLaptop, world: World, offsetMs = 0, project = world.projects[0]): { at: number; run: () => Promise<void> }[] {
   const events: { at: number; run: () => Promise<void> }[] = [];
   for (let i = 0; i < 30; i += 1) events.push({ at: offsetMs + 5 * MINUTE + i * 16 * MINUTE, run: () => l.edit(i) });
-  for (let i = 0; i < 40; i += 1) events.push({ at: offsetMs + 2 * MINUTE + i * 12 * MINUTE, run: () => l.openScreen(world.projects[0], SCREEN_KINDS[i % SCREEN_KINDS.length]) });
+  for (let i = 0; i < 40; i += 1) events.push({ at: offsetMs + 2 * MINUTE + i * 12 * MINUTE, run: () => l.openScreen(project, SCREEN_KINDS[i % SCREEN_KINDS.length]) });
   return events;
 }
 
@@ -125,9 +125,12 @@ export async function tenLaptops(o: { laptops?: number } = {}): Promise<Scenario
   const world = createWorld();
   const count = o.laptops ?? 10;
   const laptops: SimLaptop[] = [];
-  for (let i = 0; i < count; i += 1) laptops.push(await synced(world, { userId: `u${i + 1}`, peers: count - 1, activeProject: world.projects[i % world.projects.length] }));
+  // two people per project (5 projects), each editing their own ten tasks: their edits are each other's colleague changes
+  for (let i = 0; i < count; i += 1) {
+    laptops.push(await synced(world, { userId: `u${i + 1}`, peers: count - 1, activeProject: world.projects[i % world.projects.length], taskOffset: (Math.floor(i / world.projects.length) % 2) * 10 }));
+  }
   for (const l of laptops) await l.open();
-  const events = laptops.flatMap((l, i) => workdayEvents(l, world, i * 90_000));
+  const events = laptops.flatMap((l, i) => workdayEvents(l, world, i * 90_000, world.projects[i % world.projects.length]));
   await timeline(world, events, 8 * HOUR);
   for (const l of laptops) l.stop();
   return summarise("tenLaptopsPerLaptop", laptops);
