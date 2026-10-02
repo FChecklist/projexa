@@ -28,6 +28,17 @@ export function mayOffer(role: string | null, functionId: string): boolean {
   return fn !== undefined && rankOf(role) >= fn.min_role_rank;
 }
 
+/**
+ * The handlers for a controlled text/date input: the same setter on change AND input. A real keystroke raises both (the second is a
+ * no-op); onInput is what the repo's test environment can drive (the same rule as DeliveryParts.tsx textHandlers).
+ */
+export function textInput(set: (value: string) => void) {
+  return {
+    onChange: (e: { currentTarget: { value: string } }) => set(e.currentTarget.value),
+    onInput: (e: { currentTarget: { value: string } }) => set(e.currentTarget.value),
+  };
+}
+
 /** What to say after a write was kept on this laptop. */
 export function keptNote(shell: ShellApi): string {
   return shell.connectivity === "online" ? "Saved on this laptop and being sent." : "Saved on this laptop. It will be sent to the server when you are connected.";

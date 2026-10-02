@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { changeOrderPendingWord, changeOrderStatusText, scheduleImpactText, type ChangeOrderObjectData } from "./design-change-adapter";
 import { notQueuedMessage, submitChangeOrderOffline, validateSigner } from "./design-change-writes";
-import { CoMoney, CopyNote, Facts, NOT_SYNCED, NO_PROJECT, Note, OnlineOnly, PendingMark, StateMessage, keptNote, mayOffer, projectQuery, writeAccess } from "./DesignChangeShared";
+import { CoMoney, CopyNote, Facts, NOT_SYNCED, NO_PROJECT, Note, OnlineOnly, PendingMark, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 
 const BACK = { href: "/change-orders", label: "Back to Change Orders" };
 
@@ -79,14 +79,15 @@ export default function ChangeOrderObjectScreen({ shell, data }: ShellScreenProp
             <form
               className="max-w-sm space-y-2"
               data-testid="co-send-form"
+              noValidate
               onSubmit={(e) => {
                 e.preventDefault();
                 void send();
               }}
             >
               <p className="text-xs text-px-muted">A real signing request is created on the server when this is sent.</p>
-              <label className="block text-sm">Signer name<input className="mt-1 block w-full rounded border border-black/20 p-1.5 text-sm" data-testid="co-signer-name" value={signerName} onChange={(e) => setSignerName(e.target.value)} /></label>
-              <label className="block text-sm">Signer email<input type="email" className="mt-1 block w-full rounded border border-black/20 p-1.5 text-sm" data-testid="co-signer-email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} /></label>
+              <label className="block text-sm">Signer name<input className="mt-1 block w-full rounded border border-black/20 p-1.5 text-sm" data-testid="co-signer-name" value={signerName} {...textInput(setSignerName)} /></label>
+              <label className="block text-sm">Signer email<input type="email" className="mt-1 block w-full rounded border border-black/20 p-1.5 text-sm" data-testid="co-signer-email" value={signerEmail} {...textInput(setSignerEmail)} /></label>
               <div className="flex gap-2">
                 <Button type="submit" size="sm" data-testid="co-send" disabled={busy}>Send</Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setSending(false)}>Cancel</Button>

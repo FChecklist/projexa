@@ -17,7 +17,7 @@ import { formatDayLabel, formatHours } from "@/lib/design-studio-timesheet";
 import type { ShellScreenProps } from "../types";
 import { undecided, type ReviewData, type ReviewGroup } from "./design-change-adapter";
 import { approveTimeEntryOffline, notQueuedMessage, rejectTimeEntryOffline } from "./design-change-writes";
-import { CopyNote, NOT_SYNCED, NO_PROJECT, Note, OnlineOnly, StateMessage, keptNote, mayOffer, projectQuery, writeAccess } from "./DesignChangeShared";
+import { CopyNote, NOT_SYNCED, NO_PROJECT, Note, OnlineOnly, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 import { EntryStatus } from "./DesignStudioTimesheetScreen";
 
 export const designerLabel = (g: Pick<ReviewGroup, "self" | "userId">): string => (g.self ? "You" : g.userId === "unknown" ? "A designer" : `A designer (${g.userId.slice(0, 6)})`);
@@ -65,7 +65,7 @@ function Group({ shell, group, projectId, mayDecide, onDone }: { shell: ShellScr
             if (reason.trim()) void decide("reject");
           }}
         >
-          <label className="text-sm">Reason *<input className="mt-1 block w-72 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-review-reason" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+          <label className="text-sm">Reason *<input className="mt-1 block w-72 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-review-reason" value={reason} {...textInput(setReason)} /></label>
           <Button type="submit" size="sm" data-testid="ds-review-return-send" disabled={busy || !reason.trim()} title={!reason.trim() ? "A reason is required" : undefined}>Return</Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setReturning(false)}>Cancel</Button>
         </form>

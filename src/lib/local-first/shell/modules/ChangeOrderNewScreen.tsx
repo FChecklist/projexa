@@ -11,7 +11,7 @@ import { CURRENCY_FALLBACK_LABEL } from "@/lib/currency";
 import type { ShellScreenProps } from "../types";
 import type { ChangeOrderNewData } from "./design-change-adapter";
 import { createChangeOrderOffline, notQueuedMessage, validateNewChangeOrder } from "./design-change-writes";
-import { NOT_SYNCED, NO_PROJECT, Note, StateMessage, keptNote, mayOffer, projectQuery, writeAccess } from "./DesignChangeShared";
+import { NOT_SYNCED, NO_PROJECT, Note, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 
 const BACK = { href: "/change-orders", label: "Back to Change Orders" };
 type Field = "title" | "costImpact" | "scheduleImpactDays";
@@ -59,16 +59,16 @@ export default function ChangeOrderNewScreen({ shell, data }: ShellScreenProps<C
           void save();
         }}
       >
-        <label className="block text-sm">Title *<input className={input} data-testid="co-new-title" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
+        <label className="block text-sm">Title *<input className={input} data-testid="co-new-title" value={title} {...textInput(setTitle)} /></label>
         {field("title")}
-        <label className="block text-sm">Reason (optional)<textarea className={input} rows={2} data-testid="co-new-reason" value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+        <label className="block text-sm">Reason (optional)<textarea className={input} rows={2} data-testid="co-new-reason" value={reason} {...textInput(setReason)} /></label>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm">Cost Impact{CURRENCY_FALLBACK_LABEL ? ` (${CURRENCY_FALLBACK_LABEL.trim()})` : ""}<input className={input} data-testid="co-new-cost" inputMode="decimal" placeholder="+/- amount" value={costImpact} onChange={(e) => setCostImpact(e.target.value)} /></label>
+            <label className="block text-sm">Cost Impact{CURRENCY_FALLBACK_LABEL ? ` (${CURRENCY_FALLBACK_LABEL.trim()})` : ""}<input className={input} data-testid="co-new-cost" inputMode="decimal" placeholder="+/- amount" value={costImpact} {...textInput(setCostImpact)} /></label>
             {field("costImpact")}
           </div>
           <div>
-            <label className="block text-sm">Schedule Impact (days)<input className={input} data-testid="co-new-days" inputMode="numeric" placeholder="+/- days" value={scheduleImpactDays} onChange={(e) => setScheduleImpactDays(e.target.value)} /></label>
+            <label className="block text-sm">Schedule Impact (days)<input className={input} data-testid="co-new-days" inputMode="numeric" placeholder="+/- days" value={scheduleImpactDays} {...textInput(setScheduleImpactDays)} /></label>
             {field("scheduleImpactDays")}
           </div>
         </div>

@@ -11,7 +11,7 @@ import { DESIGN_STUDIO_CATEGORIES, saveLabel } from "@/lib/design-studio-timeshe
 import type { ShellScreenProps } from "../types";
 import { taskLabel, type TimeEntryNewData } from "./design-change-adapter";
 import { notQueuedMessage, recordTimeEntryOffline, validateNewTimeEntry } from "./design-change-writes";
-import { NOT_SYNCED, NO_PROJECT, Note, StateMessage, mayOffer, projectQuery, writeAccess } from "./DesignChangeShared";
+import { NOT_SYNCED, NO_PROJECT, Note, StateMessage, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 
 const BACK = { href: "/design-studio", label: "Back to the timesheet" };
 
@@ -66,9 +66,9 @@ export default function DesignStudioEntryNewScreen({ shell, data }: ShellScreenP
           </select>
         </label>
         {err("issueId")}
-        <label className="block text-sm">Date<input type="date" className={input} data-testid="ds-new-date" value={spentOn} onChange={(e) => setSpentOn(e.target.value)} /></label>
+        <label className="block text-sm">Date<input type="date" className={input} data-testid="ds-new-date" value={spentOn} {...textInput(setSpentOn)} /></label>
         {err("spentOn")}
-        <label className="block text-sm">Hours *<input className={input} data-testid="ds-new-hours" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} /></label>
+        <label className="block text-sm">Hours *<input className={input} data-testid="ds-new-hours" inputMode="decimal" value={hours} {...textInput(setHours)} /></label>
         {err("hours")}
         <label className="block text-sm">Category
           <select className={input} value={category} onChange={(e) => setCategory(e.target.value)}>

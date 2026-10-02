@@ -22,7 +22,7 @@ import {
 import type { ShellScreenProps } from "../types";
 import { canSubmitEntry, entriesInView, entryStatusWord, taskLabel, type EntryView, type TimesheetData } from "./design-change-adapter";
 import { notQueuedMessage, recordTimeEntryOffline, submitTimeEntryOffline, validateNewTimeEntry } from "./design-change-writes";
-import { CopyNote, NOT_SYNCED, NO_PROJECT, Note, OnlineOnly, PendingMark, StateMessage, keptNote, mayOffer, projectQuery, writeAccess } from "./DesignChangeShared";
+import { CopyNote, NOT_SYNCED, NO_PROJECT, Note, OnlineOnly, PendingMark, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -107,7 +107,7 @@ export default function DesignStudioTimesheetScreen({ shell, query, data }: Shel
       <CopyNote testId="ds-copy-note" syncedAt={data.syncedAt} />
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
-        <label className="text-sm">Day<input type="date" className="mt-1 block w-44 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-day" value={day} onChange={(e) => DAY_RE.test(e.target.value) && setDay(e.target.value)} /></label>
+        <label className="text-sm">Day<input type="date" className="mt-1 block w-44 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-day" value={day} {...textInput((v) => DAY_RE.test(v) && setDay(v))} /></label>
         <label className="text-sm">View
           <select className="mt-1 block w-40 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-view" value={view} onChange={(e) => setView(e.target.value === "week" ? "week" : "day")}>
             <option value="day">This day</option>
@@ -167,7 +167,7 @@ export default function DesignStudioTimesheetScreen({ shell, query, data }: Shel
                   {errors.issueId ? <p className="mt-1 text-xs text-px-error">{errors.issueId}</p> : null}
                 </TableCell>
                 <TableCell>
-                  <input aria-label="Hours" className="w-24 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-hours" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} />
+                  <input aria-label="Hours" className="w-24 rounded border border-black/20 p-1.5 text-sm" data-testid="ds-hours" inputMode="decimal" value={hours} {...textInput(setHours)} />
                   {errors.hours ? <p className="mt-1 text-xs text-px-error" data-testid="ds-hours-error">{errors.hours}</p> : null}
                 </TableCell>
                 <TableCell />
