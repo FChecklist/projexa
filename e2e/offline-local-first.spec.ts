@@ -5,9 +5,9 @@ import type { FixtureLine, ProjectFixture } from "./support/boq-fixture";
 // LOCAL-FIRST (R1, R2, R9, R10). PROJEXA keeps working on the laptop with NO internet, and with internet but OUR server down; a person who
 // is signed in stays signed in; an edit made offline is sent when the connection is back.
 //
-// !! WRITTEN TO RUN IN CI, NEVER RUN WHERE IT WAS WRITTEN. The laptop it was authored on has too little free memory for a production build and a
-// browser, so this file has been read and typechecked but NOT executed. If it fails, suspect the spec first (a selector, a timeout) and read the
-// failure message: every wait below says what it was waiting for.
+// Written on a laptop that could not run it; first made to pass in a real Chromium by package lf-e8 (2026-10-02), which found and fixed three
+// app bugs on the way (the first sign-in's boot pass, a doubled connectivity marker, a crash on every keystroke in the offline BOQ screen) and
+// aligned the sync stub with the real service. If it fails, read the failure message: every wait below says what it was waiting for.
 //
 // Runs ONLY through playwright.local-first.config.ts: a PRODUCTION build (the service worker is never registered by `next dev`) with the
 // release bundle made by scripts/make-release.mjs, the local Auth stand-in from e2e/support/fake-supabase-server.mjs, and the sync service
@@ -59,7 +59,16 @@ const CORS = (origin: string | undefined) => ({
   vary: "Origin",
 });
 
-/** Answers the sync service the way docs/local-first/CONTRACT.md says, from the fixture. */
+// The person's VERIDIAN id (compliance.users.id, a cuid). The real service's manifest names the person by THIS id and by the sign-in id in
+// user.auth_user_id; the two are different strings (docs/local-first/CONTRACT.md "GET /manifest").
+const VERIDIAN_PERSON_ID = "clfspecperson0000000000001";
+const EPOCH = "lf-spec-epoch-1";
+
+/**
+ * Answers the sync service in the shapes the real one sends (compliance-tracker supabase/functions/projexa-sync/handler.ts, branch
+ * feat/lf-sync-backend, and docs/local-first/CONTRACT.md), from the fixture. No signing key is configured here, so rows are unsigned
+ * exactly as the real service sends them without one: `kid: null` and no `sig` on a row.
+ */
 async function stubSyncService(page: Page, who: LocalSession, net: Net) {
   const served: string[] = [];
   const json = (route: Route, origin: string | undefined, body: unknown, status = 200) =>
@@ -73,12 +82,20 @@ async function stubSyncService(page: Page, who: LocalSession, net: Net) {
     served.push(`${request.method()} ${path}`);
     if (request.method() === "GET" && path === "/manifest") {
       return json(route, origin, {
-        user: { id: who.userId, name: "Asha Rao", role: "owner", org_id: "lf-org-1" },
+        user: { id: VERIDIAN_PERSON_ID, auth_user_id: who.userId, name: "Asha Rao", role: "owner", org_id: "lf-org-1" },
         projects: [{ id: PROJECT_ID, name: PROJECT_NAME, status: "active" }],
         kinds: [{ kind: "boq_lines", project_scoped: true, cursor_field: "updated_at", deletes_supported: true }],
         view_class: "0123456789abcdef",
+        org_kinds: [],
+        org_view_class: null,
         release: { current: null, min_compatible: null, protocol: 2 },
         server_time: new Date().toISOString(),
+      });
+    }
+    if (request.method() === "GET" && path === "/heads") {
+      return json(route, origin, {
+        heads: { [PROJECT_ID]: 0, __org__: 0 }, projects_etag: "lf-spec-projects-1", role: "owner", view_class: "0123456789abcdef", org_view_class: null,
+        epoch: EPOCH, server_time: new Date().toISOString(),
       });
     }
     if (request.method() === "POST" && path === "/pull") {
@@ -86,14 +103,22 @@ async function stubSyncService(page: Page, who: LocalSession, net: Net) {
       if (body.project_id !== PROJECT_ID || body.kind !== "boq_lines") return json(route, origin, { error: "not found" }, 404);
       const rows = body.ids ? LINES.filter((l) => body.ids!.includes(l.id)) : LINES;
       return json(route, origin, {
-        items: rows.map((l) => ({ id: l.id, updated_at: l.createdAt, version: 1, data: l, sig: null })),
+        items: rows.map((l) => ({ id: l.id, updated_at: l.createdAt, version: 1, data: l })),
         kid: null, next_cursor: null, has_more: false, hidden_fields: [], redacted: false, server_time: new Date().toISOString(),
       });
     }
-    if (request.method() === "POST" && path === "/changes") return json(route, origin, { changes: [], next_seq: 0, has_more: false, head_seq: 0, server_time: new Date().toISOString() });
-    if (request.method() === "POST" && path === "/ids") return json(route, origin, { ids: LINES.map((l) => l.id), has_more: false, next_id: null });
-    if (request.method() === "GET" && path === "/release/current") return json(route, origin, { current: null, min_compatible: null, registered: true });
-    if (request.method() === "POST" && (path === "/release/register" || path === "/install")) return json(route, origin, { ok: true });
+    if (request.method() === "POST" && path === "/changes") {
+      return json(route, origin, { changes: [], next_seq: 0, has_more: false, head_seq: 0, reset_required: false, epoch: EPOCH, server_time: new Date().toISOString() });
+    }
+    if (request.method() === "POST" && path === "/ids") {
+      const ids = LINES.map((l) => l.id);
+      return json(route, origin, { ids, has_more: false, next_id: null, versions: ids.map(() => 1), head_seq: 0, epoch: EPOCH, server_time: new Date().toISOString() });
+    }
+    if (request.method() === "GET" && path === "/release/current") {
+      return json(route, origin, { registered: true, current: null, min_compatible: null, protocol: 2, server_time: new Date().toISOString() });
+    }
+    if (request.method() === "POST" && path === "/release/register") return json(route, origin, { registered: true, server_time: new Date().toISOString() });
+    if (request.method() === "POST" && path === "/install") return json(route, origin, { recorded: true, server_time: new Date().toISOString() });
     return json(route, origin, { error: "not part of the local stub" }, 404);
   });
   return { served };
