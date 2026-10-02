@@ -321,10 +321,10 @@ describe("(vii) 426: this release is too old", () => {
   test("stops with status update_required and the details, stores nothing, and pauses: no further call leaves the replica until resume()", async () => {
     const { server, replica, open } = setup();
     server.upsert(rfi("a"));
-    server.requireUpdate({ current: "2026.10.09-1", minCompatible: "2026.10.05-1" });
+    server.requireUpdate({ current: "2026.10.09-001", minCompatible: "2026.10.05-001" });
     const report = await replica.sync();
     expect(report.status).toBe("update_required");
-    expect(report.updateRequired).toEqual({ current: "2026.10.09-1", minCompatible: "2026.10.05-1" });
+    expect(report.updateRequired).toEqual({ current: "2026.10.09-001", minCompatible: "2026.10.05-001" });
     expect(report.syncedAt).toBeNull();
     expect(replica.getStatus().status).toBe("update_required");
     const db = await open();

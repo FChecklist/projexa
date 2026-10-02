@@ -45,18 +45,18 @@ describe("X-Px-Client header (protocol 2, schema 3)", () => {
     expect(calls.calls.length).toBe(6);
     for (const c of calls.calls) expect(headers(c)["X-Px-Client"]).toBe("dev; protocol=2; schema=3");
 
-    const versioned = make([json({ user: { id: "u", org_id: "o" }, projects: [], kinds: [] })], { getReleaseVersion: () => "2026.10.02-3" });
+    const versioned = make([json({ user: { id: "u", org_id: "o" }, projects: [], kinds: [] })], { getReleaseVersion: () => "2026.10.02-003" });
     await versioned.client.manifest();
-    expect(headers(versioned.calls[0]!)["X-Px-Client"]).toBe("2026.10.02-3; protocol=2; schema=3");
+    expect(headers(versioned.calls[0]!)["X-Px-Client"]).toBe("2026.10.02-003; protocol=2; schema=3");
   });
 });
 
 describe("426 update required", () => {
   test("becomes the kind update_required with what the service said, and is never retried", async () => {
-    const m = make([json({ error: "update required", current: "2026.10.05-1", min_compatible: "2026.10.03-2" }, 426)], { maxRetries: 3 });
+    const m = make([json({ error: "update required", current: "2026.10.05-001", min_compatible: "2026.10.03-002" }, 426)], { maxRetries: 3 });
     const err = await m.client.push({ deviceId: "d", ops: [] }).catch((e) => e);
     expect(err).toBeInstanceOf(SyncError);
-    expect(err).toMatchObject({ kind: "update_required", status: 426, update: { current: "2026.10.05-1", minCompatible: "2026.10.03-2" } });
+    expect(err).toMatchObject({ kind: "update_required", status: 426, update: { current: "2026.10.05-001", minCompatible: "2026.10.03-002" } });
     expect(m.calls.length).toBe(1);
   });
 
