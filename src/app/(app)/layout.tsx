@@ -6,6 +6,7 @@ import { ShellScreenProvider } from "@/components/shell/shell-screen-context";
 import { WorkspacePrepare } from "@/components/WorkspacePrepare";
 import { OutboxAttention } from "@/components/OutboxAttention";
 import { AiAttach } from "@/lib/local-first/ai/AiAttach";
+import { LocalFirstDefault } from "@/components/local-first/LocalFirstDefault";
 
 // R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
 // cc_spec point 187). It is the ONE place that governs all 53 app routes, so
@@ -52,6 +53,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // second, independent answer of its own and disagreeing with the pane.
   return (
     <VeriChatProvider>
+      {/* LOCAL-FIRST: a signed-in person is on the laptop-first path by default (renders nothing; first, so it runs before any effect reads the flag). */}
+      <LocalFirstDefault />
       <ShellScreenProvider>
         <M24Shell>{children}</M24Shell>
         <WorkspacePrepare />

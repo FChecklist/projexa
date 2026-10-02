@@ -28,6 +28,30 @@ export function isLocalFirstEnabled(): boolean {
   }
 }
 
+/** localStorage key of the person's own "no" (written by setLocalFirstEnabled(false)). Absent until a person or support turns local-first off on purpose. */
+export const LOCAL_FIRST_OPT_OUT = "px-local-first-off";
+
+/**
+ * DEFAULT ON for a signed-in person (owner order 2026-10-02: "the user never has to think"; found by the first real-browser run of the offline e2e,
+ * which showed that NOTHING in the app ever turned the flag on, so local-first would have been inert for every real person after the deploy).
+ *
+ * A browser that has not decided yet (no flag, no opt-out) gets the flag set to "1". A flag that exists ("1" on, anything else off) is a decision and is
+ * left alone; so is an opt-out. Synchronous and idempotent on purpose: it is called while the signed-in layout RENDERS, before any component's effect
+ * reads the flag, so the first page load of a person already behaves as local-first. A visitor never reaches it (it lives in the signed-in layout),
+ * so the flag-off inertness of a visitor (no request, no storage write, no DOM) is unchanged. Returns whether it turned the flag on now.
+ */
+export function applyLocalFirstDefault(storage: Pick<Storage, "getItem" | "setItem"> | null | undefined = typeof localStorage === "undefined" ? null : localStorage): boolean {
+  try {
+    if (!storage) return false;
+    if (storage.getItem(LOCAL_FIRST_FLAG) !== null) return false;
+    if (storage.getItem(LOCAL_FIRST_OPT_OUT) === "1") return false;
+    storage.setItem(LOCAL_FIRST_FLAG, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 let activeUserId: string | null = null;
 /** Remembered when a replica is created for a person, so a screen need not ask the browser client again. */
 export function setActiveLocalUser(userId: string | null): void {
