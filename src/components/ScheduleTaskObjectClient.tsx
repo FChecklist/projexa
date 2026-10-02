@@ -145,7 +145,7 @@ export default function ScheduleTaskObjectClient({
     setValues({ ...start, ...waitingFields(draft.params) });
     setMode("edit");
     setDraftNote(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per draft, when the task is there to lay it over
+    // Once per draft, when the task is there to lay it over (not on every pending-edit change).
   }, [draft, task?.id]);
 
   async function handleSave() {
