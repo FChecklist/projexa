@@ -57,7 +57,6 @@ type Row = { kind: string; id: string; projectId: string; data: Record<string, u
 type Change = { seq: number; projectId: string; kind: string; id: string; version: number; op: "I" | "U" | "D" };
 
 // `body` is whatever JSON the client sent (always an object for the POST routes); tests read its fields directly.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type FakeRequest = { path: string; method: string; headers: Record<string, string>; body: any };
 
 /** What a push function handler sees. */

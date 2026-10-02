@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { createRfiLocally } from "@/lib/local-first/local-writes";
 
 export default function RfiCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -23,6 +24,16 @@ export default function RfiCreateClient({ projectId }: { projectId: string }) {
     if (!subject.trim() || !question.trim()) { toast.error("Subject and question are required"); return; }
     setSubmitting(true);
     try {
+      // LOCAL-FIRST (flag px-local-first=1, see src/lib/local-first/local-writes.ts): with the laptop's workspace ready the
+      // RFI is written to this laptop at once and sent to the server by the outbox -- so it is not lost offline, and the
+      // list shows it immediately with a "saved on this laptop, syncing" marker. Anything else (flag off, nobody signed in,
+      // project not copied yet) returns null and the request below runs exactly as it always did.
+      const queued = await createRfiLocally({ projectId, subject, question, dueDate: dueDate || undefined });
+      if (queued) {
+        toast.success("RFI saved on this laptop. It is being sent to the server.");
+        router.push(`/rfis?projectId=${encodeURIComponent(projectId)}`);
+        return;
+      }
       const rfi = await fetchJson<{ id: string }>("/api/rfis", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, subject, question, dueDate: dueDate || undefined }),

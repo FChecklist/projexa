@@ -25,6 +25,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { updateTaskLocally, type TaskPatch } from "@/lib/local-first/local-writes";
+import { useLocalWrites } from "@/lib/local-first/use-local-writes";
+import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
 type Task = {
   id: string; projectId: string; number: number; title: string; description: string | null;
@@ -34,6 +37,14 @@ type Task = {
 type StatusOption = { id: string; name: string };
 
 const PRIORITY_OPTIONS = ["no_priority", "low", "medium", "high", "urgent"];
+
+/** The task fields a waiting local edit (the outbox op's params) can carry. */
+const EDITABLE_FIELDS = ["title", "description", "priority", "statusId", "startDate", "dueDate", "completionPercentage"] as const;
+function waitingFields(edit: Record<string, unknown>): Partial<Task> {
+  const out: Record<string, unknown> = {};
+  for (const key of EDITABLE_FIELDS) if (key in edit) out[key] = edit[key];
+  return out as Partial<Task>;
+}
 
 export default function ScheduleTaskObjectClient({
   taskId,
@@ -90,9 +101,31 @@ export default function ScheduleTaskObjectClient({
 
   useEffect(() => { load(); }, [taskId]);
 
+  // LOCAL-FIRST: an edit made on this laptop that the server has not confirmed yet. Flag off = an empty view and nothing changes.
+  const pending = useLocalWrites("tasks", task?.projectId, { onApplied: () => { void load(); } });
+
   async function handleSave() {
     setSaving(true);
     try {
+      // LOCAL-FIRST (flag px-local-first=1, see src/lib/local-first/local-writes.ts): with this task on the laptop at a server
+      // version, the edit is written to the laptop at once and sent by the outbox (the server still decides, and says if
+      // somebody else changed the task meanwhile). Anything else returns null and the save below runs as it always did.
+      if (task) {
+        const patch: TaskPatch = {};
+        if (values.title !== undefined) patch.title = values.title;
+        if (values.description !== undefined) patch.description = values.description;
+        if (values.priority !== undefined) patch.priority = values.priority;
+        if (values.statusId !== undefined) patch.statusId = values.statusId;
+        patch.startDate = values.startDate || null;
+        patch.dueDate = values.dueDate || null;
+        if (values.completionPercentage !== undefined) patch.completionPercentage = values.completionPercentage;
+        const queued = await updateTaskLocally({ projectId: task.projectId, taskId, patch });
+        if (queued) {
+          toast.success("Task saved on this laptop. It is being sent to the server.");
+          setMode("display");
+          return;
+        }
+      }
       const res = await fetch(`/api/schedule/tasks/${taskId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -171,7 +204,11 @@ export default function ScheduleTaskObjectClient({
     />
   );
 
-  const statusLabel = statuses.find((s) => s.id === task.statusId)?.name ?? task.statusId;
+  // The server's row with this laptop's waiting edit laid over it (what the person last saved is what they see).
+  const waiting = pending.edits.get(taskId);
+  const view: Task = waiting ? { ...task, ...waitingFields(waiting) } : task;
+
+  const statusLabel = statuses.find((s) => s.id === view.statusId)?.name ?? view.statusId;
 
   return (
     <>
@@ -179,23 +216,23 @@ export default function ScheduleTaskObjectClient({
         part of the label because it is how this product identifies a task on
         every other screen -- the page heading, the board card and the timesheet
         all lead with it. */}
-    <ObjectContext moduleId="schedule" label={`#${task.number} ${task.title}`} projectId={task.projectId} />
+    <ObjectContext moduleId="schedule" label={`#${view.number} ${view.title}`} projectId={view.projectId} />
     <KitObjectScreen
       breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
-      title={`#${task.number} ${task.title}`}
+      title={`#${view.number} ${view.title}`}
       mode={mode}
       hasDraft={false}
-      headerStatus={{ tone: task.isArchived ? "neutral" : task.completionPercentage >= 100 ? "done" : "waiting", label: task.isArchived ? "archived" : statusLabel }}
+      headerStatus={{ tone: view.isArchived ? "neutral" : view.completionPercentage >= 100 ? "done" : "waiting", label: view.isArchived ? "archived" : statusLabel }}
       facets={[
-        { label: "Priority", value: task.priority.replace(/_/g, " ") },
-        { label: "% Complete", value: `${task.completionPercentage}%` },
+        { label: "Priority", value: view.priority.replace(/_/g, " ") },
+        { label: "% Complete", value: `${view.completionPercentage}%` },
       ]}
-      onEdit={!task.isArchived ? () => { setValues(task); setMode("edit"); } : undefined}
+      onEdit={!view.isArchived ? () => { setValues(view); setMode("edit"); } : undefined}
       onSave={mode === "edit" ? handleSave : undefined}
-      onCancel={mode === "edit" ? () => { setValues(task); setMode("display"); } : undefined}
-      onDelete={!task.isArchived ? handleArchive : undefined}
-      deleteDisabledReason={task.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
-      onBack={() => router.push(backTo ?? `/schedule?projectId=${task.projectId}&tab=timeline`)}
+      onCancel={mode === "edit" ? () => { setValues(view); setMode("display"); } : undefined}
+      onDelete={!view.isArchived ? handleArchive : undefined}
+      deleteDisabledReason={view.isArchived ? "Already archived" : archiving ? "Archiving…" : undefined}
+      onBack={() => router.push(backTo ?? `/schedule?projectId=${view.projectId}&tab=timeline`)}
       saveDisabled={saving || !values.title?.trim()}
       saveDisabledReason={saving ? "Saving…" : !values.title?.trim() ? "Title is required" : undefined}
       // R67 D-47: the create screen's receipt, in the persistent message area
@@ -203,6 +240,7 @@ export default function ScheduleTaskObjectClient({
       messages={createdNumber ? [{ level: "success", text: `Activity #${createdNumber} created` }] : []}
     >
       <div className="space-y-3 px-4 py-3">
+        {waiting ? <div><PendingSyncMarker /></div> : null}
         {mode === "edit" ? (
           <>
             <div className="space-y-1.5"><Label>Title</Label><Input value={values.title ?? ""} onChange={(e) => setValues((v) => ({ ...v, title: e.target.value }))} /></div>
@@ -210,14 +248,14 @@ export default function ScheduleTaskObjectClient({
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label>Status</Label>
-                <Select value={values.statusId ?? task.statusId} onValueChange={(statusId) => setValues((v) => ({ ...v, statusId }))}>
+                <Select value={values.statusId ?? view.statusId} onValueChange={(statusId) => setValues((v) => ({ ...v, statusId }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>{statuses.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>Priority</Label>
-                <Select value={values.priority ?? task.priority} onValueChange={(priority) => setValues((v) => ({ ...v, priority }))}>
+                <Select value={values.priority ?? view.priority} onValueChange={(priority) => setValues((v) => ({ ...v, priority }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>{PRIORITY_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p.replace(/_/g, " ")}</SelectItem>)}</SelectContent>
                 </Select>
@@ -231,16 +269,16 @@ export default function ScheduleTaskObjectClient({
           </>
         ) : (
           <>
-            <p className="text-sm text-ct-navy whitespace-pre-wrap">{task.description || <span className="text-ct-muted">No description.</span>}</p>
+            <p className="text-sm text-ct-navy whitespace-pre-wrap">{view.description || <span className="text-ct-muted">No description.</span>}</p>
             <dl className="grid grid-cols-3 gap-3 text-[13px]">
-              <div><dt className="text-ct-muted">Start Date</dt><dd className="text-ct-navy">{task.startDate ?? "—"}</dd></div>
-              <div><dt className="text-ct-muted">Due Date</dt><dd className="text-ct-navy">{task.dueDate ?? "—"}</dd></div>
+              <div><dt className="text-ct-muted">Start Date</dt><dd className="text-ct-navy">{view.startDate ?? "—"}</dd></div>
+              <div><dt className="text-ct-muted">Due Date</dt><dd className="text-ct-navy">{view.dueDate ?? "—"}</dd></div>
               <div><dt className="text-ct-muted">Status</dt><dd className="text-ct-navy">{statusLabel}</dd></div>
             </dl>
           </>
         )}
 
-        {mode === "display" && !task.isArchived && (
+        {mode === "display" && !view.isArchived && (
           <div className="border-t border-ct-border pt-3">
             {!loggingTimeOpen ? (
               <Button size="sm" variant="outline" onClick={() => setLoggingTimeOpen(true)}>Log Time</Button>

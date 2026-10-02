@@ -153,6 +153,8 @@ export type Outbox = {
   discard(opId: string): Promise<void>;
   /** Ops still waiting, of every status. Reads the database. */
   pendingCount(): Promise<number>;
+  /** The waiting ops themselves, oldest first (a screen overlays their params on server data while they wait). */
+  listPending(): Promise<OutboxOp[]>;
   dismissNotice(opId: string): Promise<void>;
   /** The latest snapshot, for useSyncExternalStore. A new object every time something changed. */
   getState(): OutboxState;
@@ -698,6 +700,9 @@ export function createOutbox(options: OutboxOptions): Outbox {
     },
     async pendingCount() {
       return withDb(async (db) => (await db.listOps()).length);
+    },
+    async listPending() {
+      return withDb((db) => db.listOps());
     },
 
     async resolve(opId, choice) {
