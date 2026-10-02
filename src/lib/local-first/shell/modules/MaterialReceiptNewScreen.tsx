@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
 import { recordReceiptOffline } from "./delivery-writes";
-import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, ReadOnlyNote, SaveNote, Screen, StateMessage, fieldClass, mayWrite, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import type { MaterialsData } from "./materials-adapter";
 
 export default function MaterialReceiptNewScreen({ shell, query, data }: ShellScreenProps<MaterialsData>) {
@@ -39,7 +39,9 @@ export default function MaterialReceiptNewScreen({ shell, query, data }: ShellSc
   return (
     <Screen testId="material-receipt-new" state="local" title={`Record receipt${projectName(shell, projectId) ? ` / ${projectName(shell, projectId)}` : ""}`}>
       <CopyNote testId="material-receipt-new-copy-note" syncedAt={data.syncedAt} />
-      {materials.length === 0 ? (
+      {!mayWrite(shell) ? (
+        <ReadOnlyNote />
+      ) : materials.length === 0 ? (
         <p className="mt-4 text-sm text-px-muted">There is no active material on this project on this laptop. New materials are added while you are online.</p>
       ) : (
         <form onSubmit={submit} className="mt-4 max-w-xl rounded-lg border border-black/10 bg-white p-4" data-testid="material-receipt-form">

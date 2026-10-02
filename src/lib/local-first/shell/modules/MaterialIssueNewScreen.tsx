@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { ShellScreenProps } from "../types";
 import { localDay } from "./delivery-local";
 import { recordIssueOffline } from "./delivery-writes";
-import { CopyNote, SaveNote, Screen, StateMessage, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, ReadOnlyNote, SaveNote, Screen, StateMessage, fieldClass, mayWrite, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import type { MaterialsData } from "./materials-adapter";
 
 export default function MaterialIssueNewScreen({ shell, query, data }: ShellScreenProps<MaterialsData>) {
@@ -49,7 +49,9 @@ export default function MaterialIssueNewScreen({ shell, query, data }: ShellScre
   return (
     <Screen testId="material-issue-new" state="local" title={`Issue material${projectName(shell, projectId) ? ` / ${projectName(shell, projectId)}` : ""}`}>
       <CopyNote testId="material-issue-new-copy-note" syncedAt={data.syncedAt} />
-      {stockUnknown ? (
+      {!mayWrite(shell) ? (
+        <ReadOnlyNote />
+      ) : stockUnknown ? (
         <p className="mt-4 text-sm text-px-muted">Receipts and issues have not finished copying to this laptop yet, so stock cannot be checked here.</p>
       ) : materials.length === 0 ? (
         <p className="mt-4 text-sm text-px-muted">No material has stock on hand on this laptop.</p>

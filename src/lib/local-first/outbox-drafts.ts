@@ -37,11 +37,24 @@ export function draftHref(draft: Pick<OutboxDraft, "opId" | "functionId" | "proj
   }
 }
 
-/** The draft's free text, for a card that has no screen to open (so the person can still copy what they wrote). */
+const NOT_TYPED = /(^id$|Id$|_id$|Date$|_date$)/;
+
+/** "quantityDone" -> "Quantity done", "hours" -> "Hours". */
+function fieldWords(key: string): string {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ").toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * The draft's own words and amounts, for a card that has no screen to open (so the person can still see and copy what they wrote).
+ * Free text as it was typed; a NUMBER the person typed (hours, a quantity, a percent) with its field's name, because a bare "9" says
+ * nothing -- and before lf-e10a (2026-10-02) numbers were left out entirely, so a turned-down attendance mark, receipt, issue or
+ * progress entry showed none of the amount the person had typed.
+ */
 export function draftText(draft: Pick<OutboxDraft, "params">): string {
   return Object.entries(draft.params)
-    .filter(([k, v]) => typeof v === "string" && v.trim() && !/(^id$|Id$|_id$|Date$|_date$)/.test(k))
-    .map(([, v]) => v as string)
+    .filter(([k, v]) => !NOT_TYPED.test(k) && ((typeof v === "string" && v.trim() !== "") || (typeof v === "number" && Number.isFinite(v))))
+    .map(([k, v]) => (typeof v === "number" ? `${fieldWords(k)}: ${v}` : (v as string)))
     .join("\n\n");
 }
 

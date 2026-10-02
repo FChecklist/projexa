@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ShellScreenProps } from "../types";
 import { ATTENDANCE_STATUSES, markAttendanceOffline, type AttendanceStatus } from "./delivery-writes";
-import { CopyNote, Money, SaveNote, Screen, StateMessage, Waiting, projectName, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, Money, SaveNote, Screen, StateMessage, Waiting, mayWrite, projectName, useLocalSave, withProject } from "./DeliveryParts";
 import type { AttendanceSheetData } from "./labour-adapter";
 import { statusWord } from "./LabourScreen";
 
@@ -19,6 +19,7 @@ export default function LabourAttendanceSheetScreen({ shell, data }: ShellScreen
   if (data.state !== "local") return <StateMessage testId="labour-attendance-sheet" title="Attendance sheet" state={data.state} what="day" back={{ href: "/labour?tab=attendance", label: "Back to attendance" }} />;
   const name = projectName(shell, data.projectId);
   const { projectId, date } = data;
+  const canMark = mayWrite(shell);
 
   async function mark(rosterId: string, status: AttendanceStatus) {
     setBusyId(rosterId);
@@ -47,7 +48,7 @@ export default function LabourAttendanceSheetScreen({ shell, data }: ShellScreen
                 <TableHead>Trade</TableHead>
                 <TableHead>Attendance</TableHead>
                 <TableHead className="text-right">Cost</TableHead>
-                <TableHead>Mark</TableHead>
+                {canMark ? <TableHead>Mark</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -57,13 +58,15 @@ export default function LabourAttendanceSheetScreen({ shell, data }: ShellScreen
                   <TableCell className="capitalize">{worker.trade ?? ""}</TableCell>
                   <TableCell>{m ? statusWord(m.status) : "Not marked"}<Waiting on={Boolean(m?.waiting)} /></TableCell>
                   <TableCell className="text-right">{m && !m.waiting ? <Money value={m.dailyCost} hidden={data.costHidden} /> : ""}</TableCell>
-                  <TableCell className="space-x-1 whitespace-nowrap">
-                    {ATTENDANCE_STATUSES.map((s) => (
-                      <Button key={s} type="button" size="sm" variant={m?.status === s ? "default" : "outline"} disabled={saving || busyId === worker.id} onClick={() => void mark(worker.id, s)}>
-                        {statusWord(s)}
-                      </Button>
-                    ))}
-                  </TableCell>
+                  {canMark ? (
+                    <TableCell className="space-x-1 whitespace-nowrap">
+                      {ATTENDANCE_STATUSES.map((s) => (
+                        <Button key={s} type="button" size="sm" variant={m?.status === s ? "default" : "outline"} disabled={saving || busyId === worker.id} onClick={() => void mark(worker.id, s)}>
+                          {statusWord(s)}
+                        </Button>
+                      ))}
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>

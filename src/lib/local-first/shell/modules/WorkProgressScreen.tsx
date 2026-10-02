@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { ShellScreenProps } from "../types";
 import { recordProgressOffline } from "./delivery-writes";
 import { localDay } from "./delivery-local";
-import { CopyNote, DASH, Num, SaveNote, Screen, ServerOnly, StateMessage, Tabs, Waiting, fieldClass, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Num, ReadOnlyNote, SaveNote, Screen, ServerOnly, StateMessage, Tabs, Waiting, fieldClass, mayWrite, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import { progressCsv, type WorkProgressData } from "./work-progress-adapter";
 
 const TABS = [
@@ -45,7 +45,9 @@ type Local = Extract<WorkProgressData, { state: "local" }>;
 function EntryTab({ shell, data }: { shell: ShellScreenProps["shell"]; data: Local }) {
   return (
     <>
-      {data.form.mode === "offline" ? (
+      {!mayWrite(shell) ? (
+        <ReadOnlyNote />
+      ) : data.form.mode === "offline" ? (
         <EntryForm shell={shell} projectId={data.projectId} form={data.form} />
       ) : (
         <p className="mt-4 text-sm text-px-muted" data-testid="work-progress-form-needs-server">{NEEDS_SERVER_TEXT[data.form.reason]}</p>
