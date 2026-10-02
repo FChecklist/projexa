@@ -3,14 +3,22 @@
 // LOCAL-FIRST shell, Documents list: the project's documents (drawings and permits included, as online), read from the laptop's own
 // copy. Columns are the online list's (DOCUMENTS_LIST_COLUMNS): Name, Category, Type, Size, Expiry, Added. Uploading needs a connection.
 
+import { useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ShellScreenProps } from "../types";
 import type { DocumentsListData } from "./documents-adapter";
+import { pruneKeptFiles } from "./documents-file-prune";
 import { CopyNote, NOT_SYNCED, NO_PROJECT, OnlineOnly, StateMessage, Waiting, dateText, projectQuery, sizeText } from "./DocumentsShared";
 
 export default function DocumentsListScreen({ shell, data }: ShellScreenProps<DocumentsListData>) {
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
   const title = `Documents${project ? ` / ${project.name}` : ""}`;
+  const syncedProject = data.state === "local" ? data.projectId : null;
+  // Kept files of documents no longer on the laptop are dropped (only removes; see documents-file-prune.ts).
+  useEffect(() => {
+    if (syncedProject) void pruneKeptFiles(shell.data, syncedProject);
+  }, [shell.data, syncedProject]);
+
   if (data.state === "no_project") return <StateMessage testId="documents-list" state="no_project" title="Documents">{NO_PROJECT}</StateMessage>;
   if (data.state === "not_synced") return <StateMessage testId="documents-list" state="not_synced" title={title}>{NOT_SYNCED}</StateMessage>;
 
