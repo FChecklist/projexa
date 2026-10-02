@@ -212,6 +212,53 @@ test("documents: edits made offline wait on the laptop, survive a reload, and ar
   expectCleanConsole(p.console)
 })
 
+test("documents: the AI asking to delete a permit makes a DRAFT; nothing leaves until the person confirms; then exactly one delete_permit", async ({ page, context }) => {
+  const p = await prepareLaptop(page, context, "member")
+
+  await test.step("the browser AI's door is open on the app's page", async () => {
+    await expect.poll(() => page.evaluate(() => typeof (window as unknown as { projexa?: { ai?: unknown } }).projexa?.ai), { timeout: 60_000, message: "window.projexa.ai never appeared" }).toBe("object")
+  })
+
+  await test.step("the AI asks: it gets a draft, and nothing is queued or sent", async () => {
+    const result = await page.evaluate(
+      (projectId) => (window as unknown as { projexa: { ai: { delete(fn: string, ref: unknown, params: unknown): Promise<{ status: string }> } } }).projexa.ai.delete(
+        "delete_permit", { kind: "documents", id: "lf-permit-hot" }, { projectId, permitId: "lf-permit-hot" },
+      ),
+      PROJECT_ID,
+    )
+    expect(result.status).toBe("draft")
+    await expect(page.getByRole("region", { name: "Requests from your AI" })).toContainText("Hot works permit")
+    await page.waitForTimeout(2_000)
+    expect(await readOutbox(page, p.session.userId)).toEqual([])
+    expect(p.sync.pushed).toEqual([])
+  })
+
+  await test.step("a script (the AI itself) cannot click the confirm for the person", async () => {
+    await page.evaluate(() => (document.querySelector('[aria-label="Confirm: Delete permit"], [aria-label^="Confirm:"]') as HTMLButtonElement | null)?.click())
+    await page.waitForTimeout(1_000)
+    expect(await readOutbox(page, p.session.userId)).toEqual([])
+  })
+
+  await test.step("offline, the PERSON confirms with a real click: one op waits on the laptop", async () => {
+    await goOffline(context, p)
+    await page.getByRole("button", { name: /^Confirm:/ }).click()
+    await expect.poll(() => readOutbox(page, p.session.userId).then((ops) => ops.map((o) => o.functionId))).toEqual(["delete_permit"])
+    expect(p.sync.pushed).toEqual([])
+  })
+
+  await test.step("back online: exactly one delete_permit, in the registry's parameter names", async () => {
+    await goOnline(context, p)
+    await expect.poll(() => p.sync.pushed.length, { timeout: 90_000, message: "the confirmed delete was never sent" }).toBe(1)
+    expect(p.sync.pushed[0]).toMatchObject({
+      function_id: "delete_permit", project_id: PROJECT_ID, params: { projectId: PROJECT_ID, permitId: "lf-permit-hot" },
+      record: { kind: "documents", id: "lf-permit-hot", base_version: 3 },
+    })
+    await page.waitForTimeout(3_000)
+    expect(p.sync.pushed).toHaveLength(1)
+  })
+  expectCleanConsole(p.console)
+})
+
 test("documents: a viewer reads everything offline but is offered no change at all", async ({ page, context }) => {
   const p = await prepareLaptop(page, context, "viewer")
   await goOffline(context, p)
