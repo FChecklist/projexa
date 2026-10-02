@@ -39,8 +39,11 @@ export function canProposeEdits(role: string | null): boolean {
   return !(role !== null && READ_ONLY_ROLES.has(role));
 }
 
+/** Render tests set `outbox` here to run the screens against a test outbox; the app leaves it empty (the person's shared outbox). */
+export const documentsWriteDeps: { outbox?: OutboxPort } = {};
+
 async function defaultOutbox(userId: string): Promise<OutboxPort> {
-  return (await import("../../outbox-shared")).getSharedOutbox(userId);
+  return documentsWriteDeps.outbox ?? (await import("../../outbox-shared")).getSharedOutbox(userId);
 }
 
 const NOT_HERE = "This is not saved on this laptop, so it cannot be changed here. Open it while you are online.";
