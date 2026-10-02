@@ -6,6 +6,11 @@ import { createClient } from "@/lib/supabase/client";
 import { localDbNameFor, openLocalDb } from "@/lib/local-first/local-db";
 import { getSharedReplica } from "@/lib/local-first/replica-shared";
 import { isLocalFirstEnabled } from "@/lib/local-first/local-reader";
+import { LOCAL_DB_VERSION } from "@/lib/local-first/local-db";
+import { getDeviceId } from "@/lib/local-first/outbox-shared";
+import { accessToken, getReleaseVersion } from "@/lib/local-first/shared-client";
+import { createReleaseClient } from "@/lib/local-first/release/release-client";
+import { createPrepareReporter, type PrepareReport } from "@/lib/local-first/prepare-report";
 import type { Replica } from "@/lib/local-first/replica";
 import {
   PREPARE_BUDGET_MS,
@@ -140,6 +145,24 @@ export function buildSteps(
   return localFirstOn() ? steps : steps.filter((s) => s.id !== "projects");
 }
 
+/** The reporter that tells OUR side how this laptop's preparation is going (prepare-report.ts): the sync service, and this site's own log as the second line. */
+export function createLiveReporter() {
+  const client = createReleaseClient({ getAccessToken: accessToken, clientVersion: getReleaseVersion, schema: LOCAL_DB_VERSION });
+  return createPrepareReporter({
+    deviceId: getDeviceId(),
+    release: () => {
+      const v = getReleaseVersion();
+      return v && v.length <= 40 ? v : null;
+    },
+    send: (r: PrepareReport) => client.reportPrepare(r as unknown as Record<string, unknown>),
+    beacon: (r: PrepareReport) => {
+      try {
+        navigator.sendBeacon?.("/api/local-first/prepare-report", new Blob([JSON.stringify(r)], { type: "application/json" }));
+      } catch { /* the sync service is the main line */ }
+    },
+  });
+}
+
 export function WorkspacePrepareView({ progress }: { progress: PrepareProgress; lastSyncedAt?: number | null }) {
   // MANDATORY and QUIET (owner directive 2026-10-03): the title, one sentence and the percentage. No step list, no errors, no buttons:
   // nothing to skip and nothing to press. It opens PROJEXA by itself at 100% (WorkspacePrepare); after a failure it simply tries again.
@@ -184,6 +207,7 @@ export function WorkspacePrepare() {
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null | undefined>(undefined);
   const started = useRef(false);
   const [attempt, setAttempt] = useState(0);
+  const reporter = useRef<ReturnType<typeof createLiveReporter> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,10 +233,19 @@ export function WorkspacePrepare() {
     if (!open || !userId || started.current) return;
     started.current = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // OUR side watches every run: stage, percentage, heartbeat, failures with their reason (prepare-report.ts)
+    if (!reporter.current) {
+      try { reporter.current = createLiveReporter(); reporter.current.start(); } catch { /* reporting must never stop the preparation */ }
+    } else {
+      reporter.current.retry();
+    }
     prepareWorkspace({
       steps: buildSteps(userId, (href) => router.prefetch(href)),
       budgetMs: PREPARE_BUDGET_MS,
-      onProgress: setProgress,
+      onProgress: (p) => {
+        setProgress(p);
+        try { reporter.current?.progress(p); } catch { /* ignore */ }
+      },
     }).then((result) => {
       setLastSyncedAt(getSharedReplica(userId).getStatus().report?.syncedAt ?? null);
       try {
@@ -228,6 +261,8 @@ export function WorkspacePrepare() {
     try { if (userId) sessionStorage.setItem(seenKey(userId), "1"); } catch { /* ignore */ }
     setOpen(false);
   };
+
+  useEffect(() => () => { reporter.current?.stop(); reporter.current = null; }, []);
 
   const prepared = progress ? isPrepared(progress) : false;
   useEffect(() => {
