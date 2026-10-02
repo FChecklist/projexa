@@ -172,6 +172,8 @@ describe("writes through the outbox", () => {
     expect((await rejection(surface.api.create("create_rfi", { ...RFI, projectId: "p9" }))).code).toBe("PROJECT_NOT_YOURS");
     expect((await rejection(surface.api.update("update_task", { kind: "tasks", id: "t2" }, TASK))).code).toBe("WRONG_PROJECT");
     expect((await rejection(surface.api.create("create_project", { name: "X" }))).code).toBe("NEEDS_ONLINE");
+    // lf-e11: and no manual offers it (the static one included): a manual must not promise what the surface always refuses
+    expect(Object.values((await surface.api.manual()).writes.functions).flat().map((f) => f.id)).not.toContain("create_project");
     expect(enqueued()).toBe(0);
   });
 });
@@ -244,7 +246,8 @@ describe("the manual", () => {
       const manual = await surface.api.manual();
       const expected = functionsForRank(rank);
       for (const action of ["create", "update", "delete"] as const) {
-        expect(manual.writes.functions[action].map((f) => f.id)).toEqual(expected[action].map((f) => f.function_id));
+        // lf-e11: create_project is never run by this surface (NEEDS_ONLINE), so the manual no longer offers it
+        expect(manual.writes.functions[action].map((f) => f.id)).toEqual(expected[action].map((f) => f.function_id).filter((id) => id !== "create_project"));
         for (const f of manual.writes.functions[action]) expect(f.min_role_rank).toBeLessThanOrEqual(rank);
       }
       expect(manual.for_role).toEqual({ role, rank });
