@@ -25,6 +25,7 @@ export function gateByFlag(replica: Replica, flagOn: () => boolean = isLocalFirs
     syncProject: (projectId, kind, signal, o) => (flagOn() ? replica.syncProject(projectId, kind, signal, o) : Promise.resolve(flagOffReport())),
     reconcileDeletes: (projectId, kind, o) => (flagOn() ? replica.reconcileDeletes(projectId, kind, o) : Promise.resolve({ removed: 0, skipped: true })),
     resume: () => replica.resume(),
+    noteFeedCurrent: (projectId) => replica.noteFeedCurrent?.(projectId),
     getStatus: () => replica.getStatus(),
   };
 }

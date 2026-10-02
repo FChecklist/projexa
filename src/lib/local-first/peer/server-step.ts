@@ -19,7 +19,9 @@
 //       - `org_view_class` differs / the "__org__" head  -> handed to `onOrgClassChanged` / `onOrgHead` (EXTENSION POINT for package
 //                                                           E7, which adds the organisation kinds; nothing here reads them yet);
 //       - a project's head is past its stored feed cursor -> that project's one-project run (/changes from the cursor, then a pull by
-//                                                           ids of only what moved) -- and NOTHING for the projects that did not move.
+//                                                           ids of only what moved) -- at once for the OPEN project, at most every
+//                                                           `othersEveryMs` (an hour) for the others -- and NOTHING for the projects
+//                                                           that did not move.
 //     Nothing changed: the run cost exactly one request. A whole sync still runs at least every `headsFullEveryMs` (default a day)
 //     for the spread delete repair. An OLDER service without /heads (404) is remembered for `headsRetryMs` (default a day) and the
 //     step falls back to project mode meanwhile; any other failure of /heads throws (the scheduler counts the server as unreachable).
@@ -60,6 +62,8 @@ export type ServerStepOptions = {
   refreshAttestation?: () => Promise<unknown>;
   /** Heads mode (needs `syncProject`): the one-call poll, a SyncClient's `heads`. */
   heads?: () => Promise<HeadsAnswer>;
+  /** Heads mode: /heads said this project has nothing past the stored position (Replica.noteFeedCurrent). Optional. */
+  feedCurrent?: (projectId: string) => void;
   /** Heads mode: drops the copy's non-dirty rows and positions (reset-copy.ts) before the whole sync that rebuilds it. */
   resetCopy?: () => Promise<void>;
   /** EXTENSION POINT (package E7): the organisation feed's head, every heads run (the organisation kinds are E7's to pull). */
@@ -138,7 +142,7 @@ export function createServerStep(o: ServerStepOptions): () => Promise<StepResult
 
   const changedClass = (stored: string | null | undefined, now: string | null) => stored !== undefined && stored !== null && now !== null && stored !== now;
 
-  async function headsMode(manifest: StoredManifest | undefined, answer: HeadsAnswer): Promise<StepResult> {
+  async function headsMode(manifest: StoredManifest | undefined, answer: HeadsAnswer, active: string | null): Promise<StepResult> {
     const stored = (await o.meta.getMeta<StoredHeads>(HEADS_KEY)) ?? null;
     const settle = () => o.meta.setMeta(HEADS_KEY, {
       etag: answer.projects_etag, viewClass: answer.view_class, orgViewClass: answer.org_view_class, epoch: answer.epoch, at: now(),
@@ -179,7 +183,14 @@ export function createServerStep(o: ServerStepOptions): () => Promise<StepResult
         await settle();
         return r;
       }
-      if (head <= cursor.seq) continue; // nothing new in this project: not one request for it
+      if (head <= cursor.seq) {
+        o.feedCurrent?.(projectId); // nothing new in this project: not one request for it, and a screen opened now need not ask either
+        continue;
+      }
+      // COST (measured, COST_MODEL.md): the open project is read as soon as it moved; another project that moved is read at most
+      // every `othersEveryMs` (lf-e6's hourly rhythm for projects nobody is looking at), so a busy colleague elsewhere does not
+      // cost a feed read every five minutes. Its news waits at most an hour, and opening it (a screen) reads it at once.
+      if (projectId !== active && now() - (checkedAt.get(projectId) ?? Number.NEGATIVE_INFINITY) < othersEveryMs) continue;
       const report = await o.syncProject!(projectId, { moved: true });
       if (failed(report.status)) throw new Error(`sync ${report.status}`);
       checkedAt.set(projectId, now());
@@ -193,6 +204,7 @@ export function createServerStep(o: ServerStepOptions): () => Promise<StepResult
     try {
       const manifest = await o.meta.getMeta<StoredManifest>(MANIFEST_KEY);
       if (o.heads && o.syncProject && now() >= headsUnsupportedUntil) {
+        const active = o.activeProject?.() ?? null;
         let answer: HeadsAnswer | null = null;
         try {
           answer = await o.heads();
@@ -200,7 +212,7 @@ export function createServerStep(o: ServerStepOptions): () => Promise<StepResult
           if (!(err instanceof SyncError && err.kind === "not_found")) throw err;
           headsUnsupportedUntil = now() + headsRetryMs; // an older service: fall back below, ask again tomorrow
         }
-        if (answer) return await headsMode(manifest, answer);
+        if (answer) return await headsMode(manifest, answer, active);
       }
       return o.syncProject ? await projectMode(manifest) : await headMode(manifest);
     } finally {

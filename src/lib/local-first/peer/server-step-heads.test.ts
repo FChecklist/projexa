@@ -14,13 +14,15 @@ import { HEADS_KEY, createServerStep } from "./server-step";
 const noYield = async () => {};
 const PROJECTS = ["p1", "p2", "p3"];
 
-async function setup(o: { heads?: boolean; projectFreshMs?: number } = {}) {
+async function setup(o: { heads?: boolean; projectFreshMs?: number; feedCurrent?: boolean } = {}) {
+  const clock = { t: Date.now() };
+  const now = () => clock.t;
   const idb = new IDBFactory();
   const server = createFakeSyncServer({ projects: [...PROJECTS], heads: o.heads });
   for (const p of PROJECTS) for (let i = 0; i < 3; i += 1) server.upsert({ kind: "tasks", projectId: p, id: `${p}-t${i}`, data: { title: `Task ${i}` } });
   // The replica's real defaults, including its 2-minute "read a moment ago" shortcut: the first copy just read every feed, so a
   // heads-mode run right after it MUST get past that shortcut for a project /heads says moved.
-  const replica = createReplica({ userId: "u1", client: server.client, idb, yieldFn: noYield, pacer: null, ...(o.projectFreshMs !== undefined ? { projectFreshMs: o.projectFreshMs } : {}) });
+  const replica = createReplica({ userId: "u1", client: server.client, idb, yieldFn: noYield, pacer: null, now, ...(o.projectFreshMs !== undefined ? { projectFreshMs: o.projectFreshMs } : {}) });
   expect((await replica.sync()).status).toBe("done"); // the first copy (WorkspacePrepare)
   const db = await openLocalDb(idb, localDbNameFor("u1"));
   const resets: number[] = [];
@@ -32,10 +34,12 @@ async function setup(o: { heads?: boolean; projectFreshMs?: number } = {}) {
     activeProject: () => "p1",
     heads: () => server.client.heads!(),
     resetCopy: async () => { resets.push((await resetLocalCopy(db)).removed); },
+    ...(o.feedCurrent === false ? {} : { feedCurrent: (p: string) => replica.noteFeedCurrent?.(p) }),
+    now,
   });
   const mark = () => server.requests.length;
   const since = (from: number) => server.requests.slice(from).map((r) => `${r.path}${r.path === "/changes" || r.path === "/pull" ? ` ${(r.body as { project_id?: string }).project_id}` : ""}`);
-  return { idb, server, replica, db, step, resets, mark, since };
+  return { idb, server, replica, db, step, resets, mark, since, clock };
 }
 
 describe("heads mode: one request per round when nothing changed", () => {
@@ -63,6 +67,40 @@ describe("heads mode: one request per round when nothing changed", () => {
     await s.step();
     expect(s.since(again)).toEqual(["/heads"]);
     s.db.close();
+  });
+});
+
+describe("heads mode: the open project at once, the others at most hourly, and the shortcut for screens", () => {
+  test("a project nobody is looking at that moved AGAIN within the hour waits (one request); the open one is read at once", async () => {
+    const s = await setup();
+    await s.step();
+    s.server.upsert({ kind: "tasks", projectId: "p2", id: "p2-t0", data: { title: "first" } });
+    await s.step(); // p2 read (never read by this step before)
+    s.clock.t += 10 * 60_000;
+    s.server.upsert({ kind: "tasks", projectId: "p2", id: "p2-t0", data: { title: "second" } });
+    s.server.upsert({ kind: "tasks", projectId: "p1", id: "p1-t0", data: { title: "open project" } });
+    let at = s.mark();
+    await s.step();
+    expect(s.since(at)).toEqual(["/heads", "/changes p1", "/pull p1"]); // p1 (open) at once; p2 waits
+    s.clock.t += 60 * 60_000;
+    at = s.mark();
+    await s.step();
+    expect(s.since(at)).toEqual(["/heads", "/changes p2", "/pull p2"]); // an hour later p2's news arrives
+    expect((await s.db.getRecord("tasks", "p2-t0"))!.data).toMatchObject({ title: "second" });
+    s.db.close();
+  });
+
+  test("a quiet /heads round counts as a feed check: a screen opened right after asks nothing (and without the hook it asks)", async () => {
+    for (const feedCurrent of [true, false]) {
+      const s = await setup({ feedCurrent });
+      await s.step();
+      s.clock.t += 10 * 60_000; // the first copy's own feed read is long past the 2-minute shortcut
+      await s.step(); // quiet: p3's head equals its stored position
+      const at = s.mark();
+      await s.replica.syncProject("p3", "tasks"); // the screen's background revalidation
+      expect(s.since(at)).toEqual(feedCurrent ? [] : ["/changes p3"]);
+      s.db.close();
+    }
   });
 });
 

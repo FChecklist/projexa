@@ -30,7 +30,15 @@ describe("cost budget per scenario (requests per laptop, push ops counted twice:
     expect(r.perLaptopTotal).toBeLessThanOrEqual(SCENARIO_BUDGETS.idle8h);
     expect(r.perLaptop.pull ?? 0).toBe(0); // nothing changed: not one keyset page
     expect(r.perLaptop.ids ?? 0).toBe(0);
+    expect(r.perLaptop.changes ?? 0).toBe(0); // FC cost:COST-03: nothing moved, so no feed was read -- only GET /heads
   }, 120_000);
+
+  test("(a') idle for 8 hours with 20 projects: still about one request per round (GET /heads does not grow with projects)", async () => {
+    const r = await idle8h({}, { projects: 20 });
+    note(r);
+    expect(r.perLaptopTotal).toBeLessThanOrEqual(SCENARIO_BUDGETS.idle8h20Projects);
+    expect(r.perLaptop.changes ?? 0).toBe(0);
+  }, 300_000);
 
   test("(b) a working day: 30 own edits, 30 colleague changes, 40 screens", async () => {
     const r = await workday();

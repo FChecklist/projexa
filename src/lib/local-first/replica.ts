@@ -142,6 +142,12 @@ export type Replica = {
   reconcileDeletes(projectId: string, kind: string, options?: { force?: boolean; signal?: AbortSignal }): Promise<{ removed: number; skipped: boolean }>;
   /** Lifts the pause a 426 put on sync (call it once the app has been updated). */
   resume(): void;
+  /**
+   * COST (package FC): the caller KNOWS this project's feed has nothing past the stored position right now (GET /heads said its head
+   * equals it, server-step.ts heads mode). Counts as a feed check for the "read a moment ago" shortcut (projectFreshMs), so a screen
+   * opened just after does not ask the feed again. Optional: other Replica implementations may lack it.
+   */
+  noteFeedCurrent?(projectId: string): void;
   getStatus(): { status: ReplicaStatus; report: SyncReport | null };
 };
 
@@ -883,6 +889,7 @@ export function createReplica(options: ReplicaOptions): Replica {
       }
     },
     resume() { paused = null; },
+    noteFeedCurrent(projectId) { feedCheckedAt.set(projectId, now()); },
     getStatus: () => ({ status, report: lastReport }),
   };
 }

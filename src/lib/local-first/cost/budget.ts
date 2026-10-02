@@ -19,7 +19,7 @@ export const WORK_DAYS_PER_MONTH = 22;
 
 /** Which projexa-sync route a request went to (the path after the function's base URL). */
 export type Route =
-  | "manifest" | "pull" | "pull_ids" | "changes" | "ids" | "push" | "attest"
+  | "manifest" | "heads" | "pull" | "pull_ids" | "changes" | "ids" | "push" | "attest"
   | "release_current" | "release_register" | "install"
   | "jobs_claim" | "jobs_heartbeat" | "jobs_result" | "jobs_enqueue" | "jobs_get"
   | "other";
@@ -58,8 +58,13 @@ export function project(perWorkingDay: number, quota = EDGE_FREE_MONTHLY, days =
  * a per-navigation call breaks the build instead of the bill. Raising one is a deliberate act: say why in the commit.
  */
 export const SCENARIO_BUDGETS = {
-  /** (a) online, tab visible, nothing changes anywhere, 8 hours. */
-  idle8h: 60,
+  /**
+   * (a) online, tab visible, nothing changes anywhere, 8 hours. Package FC (cost:COST-03) tightened it from 60: with GET /heads a quiet
+   * round is ONE request whatever the number of projects (measured 22; lf-e6's project mode measured 50 at 5 projects, 155 at 20).
+   */
+  idle8h: 30,
+  /** (a') the same idle day with 20 projects: the heads poll does not grow with projects (FC cost:COST-03). */
+  idle8h20Projects: 30,
   /** (b) an 8-hour working day: 30 own edits and 30 changes made by colleagues. Includes the 30 exec runs of the pushed ops. */
   workday: 260,
   /** (c) the first sync of a person with 5 projects (28 kinds each), and the rest of that first hour: one page per pair, plus ~35. */
@@ -80,7 +85,7 @@ export function routeOf(path: string, body?: unknown): Route {
   const p = path.replace(/\/+$/, "");
   if (p === "/pull") return body && typeof body === "object" && Array.isArray((body as { ids?: unknown }).ids) ? "pull_ids" : "pull";
   const map: Record<string, Route> = {
-    "/manifest": "manifest", "/changes": "changes", "/ids": "ids", "/push": "push", "/attest": "attest",
+    "/manifest": "manifest", "/heads": "heads", "/changes": "changes", "/ids": "ids", "/push": "push", "/attest": "attest",
     "/release/current": "release_current", "/release/register": "release_register", "/install": "install",
     "/jobs/claim": "jobs_claim", "/jobs/heartbeat": "jobs_heartbeat", "/jobs/result": "jobs_result", "/jobs/enqueue": "jobs_enqueue", "/jobs/get": "jobs_get",
   };

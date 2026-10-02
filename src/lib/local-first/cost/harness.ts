@@ -33,6 +33,7 @@ import { createOutbox, type Outbox } from "../outbox";
 import { createAttestationSource } from "../peer/attest";
 import { createSyncScheduler, type SchedulerClock, type SyncScheduler } from "../peer/scheduler";
 import { createServerStep } from "../peer/server-step";
+import { resetLocalCopy } from "../peer/reset-copy";
 import { createRequestPacer } from "../rate-pacer";
 import { createReplica, type Replica } from "../replica";
 import { refreshShellManifest } from "../shell/manifest-cache";
@@ -142,6 +143,8 @@ export type LaptopOptions = {
   activeProject?: string;
   /** Wire the server step in its original head-check mode instead of peer-shared.ts's project mode (comparison only). */
   headMode?: boolean;
+  /** Wire the server step in lf-e6's project mode, without GET /heads (what an older service gets; comparison only). */
+  projectMode?: boolean;
   /** This person edits tasks offset..offset+9 of the open project (two people on one project edit different tasks). */
   taskOffset?: number;
 };
@@ -267,9 +270,15 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
         },
       });
       // peer-shared.ts's wiring: project mode, the open project every run (o.headMode: the original head-check mode, for comparison)
+      // peer-shared.ts's wiring (package FC): heads mode -- one GET /heads per run, a project's feed only when its head moved.
+      // o.projectMode: lf-e6's project mode without /heads (an older service), o.headMode: the original head check (comparison only).
       const serverStep = createServerStep({
         meta: d, changes: (r) => client.changes(r), sync: () => replica.sync(), now: clock.now,
-        ...(o.headMode ? {} : { syncProject: (projectId: string) => replica.syncProject(projectId), activeProject: () => env.active }),
+        ...(o.headMode ? {} : {
+          syncProject: (projectId: string, opts?: { moved?: boolean }) => replica.syncProject(projectId, undefined, undefined, opts),
+          activeProject: () => env.active,
+          ...(o.projectMode ? {} : { heads: () => client.heads!(), resetCopy: async () => { await resetLocalCopy(d); }, feedCurrent: (p: string) => replica.noteFeedCurrent?.(p) }),
+        }),
       });
       const att = attestation;
       scheduler = createSyncScheduler({

@@ -70,6 +70,7 @@ export function startPeerSync(userId: string): void {
         syncProject: (projectId, opts) => replica.syncProject(projectId, undefined, undefined, opts),
         heads: async () => { await sharedPacer().take(); return client.heads!(); },
         resetCopy: async () => { await resetLocalCopy(db); },
+        feedCurrent: (projectId) => replica.noteFeedCurrent?.(projectId),
         activeProject: () => {
           try {
             return localStorage.getItem(selectedProjectKey(userId));

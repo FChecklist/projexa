@@ -65,13 +65,13 @@ function workdayEvents(l: SimLaptop, world: World, offsetMs = 0, project = world
   return events;
 }
 
-export async function idle8h(o: LaptopOptions = {}): Promise<ScenarioResult> {
-  const world = createWorld();
+export async function idle8h(o: LaptopOptions = {}, w: { projects?: number } = {}): Promise<ScenarioResult> {
+  const world = createWorld(w.projects ? { projects: w.projects, rowsPerKind: 1 } : {});
   const l = await synced(world, o);
   await l.open();
   await world.clock.advance(8 * HOUR);
   l.stop();
-  return summarise("idle8h", [l]);
+  return summarise(w.projects ? `idle8h${w.projects}Projects` : "idle8h", [l]);
 }
 
 export async function workday(o: LaptopOptions = {}): Promise<ScenarioResult> {
