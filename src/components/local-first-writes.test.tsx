@@ -245,7 +245,9 @@ describe("ScheduleTaskObjectClient: editing a task", () => {
     await view.findByText(/#12 Joinery shop drawings v2/); // shown at once
     expect(h.fetched.some((f) => f.method === "PATCH")).toBe(false);
     const ops = await h.outbox.listPending();
-    expect(ops[0]).toMatchObject({ functionId: "update_task", record: { kind: "tasks", id: "t1", baseVersion: 1 }, params: { projectId: "p1", issueId: "t1", title: "Joinery shop drawings v2", statusId: "s1", priority: "medium" } });
+    expect(ops[0]).toMatchObject({ functionId: "update_task", record: { kind: "tasks", id: "t1", baseVersion: 1 } });
+    // FB data:F3: only the field the person changed travels (never the whole form, never the task's % complete).
+    expect(ops[0]!.params).toEqual({ projectId: "p1", issueId: "t1", title: "Joinery shop drawings v2" });
 
     served = { ...TASK, title: "Joinery shop drawings v2" };
     await h.outbox.flush();
