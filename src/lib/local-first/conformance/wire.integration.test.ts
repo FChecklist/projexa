@@ -527,8 +527,20 @@ suite("D. push through the outbox: update, create, answer; the real row shapes",
     const lines = await localList("boq_lines");
     expect(lines.length).toBe(2);
     console.log("[W18b] real boq_lines data keys:", Object.keys(lines[0].data).sort().join(","));
-    // every real line maps to the screen's line shape
-    expect(lines.map((l) => boqLocalMod.toGatewayLine(l.data)).filter(Boolean).length).toBe(lines.length);
+    // every real line maps to the screen's line shape, its BOQ facts from the real `boqs` row (and not without them: nothing invented)
+    const boqRows = (await localList("boqs")).map((r) => r.data);
+    expect(boqLocalMod.linesFromReplica(lines.map((l) => l.data), boqRows).length).toBe(lines.length);
+    expect(lines.map((l) => boqLocalMod.toGatewayLine(l.data)).filter(Boolean)).toEqual([]);
+    // the golden rows the non-CT unit test (shell/modules/scope-adapter-real-rows.test.ts) is fed: still the real handler's key sets
+    // (LF_WRITE_GOLDEN=1 re-captures them first, e.g. after the backend changes a kind's columns)
+    const goldenUrl = new URL("../__fixtures__/real-sync-rows.json", import.meta.url);
+    if (process.env.LF_WRITE_GOLDEN === "1") {
+      await Bun.write(goldenUrl, JSON.stringify({ captured: "wire.integration.test.ts W18b: rows stored by the real client from the real projexa-sync handler on PGlite (feat/lf-sync-backend)", boqs: boqRows, boq_lines: lines.map((l) => l.data) }, null, 2) + "\n");
+    }
+    const golden = JSON.parse(await Bun.file(goldenUrl).text());
+    const keys = (rows) => [...new Set(rows.map((r) => Object.keys(r).sort().join(",")))];
+    expect(keys(golden.boq_lines)).toEqual(keys(lines.map((l) => l.data)));
+    expect(keys(golden.boqs)).toEqual(keys(boqRows));
     // the shell's scope module (laptop shell) draws the BOQ from the local database only
     const shell = { userId: U, idb: IDB, projects: [{ id: "proj-a", name: "A" }] };
     const list = await scopeAdapter.loadScopeList(shell, "proj-a");
