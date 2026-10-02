@@ -185,10 +185,26 @@ export type SyncStub = {
   answerNext: (functionId: string, answer: PushAnswer) => void
 }
 
+/** The columns an applied update changes on its row, as the real executors write them (registry parameter -> records_core column). */
+function columnsOf(op: PushedOp): Record<string, unknown> {
+  const p = op.params
+  const out: Record<string, unknown> = {}
+  if (op.function_id === "update_document_metadata") {
+    if (p.name !== undefined) out.name = p.name
+    if (p.category !== undefined) out.category = p.category
+    if (p.expiryDate !== undefined) out.expiry_date = p.expiryDate
+  }
+  if (op.function_id === "update_mom_minutes" && p.minutes !== undefined) out.minutes = p.minutes
+  return out
+}
+
 export async function stubSyncService(page: Page, who: LocalSession, net: Net, role: string): Promise<SyncStub> {
   const stub: SyncStub = { served: [], pushed: [], answerNext: (fn, a) => { (answers[fn] ??= []).push(a) } }
   const answers: Record<string, PushAnswer[]> = {}
   const versions = new Map<string, number>()
+  // What an applied op changed, per "kind:id" (this stub only: the fixtures are shared and never mutated). A pull after the push
+  // returns the row as the real server would hold it then.
+  const applied = new Map<string, Record<string, unknown>>()
   const json = (route: Route, origin: string | undefined, body: unknown, status = 200) =>
     route.fulfill({ status, headers: { ...CORS(origin), "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(body) })
   const now = () => new Date().toISOString()
@@ -225,7 +241,7 @@ export async function stubSyncService(page: Page, who: LocalSession, net: Net, r
       return json(route, origin, {
         items: rows.map((r) => ({
           id: r.id, updated_at: r.updated_at, version: versions.get(`${body.kind}:${r.id}`) ?? r.version,
-          data: { ...r.data, ...Object.fromEntries(hidden.map((f) => [f, null])) },
+          data: { ...r.data, ...applied.get(`${body.kind}:${r.id}`), ...Object.fromEntries(hidden.map((f) => [f, null])) },
           ...(r.deleted ? { deleted: true } : {}),
         })),
         kid: null, next_cursor: null, has_more: false, hidden_fields: hidden, redacted: hidden.length > 0, server_time: now(),
@@ -254,6 +270,7 @@ export async function stubSyncService(page: Page, who: LocalSession, net: Net, r
         const key = op.record ? `${op.record.kind}:${op.record.id}` : `new:${op.op_id}`
         const version = (versions.get(key) ?? op.record?.base_version ?? 0) + 1
         versions.set(key, version)
+        if (op.record) applied.set(key, { ...applied.get(key), ...columnsOf(op) })
         return { op_id: op.op_id, status: "applied", record_id: op.record?.id ?? `srv-${op.op_id.slice(0, 8)}`, route: null, version, server: null }
       })
       return json(route, origin, { results, server_time: now() })

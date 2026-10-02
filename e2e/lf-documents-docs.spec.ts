@@ -182,22 +182,25 @@ test("documents: edits made offline wait on the laptop, survive a reload, and ar
   await test.step("back online, staying on the laptop's screen: each edit is sent exactly once, in the registry's parameter names", async () => {
     await goOnline(context, p)
     await expect.poll(() => p.sync.pushed.length, { timeout: 90_000, message: "the offline edits were never sent after the laptop came back online" }).toBe(4)
-    const byFn = (fn: string) => p.sync.pushed.filter((o) => o.function_id === fn)
+    // Ops on DIFFERENT rows may leave in different requests (an op that was tried while offline waits out its retry delay); the outbox
+    // keeps the order only per row (outbox.ts eligible()), so these lists are compared by row, not by arrival.
+    const byFn = (fn: string) => p.sync.pushed.filter((o) => o.function_id === fn).sort((a, b) => String(a.record?.id).localeCompare(String(b.record?.id)))
     expect(byFn("update_mom_minutes").map((o) => o.params)).toEqual([
       { projectId: PROJECT_ID, meetingId: "lf-mom-12", minutes: "Pour of zone B moved to Thursday. Crane moves on 3 Oct; façade mock-up approved." },
     ])
     expect(byFn("update_document_metadata").map((o) => o.params)).toEqual([
       { projectId: PROJECT_ID, documentId: "lf-doc-safety", name: "Site safety plan - rev 3 (Ü)" },
-      { projectId: PROJECT_ID, documentId: "lf-permit-dm", name: "Building permit - podium and tower", expiryDate: "2027-06-30" },
       { projectId: PROJECT_ID, documentId: "lf-dwg-a101-c", name: "A-101 Ground floor plan - lobby revised" },
+      { projectId: PROJECT_ID, documentId: "lf-permit-dm", name: "Building permit - podium and tower", expiryDate: "2027-06-30" },
     ])
     for (const op of p.sync.pushed) expect(op.project_id).toBe(PROJECT_ID)
-    expect(p.sync.pushed.map((o) => o.record)).toEqual([
+    expect(p.sync.pushed.map((o) => o.record).sort((a, b) => String(a?.id).localeCompare(String(b?.id)))).toEqual([
       { kind: "documents", id: "lf-doc-safety", base_version: 3 },
-      { kind: "documents", id: "lf-permit-dm", base_version: 3 },
       { kind: "documents", id: "lf-dwg-a101-c", base_version: 3 },
       { kind: "meeting_minutes", id: "lf-mom-12", base_version: 5 },
+      { kind: "documents", id: "lf-permit-dm", base_version: 3 },
     ])
+    expect(new Set(p.sync.pushed.map((o) => o.op_id)).size, "an op was sent twice").toBe(4)
     await expect.poll(() => readOutbox(page, p.session.userId), { message: "the sent edits are still stored as waiting" }).toEqual([])
     await page.reload()
     await expect(page.locator('[data-testid="documents-list-row"][data-doc-id="lf-doc-safety"]')).toContainText("Site safety plan - rev 3 (Ü)")
