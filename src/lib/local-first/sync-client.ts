@@ -11,6 +11,10 @@
 //   POST <base>/ids      {project_id, kind, after_id, limit<=5000} -> { ids, has_more, next_id }
 //   POST <base>/push     {device_id, ops:[{op_id,function_id,project_id,params,record?,resolution?,client_at}]}
 //        -> { results:[{op_id,status,record_id?,route?,version?,server?,error?}], server_time }
+//   GET  <base>/heads    -> { heads:{<project>|"__org__": head}, projects_etag, view_class, org_view_class, epoch }   (drizzle/0686)
+// ORGANISATION kinds (lf-e7, drizzle/0684): the manifest adds `org_kinds` and `org_view_class`; their pull / ids / changes are the same
+// routes with project_id ORG_PROJECT ("__org__"), which the handler accepts as "no project". Pages carry `view_class` / `org_view_class`,
+// the feed `reset_required` and `epoch`: replica-class.ts acts on them.
 // Auth: `Authorization: Bearer <PROJEXA Supabase access token>`; no cookie is sent (credentials omitted).
 // Every call also sends `X-Px-Client: <release>; protocol=2; schema=3`. A laptop whose release is below the
 // service's minimum gets 426, which this client turns into the SyncError kind "update_required" (never retried).
@@ -50,6 +54,13 @@ export type SyncManifest = {
   projects: { id: string; name?: string; status?: string }[];
   kinds: { kind: string; project_scoped?: boolean; cursor_field?: string; deletes_supported?: boolean }[];
   view_class?: string;
+  /**
+   * The ORGANISATION kinds the person's role may read (drizzle/0684; package lf-e7): synced under the sentinel project ORG_PROJECT.
+   * Absent from an older service = none. `peer_shareable: false` (org_people) never moves laptop to laptop.
+   */
+  org_kinds?: { kind: string; project_scoped?: boolean; cursor_field?: string; deletes_supported?: boolean; peer_shareable?: boolean }[];
+  /** The fingerprint of what the role may read of the organisation kinds: rows on the laptop were cut for exactly this class. */
+  org_view_class?: string;
   release?: { current?: string; min_compatible?: string; protocol?: number };
   /** Whether PROJEXA's own AI is switched on (ai-off/internal-ai.ts). Absent = the backend does not say = OFF on the laptop. */
   internal_ai?: boolean;
@@ -65,7 +76,12 @@ export type SyncItem = {
   version?: number;
   /** ES256 signature over px2|org|project|kind|id|version|updated_at|sha256(canonical data). Absent = unsigned. */
   sig?: string;
+  /** The px3 signature, which also commits to the view class the row was cut for (handler.ts sign.ts itemMessageV3). Absent from an older service. */
+  sig3?: string;
 };
+
+/** The sentinel "project" the organisation kinds live under, on the wire (handler.ts ORG_SENTINEL) and in the laptop's database. */
+export const ORG_PROJECT = "__org__";
 
 /** Opaque to the client: whatever the service handed back is passed back unchanged. */
 export type SyncCursor = string | number;
@@ -78,6 +94,10 @@ export type SyncPage = {
   has_more: boolean;
   hidden_fields: string[];
   redacted: boolean;
+  /** The role fingerprint a project page was redacted under (0679). A laptop that recorded another one for the project resets it. */
+  view_class?: string;
+  /** The same for an organisation page (0684). */
+  org_view_class?: string;
   server_time?: string;
 };
 
@@ -88,10 +108,27 @@ export type ChangesPage = {
   next_seq: number;
   has_more: boolean;
   head_seq: number;
+  /** The laptop's position is older than the server's pruned history (or from another database state): resync this project, continue from head_seq. */
+  reset_required?: boolean;
+  /** The id of the server's version tables (0679): a different one means every version and cursor this laptop holds is meaningless. */
+  epoch?: string;
   server_time?: string;
 };
 
 export type IdsPage = { ids: string[]; has_more: boolean; next_id: string | null };
+
+/**
+ * GET /heads (drizzle/0686): every feed head the person may read in ONE call, `heads[ORG_PROJECT]` for the organisation feed, and the
+ * person's current classes and epoch. The cheap way to learn "nothing changed" and "my role / the epoch changed".
+ */
+export type HeadsAnswer = {
+  heads: Record<string, number>;
+  projects_etag: string | null;
+  view_class: string | null;
+  org_view_class: string | null;
+  epoch: string | null;
+  server_time?: string;
+};
 
 /** One row as the push endpoint returns it (a conflict's current server row, or the row an op produced). */
 export type SyncServerRow = {
@@ -181,6 +218,8 @@ export type SyncClient = {
   changes(req: { projectId: string; afterSeq: number | null; limit?: number }, signal?: AbortSignal): Promise<ChangesPage>;
   ids(req: { projectId: string; kind: string; afterId: string | null; limit?: number }, signal?: AbortSignal): Promise<IdsPage>;
   push(req: { deviceId: string; ops: PushOp[] }, signal?: AbortSignal): Promise<PushResponse>;
+  /** GET /heads (optional: a client double without it simply never polls heads; an older service answers 404 = SyncError not_found). */
+  heads?(signal?: AbortSignal): Promise<HeadsAnswer>;
 };
 
 const defaultSleep = (ms: number, signal?: AbortSignal) =>
@@ -207,9 +246,21 @@ function parseManifest(body: unknown): SyncManifest {
   const release = isObject(body.release) ? (body.release as SyncManifest["release"]) : undefined;
   const internalAi = typeof body.internal_ai === "boolean" ? body.internal_ai
     : isObject(body.features) && typeof body.features.internal_ai === "boolean" ? body.features.internal_ai : undefined;
+  // Organisation kinds (lf-e7): untrusted input, filtered, never cast whole. Absent (an older service) stays absent.
+  const orgKinds = Array.isArray(body.org_kinds)
+    ? body.org_kinds.filter((k): k is Record<string, unknown> & { kind: string } => isObject(k) && typeof k.kind === "string" && k.kind.length > 0 && k.kind.length <= 64)
+      .map((k) => ({
+        kind: k.kind, project_scoped: false as const,
+        ...(typeof k.cursor_field === "string" ? { cursor_field: k.cursor_field } : {}),
+        ...(typeof k.deletes_supported === "boolean" ? { deletes_supported: k.deletes_supported } : {}),
+        ...(typeof k.peer_shareable === "boolean" ? { peer_shareable: k.peer_shareable } : {}),
+      }))
+    : undefined;
   return {
     user: body.user as SyncManifest["user"], projects, kinds,
     ...(typeof body.view_class === "string" ? { view_class: body.view_class } : {}),
+    ...(orgKinds ? { org_kinds: orgKinds } : {}),
+    ...(typeof body.org_view_class === "string" ? { org_view_class: body.org_view_class } : {}),
     ...(release ? { release } : {}),
     ...(internalAi !== undefined ? { internal_ai: internalAi } : {}),
     server_time: typeof body.server_time === "string" ? body.server_time : undefined,
@@ -267,6 +318,7 @@ function parsePage(body: unknown): SyncPage {
     const version = asVersion(raw.version);
     if (version !== undefined) item.version = version;
     if (typeof raw.sig === "string" && raw.sig.length > 0) item.sig = raw.sig;
+    if (typeof raw.sig3 === "string" && raw.sig3.length > 0) item.sig3 = raw.sig3;
     items.push(item);
   }
   return {
@@ -276,6 +328,8 @@ function parsePage(body: unknown): SyncPage {
     has_more: body.has_more,
     hidden_fields: Array.isArray(body.hidden_fields) ? body.hidden_fields.filter((f): f is string => typeof f === "string") : [],
     redacted: body.redacted === true,
+    ...(typeof body.view_class === "string" ? { view_class: body.view_class } : {}),
+    ...(typeof body.org_view_class === "string" ? { org_view_class: body.org_view_class } : {}),
     server_time: typeof body.server_time === "string" ? body.server_time : undefined,
   };
 }
@@ -297,6 +351,25 @@ function parseChanges(body: unknown, afterSeq: number | null): ChangesPage {
   const next = typeof body.next_seq === "number" && Number.isFinite(body.next_seq) ? body.next_seq : (afterSeq ?? head);
   return {
     changes, next_seq: next, has_more: body.has_more === true, head_seq: head,
+    ...(body.reset_required === true ? { reset_required: true } : {}),
+    ...(typeof body.epoch === "string" && body.epoch.length > 0 ? { epoch: body.epoch } : {}),
+    server_time: typeof body.server_time === "string" ? body.server_time : undefined,
+  };
+}
+
+function parseHeads(body: unknown): HeadsAnswer {
+  if (!isObject(body) || !isObject(body.heads)) {
+    throw new SyncError("bad_response", "The sync service sent heads this version does not understand.");
+  }
+  const heads: Record<string, number> = {};
+  for (const [k, v] of Object.entries(body.heads)) if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) heads[k] = v;
+  const text = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : null);
+  return {
+    heads,
+    projects_etag: text(body.projects_etag),
+    view_class: text(body.view_class),
+    org_view_class: text(body.org_view_class),
+    epoch: text(body.epoch),
     server_time: typeof body.server_time === "string" ? body.server_time : undefined,
   };
 }
@@ -483,6 +556,9 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
       // The service runs every op through the real pipeline, one after another: allow it longer than a read. A timeout
       // is safe -- the same op_id sent again is answered "duplicate", never applied twice.
       return parsePush(await request("/push", { method: "POST", body: { device_id: req.deviceId, ops: req.ops }, timeoutMs: Math.max(timeoutMs, 60_000) }, signal));
+    },
+    async heads(signal) {
+      return parseHeads(await request("/heads", { method: "GET" }, signal));
     },
   };
 }
