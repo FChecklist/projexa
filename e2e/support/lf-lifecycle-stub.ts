@@ -77,10 +77,14 @@ export type SyncWorld = {
   failNext: { count: number; status: number };
   /** Bodies of POST /push. */
   pushes: unknown[];
+  /** The bodies of POST /prepare: what the laptop told us about its preparation (src/lib/local-first/prepare-report.ts). */
+  prepares: Array<Record<string, unknown>>;
+  /** Routes (by name, e.g. "manifest") that answer `status` instead, until the spec clears it. */
+  failRoutes: { names: Set<string>; status: number };
 };
 
 export function newWorld(): SyncWorld {
-  return { net: "up", persons: new Map(), hits: [], preflights: 0, updateRequired: null, release: { current: null, min_compatible: null }, installs: [], clients: [], failNext: { count: 0, status: 503 }, pushes: [] };
+  return { net: "up", persons: new Map(), hits: [], preflights: 0, updateRequired: null, release: { current: null, min_compatible: null }, installs: [], clients: [], failNext: { count: 0, status: 503 }, pushes: [], prepares: [], failRoutes: { names: new Set<string>(), status: 503 } };
 }
 
 /** The route name the cost budget uses (src/lib/local-first/cost/budget.ts routeOf, copied: the spec must not import app code). */
@@ -147,6 +151,7 @@ export async function stubSyncService(context: BrowserContext, world: SyncWorld)
       world.failNext.count -= 1;
       return reply(world.failNext.status, { error: "Service unavailable" });
     }
+    if (world.failRoutes.names.has(name)) return reply(world.failRoutes.status, { error: "Service unavailable" });
     if (!person) return reply(401, { error: "Unauthorized" });
     if (world.updateRequired && !RELEASE_ROUTES.has(name)) {
       return reply(426, { error: "Update required", code: "UPDATE_REQUIRED", current: world.updateRequired.current, min_compatible: world.updateRequired.min_compatible, protocol: 2, reason: "release" });
@@ -187,6 +192,9 @@ export async function stubSyncService(context: BrowserContext, world: SyncWorld)
         return reply(200, { registered: true, server_time: now() });
       case "install":
         world.installs.push(body as Record<string, unknown>);
+        return reply(200, { recorded: true, server_time: now() });
+      case "prepare":
+        world.prepares.push(body as Record<string, unknown>);
         return reply(200, { recorded: true, server_time: now() });
       default:
         return reply(404, { error: "not part of the local stub" });
