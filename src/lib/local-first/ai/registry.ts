@@ -70,7 +70,8 @@ export function findFunction(functionId: string): RegistryFunction | undefined {
 
 // The registry has no "action" column, so it is read from the verb the id starts with. A delete is a function that
 // REMOVES or VOIDS a record; everything that starts a new record is a create; the rest change an existing record.
-// The registry has no general delete today (only void_material_receipt): that is a backend gap (R7), not hidden here.
+// The removals are the registry's own (delete_permit, delete_mom, archive_task... since compliance-tracker drizzle/0685 + 0687; the
+// copy was refreshed by lf-e10b): never invented here.
 const DELETE_VERBS = ["delete_", "remove_", "void_", "archive_", "cancel_"];
 const CREATE_VERBS = ["create_", "add_", "record_", "capture_", "apply_", "place_", "log_", "link_"];
 

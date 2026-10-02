@@ -8,7 +8,9 @@ import { ROLE_RANK, WRITE_FUNCTIONS, actionOf, checkWrite, findFunction, functio
 describe("registry", () => {
   test("usable = write, on a link level, not excluded (what the server's push gate accepts)", () => {
     const all = (registryFile as { functions: { function_id: string; kind: string; link_level: number | null; excluded_reason: string | null }[] }).functions;
-    expect(all.length).toBe(73);
+    // lf-e10b re-vendored from compliance-tracker main (d1119f69): 118 write functions (was 73, before the AI CRUD functions of
+    // drizzle/0685 + 0687 existed in the copy).
+    expect(all.length).toBe(118);
     expect(WRITE_FUNCTIONS.map((f) => f.function_id)).toEqual(all.filter((f) => f.kind === "write" && f.link_level !== null && !f.excluded_reason).map((f) => f.function_id));
     expect(findFunction("link_roster_employee")).toBeUndefined();
     expect(registryFile.source_commit).toMatch(/^[0-9a-f]{40}$/);
@@ -29,8 +31,13 @@ describe("registry", () => {
     expect(actionOf("reject_timesheet")).toBe("update");
     expect(actionOf("draft_progress_claim")).toBe("update");
     expect(actionOf("void_material_receipt")).toBe("delete");
-    // Today's registry has exactly one removal (a backend gap, R7): the manual says so rather than inventing deletes.
-    expect(WRITE_FUNCTIONS.filter((f) => actionOf(f.function_id) === "delete").map((f) => f.function_id)).toEqual(["void_material_receipt"]);
+    // The removals the registry really has (the AI CRUD functions of compliance-tracker drizzle/0685 + 0687); each is a DRAFT the
+    // person confirms (R7). Read from the registry, never invented.
+    expect(WRITE_FUNCTIONS.filter((f) => actionOf(f.function_id) === "delete").map((f) => f.function_id)).toEqual([
+      "archive_project", "archive_task", "cancel_change_order", "delete_attendance", "delete_boq", "delete_boq_category", "delete_meeting", "delete_mom",
+      "delete_permit", "delete_progress_entry", "delete_time_entry", "remove_mood_board_item", "remove_placement", "remove_room", "remove_sprint_task",
+      "void_material_receipt",
+    ]);
   });
 
   test("functionsForRank is monotonic and complete at the top", () => {

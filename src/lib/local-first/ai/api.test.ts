@@ -32,7 +32,9 @@ describe("reads", () => {
     expect(m.kinds).toContain("tasks");
     expect(m.functions.create.map((f) => f.id)).toContain("create_rfi");
     expect(m.functions.create.map((f) => f.id)).not.toContain("create_project");
-    expect(m.functions.delete.map((f) => f.id)).toEqual(["void_material_receipt"]);
+    expect(m.functions.delete.map((f) => f.id)).toContain("delete_permit");
+    expect(m.functions.delete.map((f) => f.id)).toContain("delete_mom");
+    expect(m.functions.delete.map((f) => f.id)).toContain("void_material_receipt");
     expect(m.softwareCanBeChanged).toBe(false);
     expect(m.deletesNeedConfirmation).toBe(true);
     expect(m.integrity).toBe("not_installed");
