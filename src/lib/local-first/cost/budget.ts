@@ -62,8 +62,8 @@ export const SCENARIO_BUDGETS = {
   idle8h: 60,
   /** (b) an 8-hour working day: 30 own edits and 30 changes made by colleagues. Includes the 30 exec runs of the pushed ops. */
   workday: 260,
-  /** (c) the first sync of a person with 5 projects (28 kinds each), until the copy is complete. */
-  coldStart5Projects: 5 * 28 + 5 + 4,
+  /** (c) the first sync of a person with 5 projects (28 kinds each), and the rest of that first hour: one page per pair, plus ~35. */
+  coldStart5Projects: 5 * 28 + 35,
   /** (d) reconnecting after 3 days offline (200 changes made meanwhile): the catch-up. */
   reconnectAfter3Days: 25,
   /** (e) 10 laptops of one organisation, peers connected, each a working day of 30 edits: per laptop. */
