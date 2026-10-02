@@ -92,6 +92,17 @@ export type ReplicaOptions = {
   onChunk?: (rows: number) => void;
   /** A (project, kind) is reconciled against the server's id list at most this often. Default one day. */
   reconcileEveryMs?: number;
+  /**
+   * COST (package lf-e6). A (project, kind) whose deletes the change feed carries (manifest `deletes_supported: true`) only
+   * needs the id-list repair for deletes made before its feed position existed: at most this often. Default seven days.
+   */
+  feedReconcileEveryMs?: number;
+  /** COST: at most this many (project, kind) id-list repairs per whole sync, so the repair is spread over several runs. Default 12. */
+  reconcileBudgetPerRun?: number;
+  /** COST: a one-project run within this long of that project's last change-feed check, for kinds the feed covers, sends nothing. Default 2 minutes. */
+  projectFreshMs?: number;
+  /** COST: a one-project run reuses the manifest stored by an earlier run of at most this age instead of asking again. Default 6 hours. */
+  manifestMaxAgeMs?: number;
 };
 
 export type Replica = {
@@ -117,11 +128,19 @@ export const cursorKey = (projectId: string, kind: string) => `sync:cursor:${pro
 /** Written only when a (project, kind) has been pulled to the end at least once: the reader trusts this, not the cursor. */
 export const doneKey = (projectId: string, kind: string) => `sync:done:${projectId}:${kind}`;
 
-export type StoredManifest = { userId: string; orgId: string; projectIds: string[]; kinds: string[]; at: number };
+/**
+ * `feedKinds` (absent in what an older build stored): the kinds whose every change, tombstones included, the change feed
+ * carries (manifest `deletes_supported: true`). A pulled-to-the-end pair of such a kind is kept current by the feed alone.
+ */
+export type StoredManifest = { userId: string; orgId: string; projectIds: string[]; kinds: string[]; at: number; feedKinds?: string[] };
 export type DoneMarker = { at: number; redacted: boolean; hiddenFields: string[] };
 
 const defaultYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+export const FEED_RECONCILE_EVERY_MS = 7 * ONE_DAY_MS;
+export const RECONCILE_BUDGET_PER_RUN = 12;
+export const PROJECT_FRESH_MS = 2 * 60_000;
+export const MANIFEST_MAX_AGE_MS = 6 * 60 * 60_000;
 
 function emptyReport(status: ReplicaStatus): SyncReport {
   return { status, projectsTotal: 0, projectsSynced: 0, itemsStored: 0, itemsRemoved: 0, changesApplied: 0, reconciledRemoved: 0, issues: [], syncedAt: null };
@@ -150,6 +169,12 @@ export function createReplica(options: ReplicaOptions): Replica {
   const yieldFn = options.yieldFn ?? defaultYield;
   const now = options.now ?? (() => Date.now());
   const reconcileEveryMs = options.reconcileEveryMs ?? ONE_DAY_MS;
+  const feedReconcileEveryMs = options.feedReconcileEveryMs ?? FEED_RECONCILE_EVERY_MS;
+  const reconcileBudget = Math.max(0, options.reconcileBudgetPerRun ?? RECONCILE_BUDGET_PER_RUN);
+  const projectFreshMs = Math.max(0, options.projectFreshMs ?? PROJECT_FRESH_MS);
+  const manifestMaxAgeMs = Math.max(0, options.manifestMaxAgeMs ?? MANIFEST_MAX_AGE_MS);
+  /** When each project's change feed was last read to its end by this replica (memory only: a reload checks again once). */
+  const feedCheckedAt = new Map<string, number>();
 
   // A client object without the version-aware calls (an older build, a minimal test double) is still a valid client:
   // it simply has no change feed and no id list, so those two steps are skipped for it.
@@ -318,9 +343,9 @@ export function createReplica(options: ReplicaOptions): Replica {
 
   // ─── reconcile deletes (CONTRACT.md section 1, /ids) ───────────────────────────────────────────────────
 
-  async function reconcilePair(db: LocalDb, orgId: string, projectId: string, kind: string, signal: AbortSignal, force: boolean): Promise<{ removed: number; skipped: boolean }> {
+  async function reconcilePair(db: LocalDb, orgId: string, projectId: string, kind: string, signal: AbortSignal, force: boolean, everyMs = reconcileEveryMs): Promise<{ removed: number; skipped: boolean }> {
     const stamp = await db.getMeta<{ at: number } | null>(reconcileKey(projectId, kind));
-    if (!force && stamp && now() - stamp.at < reconcileEveryMs) return { removed: 0, skipped: true };
+    if (!force && stamp && now() - stamp.at < everyMs) return { removed: 0, skipped: true };
 
     // The local rows are listed BEFORE the id list is fetched: a row that arrives while the (possibly slow) list is
     // being read is not in this snapshot and so can never be mistaken for a deleted one.
@@ -353,7 +378,7 @@ export function createReplica(options: ReplicaOptions): Replica {
 
   // ─── one run ───────────────────────────────────────────────────────────────────────────────────────────────
 
-  async function run(scope: { projectId?: string; kind?: string }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void): Promise<SyncReport> {
+  async function run(scope: { projectId?: string; kind?: string }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void, allowStored = true): Promise<SyncReport> {
     const report = emptyReport("syncing");
     setStatus("syncing", report);
     const internal = new AbortController();
@@ -368,24 +393,44 @@ export function createReplica(options: ReplicaOptions): Replica {
       return report;
     };
 
+    // Set when a one-project run relied on the stored manifest and the service then said the project is not there (404):
+    // the run is repeated once with a fresh manifest, so a project the person lost is still cleared exactly as before.
+    let staleStoredManifest = false;
     try {
       db = await openLocalDb(options.idb ?? globalThis.indexedDB, localDbNameFor(options.userId));
-      const manifest = await options.client.manifest(internal.signal);
-
-      if (manifest.user.id !== options.userId) {
-        report.issues.push({ reason: "user_mismatch", message: "The sign-in on this laptop does not match the person this workspace belongs to." });
-        return finish("error");
-      }
-      const orgId = manifest.user.org_id;
-      const previous = await db.getMeta<StoredManifest>(MANIFEST_KEY);
-      if (previous && previous.orgId !== orgId) {
-        report.issues.push({ reason: "org_mismatch", message: "This laptop's copy belongs to a different organisation, so nothing was synced." });
-        return finish("error");
-      }
-
-      const kinds = manifest.kinds.filter(isProjectScoped).map((k) => k.kind);
-      const projectIds = manifest.projects.map((p) => p.id);
       const wholeRun = scope.projectId === undefined;
+      const previous = await db.getMeta<StoredManifest>(MANIFEST_KEY);
+
+      // COST: a one-project run (a screen opened, the scheduler's check of one project) does not ask for the manifest again
+      // while the stored one is recent, covers this project and says which kinds the feed carries. A whole run always asks.
+      const stored = !wholeRun && allowStored && previous && previous.userId === options.userId && Array.isArray(previous.feedKinds)
+        && Array.isArray(previous.projectIds) && previous.projectIds.includes(scope.projectId!) && now() - previous.at < manifestMaxAgeMs
+        ? previous : null;
+
+      let orgId: string;
+      let kinds: string[];
+      let feedKinds: Set<string>;
+      let projectIds: string[];
+      if (stored) {
+        orgId = stored.orgId;
+        kinds = stored.kinds;
+        feedKinds = new Set(stored.feedKinds);
+        projectIds = stored.projectIds;
+      } else {
+        const manifest = await options.client.manifest(internal.signal);
+        if (manifest.user.id !== options.userId) {
+          report.issues.push({ reason: "user_mismatch", message: "The sign-in on this laptop does not match the person this workspace belongs to." });
+          return finish("error");
+        }
+        orgId = manifest.user.org_id;
+        if (previous && previous.orgId !== orgId) {
+          report.issues.push({ reason: "org_mismatch", message: "This laptop's copy belongs to a different organisation, so nothing was synced." });
+          return finish("error");
+        }
+        kinds = manifest.kinds.filter(isProjectScoped).map((k) => k.kind);
+        feedKinds = new Set(manifest.kinds.filter((k) => isProjectScoped(k) && k.deletes_supported === true).map((k) => k.kind));
+        projectIds = manifest.projects.map((p) => p.id);
+      }
 
       // Projects this person no longer belongs to leave the laptop (only on a full run: a partial one has no full list to compare).
       if (wholeRun && previous) {
@@ -407,16 +452,45 @@ export function createReplica(options: ReplicaOptions): Replica {
         // Asked for a project the service does not list: the person cannot read it, so nothing of it may stay here.
         const removed = await db.deleteByProject(orgId, scope.projectId!);
         report.itemsRemoved += removed;
+        // ... and the stored manifest stops naming it, so a later one-project run does not trust it for this project again.
+        if (previous?.projectIds?.includes(scope.projectId!)) {
+          await db.setMeta(MANIFEST_KEY, { ...previous, projectIds: previous.projectIds.filter((id) => id !== scope.projectId) } satisfies StoredManifest);
+        }
         report.issues.push({ projectId: scope.projectId, reason: "not_found", message: "That project is not available to you." });
         return finish("partial");
       }
 
-      // Written before any pull, so a reader always knows the organisation of whatever a half-finished run stored.
-      await db.setMeta(MANIFEST_KEY, {
-        userId: options.userId, orgId,
-        projectIds: wholeRun ? projectIds : [...new Set([...(previous?.projectIds ?? []), ...targetProjects])],
-        kinds, at: now(),
-      } satisfies StoredManifest);
+      // Written before any pull, so a reader always knows the organisation of whatever a half-finished run stored. A run that
+      // reused the stored manifest learned nothing new about it, so it leaves it (and its age) as it is.
+      if (!stored) {
+        await db.setMeta(MANIFEST_KEY, {
+          userId: options.userId, orgId,
+          projectIds: wholeRun ? projectIds : [...new Set([...(previous?.projectIds ?? []), ...targetProjects])],
+          kinds, at: now(), feedKinds: [...feedKinds],
+        } satisfies StoredManifest);
+      }
+
+      // A pair the feed keeps current: its project has a feed position, the feed carries the kind's deletes, and it was pulled
+      // to the end once. Its keyset pull would only ever return what the feed already names, so it is not asked again.
+      const feedCovered = async (projectId: string, kind: string): Promise<boolean> =>
+        feedKinds.has(kind)
+        && !!(await db!.getMeta<{ seq: number } | null>(changeCursorKey(projectId)))
+        && !!(await db!.getMeta<DoneMarker | null>(doneKey(projectId, kind)));
+
+      // COST: the same project was read to the end of its feed a moment ago (a screen opened twice, the scheduler right after a
+      // screen) and every asked kind is feed-covered: nothing can be learned by asking again so soon.
+      if (!wholeRun && hasFeed && projectFreshMs > 0) {
+        const checked = feedCheckedAt.get(scope.projectId!);
+        if (checked !== undefined && now() - checked < projectFreshMs) {
+          let allCovered = targetKinds.length > 0;
+          for (const k of targetKinds) if (!(await feedCovered(scope.projectId!, k))) { allCovered = false; break; }
+          if (allCovered) {
+            report.projectsTotal = 1;
+            report.projectsSynced = 1;
+            return finish("done");
+          }
+        }
+      }
 
       report.projectsTotal = targetProjects.length;
       const failedProjects = new Set<string>();
@@ -479,13 +553,28 @@ export function createReplica(options: ReplicaOptions): Replica {
         });
       emitProgress();
 
+      let repairsLeft = reconcileBudget;
       await pool(pairs, async (pair) => {
         currentProject = pair.projectId;
         try {
-          await pullPair(db!, orgId, pair.projectId, pair.kind, report, internal.signal);
-          // 3. Repair deletes made before change tracking existed (at most once a day per pair; never fatal, never a report issue).
+          const onFeed = withFeed.has(pair.projectId) && feedKinds.has(pair.kind);
+          const covered = onFeed && (await feedCovered(pair.projectId, pair.kind));
+          const fromScratch = !covered && ((await db!.getMeta<SyncCursor | null>(cursorKey(pair.projectId, pair.kind))) ?? null) === null;
+          // COST: a feed-covered pair is brought up to date by step 4 (the feed), not by another keyset sweep.
+          if (!covered) await pullPair(db!, orgId, pair.projectId, pair.kind, report, internal.signal);
+          // 3. Repair deletes made before change tracking existed (never fatal, never a report issue). COST: only in a whole run,
+          // at most `reconcileBudgetPerRun` id lists per run; a feed-covered pair at most weekly; a pair just copied from scratch
+          // AFTER its feed position was taken cannot hold such a delete, so it is stamped without a call.
           try {
-            const result = hasIds ? await reconcilePair(db!, orgId, pair.projectId, pair.kind, internal.signal, false) : { removed: 0 };
+            let result = { removed: 0 };
+            if (hasIds && wholeRun) {
+              if (onFeed && fromScratch) await db!.setMeta(reconcileKey(pair.projectId, pair.kind), { at: now() });
+              else if (repairsLeft > 0) {
+                const r = await reconcilePair(db!, orgId, pair.projectId, pair.kind, internal.signal, false, onFeed ? feedReconcileEveryMs : reconcileEveryMs);
+                if (!r.skipped) repairsLeft -= 1;
+                result = r;
+              }
+            }
             report.itemsRemoved += result.removed;
             report.reconciledRemoved += result.removed;
           } catch (err) {
@@ -499,6 +588,7 @@ export function createReplica(options: ReplicaOptions): Replica {
           if (noteFatal(err, pair.projectId, pair.kind)) return;
           if (syncKind === "aborted") return;
           if (syncKind === "not_found") {
+            if (stored) staleStoredManifest = true;
             // No longer readable (or the kind was retired): what was copied for this pair must not stay.
             await clearPair(db!, orgId, pair.projectId, pair.kind, report).catch(() => {});
             report.issues.push({ projectId: pair.projectId, kind: pair.kind, reason: "not_found", message: "No longer available to you, so its local copy was removed." });
@@ -522,15 +612,27 @@ export function createReplica(options: ReplicaOptions): Replica {
         await pool([...withFeed].filter((p) => !failedProjects.has(p)), async (projectId) => {
           try {
             await applyChanges(db!, orgId, projectId, kindSet, report, internal.signal);
+            feedCheckedAt.set(projectId, now());
           } catch (err) {
             if (noteFatal(err, projectId)) return;
             if (err instanceof SyncError && err.kind === "aborted") return;
-            if (err instanceof SyncError && err.kind === "not_found") return; // the project went away between the pull and the feed: the next sync clears it
+            if (err instanceof SyncError && err.kind === "not_found") {
+              if (stored) staleStoredManifest = true;
+              return; // the project went away between the pull and the feed: the next sync clears it
+            }
             failedProjects.add(projectId);
             projectsClean = Math.max(0, projectsClean - 1);
             issueFor(err, projectId);
           }
         });
+      }
+
+      if (stored && staleStoredManifest && !state.fatal) {
+        // The stored manifest named a project the service no longer serves to this person: ask for the manifest and run again.
+        signal?.removeEventListener("abort", onOuter);
+        db.close();
+        db = null;
+        return run(scope, signal, progressCb, false);
       }
 
       report.projectsSynced = projectsClean;

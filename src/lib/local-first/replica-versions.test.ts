@@ -240,9 +240,11 @@ describe("(ii) a dirty row survives a pull, a tombstone and a reconcile", () => 
 });
 
 describe("reconcile deletes (the repair path for deletes made before change tracking)", () => {
+  // A service whose feed does NOT carry deletes (manifest deletes_supported: false). Where the feed does carry them, the repair
+  // is weekly and spread (package lf-e6, see "cost: the change feed replaces the sweep" below).
   test("runs after a pair was pulled to the end, at most once a day per pair", async () => {
     let clock = 5_000_000;
-    const { server, replica, open } = setup({}, { now: () => clock });
+    const { server, replica, open } = setup({ trackDeletes: false }, { now: () => clock });
     server.upsert(rfi("a"));
     server.upsert(rfi("b"));
     await replica.sync(); // first sync: nothing local before the pull... but after it there are rows
@@ -270,7 +272,7 @@ describe("reconcile deletes (the repair path for deletes made before change trac
   });
 
   test("a (project, kind) with no local rows spends no call but is stamped", async () => {
-    const { server, replica, open } = setup();
+    const { server, replica, open } = setup({ trackDeletes: false });
     server.upsert(rfi("a")); // only rfis has rows; tasks, boq_lines and progress are empty
     await replica.sync();
     const idsKinds = server.requests.filter((r) => r.path === "/ids").map((r) => r.body.kind);
@@ -420,8 +422,9 @@ describe("(ix) another organisation's record is still refused", () => {
 });
 
 describe("what the earlier guarantees look like through the new fake (regression guard)", () => {
+  // (a service whose feed carries no deletes; with one that does, the second sync sends no keyset pull at all -- see the cost tests)
   test("page cursors and the done marker are still written, and a second sync with nothing changed pulls only from the stored cursor", async () => {
-    const { server, replica, open } = setup();
+    const { server, replica, open } = setup({ trackDeletes: false });
     for (const id of ["a", "b", "c"]) server.upsert(rfi(id));
     await replica.sync();
     const db = await open();
