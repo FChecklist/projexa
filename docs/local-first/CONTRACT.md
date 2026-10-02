@@ -43,7 +43,11 @@ Signed message (UTF-8): `px2|<org>|<project>|<kind>|<id>|<version>|<updated_at>|
 
 ## 2. Push (new)
 
-`POST /push` body `{device_id, ops:[{op_id, function_id, project_id, params, record?:{kind, id, base_version}, resolution?:"overwrite", client_at}]}` (<= 50 ops, <= 256 KB, applied in order)
+`POST /push` body `{device_id, ops:[{op_id, function_id, project_id, params, record?:{kind, id, base_version}, record_kind?, resolution?:"overwrite", client_at}]}` (<= 50 ops, <= 256 KB, applied in order)
+
+- `record_kind` (a create only): the sync kind the op creates (`"rfis"`), so the `applied` answer carries the new row and its version and the laptop needs no second request (handler.ts reads it; FB wire:F10).
+- Each op is at most **65,536 characters** as the server prints it (0681 `length(p_op::text)`, else `BAD_OP`), and each free-text parameter at most **2,000 characters** after the server's own cleaning (`TEXT_TOO_LONG`). The laptop refuses both BEFORE queueing, so the person's text stays in the form (FB data:F4, wire:F12).
+- A whole-request **403** (`NOT_LINKED`) pauses the laptop's outbox with one message until the person tries again; other whole-request refusals (400/404/413) are tried at most 3 times, then the person is asked (FB wire:F14, cost:COST-07).
 -> `{results:[{op_id, status, record_id?, route?, version?, server?:{kind,id,version,updated_at,data,sig,kid}, error?:{code, missing?}}], server_time}`
 
 `function_id` is a function of the AI work link registry (the same ids the PROJEXA pills use). The backend runs it through the **real pipeline** as the person with their LIVE role
@@ -53,9 +57,9 @@ approval figures are never accepted as computed by the browser; only the person'
 Statuses:
 - `applied` - done; `record_id`/`route` as the pipeline answered, `version` the record's new head version.
 - `duplicate` - this `op_id` was already applied; the stored answer is returned again (idempotent; safe to retry after a lost response).
-- `conflict` - `record.base_version` is older than the head version: nothing was written; `server` carries the current signed row. The laptop shows both and the person chooses *keep theirs* (drop the op) or *keep mine* (resend with `resolution:"overwrite"` and `base_version` = the server's version).
-- `rejected` - permanent no (role, validation, unknown function, project not readable). Drop the op, tell the person why in plain words. Never retried.
-- `failed` - transient or uncertain (`EXECUTION_UNCERTAIN`, timeout). Keep the op, retry with the same `op_id` after a back-off; the ledger guarantees at most one effect.
+- `conflict` - `record.base_version` is older than the head version: nothing was written; `server` carries the current signed row. The laptop does a field-level three-way merge (R12, `outbox-merge.ts`): fields only one side changed merge by themselves and the op is re-sent against `server.version`; an op whose every field already holds its value is "already in"; only a same-field disagreement (or any money/approval field) reaches the person: *keep theirs* (for those fields; the newest server row the laptop knows) or *keep mine* (resend with `resolution:"overwrite"` and `base_version` = the newest server version). `server: null` means the row was DELETED: the person chooses *keep my version as a new one* (where a create exists), *keep my text*, or *discard*.
+- `rejected` - permanent no (role, validation, unknown function, project not readable). Drop the op, tell the person why in plain words, and keep what they typed as a **draft** (local schema 4) until they re-send or discard it. Never retried.
+- `failed` - transient or uncertain (`EXECUTION_UNCERTAIN`, timeout). Keep the op, retry with the same `op_id` after a back-off (2 s doubling to 5 min); the ledger guarantees at most one effect. An UNCERTAIN outcome is re-sent at most 5 times ("checking"), then the person chooses *send again* (same `op_id`) or *stop and keep my text*.
 - `needs_server` - the function cannot run on the edge (stubbed dependency). Keep the op; the laptop offers the normal online path.
 
 A laptop edit is applied locally at once (optimistic, row marked `dirty` with the op id) and the op waits in the **outbox** until it is `applied`/`duplicate`; then the row is replaced by the server's row at its new version.
