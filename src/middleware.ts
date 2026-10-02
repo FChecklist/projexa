@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getClaimsWithRetry } from "./lib/supabase/get-claims-with-retry";
+import { createDurableAuthFetch, hasSessionCookie, isTransientAuthError } from "./lib/supabase/durable-auth";
 import { checkApiWriteAccess, MUTATING_METHODS } from "./lib/authz/api-write-policy";
 import { requiresAuthenticatedPage } from "./lib/authz/page-access";
 import { isLandingRoute, isStaticPublicRoute, localisedMarketingPath } from "./lib/public-page-cache";
@@ -67,6 +68,16 @@ function withLocaleCookie(response: NextResponse, request: NextRequest, locale: 
   return response;
 }
 
+const AUTH_UNAVAILABLE_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="8"><title>PROJEXA</title></head><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;color:#1c2b3a"><h1 style="font-size:1.25rem">PROJEXA is waiting for the sign-in service</h1><p>You are still signed in. The service that confirms it cannot be reached right now, so this page will try again in a few seconds. Nothing you did is lost.</p></body></html>`;
+
+/** 503, never cached, with a calm self-refresh. See the caller for why a person with a session never gets the login redirect here. */
+function authUnavailableResponse(): NextResponse {
+  return new NextResponse(AUTH_UNAVAILABLE_PAGE, {
+    status: 503,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Retry-After": "8" },
+  });
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -116,11 +127,18 @@ export async function middleware(request: NextRequest) {
   // down.
   let supabase: ReturnType<typeof createServerClient> | null = null;
   let userId: string | null = null;
+  // LOCAL-FIRST R9: true when the claims check failed because the sign-in service could not be reached or could not
+  // finish (not because the person is signed out). Used below so such a failure never bounces a person who HAS a session
+  // to /login, and (via the fetch wrapper) never deletes their session cookie.
+  let authCheckTransient = false;
   try {
     supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        // A refresh that fails for any reason except "this refresh token is revoked" must not make auth-js drop the
+        // session, and with it the Set-Cookie that deletes it from the browser (see lib/supabase/durable-auth.ts).
+        global: { fetch: createDurableAuthFetch((...args) => fetch(...args)) },
         cookies: {
           getAll() {
             return request.cookies.getAll();
@@ -141,10 +159,12 @@ export async function middleware(request: NextRequest) {
       // but no longer silent -- this is exactly the failure mode that used to
       // produce unexplained logouts.
       console.error("[middleware] getClaims() failed:", error.message);
+      authCheckTransient = isTransientAuthError(error);
     }
     userId = (data?.claims?.sub as string | undefined) ?? null;
   } catch (err) {
     console.error("[middleware] auth check threw:", err instanceof Error ? err.message : err);
+    authCheckTransient = isTransientAuthError(err);
   }
 
   const pathname = request.nextUrl.pathname;
@@ -210,6 +230,14 @@ export async function middleware(request: NextRequest) {
   // without it every API 401 JSON turns into a 307 redirect to an HTML login
   // page) and pinned to the filesystem by page-access.test.ts.
   const isProtected = requiresAuthenticatedPage(pathname);
+
+  if (!userId && isProtected && authCheckTransient && hasSessionCookie(request.cookies.getAll().map((c) => c.name))) {
+    // LOCAL-FIRST R9: this person HAS a session; the sign-in service just cannot confirm it right now (it is down, slow
+    // or unreachable). Sending them to /login would tell them they were signed out and ask for a password the laptop
+    // copy never needs. A 503 says what is true: try again. The service worker answers a 5xx navigation with the
+    // on-laptop shell (src/lib/local-first/release/sw-core.ts), so a laptop that has the release never shows this page.
+    return withLocaleCookie(authUnavailableResponse(), request, locale);
+  }
 
   if (!userId && isProtected) {
     const url = request.nextUrl.clone();
