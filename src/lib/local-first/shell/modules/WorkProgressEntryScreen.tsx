@@ -16,7 +16,7 @@ export default function WorkProgressEntryScreen({ data }: ShellScreenProps<WorkP
     ["Activity", e.activityName ?? DASH],
     ["BOQ line", e.boqLabel ?? DASH],
     ["Qty done", <><Num value={e.quantityDone} />{e.unit ? ` ${e.unit}` : ""}</>],
-    ["% complete", <Num value={e.percentComplete} suffix="%" />],
+    ["% complete", <Num key="pct" value={e.percentComplete} suffix="%" />],
     ["Basis", e.entryBasis === "SNAPSHOT" ? "Total to date" : e.entryBasis === "DELTA" ? "Today's work" : DASH],
     ["Remarks", e.remarks ?? DASH],
   ];
