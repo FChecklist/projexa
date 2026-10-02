@@ -369,10 +369,18 @@ export const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex"
  * Collects the page's console errors and uncaught exceptions. Expected noise is named, never a blanket filter: a request this spec ABORTED on
  * purpose (offline / server down) makes Chromium print "Failed to load resource: net::ERR_..." for it, which is the test's own doing.
  */
-export function watchConsole(page: Page): { errors: string[]; unexpected: () => string[] } {
+export function watchConsole(page: Page): { errors: string[]; unexpected: () => string[]; aiTamper: () => number } {
   const errors: string[] = [];
   page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   const expected = [/^Failed to load resource: net::ERR_(INTERNET_DISCONNECTED|CONNECTION_REFUSED|CONNECTION_RESET|FAILED)/, /^Failed to load resource: the server responded with a status of (426|503|429|404|401)/];
-  return { errors, unexpected: () => errors.filter((e) => !expected.some((r) => r.test(e))) };
+  // FINDING (lf-e12, NOT fixed: an integrity check, see the report): after a sign-out the worker drops the release caches while the device
+  // meta still names the release, and the browser AI's integrity check (src/lib/local-first/ai/integrity.ts) reads that as TAMPERING and
+  // switches the AI off with this error. It is counted apart, never ignored: the session specs assert exactly where it appears.
+  const tamper = /^\[projexa\] AI access switched off: the installed release does not match its recorded fingerprints/;
+  return {
+    errors,
+    unexpected: () => errors.filter((e) => !expected.some((r) => r.test(e)) && !tamper.test(e)),
+    aiTamper: () => errors.filter((e) => tamper.test(e)).length,
+  };
 }

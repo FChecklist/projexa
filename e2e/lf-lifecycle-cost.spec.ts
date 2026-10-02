@@ -75,4 +75,5 @@ test("R14: one working day in the browser (open, 3 screens, 20 edits, 8 hours of
   // FINDING guard: every edit was sent (cost is never saved by not syncing). The BOQ screen's edits go to /api (PATCH), not to the sync service.
   expect(apiDay.filter((r) => r.startsWith("PATCH")).length).toBe(20);
   expect(console_.unexpected(), "unexpected console errors").toEqual([]);
+  expect(console_.aiTamper()).toBe(0);
 });

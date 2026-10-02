@@ -168,6 +168,7 @@ test("V1: release N+1 is installed in the background; N runs until the switch; l
   });
   expect(await databases(page)).toEqual(expect.arrayContaining(["projexa-local", personDb(session.userId)]));
   expect(console_.unexpected(), "unexpected console errors").toEqual([]);
+  expect(console_.aiTamper(), "a verified release update was read as tampering by the AI integrity check").toBe(0);
 });
 
 test("V1: a release whose file does not match its sha256 is refused, a download cut in the middle changes nothing, and the laptop tries again later", async ({ page, context }) => {
@@ -220,6 +221,7 @@ test("V1: a release whose file does not match its sha256 is refused, a download 
   });
   expect(session.userId).toBeTruthy();
   expect(console_.unexpected(), "unexpected console errors").toEqual([]);
+  expect(console_.aiTamper(), "a verified release update was read as tampering by the AI integrity check").toBe(0);
 });
 
 test("V1: a first install whose BUNDLE does not match the manifest's sha256 is refused (no release cache at all), and the next start installs it", async ({ page, context }) => {
@@ -261,4 +263,5 @@ test("V1: a first install whose BUNDLE does not match the manifest's sha256 is r
   });
   expect(session.userId).toBeTruthy();
   expect(console_.unexpected(), "unexpected console errors").toEqual([]);
+  expect(console_.aiTamper(), "a verified release update was read as tampering by the AI integrity check").toBe(0);
 });

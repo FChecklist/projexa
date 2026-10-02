@@ -72,11 +72,15 @@ test("sign-out keeps the copy by default; signing in again is instant (no re-dow
     expect(world.hits.filter((h) => h.route === "pull" || h.route === "pull_ids").length, "the kept copy was downloaded again").toBe(pullsBefore);
     // FINDING (lf-e12): the DATA is kept, but the sign-out made the worker drop the person's release caches (sw-core CLEAR_PERSON), so the
     // APP itself (the whole bundle, ~2.6 MB from the app's origin) is downloaded again after the re-login before the laptop works offline.
-    // Asserted as it is, so a change in either direction is seen: the install is reported again, as a fresh "installed".
+    // Asserted as it is, so a change in either direction is seen: the install is reported again, and to the registry it reads as an
+    // "update" of the release to ITSELF (device meta app:release outlived its cache).
     const installsBefore = world.installs.length;
     await expect.poll(() => releaseCaches(page), { timeout: 120_000, message: "the release was not put back after the re-login" }).toHaveLength(1);
     await expect.poll(() => world.installs.length).toBe(installsBefore + 1);
-    expect(world.installs.at(-1)).toMatchObject({ status: "installed", previous_release: null });
+    const again = world.installs.at(-1)!;
+    expect(again).toMatchObject({ status: "updated" });
+    expect(again.previous_release).toBe(again.release_version);
+    await expect.poll(() => swPointer(page), { timeout: 60_000 }).toMatchObject({ personId: session.userId });
     await goOffline(context, world, app.setOffline);
     await page.goto(`/local/scope/${A.boqId}?projectId=${A.projectId}`);
     await expect(page.getByTestId("boq-local-line")).toHaveCount(3);
@@ -85,6 +89,8 @@ test("sign-out keeps the copy by default; signing in again is instant (no re-dow
     await goOnline(context, world, app.setOffline);
   });
   expect(console_.unexpected(), "unexpected console errors").toEqual([]);
+  // FINDING pinned (see watchConsole): the release cache the sign-out dropped is read as tampering, and the AI is switched off once.
+  expect(console_.aiTamper(), "the AI-integrity finding changed: re-check e2e/support/lf-lifecycle-stub.ts watchConsole").toBeGreaterThan(0);
 });
 
 test("Sign out and delete this laptop's copy: the person's database is removed, nothing else is", async ({ page, context }) => {
@@ -150,6 +156,9 @@ test("two people on one laptop: B (another organisation) never sees anything of 
     await signBackIn(context, a.session);
     await page.goto(`/scope/${A.boqId}`);
     await expect.poll(() => page.evaluate(() => localStorage.getItem("px-identity-v1")), { timeout: 30_000 }).toContain(a.session.userId);
+    // B's sign-out dropped the release caches too (see the first test's FINDING): the app is put back for A before it works offline
+    await expect.poll(() => releaseCaches(page), { timeout: 120_000 }).toHaveLength(1);
+    await expect.poll(() => swPointer(page), { timeout: 60_000 }).toMatchObject({ personId: a.session.userId });
     await goOffline(context, world, appA.setOffline);
     await page.goto(`/local/scope/${A.boqId}?projectId=${A.projectId}`);
     await expect(page.getByTestId("boq-local-title")).toHaveText(A.boqTitle);
@@ -159,6 +168,7 @@ test("two people on one laptop: B (another organisation) never sees anything of 
     expect(await releaseCaches(page)).toHaveLength(1);
   });
   expect(console_.unexpected(), "unexpected console errors").toEqual([]);
+  expect(console_.aiTamper(), "the AI-integrity finding changed: re-check e2e/support/lf-lifecycle-stub.ts watchConsole").toBeGreaterThan(0);
 });
 
 test("the local-first opt-out is respected for every person of the browser, and stays off across a reload", async ({ page, context }) => {
