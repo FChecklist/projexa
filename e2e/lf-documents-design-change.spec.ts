@@ -71,6 +71,10 @@ test("change orders and the timesheet open offline with their real values; money
     await openLocal(page, "/design-studio/cost-analysis")
     await expect(page.getByTestId("dc-server-only")).toBeVisible()
     await noCrash(page)
+    // leave it before the connection returns: online, that screen hands itself over to the server (tested below), which would race
+    // the next navigation of this test
+    await openLocal(page, "/change-orders")
+    await expect(page.getByTestId("co-list")).toBeVisible()
   })
 
   expect(await readOutbox(page, p.session.userId)).toEqual([])

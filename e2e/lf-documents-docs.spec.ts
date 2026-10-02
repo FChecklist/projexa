@@ -103,6 +103,10 @@ test("documents: the four lists and their objects open offline from the laptop, 
       await expect(page.getByTestId("documents-server-only"), `${path} did not explain itself offline`).toBeVisible()
       await noCrash(page)
     }
+    // leave it before the connection returns: online, a create screen hands itself over to the server (tested below), which would race
+    // the next navigation of this test
+    await openLocal(page, "/documents")
+    await expect(page.getByTestId("documents-list")).toBeVisible()
   })
 
   expect(await readOutbox(page, p.session.userId), "reading must not queue anything").toEqual([])
