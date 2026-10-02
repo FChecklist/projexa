@@ -30,7 +30,14 @@ export const TEST_VECTOR = {
 
 export type PublicKeyInfo = { kid: string; alg: string; jwk: JsonWebKey; active?: boolean };
 
-export type PeerClaims = { typ: string; v: number; sub: string; org: string; projects: string[]; view: string; iat: number; exp: number };
+export type PeerClaims = {
+  typ: string; v: number; sub: string; org: string; projects: string[]; view: string; iat: number; exp: number;
+  /**
+   * lf-e7: the ORGANISATION view class (drizzle/0684 org_view_class) the server attests, claim `org_view`. Organisation rows move between
+   * two laptops only when both tokens carry it and it is equal (protocol.ts). Absent from today's /attest: then they never move.
+   */
+  orgView?: string;
+};
 
 /** A signed row as one laptop hands it to another. Nothing else travels: no tombstones, no local fields. */
 export type SignedRow = { project: string; kind: string; id: string; version: number; updated_at: string; data: unknown; sig: string; kid: string };
@@ -173,7 +180,8 @@ export async function verifyToken(token: unknown, keys: KeyRing, nowMs: number):
   const now = Math.floor(nowMs / 1000);
   if (exp <= now) return { ok: false, reason: "expired" };
   if (iat > now + CLOCK_SKEW_SECONDS) return { ok: false, reason: "not_yet_valid" };
-  return { ok: true, claims: { typ: TOKEN_TYPE, v: typeof body.v === "number" ? body.v : 1, sub, org, projects: projects as string[], view, iat, exp } };
+  const orgView = typeof body.org_view === "string" && body.org_view !== "" ? body.org_view : undefined;
+  return { ok: true, claims: { typ: TOKEN_TYPE, v: typeof body.v === "number" ? body.v : 1, sub, org, projects: projects as string[], view, iat, exp, ...(orgView ? { orgView } : {}) } };
 }
 
 // ─── rows ───────────────────────────────────────────────────────────────────────────────────────────
