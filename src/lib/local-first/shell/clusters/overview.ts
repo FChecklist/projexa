@@ -7,6 +7,7 @@
 
 import { defineShellRoute, type ShellApi, type ShellRoute } from "../types";
 import { loadDashboard } from "../modules/dashboard-adapter";
+import { loadReports } from "../modules/reports-adapter";
 
 const dashboardAdapter = async (shell: ShellApi) =>
   loadDashboard(shell.data, shell.projectId, { shellEdits: (await shell.writer.list().catch(() => [])).length });
@@ -25,5 +26,12 @@ export const ROUTES: readonly ShellRoute[] = [
     title: "Project dashboard",
     load: () => import("../modules/DashboardLocalScreen"),
     adapter: dashboardAdapter,
+  }),
+  defineShellRoute({
+    pattern: "/reports",
+    title: "Reports",
+    nav: { label: "Reports", order: 80 },
+    load: () => import("../modules/ReportsLocalScreen"),
+    adapter: (shell, _params, query) => loadReports(shell.data, shell.projectId, query),
   }),
 ];
