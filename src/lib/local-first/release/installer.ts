@@ -108,7 +108,7 @@ export type InstallerDeps = {
   /** Asks the service worker to use `version` and forget the others; rejects when it cannot. */
   switchTo: (version: string) => Promise<void>;
   /** The registry's current numbering, when it could be had. Used for file_no / file_version of the stored table. */
-  registry?: () => Promise<RegistryRelease | null>;
+  registry?: (wanted: { release_version: string; manifest_sha256: string }) => Promise<RegistryRelease | null>;
   /** POST /install; resolves false (never throws) when it could not be sent. */
   recordInstall?: (record: InstallRecord) => Promise<boolean>;
 };
@@ -325,7 +325,7 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     if (!(await cacheIsComplete(deps.caches, manifest))) throw new InstallError("storage", "The laptop's cache does not hold every file after writing.");
 
     // 4. meta, then the switch. Meta first so a failed switch can be undone from what is still in hand.
-    const registry = deps.registry ? await deps.registry().catch(() => null) : null;
+    const registry = deps.registry ? await deps.registry({ release_version: manifest.release_version, manifest_sha256: manifest.manifest_sha256 }).catch(() => null) : null;
     const numbering = registry && registry.manifest_sha256 === manifest.manifest_sha256 ? new Map(registry.files.map((f) => [f.path, f])) : new Map();
     const installedAt = now();
     const record: InstalledRelease = {
