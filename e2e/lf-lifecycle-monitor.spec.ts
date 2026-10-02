@@ -4,8 +4,8 @@ import { makePerson, newWorld, signIn, stubSyncService } from "./support/lf-life
 // LOCAL-FIRST prepare monitor (owner directive 2026-10-03): "if the download is happening and, for any reason, it stops, we should know at our
 // end ... without the files PROJEXA does not work ... we cannot lose a customer". In a real Chromium (playwright.local-first.config.ts):
 //   * the screen shows ONLY the title, the sentence and the percentage: no step list, no error text, no Skip, no button;
-//   * while the sync service cannot be reached the laptop is NOT let in, and it tells us (POST /prepare) where it stopped and WHY;
-//   * it keeps telling us (heartbeat / retry) while it is stuck, and tries again by itself;
+//   * while the sync service cannot be reached the laptop is NOT let in; it heartbeats the same stage and percentage (the server calls that STUCK),
+//     then tells us (POST /prepare) it FAILED, where, and why when its time budget ends, and tries again by itself;
 //   * once the service answers it reaches 100%, PROJEXA opens by itself, and the last thing we hear is `done` at 100.
 
 const A = makePerson("mona", "lf-org-1", "Monitor Point Tower", "Monitor Point - Structure");
@@ -28,21 +28,26 @@ test("a preparation that cannot finish is seen on our side with its reason, retr
     await expect(page.getByText(/Skip for now|Open PROJEXA|not reachable|still works/)).toHaveCount(0);
   });
 
-  await test.step("we are told it stopped, where, and why", async () => {
+  await test.step("while it is stuck we hear it: the same stage and percentage again and again (the server calls that STUCK), and the person is not let in", async () => {
     await expect
-      .poll(() => world.prepares.filter((p) => p.status === "failed" || p.status === "retrying").length, { timeout: 150_000, message: "the laptop never told us its preparation was failing" })
-      .toBeGreaterThan(0);
-    const failure = world.prepares.find((p) => p.status === "failed" || p.status === "retrying")!;
-    expect(failure).toMatchObject({ stage: "projects", error_class: "service_unreachable", device_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) });
-    expect(Number(failure.percent)).toBeLessThan(100);
-    // still locked in: the person is not let into a laptop that has no copy
+      .poll(() => world.prepares.filter((p) => p.stage === "projects" && p.status === "running").length, { timeout: 120_000, message: "a stuck laptop went silent: no heartbeat from the projects stage" })
+      .toBeGreaterThanOrEqual(2);
+    const same = world.prepares.filter((p) => p.stage === "projects" && p.status === "running");
+    expect(new Set(same.map((p) => p.percent)).size, "no progress while the service is down").toBe(1);
+    expect(Number(same[0]!.percent)).toBeLessThan(100);
     await expect(dialog).toBeVisible();
     await expect(dialog.locator("button")).toHaveCount(0);
   });
 
-  await test.step("while it is stuck it keeps telling us (heartbeat / retry), and tries again by itself", async () => {
-    const before = world.prepares.length;
-    await expect.poll(() => world.prepares.length, { timeout: 120_000, message: "a stuck laptop went silent" }).toBeGreaterThan(before);
+  await test.step("when its time budget runs out we are told it FAILED, where, and why, and it tries again by itself", async () => {
+    await expect
+      .poll(() => world.prepares.some((p) => p.status === "failed" || p.status === "retrying"), { timeout: 240_000, message: "the laptop never told us its preparation failed" })
+      .toBe(true);
+    const failure = world.prepares.find((p) => p.status === "failed" || p.status === "retrying")!;
+    expect(failure).toMatchObject({ stage: "projects", device_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) });
+    expect(["service_unreachable", "timeout"]).toContain(failure.error_class);
+    expect(Number(failure.percent)).toBeLessThan(100);
+    await expect(dialog, "still locked in: a laptop without its copy is not let in").toBeVisible();
     const manifestHits = world.hits.filter((h) => h.route === "manifest").length;
     await expect.poll(() => world.hits.filter((h) => h.route === "manifest").length, { timeout: 120_000, message: "it did not try again by itself" }).toBeGreaterThan(manifestHits);
   });
