@@ -34,9 +34,12 @@
 
 import { changeCursorKey, localDbNameFor, openLocalDb, reconcileKey, type LocalDb } from "./local-db";
 import {
-  SYNC_CHANGES_LIMIT, SYNC_ID_LIST_LIMIT, SYNC_PAGE_LIMIT, SyncError, manifestSignInId,
+  ORG_PROJECT, SYNC_CHANGES_LIMIT, SYNC_ID_LIST_LIMIT, SYNC_PAGE_LIMIT, SyncError, manifestSignInId,
   type SyncChange, type SyncClient, type SyncCursor, type SyncErrorKind, type SyncItem, type SyncManifest, type UpdateRequiredDetails,
 } from "./sync-client";
+// lf-e7: the organisation kinds and the role / class / epoch rules live in their own files; this one only calls them.
+import { ORG_CHECK_KEY, applyClasses, assertPageClass, classSignal, isClassSignal, noteEpoch, resetEverything, resetProject, type ClassSignal } from "./replica-class";
+import { ORG_CHECK_EVERY_MS, checkOrganisation, orgKindsOf } from "./replica-org";
 
 export { changeCursorKey, reconcileKey };
 
@@ -51,7 +54,7 @@ export type ReplicaProgress = {
   currentProject: string | null;
 };
 
-export type ReplicaIssue = { projectId?: string; kind?: string; reason: SyncErrorKind | "store" | "org_mismatch" | "user_mismatch" | "no_progress"; message: string };
+export type ReplicaIssue = { projectId?: string; kind?: string; reason: SyncErrorKind | "store" | "org_mismatch" | "user_mismatch" | "no_progress" | ClassSignal["replicaReason"]; message: string };
 
 export type SyncReport = {
   status: ReplicaStatus;
@@ -103,6 +106,11 @@ export type ReplicaOptions = {
   projectFreshMs?: number;
   /** COST: a one-project run reuses the manifest stored by an earlier run of at most this age instead of asking again. Default 6 hours. */
   manifestMaxAgeMs?: number;
+  /**
+   * lf-e7 COST: a one-project run (the scheduler's round) also checks the ORGANISATION at most this often: one GET /heads (classes, epoch,
+   * the organisation feed's head), plus one /changes only when that head moved. Default one hour.
+   */
+  orgCheckEveryMs?: number;
 };
 
 export type Replica = {
@@ -145,6 +153,13 @@ export type StoredManifest = {
   userId: string; orgId: string; projectIds: string[]; kinds: string[]; at: number; feedKinds?: string[];
   /** The manifest said PROJEXA's own AI is on (ai-off/internal-ai.ts). Absent or false: off. */
   internalAi?: boolean;
+  /**
+   * lf-e7: the ORGANISATION kinds the role may read (stored under project ORG_PROJECT), those the feed carries deletes for, and those
+   * that must never move laptop to laptop (manifest `peer_shareable: false`). Absent (an older build or service): none.
+   */
+  orgKinds?: string[];
+  orgFeedKinds?: string[];
+  orgNoPeerKinds?: string[];
 };
 export type DoneMarker = { at: number; redacted: boolean; hiddenFields: string[] };
 
@@ -186,6 +201,7 @@ export function createReplica(options: ReplicaOptions): Replica {
   const reconcileBudget = Math.max(0, options.reconcileBudgetPerRun ?? RECONCILE_BUDGET_PER_RUN);
   const projectFreshMs = Math.max(0, options.projectFreshMs ?? PROJECT_FRESH_MS);
   const manifestMaxAgeMs = Math.max(0, options.manifestMaxAgeMs ?? MANIFEST_MAX_AGE_MS);
+  const orgCheckEveryMs = Math.max(0, options.orgCheckEveryMs ?? ORG_CHECK_EVERY_MS);
   /** When each project's change feed was last read to its end by this replica (memory only: a reload checks again once). */
   const feedCheckedAt = new Map<string, number>();
 
@@ -257,6 +273,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     for (let pageNo = 0; pageNo < maxPages; pageNo += 1) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
       const page = await options.client.pull({ projectId, kind, after: cursor, limit: pageLimit }, signal);
+      await assertPageClass(db, projectId, page); // lf-e7: a page cut for another role is never stored beside this project's rows
       await storePage(db, orgId, projectId, kind, page.items, report, page.kid);
       // The page is stored: only now may the cursor move.
       const next = page.next_cursor ?? cursor;
@@ -288,6 +305,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     if (stored && typeof stored.seq === "number") return true;
     try {
       const head = await options.client.changes({ projectId, afterSeq: null, limit: 1 }, signal);
+      if ((await noteEpoch(db, head.epoch)) === "changed") throw classSignal("epoch_changed", { epoch: head.epoch });
       await db.setMeta(changeCursorKey(projectId), { seq: head.head_seq });
       return true;
     } catch (err) {
@@ -327,6 +345,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     for (const [kind, ids] of toFetch) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
       const page = await options.client.pullIds({ projectId, kind, ids }, signal);
+      await assertPageClass(db, projectId, page);
       await storePage(db, orgId, projectId, kind, page.items, report, page.kid);
       report.changesApplied += page.items.length;
     }
@@ -341,6 +360,10 @@ export function createReplica(options: ReplicaOptions): Replica {
     for (let pageNo = 0; pageNo < maxPages; pageNo += 1) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
       const page = await options.client.changes({ projectId, afterSeq: ask, limit: SYNC_CHANGES_LIMIT }, signal);
+      // lf-e7: a new epoch makes every version here meaningless; reset_required makes this project's position useless. Both are acted
+      // on by run() (resetEverything / resetProject, then one more run); nothing of this page is applied.
+      if ((await noteEpoch(db, page.epoch)) === "changed") throw classSignal("epoch_changed", { epoch: page.epoch });
+      if (page.reset_required) throw classSignal("reset_required", { projectId });
       await applyChangePage(db, orgId, projectId, kinds, page.changes, report, signal);
       if (page.has_more && page.next_seq <= ask) {
         throw Object.assign(new Error("The change feed said there is more but did not move."), { replicaReason: "no_progress" as const });
@@ -394,7 +417,7 @@ export function createReplica(options: ReplicaOptions): Replica {
 
   // ─── one run ───────────────────────────────────────────────────────────────────────────────────────────────
 
-  async function run(scope: { projectId?: string; kind?: string }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void, allowStored = true): Promise<SyncReport> {
+  async function run(scope: { projectId?: string; kind?: string }, signal?: AbortSignal, progressCb?: (p: ReplicaProgress) => void, allowStored = true, retried = false): Promise<SyncReport> {
     const report = emptyReport("syncing");
     setStatus("syncing", report);
     const internal = new AbortController();
@@ -428,6 +451,9 @@ export function createReplica(options: ReplicaOptions): Replica {
       let feedKinds: Set<string>;
       let projectIds: string[];
       let internalAi = false;
+      // lf-e7: the organisation kinds the role may read (synced under ORG_PROJECT in a whole run), and the classes the server cuts for now
+      let org = { kinds: stored?.orgKinds ?? [], feedKinds: stored?.orgFeedKinds ?? [], noPeerKinds: stored?.orgNoPeerKinds ?? [] };
+      let freshManifest: SyncManifest | null = null;
       if (stored) {
         orgId = stored.orgId;
         kinds = stored.kinds;
@@ -447,9 +473,16 @@ export function createReplica(options: ReplicaOptions): Replica {
         }
         kinds = manifest.kinds.filter(isProjectScoped).map((k) => k.kind);
         feedKinds = new Set(manifest.kinds.filter((k) => isProjectScoped(k) && k.deletes_supported === true).map((k) => k.kind));
-        projectIds = manifest.projects.map((p) => p.id);
+        projectIds = manifest.projects.map((p) => p.id).filter((id) => id !== ORG_PROJECT);
         internalAi = manifest.internal_ai === true;
+        org = orgKindsOf(manifest);
+        freshManifest = manifest;
       }
+      const orgFeedKinds = new Set(org.feedKinds);
+      const isFeedKind = (projectId: string, kind: string) => (projectId === ORG_PROJECT ? orgFeedKinds : feedKinds).has(kind);
+      /** Every kind whose positions a reset must clear: what this run knows and what the stored manifest knew. */
+      const allProjectKinds = [...new Set([...(previous?.kinds ?? []), ...kinds])];
+      const allOrgKinds = [...new Set([...(previous?.orgKinds ?? []), ...org.kinds])];
 
       // Projects this person no longer belongs to leave the laptop (only on a full run: a partial one has no full list to compare).
       if (wholeRun && previous) {
@@ -479,6 +512,18 @@ export function createReplica(options: ReplicaOptions): Replica {
         return finish("partial");
       }
 
+      // lf-e7: the manifest's view of the person, applied BEFORE any pull: a project (or the organisation) whose recorded class differs is
+      // reset (its rows were redacted for another role), an organisation kind the role may no longer read leaves, the classes are recorded.
+      if (freshManifest) {
+        const outcome = await applyClasses(db, {
+          orgId, projects: projectIds, viewClass: freshManifest.view_class, orgViewClass: freshManifest.org_view_class,
+          projectKinds: allProjectKinds, orgKinds: allOrgKinds, orgKindsNow: org.kinds, orgKindsBefore: previous?.orgKinds ?? [], now: now(),
+        });
+        report.itemsRemoved += outcome.removed;
+        // a one-project run re-pulls only its own project: the next scheduler round must be a whole one for the others
+        if (!wholeRun && outcome.reset.some((p) => p !== scope.projectId)) await db.setMeta(LAST_SYNC_KEY, null);
+      }
+
       // Written before any pull, so a reader always knows the organisation of whatever a half-finished run stored. A run that
       // reused the stored manifest learned nothing new about it, so it leaves it (and its age) as it is.
       if (!stored) {
@@ -486,13 +531,14 @@ export function createReplica(options: ReplicaOptions): Replica {
           userId: options.userId, orgId,
           projectIds: wholeRun ? projectIds : [...new Set([...(previous?.projectIds ?? []), ...targetProjects])],
           kinds, at: now(), feedKinds: [...feedKinds], ...(internalAi ? { internalAi: true } : {}),
+          orgKinds: org.kinds, orgFeedKinds: org.feedKinds, orgNoPeerKinds: org.noPeerKinds,
         } satisfies StoredManifest);
       }
 
       // A pair the feed keeps current: its project has a feed position, the feed carries the kind's deletes, and it was pulled
       // to the end once. Its keyset pull would only ever return what the feed already names, so it is not asked again.
       const feedCovered = async (projectId: string, kind: string): Promise<boolean> =>
-        feedKinds.has(kind)
+        isFeedKind(projectId, kind)
         && !!(await db!.getMeta<{ seq: number } | null>(changeCursorKey(projectId)))
         && !!(await db!.getMeta<DoneMarker | null>(doneKey(projectId, kind)));
 
@@ -523,6 +569,16 @@ export function createReplica(options: ReplicaOptions): Replica {
         }
         return false;
       };
+      // lf-e7: what a step learned about classes, the epoch or a project's feed position; acted on after the pools, then one more run.
+      const signals = { classChanged: false, epoch: null as string | null, resets: new Set<string>() };
+      const noteSignal = (err: unknown): boolean => {
+        if (!isClassSignal(err)) return false;
+        if (err.replicaReason === "class_changed") signals.classChanged = true;
+        else if (err.replicaReason === "epoch_changed") signals.epoch = err.epoch ?? signals.epoch;
+        else if (err.projectId) signals.resets.add(err.projectId);
+        if (retried) report.issues.push({ projectId: err.projectId, reason: err.replicaReason, message: err.message }); // twice in a row: say so
+        return true;
+      };
       const issueFor = (err: unknown, projectId: string, kind?: string) => {
         const syncKind = err instanceof SyncError ? err.kind : null;
         const reason = syncKind ?? (err as { replicaReason?: ReplicaIssue["reason"] }).replicaReason ?? "store";
@@ -542,12 +598,15 @@ export function createReplica(options: ReplicaOptions): Replica {
       };
 
       // 1. Each project's change-feed position, read BEFORE its first full pull.
+      // lf-e7: a whole run also copies the ORGANISATION kinds the role may read, as one more "project" (ORG_PROJECT) with its own feed.
+      const orgInRun = wholeRun && org.kinds.length > 0;
       const withFeed = new Set<string>();
-      await pool(hasFeed ? targetProjects : [], async (projectId) => {
+      await pool(hasFeed ? (orgInRun ? [...targetProjects, ORG_PROJECT] : targetProjects) : [], async (projectId) => {
         try {
           if (await ensureChangeCursor(db!, projectId, internal.signal)) withFeed.add(projectId);
         } catch (err) {
           if (noteFatal(err, projectId)) return;
+          if (noteSignal(err)) return;
           if (err instanceof SyncError && err.kind === "aborted") return;
           // Without the position nothing could be pulled safely (a later read of the head would skip what changed meanwhile).
           failedProjects.add(projectId);
@@ -558,9 +617,10 @@ export function createReplica(options: ReplicaOptions): Replica {
       // 2. The full / incremental pulls.
       const pullable = targetProjects.filter((p) => !failedProjects.has(p));
       const pairs = pullable.flatMap((p) => targetKinds.map((k) => ({ projectId: p, kind: k })));
+      if (orgInRun && !failedProjects.has(ORG_PROJECT)) for (const k of org.kinds) pairs.push({ projectId: ORG_PROJECT, kind: k });
       const remaining = new Map(pullable.map((p) => [p, targetKinds.length]));
       let pairsDone = 0;
-      let projectsDone = failedProjects.size;
+      let projectsDone = failedProjects.size - (failedProjects.has(ORG_PROJECT) ? 1 : 0); // the organisation is not one of the person's projects
       let projectsClean = 0;
       if (targetKinds.length === 0) { projectsDone += pullable.length; projectsClean = pullable.length; }
       let currentProject: string | null = null;
@@ -576,7 +636,7 @@ export function createReplica(options: ReplicaOptions): Replica {
       await pool(pairs, async (pair) => {
         currentProject = pair.projectId;
         try {
-          const onFeed = withFeed.has(pair.projectId) && feedKinds.has(pair.kind);
+          const onFeed = withFeed.has(pair.projectId) && isFeedKind(pair.projectId, pair.kind);
           const covered = onFeed && (await feedCovered(pair.projectId, pair.kind));
           const fromScratch = !covered && ((await db!.getMeta<SyncCursor | null>(cursorKey(pair.projectId, pair.kind))) ?? null) === null;
           // COST: a feed-covered pair is brought up to date by step 4 (the feed), not by another keyset sweep.
@@ -605,6 +665,7 @@ export function createReplica(options: ReplicaOptions): Replica {
           failedProjects.add(pair.projectId);
           const syncKind = err instanceof SyncError ? err.kind : null;
           if (noteFatal(err, pair.projectId, pair.kind)) return;
+          if (noteSignal(err)) return;
           if (syncKind === "aborted") return;
           if (syncKind === "not_found") {
             if (stored) staleStoredManifest = true;
@@ -616,6 +677,7 @@ export function createReplica(options: ReplicaOptions): Replica {
           }
         }
         pairsDone += 1;
+        if (pair.projectId === ORG_PROJECT) { emitProgress(); return; } // the organisation's pairs are not a project's
         const left = (remaining.get(pair.projectId) ?? 1) - 1;
         remaining.set(pair.projectId, left);
         if (left === 0) {
@@ -628,12 +690,15 @@ export function createReplica(options: ReplicaOptions): Replica {
       // 4. What the change feed names: tombstones, and rows whose version moved without their timestamp.
       if (!state.fatal && !internal.signal.aborted) {
         const kindSet = new Set(kinds);
+        const orgKindSet = new Set(org.kinds);
         await pool([...withFeed].filter((p) => !failedProjects.has(p)), async (projectId) => {
           try {
-            await applyChanges(db!, orgId, projectId, kindSet, report, internal.signal);
+            await applyChanges(db!, orgId, projectId, projectId === ORG_PROJECT ? orgKindSet : kindSet, report, internal.signal);
             feedCheckedAt.set(projectId, now());
+            if (projectId === ORG_PROJECT) await db!.setMeta(ORG_CHECK_KEY, { at: now() });
           } catch (err) {
             if (noteFatal(err, projectId)) return;
+            if (noteSignal(err)) return;
             if (err instanceof SyncError && err.kind === "aborted") return;
             if (err instanceof SyncError && err.kind === "not_found") {
               if (stored) staleStoredManifest = true;
@@ -646,12 +711,43 @@ export function createReplica(options: ReplicaOptions): Replica {
         });
       }
 
+      // lf-e7: a one-project run (the scheduler's round) also looks at the ORGANISATION, at most every `orgCheckEveryMs`: one /heads
+      // (classes, epoch, the organisation feed's head) and a /changes only when that head moved. A screen's kind-scoped run never does.
+      if (!wholeRun && !scope.kind && hasFeed && org.kinds.length > 0 && !state.fatal && !internal.signal.aborted) {
+        try {
+          await checkOrganisation({
+            db, client: options.client, signal: internal.signal, now: now(), everyMs: orgCheckEveryMs, projectIds,
+            applyOrgFeed: () => applyChanges(db!, orgId, ORG_PROJECT, new Set(org.kinds), report, internal.signal),
+          });
+        } catch (err) {
+          if (!noteFatal(err, ORG_PROJECT) && !noteSignal(err) && !(err instanceof SyncError && err.kind === "aborted")) issueFor(err, ORG_PROJECT);
+        }
+      }
+
       if (stored && staleStoredManifest && !state.fatal) {
         // The stored manifest named a project the service no longer serves to this person: ask for the manifest and run again.
         signal?.removeEventListener("abort", onOuter);
         db.close();
         db = null;
-        return run(scope, signal, progressCb, false);
+        return run(scope, signal, progressCb, false, retried);
+      }
+
+      // lf-e7: what the steps learned, acted on once every step has stopped writing: a new epoch resets everything, reset_required one
+      // project; a class change is applied by the fresh manifest of the next run (applyClasses). Then ONE more run brings it all back.
+      // Dirty rows, the outbox and the drafts are never touched. A second run that learns the same again says so in the report instead.
+      if (!state.fatal && !retried && (signals.epoch || signals.resets.size > 0 || signals.classChanged)) {
+        const everyProject = [...new Set([...(previous?.projectIds ?? []), ...projectIds])];
+        if (signals.epoch) {
+          report.itemsRemoved += await resetEverything(db, orgId, everyProject, [...allProjectKinds, ...allOrgKinds], signals.epoch);
+        } else {
+          for (const p of signals.resets) report.itemsRemoved += await resetProject(db, orgId, p, p === ORG_PROJECT ? allOrgKinds : allProjectKinds);
+        }
+        // a one-project run brings back only its own project: the next scheduler round is a whole one for the rest
+        if (!wholeRun && (signals.epoch || [...signals.resets].some((p) => p !== scope.projectId))) await db.setMeta(LAST_SYNC_KEY, null);
+        signal?.removeEventListener("abort", onOuter);
+        db.close();
+        db = null;
+        return run(scope, signal, progressCb, signals.classChanged ? false : allowStored, true);
       }
 
       report.projectsSynced = projectsClean;
