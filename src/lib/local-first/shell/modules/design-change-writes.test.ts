@@ -19,10 +19,10 @@ const neverCalled: Pick<SyncClient, "push" | "pullIds"> = {
   pullIds: async () => { throw new Error("the outbox must not send anything in these tests"); },
 };
 
-async function rig(opts: { projectIds?: string[]; userId?: string } = {}) {
+async function rig(opts: { projectIds?: string[]; userId?: string; manifestUserId?: string } = {}) {
   const idb = new IDBFactory();
   const db = await openLocalDb(idb, localDbNameFor("u1"));
-  await db.setMeta(MANIFEST_KEY, { userId: "u1", orgId: "orgA", projectIds: opts.projectIds ?? ["p1"], kinds: [], at: 1 });
+  await db.setMeta(MANIFEST_KEY, { userId: opts.manifestUserId ?? "u1", orgId: "orgA", projectIds: opts.projectIds ?? ["p1"], kinds: [], at: 1 });
   await db.putRecords([
     { id: `${CHANGE_ORDERS_KIND}:co1`, type: CHANGE_ORDERS_KIND, orgId: "orgA", projectId: "p1", data: { id: "co1", number: 4, title: "Lobby", status: "draft" }, updatedAt: 1, serverVersion: 3 },
     { id: `${CHANGE_ORDERS_KIND}:co-p2`, type: CHANGE_ORDERS_KIND, orgId: "orgA", projectId: "p2", data: { id: "co-p2", number: 1, title: "Other", status: "draft" }, updatedAt: 1, serverVersion: 1 },
@@ -83,6 +83,14 @@ describe("a new change order, made with the network off", () => {
     const r = await rig();
     expect(await createChangeOrderOffline({ projectId: "p9", title: "X" }, r.access)).toEqual({ queued: false, reason: "no_copy" });
     expect(await createChangeOrderOffline({ projectId: "p1", title: "X" }, { ...r.access, userId: "u2" })).toEqual({ queued: false, reason: "no_copy" });
+    expect(await r.ops()).toEqual([]);
+  });
+
+  test("a stored manifest that names ANOTHER person is refused even when it lists the project (the ownership check on its own)", async () => {
+    // this laptop's database for u1 holds a manifest of u2 that DOES list p1: only the ownership check can refuse the write
+    const r = await rig({ manifestUserId: "u2", projectIds: ["p1"] });
+    const result = await createChangeOrderOffline({ projectId: "p1", title: "X" }, r.access);
+    expect(result.queued).toBe(false);
     expect(await r.ops()).toEqual([]);
   });
 });
