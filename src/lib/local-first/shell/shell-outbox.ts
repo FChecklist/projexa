@@ -37,7 +37,7 @@ export type ShellOutboxDeps<O extends OutboxLike = OutboxLike> = {
  * and change ...) a turned-down change was undone with no word to the person (found by lf-e10a in a real Chromium). The shell now
  * mounts it once for every screen -- except the screens that already render their own, so the person never sees it twice.
  */
-export const SCREENS_WITH_OWN_OUTBOX_CARD: readonly string[] = ["/dashboard", "/dashboard/project"];
+export const SCREENS_WITH_OWN_OUTBOX_CARD: readonly string[] = [];
 
 /** Whether the shell itself shows the outbox card on the screen of this route pattern (null = no screen matched, e.g. "/"). */
 export function shellShowsOutboxCard(pattern: string | null): boolean {

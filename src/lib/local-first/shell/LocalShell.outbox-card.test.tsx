@@ -104,18 +104,14 @@ describe("shellShowsOutboxCard", () => {
     expect(shellShowsOutboxCard("/labour")).toBe(true);
     expect(shellShowsOutboxCard("/work-progress")).toBe(true);
     expect(shellShowsOutboxCard(null)).toBe(true);
-    expect(shellShowsOutboxCard("/dashboard")).toBe(false);
-    expect(shellShowsOutboxCard("/dashboard/project")).toBe(false);
+    expect(shellShowsOutboxCard("/dashboard")).toBe(true);
+    expect(shellShowsOutboxCard("/dashboard/project")).toBe(true);
   });
 
-  test("the exception's premise holds: each excluded screen really renders its own card", async () => {
-    const { ROUTES } = await import("./clusters/overview");
+  test("no screen renders its own card any more, so the shell's one card is the only one (merge of lf-e10a and lf-e10b)", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync(new URL("./modules/DashboardLocalScreen.tsx", import.meta.url), "utf8");
-    expect(source).toContain("<OutboxAttention");
-    for (const pattern of SCREENS_WITH_OWN_OUTBOX_CARD) {
-      const route = ROUTES.find((r) => r.pattern === pattern);
-      expect(route?.load.toString()).toContain("DashboardLocalScreen");
-    }
+    expect(source).not.toContain("<OutboxAttention");
+    expect(SCREENS_WITH_OWN_OUTBOX_CARD).toEqual([]);
   });
 });
