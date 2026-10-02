@@ -28,26 +28,24 @@ test("a preparation that cannot finish is seen on our side with its reason, retr
     await expect(page.getByText(/Skip for now|Open PROJEXA|not reachable|still works/)).toHaveCount(0);
   });
 
-  await test.step("while it is stuck we hear it: the same stage and percentage again and again (the server calls that STUCK), and the person is not let in", async () => {
+  await test.step("we are told where it stopped and WHY, again and again while it is stuck, and the person is not let in", async () => {
     await expect
-      .poll(() => world.prepares.filter((p) => p.stage === "projects" && p.status === "running").length, { timeout: 120_000, message: "a stuck laptop went silent: no heartbeat from the projects stage" })
-      .toBeGreaterThanOrEqual(2);
-    const same = world.prepares.filter((p) => p.stage === "projects" && p.status === "running");
-    expect(new Set(same.map((p) => p.percent)).size, "no progress while the service is down").toBe(1);
-    expect(Number(same[0]!.percent)).toBeLessThan(100);
-    await expect(dialog).toBeVisible();
-    await expect(dialog.locator("button")).toHaveCount(0);
-  });
-
-  await test.step("when its time budget runs out we are told it FAILED, where, and why, and it tries again by itself", async () => {
+      .poll(() => world.prepares.filter((p) => p.stage === "projects").length, { timeout: 150_000, message: "the laptop never told us it was stuck in the projects stage" })
+      .toBeGreaterThanOrEqual(3);
     await expect
-      .poll(() => world.prepares.some((p) => p.status === "failed" || p.status === "retrying"), { timeout: 240_000, message: "the laptop never told us its preparation failed" })
+      .poll(() => world.prepares.some((p) => p.status === "failed" || p.status === "retrying"), { timeout: 150_000, message: "the laptop never told us its preparation failed" })
       .toBe(true);
     const failure = world.prepares.find((p) => p.status === "failed" || p.status === "retrying")!;
     expect(failure).toMatchObject({ stage: "projects", device_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) });
     expect(["service_unreachable", "timeout"]).toContain(failure.error_class);
-    expect(Number(failure.percent)).toBeLessThan(100);
-    await expect(dialog, "still locked in: a laptop without its copy is not let in").toBeVisible();
+    const stuck = world.prepares.filter((p) => p.stage === "projects");
+    expect(new Set(stuck.map((p) => p.percent)).size, "no progress while the service is down").toBe(1);
+    expect(Number(stuck[0]!.percent)).toBeLessThan(100);
+    await expect(dialog, "a laptop without its copy is not let in").toBeVisible();
+    await expect(dialog.locator("button")).toHaveCount(0);
+  });
+
+  await test.step("it tries again by itself", async () => {
     const manifestHits = world.hits.filter((h) => h.route === "manifest").length;
     await expect.poll(() => world.hits.filter((h) => h.route === "manifest").length, { timeout: 120_000, message: "it did not try again by itself" }).toBeGreaterThan(manifestHits);
   });
