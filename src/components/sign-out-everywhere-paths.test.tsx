@@ -29,6 +29,7 @@ import { createOutbox, type Outbox } from "@/lib/local-first/outbox";
 import { createReplica } from "@/lib/local-first/replica";
 import { META_KEYS } from "@/lib/local-first/release/release-constants";
 import { forgetLastSignOutNotice } from "@/lib/local-first/sign-out";
+import { SIGN_OUT_AND_DELETE_LABEL } from "@/lib/local-first/sign-out-everywhere";
 
 // identity.ts binds the service worker client at load: it (and everything importing it) is loaded AFTER the mocks below.
 const IDENTITY_STORAGE_KEY = "px-identity-v1";
@@ -131,6 +132,7 @@ async function laptop(withPendingEdit: boolean) {
   idb = new IDBFactory();
   (globalThis as { indexedDB?: unknown }).indexedDB = idb;
   setActiveLocalUser("u1");
+  localStorage.setItem("px-local-first", "1"); // the laptop copy exists only with local-first on (package lf-fc, cost:COST-02)
   const server = createFakeSyncServer();
   server.upsert({ kind: "rfis", projectId: "p1", id: "r1", data: { subject: "x" } });
   await createReplica({ userId: "u1", client: server.client, idb, yieldFn: async () => {} }).sync();
@@ -177,8 +179,8 @@ afterEach(() => {
   current.outbox = null;
 });
 
-async function clickSignOut(view: ReturnType<typeof render>) {
-  const buttons = [...view.queryAllByRole("button", { name: /Sign Out/ }), ...view.queryAllByRole("menuitem", { name: /Sign Out/ })];
+async function clickSignOut(view: ReturnType<typeof render>, name: RegExp | string = /Sign Out/) {
+  const buttons = [...view.queryAllByRole("button", { name }), ...view.queryAllByRole("menuitem", { name })];
   expect(buttons).toHaveLength(1);
   fireEvent.click(buttons[0]!);
   await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
@@ -192,7 +194,6 @@ for (const path of PATHS) {
       await clickSignOut(path.mount());
       expect(order.filter((o) => !o.startsWith("outbox.flush"))).toEqual([
         "boq copy cleared", // the button's own step (kept)
-        "boq copy cleared", // the workspace step's, after it deleted the database
         "workspace step done (identity present)",
         "sw.clearPerson u1 (identity gone)",
         "supabase.signOut (identity gone)",
@@ -201,8 +202,25 @@ for (const path of PATHS) {
       expect(localStorage.getItem(IDENTITY_STORAGE_KEY)).toBeNull();
       expect(await metaIdentity()).toBeNull();
       expect(clearPerson).toHaveBeenCalledTimes(1);
-      expect(await personDbs()).toEqual([]);
+      // package lf-fc (cost:COST-05): the default Sign Out KEEPS this laptop's copy of the workspace
+      expect(await personDbs()).toEqual(["projexa-local:u1"]);
       expect(localStorage.getItem("sb-abc-auth-token")).toBe("{}"); // reachable: Supabase's own signOut does this, not the hand clearing
+      expect(toastMessage).not.toHaveBeenCalled();
+    });
+
+    test("'Sign out and delete this laptop's copy': the same order, and the workspace step deletes the copy before the identity goes", async () => {
+      await laptop(false);
+      await clickSignOut(path.mount(), SIGN_OUT_AND_DELETE_LABEL);
+      expect(order.filter((o) => !o.startsWith("outbox.flush"))).toEqual([
+        "boq copy cleared", // the button's own step
+        "boq copy cleared", // the workspace step's, after it deleted the database
+        "workspace step done (identity present)",
+        "sw.clearPerson u1 (identity gone)",
+        "supabase.signOut (identity gone)",
+        "push /login",
+      ]);
+      expect(await personDbs()).toEqual([]);
+      expect(localStorage.getItem(IDENTITY_STORAGE_KEY)).toBeNull();
       expect(toastMessage).not.toHaveBeenCalled();
     });
 

@@ -5,8 +5,10 @@
 //                                                    Until this file, NOTHING called it: a person who clicked Sign out could be
 //                                                    silently signed back in from the mirror ("logged in until the person logs out"
 //                                                    was broken the other way round).
-//   sign-out.ts  finishLocalWorkspaceOnSignOut() -- sends the outbox while the session is alive, deletes this laptop's copy of the
-//                                                    workspace when nothing is pending, keeps it (and says so) when edits wait.
+//   sign-out.ts  finishLocalWorkspaceOnSignOut() -- sends the outbox while the session is alive; KEEPS this laptop's copy of the
+//                                                    workspace by default (package lf-fc, cost:COST-05) and deletes it only on the
+//                                                    explicit choice `deleteLocalCopy` ("Sign out and delete this laptop's copy"),
+//                                                    never while edits or drafts wait (and says so).
 //
 // ORDER (each step must survive the failure of the next):
 //   1. the workspace step FIRST: it needs the live session to send pending edits; afterwards there is no session to send them with;
@@ -33,6 +35,9 @@ import {
 } from "./identity";
 import { finishLocalWorkspaceOnSignOut, type SignOutLocalResult, type SignOutOptions } from "./sign-out";
 
+/** The words of the one explicit "delete this laptop's copy" choice, the same on every sign-out surface. */
+export const SIGN_OUT_AND_DELETE_LABEL = "Sign out and delete this laptop's copy";
+
 /** The real identity store, built exactly as boot.ts builds it (localStorage + the device meta store). */
 export function getIdentityStore(): IdentityStore {
   let storage: Storage | null = null;
@@ -55,6 +60,11 @@ export type SignOutEverywhereDeps = {
   clearBrowserSession?: SignOutDeps["clearBrowserSession"];
   /** Passed to finishLocalWorkspaceOnSignOut (tests). */
   workspace?: SignOutOptions;
+  /**
+   * The person's explicit choice "Sign out and delete this laptop's copy" (package lf-fc, cost:COST-05). Default false: the copy of
+   * the workspace STAYS on this laptop (a re-login costs nothing and works offline at once); pending edits and drafts survive either way.
+   */
+  deleteLocalCopy?: boolean;
   /** Default: finishLocalWorkspaceOnSignOut. */
   finishWorkspace?: (options?: SignOutOptions) => Promise<SignOutLocalResult>;
 };
@@ -72,7 +82,7 @@ export async function signOutEverywhere(deps: SignOutEverywhereDeps): Promise<Si
   const empty: SignOutLocalResult = { pending: 0, wiped: false, notice: null };
   let workspace = empty;
   try {
-    workspace = await (deps.finishWorkspace ?? finishLocalWorkspaceOnSignOut)(deps.workspace);
+    workspace = await (deps.finishWorkspace ?? finishLocalWorkspaceOnSignOut)({ ...deps.workspace, ...(deps.deleteLocalCopy ? { deleteLocalCopy: true } : {}) });
   } catch {
     workspace = empty;
   }

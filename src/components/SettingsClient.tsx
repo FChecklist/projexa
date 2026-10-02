@@ -12,7 +12,7 @@ import { Loader2, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
-import { signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
+import { SIGN_OUT_AND_DELETE_LABEL, signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
@@ -158,7 +158,9 @@ export default function SettingsClient({
     }
   }
 
-  async function signOut() {
+  // LOCAL-FIRST (package lf-fc, cost:COST-05): "Sign Out" keeps this laptop's copy of the workspace; the second button is the one
+  // explicit choice that deletes it (for a shared or borrowed computer).
+  async function signOut(deleteLocalCopy = false) {
     setSigningOut(true);
     const supabase = createClient();
     // See AccountMenu: a selected-project cookie that outlives the session
@@ -169,7 +171,7 @@ export default function SettingsClient({
     await clearBoqDeviceCopiesOnSignOut();
     // LOCAL-FIRST: the workspace step, then the deliberate sign-out (identity mirror, worker caches, Supabase session). See
     // AccountMenu and src/lib/local-first/sign-out-everywhere.ts. Never throws, never waits more than a few seconds.
-    const { notice: localNotice } = await signOutEverywhere({ auth: supabase.auth });
+    const { notice: localNotice } = await signOutEverywhere({ auth: supabase.auth, deleteLocalCopy });
     if (localNotice) toast.message(localNotice, { duration: 20_000 });
     router.push("/login");
   }
@@ -216,9 +218,14 @@ export default function SettingsClient({
             <div className="font-medium text-px-ink">{info?.email ?? "—"}</div>
             {info && <Badge variant={ROLE_VARIANT[info.role] ?? "outline"}>{info.role}</Badge>}
           </div>
-          <Button variant="outline" onClick={signOut} disabled={signingOut}>
-            {signingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />} Sign Out
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button variant="outline" onClick={() => void signOut(false)} disabled={signingOut}>
+              {signingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />} Sign Out
+            </Button>
+            <Button variant="ghost" size="sm" className="text-xs text-red-700" onClick={() => void signOut(true)} disabled={signingOut}>
+              {SIGN_OUT_AND_DELETE_LABEL}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

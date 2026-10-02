@@ -1,8 +1,9 @@
 /// <reference types="bun-types" />
-// LOCAL-FIRST (viii) at the screen: signing out flushes the outbox, then deletes this laptop's copy of the person's workspace
-// when nothing is pending, or keeps it and says so when edits are still on their way. SettingsClient's own Sign Out button is
-// driven for real; the other three sign-out paths (AccountMenu, AppTopbar, M24Shell's SIGNED_OUT) are checked structurally
-// below, the same way module-list-source.test.ts guards the selected-project cookie on every path.
+// LOCAL-FIRST (viii) at the screen, with the sign-out policy of package lf-fc (cost:COST-05): "Sign Out" flushes the outbox and
+// KEEPS this laptop's copy of the person's workspace; "Sign out and delete this laptop's copy" flushes and then deletes it when
+// nothing is pending, or keeps it and says so when edits are still on their way. SettingsClient's two buttons are driven for real
+// (the three buttons are driven for real in sign-out-everywhere-paths.test.tsx too); the grep checks below are only a cheap
+// backstop (review cost:TEST-10: a grep stays green on dead code).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
@@ -13,10 +14,11 @@ import { join } from "node:path";
 import { IDBFactory } from "fake-indexeddb";
 import { createFakeSyncServer, type FakeSyncServer } from "@/lib/local-first/__fixtures__/fake-sync-server";
 import { localDbNameFor, openLocalDb } from "@/lib/local-first/local-db";
-import { setActiveLocalUser } from "@/lib/local-first/local-reader";
+import { LOCAL_FIRST_FLAG, setActiveLocalUser } from "@/lib/local-first/local-reader";
 import { createOutbox, type Outbox } from "@/lib/local-first/outbox";
 import { createReplica } from "@/lib/local-first/replica";
-import { forgetLastSignOutNotice } from "@/lib/local-first/sign-out";
+import { forgetLastSignOutNotice, pendingKeptNotice, pendingNotice } from "@/lib/local-first/sign-out";
+import { SIGN_OUT_AND_DELETE_LABEL } from "@/lib/local-first/sign-out-everywhere";
 
 const order: string[] = [];
 const push = mock((href: string) => { order.push(`push ${href}`); });
@@ -55,6 +57,7 @@ async function laptop(withPendingEdit: boolean): Promise<{ idb: IDBFactory; serv
   const idb = new IDBFactory();
   (globalThis as { indexedDB?: unknown }).indexedDB = idb;
   setActiveLocalUser("u1");
+  localStorage.setItem(LOCAL_FIRST_FLAG, "1"); // the laptop copy exists only with local-first on (cost:COST-02)
   const server = createFakeSyncServer();
   server.upsert({ kind: "rfis", projectId: "p1", id: "r1", data: { subject: "x" } });
   await createReplica({ userId: "u1", client: server.client, idb, yieldFn: async () => {} }).sync();
@@ -87,17 +90,18 @@ afterEach(() => {
   cleanup();
   globalThis.fetch = realFetch;
   setActiveLocalUser(null);
+  localStorage.removeItem(LOCAL_FIRST_FLAG);
   current.outbox = null;
 });
 
 describe("SettingsClient's Sign Out", () => {
-  test("nothing pending: the outbox is flushed first, the laptop's database is deleted, and the person is sent to /login with no notice", async () => {
+  test("nothing pending: the laptop's copy is KEPT (a re-login costs nothing), and the person is sent to /login with no notice", async () => {
     const { idb } = await laptop(false);
     expect(await dbNames(idb)).toEqual(["projexa-local:u1"]);
     const view = render(<SettingsClient initialOrgInfo={ORG} initialMembers={[]} />);
     fireEvent.click(view.getByRole("button", { name: /Sign Out/ }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
-    expect(await dbNames(idb)).toEqual([]);
+    expect(await dbNames(idb)).toEqual(["projexa-local:u1"]);
     expect(toastMessage).not.toHaveBeenCalled();
     // the local work happens BEFORE the session is ended, never after
     const signOutAt = order.indexOf("supabase.signOut");
@@ -107,10 +111,10 @@ describe("SettingsClient's Sign Out", () => {
     expect(order.indexOf("outbox released")).toBeLessThan(signOutAt);
   });
 
-  test("an edit made offline is flushed BEFORE the session ends, reaches the server, and only then is the laptop's database deleted", async () => {
+  test("'Sign out and delete this laptop's copy': an edit made offline is flushed BEFORE the session ends, reaches the server, and only then is the copy deleted", async () => {
     const { idb, server } = await laptop(true);
     const view = render(<SettingsClient initialOrgInfo={ORG} initialMembers={[]} />);
-    fireEvent.click(view.getByRole("button", { name: /Sign Out/ }));
+    fireEvent.click(view.getByRole("button", { name: SIGN_OUT_AND_DELETE_LABEL }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
     expect(order.indexOf("outbox.flush")).toBeGreaterThan(-1);
     expect(order.indexOf("outbox.flush")).toBeLessThan(order.indexOf("supabase.signOut"));
@@ -120,18 +124,40 @@ describe("SettingsClient's Sign Out", () => {
     expect(toastMessage).not.toHaveBeenCalled();
   });
 
-  test("edits still pending (the service is not answering): the database is KEPT and the person is told, in words, before they land on /login", async () => {
+  test("Sign Out with an edit made offline: flushed BEFORE the session ends and reaches the server; the copy stays", async () => {
+    const { idb, server } = await laptop(true);
+    const view = render(<SettingsClient initialOrgInfo={ORG} initialMembers={[]} />);
+    fireEvent.click(view.getByRole("button", { name: /Sign Out/ }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+    expect(order.indexOf("outbox.flush")).toBeGreaterThan(-1);
+    expect(order.indexOf("outbox.flush")).toBeLessThan(order.indexOf("supabase.signOut"));
+    expect(server.getRow("rfis", "srv-rfi-1")).toMatchObject({ data: { subject: "Made offline" } });
+    expect(await dbNames(idb)).toEqual(["projexa-local:u1"]);
+    expect(toastMessage).not.toHaveBeenCalled();
+  });
+
+  test("Sign Out with edits still pending (the service is not answering): kept, and the person is told they are safe", async () => {
     const { idb, server } = await laptop(true);
     server.failNext({ status: 503, path: "/push", times: 10 });
     const view = render(<SettingsClient initialOrgInfo={ORG} initialMembers={[]} />);
     fireEvent.click(view.getByRole("button", { name: /Sign Out/ }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
     expect(await dbNames(idb)).toEqual(["projexa-local:u1"]);
+    expect(toastMessage.mock.calls.map((c) => c[0])).toEqual([pendingKeptNotice(1)]);
+  });
+
+  test("'Sign out and delete this laptop's copy' with edits still pending: the database is KEPT anyway and the person is told, in words, before they land on /login", async () => {
+    const { idb, server } = await laptop(true);
+    server.failNext({ status: 503, path: "/push", times: 10 });
+    const view = render(<SettingsClient initialOrgInfo={ORG} initialMembers={[]} />);
+    fireEvent.click(view.getByRole("button", { name: SIGN_OUT_AND_DELETE_LABEL }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+    expect(await dbNames(idb)).toEqual(["projexa-local:u1"]);
     const db = await openLocalDb(idb, localDbNameFor("u1"));
     expect((await db.listOps()).map((o) => o.opId)).toEqual(["op-1"]); // the work is still there
     db.close();
     expect(toastMessage).toHaveBeenCalledTimes(1);
-    expect(toastMessage.mock.calls[0]![0]).toBe("1 change you made on this laptop has not reached the server yet, so this laptop kept your workspace. Nothing is lost: sign in again to finish syncing it.");
+    expect(toastMessage.mock.calls[0]![0]).toBe(pendingNotice(1));
     expect(order.indexOf("toast " + toastMessage.mock.calls[0]![0])).toBeGreaterThan(order.indexOf("supabase.signOut"));
     expect(order.indexOf("push /login")).toBeGreaterThan(order.findIndex((o) => o.startsWith("toast ")));
   });
@@ -155,7 +181,9 @@ describe("every sign-out path calls the local-first sign-out", () => {
     test(`${rel} signs out through signOutEverywhere (workspace step, then the identity) and shows the notice`, () => {
       const source = code(readFileSync(join(ROOT, rel), "utf8"));
       expect(source).toContain('from "@/lib/local-first/sign-out-everywhere"');
-      const at = source.indexOf("await signOutEverywhere({ auth: supabase.auth })");
+      const at = source.indexOf("await signOutEverywhere({ auth: supabase.auth, deleteLocalCopy })");
+      // the one explicit delete choice is offered on every surface, in the same words
+      expect(source).toContain("{SIGN_OUT_AND_DELETE_LABEL}");
       expect(at).toBeGreaterThan(-1);
       expect(source.slice(at, at + 200)).toContain("toast.message(localNotice");
       // The cookie and the BOQ copy are still cleared first, and the person still lands on /login.

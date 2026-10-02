@@ -41,7 +41,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
-import { signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
+import { SIGN_OUT_AND_DELETE_LABEL, signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import Image from "next/image";
 
 type OrganizationInfo = { email: string; organization: { name: string } };
@@ -64,7 +64,8 @@ export function AppTopbar({
       .catch(() => {});
   }, []);
 
-  async function handleLogout() {
+  // LOCAL-FIRST (package lf-fc, cost:COST-05): "Sign Out" keeps this laptop's copy; the second item is the explicit delete.
+  async function handleLogout(deleteLocalCopy = false) {
     setLoggingOut(true);
     const supabase = createClient();
     // See AccountMenu: a selected-project cookie that outlives the session
@@ -75,7 +76,7 @@ export function AppTopbar({
     await clearBoqDeviceCopiesOnSignOut();
     // LOCAL-FIRST: the workspace step, then the deliberate sign-out (identity mirror, worker caches, Supabase session). See
     // AccountMenu and src/lib/local-first/sign-out-everywhere.ts. Never throws, never waits more than a few seconds.
-    const { notice: localNotice } = await signOutEverywhere({ auth: supabase.auth });
+    const { notice: localNotice } = await signOutEverywhere({ auth: supabase.auth, deleteLocalCopy });
     if (localNotice) toast.message(localNotice, { duration: 20_000 });
     router.push("/login");
   }
@@ -105,11 +106,19 @@ export function AppTopbar({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 text-red-600 focus:text-red-600"
-          onClick={handleLogout}
+          onClick={() => void handleLogout(false)}
           disabled={loggingOut}
         >
           {loggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
           {loggingOut ? "Signing out..." : "Sign Out"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 text-xs text-red-600 focus:text-red-600"
+          onClick={() => void handleLogout(true)}
+          disabled={loggingOut}
+        >
+          <LogOut className="size-4" />
+          {SIGN_OUT_AND_DELETE_LABEL}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
