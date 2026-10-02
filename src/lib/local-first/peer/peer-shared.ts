@@ -1,0 +1,98 @@
+// LOCAL-FIRST PEERS: the browser wiring of auto-sync for one signed-in person -- the real sync service, PROJEXA's own Supabase
+// client for Realtime, BroadcastChannel, ntfy.sh, real WebRTC, navigator.locks, document visibility and the online event.
+// Kept apart from auto-sync.ts so that file (and its tests) stays free of browser globals and environment variables.
+//
+// Only ONE tab per browser runs it: startPeerSync waits for the Web Lock `px-peer-leader:<user>` and holds it for the life of
+// the tab; when that tab closes, the next one takes over. Two tabs share one IndexedDB, so a second peer here would be pointless.
+
+import { createClient } from "@/lib/supabase/client";
+import { LOCAL_DB_VERSION, localDbNameFor, openLocalDb } from "../local-db";
+import { getDeviceId } from "../outbox-shared";
+import { foreignOrg } from "../replica";
+import { getSharedReplica } from "../replica-shared";
+import { accessToken, createSharedSyncClient, getReleaseVersion } from "../shared-client";
+import { SYNC_BASE_URL, SYNC_PROTOCOL } from "../sync-client";
+import { createAutoSync, type AutoSync } from "./auto-sync";
+import type { RealtimeClientLike } from "./signalling";
+import { broadcastChannelProvider, ntfyProvider, supabaseRealtimeProvider } from "./signalling";
+import { createServerStep } from "./server-step";
+import { createRtcLink } from "./transport";
+
+const running = new Map<string, { stop: () => void }>();
+
+async function fetchAttest(): Promise<unknown> {
+  const token = await accessToken();
+  if (!token) throw new Error("signed out");
+  const res = await fetch(`${SYNC_BASE_URL}/attest`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-Px-Client": `${getReleaseVersion()}; protocol=${SYNC_PROTOCOL}; schema=${LOCAL_DB_VERSION}`,
+    },
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(`attest ${res.status}`);
+  return res.json();
+}
+
+/** Starts automatic server + peer sync for this person in this browser (one leader tab). Safe to call again. */
+export function startPeerSync(userId: string): void {
+  if (typeof window === "undefined" || running.has(userId)) return;
+  let auto: AutoSync | null = null;
+  let stopped = false;
+  let releaseLock: (() => void) | null = null;
+  const onOnline = () => { void auto?.scheduler.trigger("online"); };
+  const onVisibility = () => auto?.scheduler.visibilityChanged();
+
+  const begin = async () => {
+    if (stopped) return;
+    const db = await openLocalDb(globalThis.indexedDB, localDbNameFor(userId));
+    const client = createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 1 });
+    const replica = getSharedReplica(userId);
+    auto = createAutoSync({
+      userId,
+      selfId: `${getDeviceId()}:${userId.slice(0, 8)}`.slice(0, 64),
+      db,
+      fetchAttest,
+      remoteProviders: [
+        supabaseRealtimeProvider(() => createClient() as unknown as RealtimeClientLike),
+        ntfyProvider(),
+      ],
+      localProviders: [broadcastChannelProvider()],
+      openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal }),
+      serverStep: createServerStep({ meta: db, changes: (r) => client.changes(r), sync: () => replica.sync() }),
+      isVisible: () => document.visibilityState === "visible",
+      isOnline: () => navigator.onLine !== false,
+      foreignOrg,
+    });
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibility);
+  };
+
+  const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+  if (locks?.request) {
+    void locks.request(`px-peer-leader:${userId}`, () => new Promise<void>((resolve) => {
+      releaseLock = resolve;
+      void begin().catch(() => {});
+    }));
+  } else {
+    void begin().catch(() => {});
+  }
+
+  running.set(userId, {
+    stop() {
+      stopped = true;
+      auto?.stop();
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibility);
+      releaseLock?.();
+    },
+  });
+}
+
+/** Stops it (sign-out). The local database is untouched. */
+export function stopPeerSync(userId: string): void {
+  running.get(userId)?.stop();
+  running.delete(userId);
+}

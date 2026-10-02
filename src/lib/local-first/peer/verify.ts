@@ -44,7 +44,7 @@ export function b64url(bytes: Uint8Array): string {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function fromB64url(s: string): Uint8Array {
+export function fromB64url(s: string): Uint8Array<ArrayBuffer> {
   const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
   const out = new Uint8Array(bin.length);

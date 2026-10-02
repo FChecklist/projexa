@@ -22,6 +22,30 @@ export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.cloudflare.com:3478" },
 ];
 
+/**
+ * A PeerLink whose messages that arrive before anyone listens are held (up to 256) and handed over the moment `onmessage` is
+ * set: the far end may say hello before this end has attached its session.
+ */
+export function bufferedLink(impl: { open: () => boolean; send: (t: string) => void; close: () => void }): PeerLink & { deliver(text: string): void } {
+  let handler: ((text: string) => void) | null = null;
+  const held: string[] = [];
+  return {
+    get open() { return impl.open(); },
+    send: (t) => impl.send(t),
+    close: () => impl.close(),
+    onclose: null,
+    get onmessage() { return handler; },
+    set onmessage(h) {
+      handler = h;
+      while (h && held.length) h(held.shift()!);
+    },
+    deliver(text) {
+      if (handler) handler(text);
+      else if (held.length < 256) held.push(text);
+    },
+  };
+}
+
 /** The signalling payloads a WebRTC link exchanges. */
 export type RtcSignal =
   | { type: "offer"; sdp: string }
@@ -71,14 +95,12 @@ export function createRtcLink(options: RtcOptions): RtcHandle {
   let opened = false;
 
   const wire = (dc: RTCDataChannel) => {
-    const l: PeerLink = {
-      get open() { return dc.readyState === "open" && !closed; },
-      send(text) { if (dc.readyState === "open") dc.send(text); },
-      onmessage: null,
-      onclose: null,
-      close() { try { dc.close(); } catch { /* gone */ } close(); },
-    };
-    dc.onmessage = (e) => { if (typeof e.data === "string") l.onmessage?.(e.data); };
+    const l = bufferedLink({
+      open: () => dc.readyState === "open" && !closed,
+      send: (text) => { if (dc.readyState === "open") dc.send(text); },
+      close: () => { try { dc.close(); } catch { /* gone */ } close(); },
+    });
+    dc.onmessage = (e) => { if (typeof e.data === "string") l.deliver(e.data); };
     dc.onclose = () => { l.onclose?.(); close(); };
     dc.onopen = () => { opened = true; clearTimeout(timer); resolveLink(l); };
   };
@@ -136,18 +158,13 @@ export function createRtcLink(options: RtcOptions): RtcHandle {
 /** Two linked in-memory ends (tests). `tap` sees, and may rewrite or drop (return null), every message from a to b. */
 export function createMemoryLinkPair(options: { tapAtoB?: (text: string) => string | null; tapBtoA?: (text: string) => string | null } = {}): [PeerLink, PeerLink] {
   let open = true;
-  const make = (deliver: (t: string) => void): PeerLink => ({
-    get open() { return open; },
-    send(text) { if (open) deliver(text); },
-    onmessage: null,
-    onclose: null,
-    close() {
-      if (!open) return;
-      open = false;
-      queueMicrotask(() => { a.onclose?.(); b.onclose?.(); });
-    },
-  });
-  const a: PeerLink = make((t) => { const x = options.tapAtoB ? options.tapAtoB(t) : t; if (x !== null) setTimeout(() => b.onmessage?.(x), 0); });
-  const b: PeerLink = make((t) => { const x = options.tapBtoA ? options.tapBtoA(t) : t; if (x !== null) setTimeout(() => a.onmessage?.(x), 0); });
+  const close = () => {
+    if (!open) return;
+    open = false;
+    queueMicrotask(() => { a.onclose?.(); b.onclose?.(); });
+  };
+  // a and b refer to each other only inside callbacks that run later, so both can be const
+  const a: ReturnType<typeof bufferedLink> = bufferedLink({ open: () => open, close, send: (t) => { const x = options.tapAtoB ? options.tapAtoB(t) : t; if (x !== null) setTimeout(() => b.deliver(x), 0); } });
+  const b: ReturnType<typeof bufferedLink> = bufferedLink({ open: () => open, close, send: (t) => { const x = options.tapBtoA ? options.tapBtoA(t) : t; if (x !== null) setTimeout(() => a.deliver(x), 0); } });
   return [a, b];
 }
