@@ -4,6 +4,8 @@ import { createFakeSyncServer } from "../__fixtures__/fake-sync-server";
 import { localDbNameFor, openLocalDb } from "../local-db";
 import { createReplica } from "../replica";
 import type { SyncClient } from "../sync-client";
+import { ORG_PROJECT } from "../sync-client";
+import { createOrgSigner } from "./__fixtures__/org-signer";
 import { createTestSigner } from "./__fixtures__/test-signer";
 import { connect, makeLaptop, type Laptop } from "./__fixtures__/laptop";
 import { createLocalDbPeerStore } from "./localdb-store";
@@ -68,6 +70,24 @@ describe("px3: the view-class signature travels laptop to laptop and is checked 
     const s = await connect(A, B, { nowMs: NOW, tapAtoB: (t) => t.replace(/"sig3":"[^"]*"/, '"sig3":42') });
     expect(s.b.stats.rejected).toEqual({ malformed: 1 });
     expect(await B.get("rfis", "r2")).toBeUndefined();
+  });
+});
+
+describe("px3 on organisation rows: checked with the ORGANISATION view class (the class the server signs them with)", () => {
+  test("a vendor row whose sig3 is over the shared org view class is accepted; one over another org class is refused", async () => {
+    const signer = await createOrgSigner("korg-px3");
+    const A = await signer.makeLaptop({ userId: "ua", org: "o1", view: "v-site", orgView: "ov-cost", projects: ["p1"], nowMs: NOW });
+    const B = await signer.makeLaptop({ userId: "ub", org: "o1", view: "v-site", orgView: "ov-cost", projects: ["p1"], nowMs: NOW });
+    const ok = { project: ORG_PROJECT, kind: "vendors", id: "ven-1", version: 3, updated_at: T1, data: { id: "ven-1", supplier_name: "Ace" } };
+    const other = { project: ORG_PROJECT, kind: "vendors", id: "ven-2", version: 1, updated_at: T1, data: { id: "ven-2", credit_limit: 9 } };
+    for (const [r, view] of [[ok, "ov-cost"], [other, "ov-admin"]] as const) {
+      const s = await signer.row("o1", r);
+      await A.db.putRecord({ id: `vendors:${r.id}`, type: "vendors", orgId: "o1", projectId: ORG_PROJECT, data: r.data, serverVersion: r.version, serverUpdatedAt: T1, sig: s.sig, kid: s.kid, sig3: await sig3For(signer.signRaw, "o1", view, r) });
+    }
+    const s = await connect(A, B, { nowMs: NOW });
+    expect(s.b.stats.rejected).toEqual({ wrong_view: 1 });
+    expect((await B.get("vendors", "ven-1"))?.serverVersion).toBe(3);
+    expect(await B.get("vendors", "ven-2")).toBeUndefined();
   });
 });
 

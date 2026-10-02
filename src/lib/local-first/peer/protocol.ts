@@ -278,7 +278,9 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       const row: SignedRow = { project: raw.project, kind: raw.kind, id: raw.id, version: raw.version, updated_at: raw.updated_at, data: raw.data, sig: raw.sig, kid: raw.kid, ...(sig3 ? { sig3 } : {}) };
       if (!(await verifyRow(row, self.claims.org, keys))) { reject("bad_signature"); continue; }
       // lf-e9 (px3): a row that carries the view-class signature must carry it for OUR view class; one cut for another class is refused
-      if (row.sig3 && !(await verifyRowV3(row, self.claims.org, self.claims.view, keys))) { reject("wrong_view"); continue; }
+      // (the server signs an ORGANISATION row's px3 with the organisation view class, handler.ts `isOrgKind(kind) ? orgView : view`)
+      const v3View = row.project === ORG_PROJECT ? self.claims.orgView : self.claims.view;
+      if (row.sig3 && !(v3View && (await verifyRowV3(row, self.claims.org, v3View, keys)))) { reject("wrong_view"); continue; }
       if (options.foreignOrg?.(row.data, self.claims.org)) { reject("foreign_org"); continue; }
       const local = await store.local(row.kind, row.id);
       if (local?.dirty) { reject("dirty"); continue; }

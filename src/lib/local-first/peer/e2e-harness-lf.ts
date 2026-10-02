@@ -146,6 +146,8 @@ const harness = {
     const r = await step();
     return { changed: !!r && r.changed, wholeSyncs };
   },
+  /** What peer-shared.ts wires to the `online` / `visibilitychange` events: a scheduler trigger. */
+  async triggerAuto(reason: "online" | "visible" | "manual") { await auto?.scheduler.trigger(reason); },
   signalIn(json: string) { const m = parseEnvelope(json); if (m) conn?.deliver(m); },
   peers() { return (auto ? auto.network() : net)?.verifiedCount() ?? 0; },
   stats(): NetworkStats | null { return (auto ? auto.network() : net)?.stats() ?? null; },
