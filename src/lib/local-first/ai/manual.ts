@@ -95,7 +95,7 @@ export function buildManual(forRole?: { rank: number; role: string | null }): Ma
     },
     writes: {
       how: "A write is a named function of the PROJEXA registry. It is checked on this laptop against the person's role first, saved here at once, and sent to the server when it can be reached.",
-      deletes: "A delete only makes a DRAFT the person confirms with one click in PROJEXA, unless the person switched on \"let my AI act without asking\". An AI cannot confirm a draft.",
+      deletes: "A delete only makes a DRAFT the person confirms with one click in PROJEXA, unless the person switched on \"let my AI act without asking\"; a money-sensitive removal (money_sensitive: true) is a draft even then. An AI cannot confirm a draft.",
       server_authority: "The server re-checks every write as the person with their live role, and may still refuse it; money and approval figures are always recomputed by the server.",
       functions: {
         create: groups.create.map(toManualFunction),

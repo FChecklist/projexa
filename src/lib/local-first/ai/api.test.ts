@@ -32,7 +32,10 @@ describe("reads", () => {
     expect(m.kinds).toContain("tasks");
     expect(m.functions.create.map((f) => f.id)).toContain("create_rfi");
     expect(m.functions.create.map((f) => f.id)).not.toContain("create_project");
-    expect(m.functions.delete.map((f) => f.id)).toEqual(["void_material_receipt"]);
+    // lf-e11: the refreshed registry's removals a manager (rank 3) may ask for; each is a draft (below).
+    expect(m.functions.delete.map((f) => f.id)).toContain("void_material_receipt");
+    expect(m.functions.delete.map((f) => f.id)).toContain("dispose_document");
+    expect(m.functions.delete.every((f) => f.id !== "update_task")).toBe(true);
     expect(m.softwareCanBeChanged).toBe(false);
     expect(m.deletesNeedConfirmation).toBe(true);
     expect(m.integrity).toBe("not_installed");
@@ -219,9 +222,18 @@ describe("deletes become drafts", () => {
   test("with \"let my AI act without asking\" ON, a delete is queued at once", async () => {
     const { surface, enqueued } = await makeRig({ role: "manager", actWithoutAsking: true });
     expect((await surface.api.manifest()).deletesNeedConfirmation).toBe(false);
-    const res = await surface.api.delete("void_material_receipt", { kind: "material_receipts", id: "mr1" }, VOID);
+    const res = await surface.api.delete("dispose_document", { kind: "documents", id: "d1" }, { projectId: "p1", documentId: "d1" });
     expect(res.status).toBe("queued");
     expect(enqueued()).toBe(1);
+  });
+
+  // lf-e11 (owner brief: "money-sensitive functions never skip the confirmation").
+  test("with \"act without asking\" ON, a MONEY-sensitive delete is still a draft the person confirms", async () => {
+    const { surface, enqueued } = await makeRig({ role: "manager", actWithoutAsking: true });
+    const res = await surface.api.delete("void_material_receipt", { kind: "material_receipts", id: "mr1" }, VOID);
+    expect(res.status).toBe("draft");
+    expect(enqueued()).toBe(0);
+    expect((await surface.api.drafts()).map((d) => d.functionId)).toEqual(["void_material_receipt"]);
   });
 });
 
