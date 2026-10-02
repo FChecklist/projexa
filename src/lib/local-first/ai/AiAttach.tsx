@@ -44,6 +44,13 @@ function cachedList(store: DraftStore): AiDraft[] {
   return list;
 }
 
+/** Runs `fn` only for an event the browser itself produced from a real person's input (a script cannot set isTrusted). */
+export function onlyTrusted(event: { isTrusted: boolean }, fn: () => void): boolean {
+  if (!event.isTrusted) return false;
+  fn();
+  return true;
+}
+
 /**
  * The person's one-click answer to a delete their AI asked for. A confirm is honoured only from a REAL user event
  * (event.isTrusted): a script -- the AI included -- cannot click this button for the person.
@@ -62,14 +69,13 @@ export function AiDraftConfirm({ surface }: { surface: Pick<AiSurface, "drafts" 
               type="button"
               className="rounded border px-3 py-1 font-medium"
               aria-label={`Confirm: ${d.label}`}
-              onClick={(event) => {
-                if (!event.isTrusted) return;
+              onClick={(event) => onlyTrusted(event, () => {
                 surface.confirmDraft(d.draftId).then((r) => setMessage(r.message), (err: unknown) => setMessage(err instanceof Error ? err.message : "That could not be done."));
-              }}
+              })}
             >
               Yes, do it
             </button>
-            <button type="button" className="rounded border px-3 py-1" aria-label={`Keep it: do not ${d.label.toLowerCase()}`} onClick={(event) => { if (event.isTrusted) surface.discardDraft(d.draftId); }}>
+            <button type="button" className="rounded border px-3 py-1" aria-label={`Keep it: do not ${d.label.toLowerCase()}`} onClick={(event) => onlyTrusted(event, () => surface.discardDraft(d.draftId))}>
               Keep it
             </button>
           </div>
