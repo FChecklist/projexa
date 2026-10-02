@@ -93,6 +93,11 @@ async function stand(body) {
     const r = await db.query(`insert into compliance.construction_rfis (org_id, project_id, number, subject, question, raised_by_id) values ($1, $2, $3, $4, $5, $6) returning id`, [org, project, n, p.subject, p.question, user]);
     return { kind: "done", record: { id: r.rows[0].id, route: `/rfis/${r.rows[0].id}` }, submission_id: `sub-${body.op_id}` };
   }
+  if (body.function_id === "create_schedule_task") {
+    const n = Number((await db.query(`select coalesce(max(number), 0) + 1 as n from compliance.pms_issues where project_id = $1`, [project])).rows[0].n);
+    const r = await db.query(`insert into compliance.pms_issues (id, org_id, project_id, type_id, status_id, number, title, start_date, due_date, priority, updated_at) values ($1, $2, $3, 'ty', 'st', $4, $5, $6, $7, $8, now()) returning id`, ["tk-" + body.op_id.slice(0, 8), org, project, n, p.title, p.startDate ?? null, p.dueDate ?? null, p.priority ?? null]);
+    return { kind: "done", record: { id: r.rows[0].id, route: `/schedule/${r.rows[0].id}` }, submission_id: `sub-${body.op_id}` };
+  }
   if (body.function_id === "answer_rfi") {
     const r = await db.query(`update compliance.construction_rfis set answer = $1, status = 'answered', answered_by_id = $2, answered_at = now() where id = $3 and org_id = $4 and project_id = $5 returning id`, [p.answer, user, p.rfiId, org, project]);
     if (!r.rows.length) return { kind: "failed", code: "RFI_NOT_FOUND", missing: [] };
@@ -501,6 +506,26 @@ suite("D. push through the outbox: update, create, answer; the real row shapes",
     expect((await localRow("rfis", q.tempId)) || (await localRow("rfis", realId))).toBeTruthy();
     await replica.sync(); // heals on the next sync
     expect(await localRow("rfis", realId)).toBeTruthy();
+  }, "FB");
+
+  wt("W16c", "client:FB", "an AI-created schedule task (a temp row + creates, like ai/api.ts) is on the laptop through the push AND the next syncs: it never vanishes", async () => {
+    const params = { projectId: "proj-a", title: "Install site hoarding (AI)", startDate: "2026-10-06", dueDate: "2026-10-08", priority: "medium" };
+    const tempId = "local-aitask1";
+    const opId = (await outbox.enqueue({
+      functionId: "create_schedule_task", projectId: "proj-a", params, label: "Create a task (by your AI)",
+      creates: { kind: "tasks", id: tempId },
+      optimistic: async (tx) => { await tx.putRecord({ id: `tasks:${tempId}`, type: "tasks", orgId: "org-a", projectId: "proj-a", data: { ...params, id: tempId } }); },
+    })).opId;
+    expect((await localList("tasks")).some((r) => r.data.title === params.title), "the optimistic row is shown at once").toBe(true);
+    expect(await pendingOp(opId)).toBeTruthy();
+    const report = await outbox.flush();
+    expect(report).toMatchObject({ applied: 1, remaining: 0, failed: 0 });
+    const titled = async () => (await localList("tasks")).filter((r) => r.data.title === params.title);
+    expect((await titled()).map((r) => r.id), "after the push, exactly one row, the server's").toEqual([expect.not.stringContaining("local-")]);
+    await replica.sync();
+    await replica.sync();
+    expect((await titled()).length, "after two more syncs it is still there once").toBe(1);
+    expect((await db.query(`select title from compliance.pms_issues where title = $1`, [params.title])).rows).toHaveLength(1); // persisted
   }, "FB");
 
   wt("W17", "client:FB", "answer_rfi on a row the laptop holds at a server version: applied, clean, version +1, the answer is on the server", async () => {
