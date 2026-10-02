@@ -22,13 +22,13 @@ export async function harnessBundle(): Promise<string> {
   return bundle;
 }
 
-/** One laptop: a fresh context and page with the harness loaded. Every request the page makes is logged in `requests`. */
-export async function laptop(browser: Browser): Promise<Page & { requests: string[] }> {
+/** One laptop: a fresh context and page with the harness loaded. Every request the page makes is logged in `seenUrls`. */
+export async function laptop(browser: Browser): Promise<Page & { seenUrls: string[] }> {
   const js = await harnessBundle();
   const ctx = await browser.newContext();
-  const page = (await ctx.newPage()) as Page & { requests: string[] };
-  page.requests = [];
-  page.on("request", (r) => page.requests.push(r.url()));
+  const page = (await ctx.newPage()) as Page & { seenUrls: string[] };
+  page.seenUrls = [];
+  page.on("request", (r) => page.seenUrls.push(r.url()));
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== ORIGIN) return route.abort(); // nothing leaves the machine
@@ -56,8 +56,8 @@ export async function relay(pages: Record<string, Page>, online: (id: string) =>
 }
 
 /** Requests a page made that are NOT the harness itself (the page document and /harness.js). The peer path must make none. */
-export function outsideRequests(p: Page & { requests: string[] }): string[] {
-  return p.requests.filter((u) => u !== `${ORIGIN}/` && u !== `${ORIGIN}/harness.js`);
+export function outsideRequests(p: Page & { seenUrls: string[] }): string[] {
+  return p.seenUrls.filter((u) => u !== `${ORIGIN}/` && u !== `${ORIGIN}/harness.js`);
 }
 
 export const T1 = "2026-10-01T10:00:00Z";
