@@ -4,6 +4,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { createSyncClient, type SyncClient } from "./sync-client";
+import { createRequestPacer, type RequestPacer } from "./rate-pacer";
 
 /**
  * The release of the downloaded app, sent as X-Px-Client. The release bundle (CONTRACT.md section 3) sets
@@ -16,6 +17,12 @@ export function getReleaseVersion(): string {
 export async function accessToken(): Promise<string | null> {
   const { data } = await createClient().auth.getSession();
   return data.session?.access_token ?? null;
+}
+
+let pacer: RequestPacer | null = null;
+/** The one request pacer of this browser tab (rate-pacer.ts): every replica of the tab shares it, so their sum stays under the cap. */
+export function sharedPacer(): RequestPacer {
+  return (pacer ??= createRequestPacer());
 }
 
 export function createSharedSyncClient(options: { timeoutMs?: number; maxRetries?: number } = {}): SyncClient {

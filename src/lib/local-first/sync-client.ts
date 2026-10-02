@@ -148,6 +148,12 @@ export class SyncError extends Error {
   readonly status: number;
   /** Only for kind "update_required": what the service said about the newest and the oldest allowed release. */
   readonly update?: UpdateRequiredDetails;
+  /**
+   * Only for kind "rate_limited": the wait the service asked for (its Retry-After, in ms, uncapped). Absent = the 429 carried no
+   * Retry-After, which is how the service answers the DAILY quota ("Try again tomorrow"): such an answer is never retried (package lf-fc,
+   * review cost:COST-04), and the replica treats it as a long stop instead of a one-minute wait.
+   */
+  retryAfterMs?: number;
   constructor(kind: SyncErrorKind, message: string, status = 0, update?: UpdateRequiredDetails) {
     super(message);
     this.name = "SyncError";
@@ -421,8 +427,12 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
         if (res.status === 404) throw new SyncError("not_found", "That project or data kind is not available to you.", 404);
         if (res.status === 429 || res.status >= 500) {
           const header = Number(res.headers?.get?.("Retry-After"));
-          if (Number.isFinite(header) && header > 0) retryAfterMs = Math.min(header * 1000, 30_000);
+          const asked = Number.isFinite(header) && header > 0 ? header * 1000 : null;
+          if (asked !== null) retryAfterMs = Math.min(asked, 30_000);
           failure = new SyncError(res.status === 429 ? "rate_limited" : "server", `The sync service answered ${res.status}.`, res.status);
+          if (res.status === 429 && asked !== null) failure.retryAfterMs = asked;
+          // A 429 WITHOUT Retry-After is the daily quota ("Try again tomorrow"): retrying it in seconds only spends more (cost:COST-04).
+          if (res.status === 429 && asked === null) throw failure;
         } else if (!res.ok) {
           throw new SyncError("bad_response", `The sync service answered ${res.status}.`, res.status);
         } else {
@@ -434,6 +444,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
         }
       } catch (err) {
         if (err instanceof SyncError && (err.kind === "signed_out" || err.kind === "not_found" || err.kind === "bad_response" || err.kind === "update_required")) throw err;
+        if (err instanceof SyncError && err.kind === "rate_limited" && err.retryAfterMs === undefined) throw err; // the daily quota: never retried
         if (outer?.aborted) throw new SyncError("aborted", "The sync was cancelled.");
         failure = err instanceof SyncError
           ? err

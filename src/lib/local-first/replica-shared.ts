@@ -8,7 +8,7 @@
 // (they answer an "idle" report at once). Nothing reads the laptop copy with the flag off, so filling it would be pure cost.
 
 import { createReplica, type Replica, type SyncReport } from "./replica";
-import { createSharedSyncClient } from "./shared-client";
+import { createSharedSyncClient, sharedPacer } from "./shared-client";
 import { isLocalFirstEnabled, setActiveLocalUser } from "./local-reader";
 
 const replicas = new Map<string, Replica>();
@@ -34,7 +34,7 @@ export function getSharedReplica(userId: string): Replica {
   setActiveLocalUser(userId);
   let replica = replicas.get(userId);
   if (!replica) {
-    replica = gateByFlag(createReplica({ userId, client: createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 2 }) }));
+    replica = gateByFlag(createReplica({ userId, client: createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 2 }), pacer: sharedPacer() }));
     replicas.set(userId, replica);
   }
   return replica;

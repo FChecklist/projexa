@@ -33,6 +33,7 @@
 // the server (owner-approved safeguard). This file only reads; edits go through outbox.ts.
 
 import { changeCursorKey, localDbNameFor, openLocalDb, reconcileKey, type LocalDb } from "./local-db";
+import { createRequestPacer, type RequestPacer } from "./rate-pacer";
 import {
   SYNC_CHANGES_LIMIT, SYNC_ID_LIST_LIMIT, SYNC_PAGE_LIMIT, SyncError, manifestSignInId,
   type SyncChange, type SyncClient, type SyncCursor, type SyncErrorKind, type SyncItem, type SyncManifest, type UpdateRequiredDetails,
@@ -51,7 +52,12 @@ export type ReplicaProgress = {
   currentProject: string | null;
 };
 
-export type ReplicaIssue = { projectId?: string; kind?: string; reason: SyncErrorKind | "store" | "org_mismatch" | "user_mismatch" | "no_progress"; message: string };
+export type ReplicaIssue = {
+  projectId?: string; kind?: string;
+  /** "cooling_down": a run that sent nothing because the breaker stopped an earlier one; "refused": a pair the server answered 400/413. */
+  reason: SyncErrorKind | "store" | "org_mismatch" | "user_mismatch" | "no_progress" | "cooling_down" | "refused";
+  message: string;
+};
 
 export type SyncReport = {
   status: ReplicaStatus;
@@ -103,6 +109,21 @@ export type ReplicaOptions = {
   projectFreshMs?: number;
   /** COST: a one-project run reuses the manifest stored by an earlier run of at most this age instead of asking again. Default 6 hours. */
   manifestMaxAgeMs?: number;
+  /**
+   * COST (package lf-fc, wire:F07): every request this replica sends first waits for this pacer (rate-pacer.ts, 100 a minute in a
+   * sliding minute, under the server's 120). Default: a pacer of its own on the real clock. null: no pacing (tests that count only).
+   * The app shares one pacer per browser tab (shared-client.ts sharedPacer).
+   */
+  pacer?: RequestPacer | null;
+  /** COST (lf-fc, cost:COST-04): consecutive transport failures (network, timeout, 5xx) that stop a run. Default 3. */
+  breakerThreshold?: number;
+  /** COST: the first stop after the breaker trips; doubles per consecutive trip up to cooldownCapMs. Defaults 1 minute / 30 minutes. */
+  cooldownBaseMs?: number;
+  cooldownCapMs?: number;
+  /** COST: a 429 WITHOUT Retry-After (the server's daily quota) stops sync at least this long (doubling, capped at 6 h). Default 1 hour. */
+  dailyCooldownMs?: number;
+  /** COST: a (project, kind) the server refused outright (400 / 413) is not asked again for this long. Default one day. */
+  refusedRetryMs?: number;
 };
 
 export type Replica = {
@@ -155,6 +176,48 @@ export const RECONCILE_BUDGET_PER_RUN = 12;
 export const PROJECT_FRESH_MS = 2 * 60_000;
 export const MANIFEST_MAX_AGE_MS = 6 * 60 * 60_000;
 
+// ─── COST (package lf-fc, review cost:COST-04 / wire:F07): the circuit breaker ─────────────────────────────────────────────
+//
+// Before: a pull that failed with a network error, a timeout, a 5xx or a 429 was recorded and the run went on with EVERY remaining
+// (project, kind), each with its own retries -- one failed run at P=10 was 851 requests, and every new tab repeated it. Now:
+//   * BREAKER_THRESHOLD consecutive transport failures (network / timeout / 5xx), anywhere in the run, stop it at once;
+//   * a 429 stops it at once: with Retry-After the pacer holds every request until then; WITHOUT Retry-After (the daily quota,
+//     "Try again tomorrow") the stop is long (DAILY_COOLDOWN_MS, doubling, capped at 6 h);
+//   * a 403 (the person is not linked / not allowed any more) stops it at once, for an hour;
+//   * the stop is stored in the person's database (COOLDOWN_KEY) with an exponential, capped length, so the next run -- a screen's
+//     syncProject, the scheduler, ANOTHER TAB -- sends nothing until it ends; a run that finishes "done" clears it;
+//   * a (project, kind) the server refuses outright (400 / 413: it will say the same next time) is not asked again for a day.
+// Expected cost of a failed run: a handful of requests instead of hundreds (cost/replica-breaker.test.ts).
+export const COOLDOWN_KEY = "sync:cooldown";
+export const refusedKey = (projectId: string, kind: string) => `sync:refused:${projectId}:${kind}`;
+export const BREAKER_THRESHOLD = 3;
+export const COOLDOWN_BASE_MS = 60_000;
+export const COOLDOWN_CAP_MS = 30 * 60_000;
+export const DAILY_COOLDOWN_MS = 60 * 60_000;
+export const DAILY_COOLDOWN_CAP_MS = 6 * 60 * 60_000;
+export const FORBIDDEN_COOLDOWN_MS = 60 * 60_000;
+export const REFUSED_RETRY_MS = ONE_DAY_MS;
+export type Cooldown = { until: number; reason: string; trips: number };
+
+const TRANSPORT_FAILURES: ReadonlySet<SyncErrorKind> = new Set(["network", "timeout", "server", "rate_limited"]);
+
+/** Every call of `client` first waits for the pacer. Calls the client does not have stay absent (an older client has no feed). */
+function pacedClient(client: SyncClient, pacer: RequestPacer): SyncClient {
+  const paced = <A extends unknown[], R>(fn: ((...a: A) => Promise<R>) | undefined): ((...a: A) => Promise<R>) | undefined =>
+    typeof fn === "function"
+      ? async (...a: A) => {
+        await pacer.take(a.find((x): x is AbortSignal => typeof AbortSignal !== "undefined" && x instanceof AbortSignal));
+        return fn.apply(client, a);
+      }
+      : undefined;
+  const out: Partial<SyncClient> = {};
+  for (const name of ["manifest", "pull", "pullIds", "changes", "ids", "push", "heads"] as const) {
+    const fn = paced((client as Record<string, unknown>)[name] as ((...a: unknown[]) => Promise<unknown>) | undefined);
+    if (fn) (out as Record<string, unknown>)[name] = fn;
+  }
+  return out as SyncClient;
+}
+
 function emptyReport(status: ReplicaStatus): SyncReport {
   return { status, projectsTotal: 0, projectsSynced: 0, itemsStored: 0, itemsRemoved: 0, changesApplied: 0, reconciledRemoved: 0, issues: [], syncedAt: null };
 }
@@ -188,11 +251,30 @@ export function createReplica(options: ReplicaOptions): Replica {
   const manifestMaxAgeMs = Math.max(0, options.manifestMaxAgeMs ?? MANIFEST_MAX_AGE_MS);
   /** When each project's change feed was last read to its end by this replica (memory only: a reload checks again once). */
   const feedCheckedAt = new Map<string, number>();
+  const pacer = options.pacer === undefined ? createRequestPacer() : options.pacer;
+  const client = pacer ? pacedClient(options.client, pacer) : options.client;
+  const breakerThreshold = Math.max(1, options.breakerThreshold ?? BREAKER_THRESHOLD);
+  const cooldownBaseMs = Math.max(0, options.cooldownBaseMs ?? COOLDOWN_BASE_MS);
+  const cooldownCapMs = Math.max(cooldownBaseMs, options.cooldownCapMs ?? COOLDOWN_CAP_MS);
+  const dailyCooldownMs = Math.max(0, options.dailyCooldownMs ?? DAILY_COOLDOWN_MS);
+  const refusedRetryMs = Math.max(0, options.refusedRetryMs ?? REFUSED_RETRY_MS);
+
+  /** How long a run stopped by `err` keeps sync quiet, for the `trips`-th consecutive stop. */
+  const cooldownFor = (err: SyncError, trips: number): number => {
+    const doubling = (base: number, cap: number) => Math.min(cap, base * 2 ** Math.max(0, trips - 1));
+    if (err.kind === "rate_limited") {
+      return err.retryAfterMs !== undefined
+        ? Math.max(err.retryAfterMs, doubling(cooldownBaseMs, cooldownCapMs))
+        : doubling(dailyCooldownMs, Math.max(dailyCooldownMs, DAILY_COOLDOWN_CAP_MS));
+    }
+    if (err.status === 403) return FORBIDDEN_COOLDOWN_MS;
+    return doubling(cooldownBaseMs, cooldownCapMs);
+  };
 
   // A client object without the version-aware calls (an older build, a minimal test double) is still a valid client:
   // it simply has no change feed and no id list, so those two steps are skipped for it.
-  const hasFeed = typeof options.client.changes === "function" && typeof options.client.pullIds === "function";
-  const hasIds = typeof options.client.ids === "function";
+  const hasFeed = typeof client.changes === "function" && typeof client.pullIds === "function";
+  const hasIds = typeof client.ids === "function";
 
   let status: ReplicaStatus = "idle";
   let lastReport: SyncReport | null = null;
@@ -256,7 +338,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     let hidden: string[] = [];
     for (let pageNo = 0; pageNo < maxPages; pageNo += 1) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
-      const page = await options.client.pull({ projectId, kind, after: cursor, limit: pageLimit }, signal);
+      const page = await client.pull({ projectId, kind, after: cursor, limit: pageLimit }, signal);
       await storePage(db, orgId, projectId, kind, page.items, report, page.kid);
       // The page is stored: only now may the cursor move.
       const next = page.next_cursor ?? cursor;
@@ -287,7 +369,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     const stored = await db.getMeta<{ seq: number } | null>(changeCursorKey(projectId));
     if (stored && typeof stored.seq === "number") return true;
     try {
-      const head = await options.client.changes({ projectId, afterSeq: null, limit: 1 }, signal);
+      const head = await client.changes({ projectId, afterSeq: null, limit: 1 }, signal);
       await db.setMeta(changeCursorKey(projectId), { seq: head.head_seq });
       return true;
     } catch (err) {
@@ -326,7 +408,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     }
     for (const [kind, ids] of toFetch) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
-      const page = await options.client.pullIds({ projectId, kind, ids }, signal);
+      const page = await client.pullIds({ projectId, kind, ids }, signal);
       await storePage(db, orgId, projectId, kind, page.items, report, page.kid);
       report.changesApplied += page.items.length;
     }
@@ -340,7 +422,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     let ask = Math.max(0, cursor - CHANGE_FEED_OVERLAP);
     for (let pageNo = 0; pageNo < maxPages; pageNo += 1) {
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
-      const page = await options.client.changes({ projectId, afterSeq: ask, limit: SYNC_CHANGES_LIMIT }, signal);
+      const page = await client.changes({ projectId, afterSeq: ask, limit: SYNC_CHANGES_LIMIT }, signal);
       await applyChangePage(db, orgId, projectId, kinds, page.changes, report, signal);
       if (page.has_more && page.next_seq <= ask) {
         throw Object.assign(new Error("The change feed said there is more but did not move."), { replicaReason: "no_progress" as const });
@@ -375,7 +457,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     for (let pageNo = 0; ; pageNo += 1) {
       if (pageNo >= maxPages) throw Object.assign(new Error("The sync service sent more id pages than allowed."), { replicaReason: "no_progress" as const });
       if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
-      const page = await options.client.ids({ projectId, kind, afterId: after, limit: SYNC_ID_LIST_LIMIT }, signal);
+      const page = await client.ids({ projectId, kind, afterId: after, limit: SYNC_ID_LIST_LIMIT }, signal);
       for (const id of page.ids) onServer.add(id);
       if (!page.has_more) break;
       if (page.next_id === null || page.next_id === after) {
@@ -412,9 +494,27 @@ export function createReplica(options: ReplicaOptions): Replica {
     // Set when a one-project run relied on the stored manifest and the service then said the project is not there (404):
     // the run is repeated once with a fresh manifest, so a project the person lost is still cleared exactly as before.
     let staleStoredManifest = false;
+    /** COST: stores the stop that `err` (the error that tripped the breaker) asks for; the next run of any tab respects it. */
+    const startCooldown = async (err: SyncError) => {
+      if (!db) return;
+      const prev = await db.getMeta<Cooldown | null>(COOLDOWN_KEY).catch(() => null);
+      const trips = (prev && typeof prev.trips === "number" ? prev.trips : 0) + 1;
+      const ms = cooldownFor(err, trips);
+      await db.setMeta(COOLDOWN_KEY, { until: now() + ms, reason: err.kind, trips } satisfies Cooldown).catch(() => {});
+      if (err.kind === "rate_limited" && err.retryAfterMs !== undefined) pacer?.pauseFor(err.retryAfterMs);
+      report.issues.push({ reason: err.kind, message: `Sync stopped after the sync service failed (${err.message}); it tries again in about ${Math.max(1, Math.round(ms / 60_000))} minute(s).` });
+    };
     try {
       db = await openLocalDb(options.idb ?? globalThis.indexedDB, localDbNameFor(options.userId));
       const wholeRun = scope.projectId === undefined;
+
+      // COST (cost:COST-04): an earlier run was stopped by the breaker and its stop has not ended: send nothing at all.
+      const cooling = await db.getMeta<Cooldown | null>(COOLDOWN_KEY);
+      if (cooling && typeof cooling.until === "number" && now() < cooling.until) {
+        report.issues.push({ reason: "cooling_down", message: "Sync is paused for a few minutes after the sync service failed; it tries again by itself." });
+        return finish("error");
+      }
+
       const previous = await db.getMeta<StoredManifest>(MANIFEST_KEY);
 
       // COST: a one-project run (a screen opened, the scheduler's check of one project) does not ask for the manifest again
@@ -434,7 +534,7 @@ export function createReplica(options: ReplicaOptions): Replica {
         feedKinds = new Set(stored.feedKinds);
         projectIds = stored.projectIds;
       } else {
-        const manifest = await options.client.manifest(internal.signal);
+        const manifest = await client.manifest(internal.signal);
         // The laptop knows its person by the SIGN-IN id; the manifest says whose it is in user.auth_user_id (manifestSignInId; client review F01).
         if (manifestSignInId(manifest) !== options.userId) {
           report.issues.push({ reason: "user_mismatch", message: "The sign-in on this laptop does not match the person this workspace belongs to." });
@@ -513,7 +613,26 @@ export function createReplica(options: ReplicaOptions): Replica {
 
       report.projectsTotal = targetProjects.length;
       const failedProjects = new Set<string>();
-      const state: { fatal: SyncError | null } = { fatal: null };
+      const state: { fatal: SyncError | null; tripped: SyncError | null; consecutive: number } = { fatal: null, tripped: null, consecutive: 0 };
+      /**
+       * COST (cost:COST-04): the circuit breaker. Called with every request failure (and with nothing after every success). Returns true
+       * when the run must stop: a 429 or a 403 at once, network / timeout / 5xx after `breakerThreshold` in a row. Stopping aborts every
+       * worker of this run; the remaining pairs are not tried.
+       */
+      const noteTransport = (err?: unknown): boolean => {
+        if (state.tripped) return true;
+        if (err === undefined) { state.consecutive = 0; return false; }
+        if (!(err instanceof SyncError)) return false;
+        const now403 = err.kind === "bad_response" && err.status === 403;
+        if (!TRANSPORT_FAILURES.has(err.kind) && !now403) return false;
+        state.consecutive += 1;
+        if (err.kind === "rate_limited" || now403 || state.consecutive >= breakerThreshold) {
+          state.tripped = err;
+          internal.abort();
+          return true;
+        }
+        return false;
+      };
       const noteFatal = (err: unknown, projectId?: string, kind?: string): boolean => {
         if (err instanceof SyncError && (err.kind === "signed_out" || err.kind === "update_required")) {
           if (!state.fatal) state.fatal = err;
@@ -546,8 +665,10 @@ export function createReplica(options: ReplicaOptions): Replica {
       await pool(hasFeed ? targetProjects : [], async (projectId) => {
         try {
           if (await ensureChangeCursor(db!, projectId, internal.signal)) withFeed.add(projectId);
+          noteTransport();
         } catch (err) {
           if (noteFatal(err, projectId)) return;
+          if (noteTransport(err)) return;
           if (err instanceof SyncError && err.kind === "aborted") return;
           // Without the position nothing could be pulled safely (a later read of the head would skip what changed meanwhile).
           failedProjects.add(projectId);
@@ -579,8 +700,17 @@ export function createReplica(options: ReplicaOptions): Replica {
           const onFeed = withFeed.has(pair.projectId) && feedKinds.has(pair.kind);
           const covered = onFeed && (await feedCovered(pair.projectId, pair.kind));
           const fromScratch = !covered && ((await db!.getMeta<SyncCursor | null>(cursorKey(pair.projectId, pair.kind))) ?? null) === null;
+          // COST (cost:COST-04): the server refused this pair outright (400 / 413) less than `refusedRetryMs` ago: it would say the
+          // same again, so nothing is sent; the pair is reported, not retried in a loop.
+          if (!covered) {
+            const refused = await db!.getMeta<{ at: number; status: number } | null>(refusedKey(pair.projectId, pair.kind));
+            if (refused && typeof refused.at === "number" && now() - refused.at < refusedRetryMs) {
+              throw Object.assign(new Error(`The sync service refused this data (${refused.status}); it is asked again later.`), { replicaReason: "refused" as const, skipped: true });
+            }
+          }
           // COST: a feed-covered pair is brought up to date by step 4 (the feed), not by another keyset sweep.
           if (!covered) await pullPair(db!, orgId, pair.projectId, pair.kind, report, internal.signal);
+          noteTransport();
           // 3. Repair deletes made before change tracking existed (never fatal, never a report issue). COST: only in a whole run,
           // at most `reconcileBudgetPerRun` id lists per run; a feed-covered pair at most weekly; a pair just copied from scratch
           // AFTER its feed position was taken cannot hold such a delete, so it is stamped without a call.
@@ -598,6 +728,7 @@ export function createReplica(options: ReplicaOptions): Replica {
             report.reconciledRemoved += result.removed;
           } catch (err) {
             if (noteFatal(err, pair.projectId, pair.kind)) return;
+            if (noteTransport(err)) return;
             // not_found: an older service has no /ids -- stamp the day so it is not asked again; anything else: try again next sync.
             if (err instanceof SyncError && err.kind === "not_found") await db!.setMeta(reconcileKey(pair.projectId, pair.kind), { at: now() });
           }
@@ -605,7 +736,12 @@ export function createReplica(options: ReplicaOptions): Replica {
           failedProjects.add(pair.projectId);
           const syncKind = err instanceof SyncError ? err.kind : null;
           if (noteFatal(err, pair.projectId, pair.kind)) return;
+          if (noteTransport(err)) return;
           if (syncKind === "aborted") return;
+          // 400 / 413: a refusal, not a passing failure -- remembered so the pair is not asked again tomorrow (cost:COST-04).
+          if (err instanceof SyncError && err.kind === "bad_response" && (err.status === 400 || err.status === 413)) {
+            await db!.setMeta(refusedKey(pair.projectId, pair.kind), { at: now(), status: err.status }).catch(() => {});
+          }
           if (syncKind === "not_found") {
             if (stored) staleStoredManifest = true;
             // No longer readable (or the kind was retired): what was copied for this pair must not stay.
@@ -626,14 +762,16 @@ export function createReplica(options: ReplicaOptions): Replica {
       });
 
       // 4. What the change feed names: tombstones, and rows whose version moved without their timestamp.
-      if (!state.fatal && !internal.signal.aborted) {
+      if (!state.fatal && !state.tripped && !internal.signal.aborted) {
         const kindSet = new Set(kinds);
         await pool([...withFeed].filter((p) => !failedProjects.has(p)), async (projectId) => {
           try {
             await applyChanges(db!, orgId, projectId, kindSet, report, internal.signal);
             feedCheckedAt.set(projectId, now());
+            noteTransport();
           } catch (err) {
             if (noteFatal(err, projectId)) return;
+            if (noteTransport(err)) return;
             if (err instanceof SyncError && err.kind === "aborted") return;
             if (err instanceof SyncError && err.kind === "not_found") {
               if (stored) staleStoredManifest = true;
@@ -644,6 +782,13 @@ export function createReplica(options: ReplicaOptions): Replica {
             issueFor(err, projectId);
           }
         });
+      }
+
+      // COST (cost:COST-04): the breaker stopped this run. The stop is stored, so nothing is asked until it ends.
+      if (state.tripped && !state.fatal) {
+        await startCooldown(state.tripped);
+        report.projectsSynced = projectsClean;
+        return finish(projectsClean > 0 || report.itemsStored > 0 ? "partial" : "error");
       }
 
       if (stored && staleStoredManifest && !state.fatal) {
@@ -666,10 +811,13 @@ export function createReplica(options: ReplicaOptions): Replica {
 
       if (report.issues.length > 0) return finish(projectsClean > 0 || report.itemsStored > 0 ? "partial" : "error");
       if (wholeRun) await db.setMeta(LAST_SYNC_KEY, { at: now() });
+      if (cooling) await db.setMeta(COOLDOWN_KEY, null); // a clean run ends the breaker's escalation
       return finish("done");
     } catch (err) {
       if (err instanceof SyncError) {
         report.issues.push({ reason: err.kind, message: err.message });
+        // The manifest itself failed (after the client's retries): the same stop as a tripped breaker (cost:COST-04).
+        if (TRANSPORT_FAILURES.has(err.kind) || (err.kind === "bad_response" && err.status === 403)) await startCooldown(err).catch(() => {});
         if (err.kind === "update_required") {
           report.updateRequired = err.update ?? { current: null, minCompatible: null };
           paused = report.updateRequired;

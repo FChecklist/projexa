@@ -18,6 +18,8 @@ export type RequestPacer = {
   take(signal?: AbortSignal): Promise<void>;
   /** The server asked the laptop to wait (429 + Retry-After): no request leaves before `atMs`. Never shortens an existing pause. */
   pauseUntil(atMs: number): void;
+  /** pauseUntil(now + ms) on the pacer's OWN clock (callers with another clock use this). */
+  pauseFor(ms: number): void;
   /** Requests counted in the current window (diagnostics, tests). */
   inWindow(): number;
 };
@@ -44,6 +46,9 @@ export function createRequestPacer(options: PacerOptions = {}): RequestPacer {
   const stamps: number[] = [];
   let pausedUntil = 0;
 
+  const pauseUntil = (atMs: number) => {
+    if (Number.isFinite(atMs) && atMs > pausedUntil) pausedUntil = atMs;
+  };
   const prune = (t: number) => {
     while (stamps.length && t - stamps[0]! >= windowMs) stamps.shift();
   };
@@ -67,8 +72,9 @@ export function createRequestPacer(options: PacerOptions = {}): RequestPacer {
         await sleep(Math.max(1, stamps[0]! + windowMs - t), signal);
       }
     },
-    pauseUntil(atMs) {
-      if (Number.isFinite(atMs) && atMs > pausedUntil) pausedUntil = atMs;
+    pauseUntil,
+    pauseFor(ms) {
+      if (Number.isFinite(ms) && ms > 0) pauseUntil(now() + ms);
     },
     inWindow() {
       prune(now());
