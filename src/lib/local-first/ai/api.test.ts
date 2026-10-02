@@ -283,3 +283,15 @@ describe("tamper: a changed installed file switches the surface off", () => {
     expect((await rejection(surface.api.list("tasks"))).code).toBe("SOFTWARE_TAMPERED");
   });
 });
+
+describe("the named record must be the record the params change (lf-e11 review)", () => {
+  test("a delete or update whose {kind,id} is not the record its params target is refused, nothing drafted or queued", async () => {
+    const { surface, enqueued } = await makeRig({ role: "manager" });
+    const del = await rejection(surface.api.delete("void_material_receipt", { kind: "material_receipts", id: "mr1" }, { ...VOID, receiptId: "mr-other" }));
+    expect(del.code).toBe("BAD_INPUT");
+    expect((await surface.api.drafts()).length).toBe(0);
+    const upd = await rejection(surface.api.update("update_task", { kind: "tasks", id: "t1" }, { ...TASK, issueId: "t-other" }));
+    expect(upd.code).toBe("BAD_INPUT");
+    expect(enqueued()).toBe(0);
+  });
+});

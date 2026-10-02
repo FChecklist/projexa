@@ -32,6 +32,8 @@ export type AutoSyncDeps = {
   locks?: LockManager | null;
   now?: () => number;
   foreignOrg?: (data: unknown, org: string) => boolean;
+  /** Default true: a row without the px3 view-class signature is refused (protocol.ts). Only a unit test with px2-only fixtures turns it off. */
+  requirePx3?: boolean;
   allowedKinds?: readonly string[];
 };
 
@@ -67,7 +69,7 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
     const hub = createSignalHub({ channel: self.channel, selfId: d.selfId, remote: d.remoteProviders, local: d.localProviders });
     net = createPeerNetwork({
       selfId: d.selfId, hub, keys: attestation.keys, store: createLocalDbPeerStore(d.db, self.claims.org), openLink: d.openLink, now,
-      getSelf: () => attestation.current(), foreignOrg: d.foreignOrg, allowedKinds: d.allowedKinds, noPeerKinds: () => noPeer,
+      getSelf: () => attestation.current(), foreignOrg: d.foreignOrg, requirePx3: d.requirePx3 ?? true, allowedKinds: d.allowedKinds, noPeerKinds: () => noPeer,
       onChange: (peers) => setPeerStatus({ peers }),
       onPeerVerified: () => { void scheduler.trigger("peer"); },
       onRows: () => setPeerStatus({ lastPeerSyncAt: now() }),

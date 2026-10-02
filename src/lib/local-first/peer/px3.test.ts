@@ -120,3 +120,25 @@ describe("px3: the replica stores the sig3 the service sends next to sig", () =>
     db2.close();
   });
 });
+
+describe("px3 is mandatory when the session asks for it (lf-e9 review: a peer must not be able to strip sig3)", () => {
+  test("a row cut for another view class, sent with its sig3 REMOVED, is refused as wrong_view and not stored (requirePx3)", async () => {
+    const { signer, A, B } = await setup();
+    const r = { project: "p1", kind: "boq", id: "b9", version: 4, updated_at: T1, data: { rate: 1200, amount: 54000 } };
+    await seedWithSig3(A, signer, r, await sig3For(signer.signRaw, "o1", "v-money", r));
+    // the hostile sender removes sig3 from every row on the wire
+    const strip = (t: string) => t.replace(/,"sig3":"[^"]*"/g, "");
+    const s = await connect(A, B, { nowMs: NOW, tapAtoB: strip, b: { requirePx3: true } });
+    expect(s.b.stats.rejected.wrong_view).toBe(1);
+    expect(await B.get("boq", "b9")).toBeUndefined();
+  });
+
+  test("without requirePx3 the same stripped row still lands (px2 only): the option is what protects", async () => {
+    const { signer, A, B } = await setup();
+    const r = { project: "p1", kind: "boq", id: "b9", version: 4, updated_at: T1, data: { rate: 1200, amount: 54000 } };
+    await seedWithSig3(A, signer, r, await sig3For(signer.signRaw, "o1", "v-money", r));
+    const strip = (t: string) => t.replace(/,"sig3":"[^"]*"/g, "");
+    await connect(A, B, { nowMs: NOW, tapAtoB: strip });
+    expect(await B.get("boq", "b9")).toBeTruthy();
+  });
+});

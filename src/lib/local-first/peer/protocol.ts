@@ -73,6 +73,11 @@ export type PeerSessionOptions = {
   allowedKinds?: readonly string[];
   /** lf-e7: organisation kinds that never move between laptops (manifest `peer_shareable: false`); org_people always among them. */
   noPeerKinds?: readonly string[];
+  /**
+   * lf-e9 review: a row WITHOUT `sig3` is refused (reason wrong_view). px2 alone does not commit to the view class, so a peer could strip
+   * sig3 from a row cut for another class and have it accepted. The server signs px3 on every row that has a view; the real network sets this.
+   */
+  requirePx3?: boolean;
   /** A data field naming another organisation (replica.ts foreignOrg). */
   foreignOrg?: (data: unknown, org: string) => boolean;
   onVerified?: (peer: PeerClaims) => void;
@@ -280,7 +285,7 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       // lf-e9 (px3): a row that carries the view-class signature must carry it for OUR view class; one cut for another class is refused
       // (the server signs an ORGANISATION row's px3 with the organisation view class, handler.ts `isOrgKind(kind) ? orgView : view`)
       const v3View = row.project === ORG_PROJECT ? self.claims.orgView : self.claims.view;
-      if (row.sig3 && !(v3View && (await verifyRowV3(row, self.claims.org, v3View, keys)))) { reject("wrong_view"); continue; }
+      if ((row.sig3 || options.requirePx3) && !(v3View && row.sig3 && (await verifyRowV3(row, self.claims.org, v3View, keys)))) { reject("wrong_view"); continue; }
       if (options.foreignOrg?.(row.data, self.claims.org)) { reject("foreign_org"); continue; }
       const local = await store.local(row.kind, row.id);
       if (local?.dirty) { reject("dirty"); continue; }

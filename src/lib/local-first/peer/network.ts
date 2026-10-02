@@ -37,6 +37,8 @@ export type PeerNetworkOptions = {
    * Read when each session starts, so a manifest refreshed later applies to the next link. org_people never moves either way (protocol.ts).
    */
   noPeerKinds?: () => readonly string[];
+  /** Passed to every session: a row without the px3 view-class signature is refused (protocol.ts requirePx3). */
+  requirePx3?: boolean;
   foreignOrg?: (data: unknown, org: string) => boolean;
   /** lf-e9: a peer failed hello (bad/expired/foreign token, another view class) and was dropped. Nothing of ours was sent to it. */
   onRefused?: (peerId: string, reason: HelloRefusal | "protocol") => void;
@@ -113,7 +115,7 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
         if (closed || entries.get(peerId) !== entry) { link.close(); return; }
         entry.session = createPeerSession({
           link, self, keys: o.keys, store: o.store, now: o.now, allowedKinds: o.allowedKinds, foreignOrg: o.foreignOrg,
-          noPeerKinds: o.noPeerKinds?.(),
+          noPeerKinds: o.noPeerKinds?.(), requirePx3: o.requirePx3,
           onRefused: (reason) => {
             done.refused[reason] = (done.refused[reason] ?? 0) + 1;
             o.onRefused?.(peerId, reason);

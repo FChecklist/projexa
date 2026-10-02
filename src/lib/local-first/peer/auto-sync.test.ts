@@ -41,7 +41,8 @@ describe("auto-sync with our server down", () => {
       userId: L.userId, selfId: L.userId, db: L.db, fetchAttest: fetchFor(L),
       remoteProviders: [supabaseRealtimeProvider(rt.client), ntfyProvider({ fetchImpl: nt.fetchImpl, EventSourceImpl: nt.EventSourceImpl })],
       openLink: rtc.openLink, serverStep: async () => { serverCalls++; throw new Error("unreachable"); },
-      isVisible: () => true, isOnline: () => true, locks: null, foreignOrg,
+      isVisible: () => true, isOnline: () => true, locks: null, foreignOrg, requirePx3: false, // px2-only fixtures; px3 is tested in px3.test.ts and the real-browser peer specs
+     
     });
     // attestation fetched, then the server goes down before the laptops ever meet
     const first = make(A);

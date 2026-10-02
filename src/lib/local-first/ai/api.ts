@@ -202,6 +202,19 @@ export function createAiSurface(deps: AiSurfaceDeps): AiSurface {
     return row as LocalRecord & { serverVersion: number };
   }
 
+  /**
+   * The record an AI NAMES ({kind, id}) must be the record its params TARGET. The person is shown a summary built from the named row; what
+   * runs is built from the params. Without this an AI could show "delete Site visit note" and have the params remove another receipt
+   * (found by the adversarial review of lf-e11). A function with no id parameter names nothing to compare.
+   */
+  function assertRecordIsTarget(fn: RegistryFunction, record: unknown, params: Record<string, unknown>): void {
+    const named = isPlainObject(record) && typeof record.id === "string" ? record.id : null;
+    const targeted = fn.id_params.filter((k) => k !== "projectId").map((k) => params[k]).filter((v): v is string => typeof v === "string" && v !== "");
+    if (named !== null && targeted.length > 0 && !targeted.includes(named)) {
+      throw new ProjexaAiError("BAD_INPUT", `The record you name (${named}) is not the record these parameters change. Name the same record in both.`);
+    }
+  }
+
   async function enqueue(input: Parameters<Outbox["enqueue"]>[0]): Promise<string> {
     try {
       return (await deps.outbox.enqueue(input)).opId;
@@ -323,6 +336,7 @@ export function createAiSurface(deps: AiSurfaceDeps): AiSurface {
         const fn = decide(ctx, functionId, "update", params);
         const projectId = ownProject(ctx, params.projectId);
         const row = await heldRow(ctx, record, projectId);
+        assertRecordIsTarget(fn, record, params);
         // Only fields the row already has are changed locally (a param named like a field of the row); the server's
         // answer replaces the whole row once the op is applied.
         const idParams = new Set(["projectId", ...fn.id_params]);
@@ -346,6 +360,7 @@ export function createAiSurface(deps: AiSurfaceDeps): AiSurface {
         const fn = decide(ctx, functionId, "delete", params);
         const projectId = ownProject(ctx, params.projectId);
         const row = await heldRow(ctx, record, projectId);
+        assertRecordIsTarget(fn, record, params);
         // lf-e11: a money-sensitive removal (a receipt's value, a BOQ, attendance cost) is ALWAYS confirmed by the person, even with
         // "act without asking" on: that switch is about routine changes, never about money.
         if (ctx.identity?.settings.aiActWithoutAsking === true && !fn.money_sensitive) return queueDelete(ctx, fn, projectId, structuredClone(params), row, record);
