@@ -8,7 +8,7 @@
 // No attestation (never fetched, or expired with our server down for more than 24 h): this laptop does not announce, answer
 // or link at all. A peer that fails hello is dropped and not retried until it announces again.
 
-import { createPeerSession, type PeerSession, type PeerStore } from "./protocol";
+import { createPeerSession, type HelloRefusal, type PeerSession, type PeerStore, type RejectReason, type SessionStats } from "./protocol";
 import type { SignalEnvelope, SignalHub } from "./signalling";
 import type { PeerLink, RtcHandle, RtcSignal } from "./transport";
 import type { KeyRing, PeerClaims } from "./verify";
@@ -32,7 +32,14 @@ export type PeerNetworkOptions = {
   now?: () => number;
   maxPeers?: number;
   allowedKinds?: readonly string[];
+  /**
+   * lf-e9: organisation kinds that must never move laptop to laptop (the stored manifest's `orgNoPeerKinds`, from `peer_shareable: false`).
+   * Read when each session starts, so a manifest refreshed later applies to the next link. org_people never moves either way (protocol.ts).
+   */
+  noPeerKinds?: () => readonly string[];
   foreignOrg?: (data: unknown, org: string) => boolean;
+  /** lf-e9: a peer failed hello (bad/expired/foreign token, another view class) and was dropped. Nothing of ours was sent to it. */
+  onRefused?: (peerId: string, reason: HelloRefusal | "protocol") => void;
   /** A new peer passed hello (the scheduler treats it as a reason to sync). */
   onPeerVerified?: (peer: PeerClaims) => void;
   /** Rows were accepted from a peer. */
@@ -49,8 +56,15 @@ export type PeerNetwork = {
   /** Asks every verified peer for anything new. Resolves with how many rows were accepted in this round. */
   syncAll(timeoutMs?: number): Promise<{ peers: number; accepted: number }>;
   verifiedCount(): number;
+  /**
+   * lf-e9: what every session so far did, closed ones included: rows accepted and sent, rows REJECTED per reason (bad signature, wrong
+   * view, dirty, not newer, ...) and hellos REFUSED per reason. A refusal is never silent: the UI and the tests read it here.
+   */
+  stats(): NetworkStats;
   close(): void;
 };
+
+export type NetworkStats = { accepted: number; sent: number; rejected: Partial<Record<RejectReason, number>>; refused: Partial<Record<HelloRefusal | "protocol", number>> };
 
 type Entry = { handle: RtcHandle; session: PeerSession | null; initiator: boolean };
 
@@ -64,8 +78,22 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
 
   const verifiedCount = () => [...entries.values()].filter((e) => e.session?.state === "verified").length;
   const changed = () => o.onChange?.(verifiedCount());
+  /** Totals of the sessions that already ended (live ones are added in stats()). */
+  const done: NetworkStats = { accepted: 0, sent: 0, rejected: {}, refused: {} };
+  const folded = new WeakSet<SessionStats>();
+  const addInto = (to: NetworkStats, s: SessionStats) => {
+    to.accepted += s.accepted;
+    to.sent += s.sent;
+    for (const [k, n] of Object.entries(s.rejected)) to.rejected[k as RejectReason] = (to.rejected[k as RejectReason] ?? 0) + (n ?? 0);
+  };
+  const fold = (s: PeerSession | null) => {
+    if (!s || folded.has(s.stats)) return;
+    folded.add(s.stats);
+    addInto(done, s.stats);
+  };
 
   function drop(peerId: string, e: Entry) {
+    fold(e.session);
     if (entries.get(peerId) !== e) return;
     entries.delete(peerId);
     replied.delete(peerId);
@@ -85,6 +113,11 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
         if (closed || entries.get(peerId) !== entry) { link.close(); return; }
         entry.session = createPeerSession({
           link, self, keys: o.keys, store: o.store, now: o.now, allowedKinds: o.allowedKinds, foreignOrg: o.foreignOrg,
+          noPeerKinds: o.noPeerKinds?.(),
+          onRefused: (reason) => {
+            done.refused[reason] = (done.refused[reason] ?? 0) + 1;
+            o.onRefused?.(peerId, reason);
+          },
           onVerified: (peer) => { changed(); o.onPeerVerified?.(peer); },
           onRows: (n) => o.onRows?.(n),
           onClose: () => drop(peerId, entry),
@@ -145,6 +178,11 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
       return { peers: sessions.length, accepted: after - before };
     },
     verifiedCount,
+    stats() {
+      const out: NetworkStats = { accepted: done.accepted, sent: done.sent, rejected: { ...done.rejected }, refused: { ...done.refused } };
+      for (const e of entries.values()) if (e.session && !folded.has(e.session.stats)) addInto(out, e.session.stats);
+      return out;
+    },
     close() {
       if (closed) return;
       closed = true;
