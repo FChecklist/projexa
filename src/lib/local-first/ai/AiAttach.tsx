@@ -19,7 +19,7 @@ export function inlineManualJson(): string {
 }
 
 export function AiManualScript() {
-  const json = useMemo(inlineManualJson, []);
+  const json = useMemo(() => inlineManualJson(), []);
   return <script type="application/json" id="px-ai-manual" dangerouslySetInnerHTML={{ __html: json }} />;
 }
 

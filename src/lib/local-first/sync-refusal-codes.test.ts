@@ -11,12 +11,12 @@ const generic = rejectionMessage(op, { code: "A_CODE_NOBODY_SENDS" });
 
 describe("the sync service's refusal codes have their own sentences", () => {
   const cases: [code: string, words: RegExp][] = [
-    ["ROLE_TOO_LOW", /role does not allow/i],
-    ["PROJECT_NOT_READABLE", /do not have access to that project/i],
-    ["FUNCTION_NOT_ALLOWED", /cannot be saved from the laptop copy/i],
+    ["ROLE_TOO_LOW", /role in this organisation does not allow/i],
+    ["PROJECT_NOT_READABLE", /no longer have access to that project/i],
+    ["FUNCTION_NOT_ALLOWED", /cannot be sent from this laptop/i],
     ["CAP_DAY", /today's limit/i],
-    ["BAD_OP", /not accepted as entered/i],
-    ["OP_ID_REUSED", /not accepted as entered/i],
+    ["BAD_OP", /could not read it/i],
+    ["OP_ID_REUSED", /different change under the same reference/i],
   ];
   for (const [code, words] of cases) {
     test(`${code}`, () => {
