@@ -36,7 +36,13 @@ export default function SignupPage() {
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
     if (signUpError) {
-      setError(signUpError.message);
+      // Supabase answers 422 user_already_exists for a registered address; say what to do next
+      // rather than the bare "User already registered".
+      setError(
+        signUpError.code === "user_already_exists"
+          ? "This email already has an account. Sign in instead, or use Forgot password on the sign-in page."
+          : signUpError.message
+      );
       setLoading(false);
       return;
     }
@@ -105,7 +111,7 @@ export default function SignupPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">{t("password")}</Label>
-              <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Input id="password" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} title="6 digits" placeholder="6-digit PIN" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error && <p className="text-sm text-px-error">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? t("submitting") : t("submit")}</Button>

@@ -27,9 +27,25 @@ import { createClient } from "@/lib/supabase/client";
 // getClaims() can read back. Hand-writing those cookies is what produces the
 // "[middleware] getClaims() threw: Expected ',' or '}' after property value in
 // JSON" error group -- a malformed chunked cookie. Never construct them by hand.
+// forgot-password/page.tsx stores the address here when it sends the reset email, so the link can tell whether this is the
+// machine that asked for it. localStorage only ever holds an email address, never a credential.
+function isRequestingMachine(): boolean {
+  try {
+    return Boolean(window.localStorage.getItem("projexa_recovery_email"));
+  } catch {
+    return false;
+  }
+}
+
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  // A password-reset link opened on a machine that did NOT request it: sign-in is not automatic there; the person confirms
+  // with their email and the 6-digit code from the same email instead (code and link are the same one-time credential).
+  const [needsCode, setNeedsCode] = useState(false);
+  const [codeEmail, setCodeEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +85,9 @@ export default function AuthCallbackPage() {
         } else if (code) {
           const { error: e } = await supabase.auth.exchangeCodeForSession(code);
           if (e) throw e;
+        } else if (tokenHash && type === "recovery" && !isRequestingMachine()) {
+          if (!cancelled) setNeedsCode(true);
+          return;
         } else if (tokenHash && type) {
           const { error: e } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
@@ -135,6 +154,37 @@ export default function AuthCallbackPage() {
       cancelled = true;
     };
   }, [router]);
+
+  async function submitCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setCodeBusy(true);
+    const { error: otpError } = await createClient().auth.verifyOtp({ email: codeEmail.trim(), token: code.trim(), type: "recovery" });
+    if (otpError) {
+      setError(otpError.message);
+      setCodeBusy(false);
+      return;
+    }
+    router.replace("/reset-password");
+    router.refresh();
+  }
+
+  if (needsCode) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-6">
+        <form onSubmit={submitCode} className="w-full max-w-sm space-y-4">
+          <h1 className="text-lg font-semibold">Confirm it is you</h1>
+          <p className="text-sm text-muted-foreground">Enter your email and the 6-digit code from the reset email.</p>
+          <input className="w-full rounded border px-3 py-2" type="email" required autoComplete="email" placeholder="Email" value={codeEmail} onChange={(e) => setCodeEmail(e.target.value)} />
+          <input className="w-full rounded border px-3 py-2" inputMode="numeric" pattern="[0-9]{6,10}" required placeholder="6-digit code" value={code} onChange={(e) => setCode(e.target.value)} />
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          <button className="w-full rounded bg-black px-3 py-2 text-white disabled:opacity-60" type="submit" disabled={codeBusy}>
+            {codeBusy ? "Checking…" : "Continue"}
+          </button>
+        </form>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center p-6">

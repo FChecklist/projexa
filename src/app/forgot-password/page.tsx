@@ -54,6 +54,11 @@ export default function ForgotPasswordPage() {
       return;
     }
 
+    try {
+      window.localStorage.setItem("projexa_recovery_email", email);
+    } catch {
+      /* private mode: the link then asks for email + code, which still works */
+    }
     setSent(true);
     setLoading(false);
   }
