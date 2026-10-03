@@ -14,6 +14,7 @@ import { ROUTES as DELIVERY } from "./clusters/delivery";
 import { ROUTES as DOCUMENTS } from "./clusters/documents";
 import { ROUTES as DESIGN_CHANGE } from "./clusters/design-change";
 import { ROUTES as OVERVIEW } from "./clusters/overview";
+import { ROUTES as PLATFORM_KNOWLEDGE } from "./clusters/platform-knowledge";
 
 export const SHELL_ROUTES: readonly ShellRoute[] = [
   // Scope of Work (BOQ): the first module in the shell.
@@ -62,6 +63,9 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     adapter: (shell) => loadCustomers(shell.data),
   }),
   // --- finance / sales / HR modules (end) ---
+  // --- platform and knowledge modules (begin) ---
+  ...PLATFORM_KNOWLEDGE,
+  // --- platform and knowledge modules (end) ---
 ];
 
 /** The screen for an app path, with its parameters; null when the shell does not have one. */
