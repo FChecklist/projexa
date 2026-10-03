@@ -139,7 +139,7 @@ describe("the shell opens OFFLINE from the laptop's own copy", () => {
   test("a screen the shell does not have yet, offline: a calm explanation, no error, no dialog", async () => {
     await seedLaptop();
     setOnline(false);
-    go("/local/rfis");
+    go("/local/floor-plans");
     const { findByTestId } = render(<LocalShell />);
     const note = await findByTestId("local-shell-not-here");
     expect(note.getAttribute("data-online")).toBe("0");
