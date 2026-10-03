@@ -71,12 +71,24 @@ export function syncFailureMessage(report: { status: string; issues: { reason: s
   return first?.message ?? "Some projects could not be copied to this laptop.";
 }
 
+async function defaultInstallApp(userId: string, onDetail: (done: number, total: number) => void, localFirstOn: () => boolean) {
+  const { runBrowserVerifiedInstall } = await import("@/lib/local-first/release/verified-install-browser");
+  return runBrowserVerifiedInstall(userId, localFirstOn, onDetail);
+}
+
 export function buildSteps(
   userId: string,
   prefetch: (href: string) => void,
   replicaFor: (userId: string) => Replica = getSharedReplica,
   /** The local-first flag. Off: the "projects" step (the replica's whole sync) is not part of the plan at all. */
   localFirstOn: () => boolean = isLocalFirstEnabled,
+  /**
+   * The verified browser install (release/verified-install.ts): resolves only when the release is installed in Cache Storage with every digest
+   * verified, the worker controls the page and persistent storage was asked for; throws (with a reason) otherwise. Injected so tests need no browser.
+   */
+  installApp: (userId: string, onDetail: (done: number, total: number) => void, localFirstOn: () => boolean) => Promise<unknown> = defaultInstallApp,
+  /** Development servers have no release bundle to install (see ServiceWorkerRegister); tests can force either branch. */
+  isDevelopment: boolean = process.env.NODE_ENV === "development",
 ): PrepareStep[] {
   const steps: PrepareStep[] = [
     {
@@ -101,14 +113,24 @@ export function buildSteps(
       label: "Download your screens",
       weight: 45,
       run: async ({ signal, onDetail }) => {
-        let n = 0;
-        for (const href of WARM_ROUTES) {
-          if (signal.aborted) return;
-          prefetch(href);
-          n += 1;
-          onDetail(n, WARM_ROUTES.length);
-          await pause(250, signal); // let the browser fetch this screen's code before the next one
+        if (isDevelopment) {
+          // `next dev` builds no release bundle and never runs the worker: the only thing to do is warm the dev server's routes.
+          let n = 0;
+          for (const href of WARM_ROUTES) {
+            if (signal.aborted) return;
+            prefetch(href);
+            n += 1;
+            onDetail(n, WARM_ROUTES.length);
+            await pause(250, signal);
+          }
+          return;
         }
+        // Production: a REAL install, not a warm-up. This step is done only when the release is verified in Cache Storage, the worker controls
+        // the page and persistent storage was asked for; any failure fails the step, so the screen stays, reports why and retries (RETRY_AFTER_MS).
+        await installApp(userId, onDetail, localFirstOn);
+        if (signal.aborted) return;
+        // The HTTP-cache warm-up is kept as a cheap extra for the first visit of a screen that has no /local shell (it fetches nothing the install did not verify).
+        for (const href of WARM_ROUTES) prefetch(href);
       },
     },
     {
