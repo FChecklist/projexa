@@ -88,7 +88,7 @@
       "companyName": "Company name",
       "companyNamePlaceholder": "Acme Construction",
       "email": "Email",
-      "password": "4-digit PIN",
+      "password": "6-digit PIN",
       "submit": "Create account",
       "submitting": "Creating account…",
       "haveAccount": "Already have an account?",
@@ -106,12 +106,12 @@
     },
     "resetPassword": {
       "title": "Set a new password",
-      "newPassword": "New 4-digit PIN",
-      "confirmPassword": "Confirm 4-digit PIN",
+      "newPassword": "New 6-digit PIN",
+      "confirmPassword": "Confirm 6-digit PIN",
       "submit": "Save new password",
       "submitting": "Saving…",
       "mismatch": "Those two passwords do not match.",
-      "tooShort": "Use exactly 4 digits (numbers only).",
+      "tooShort": "Use exactly 6 digits (numbers only).",
       "linkExpired": "This reset link has expired or has already been used.",
       "requestAnother": "Send me a new link"
     }

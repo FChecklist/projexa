@@ -111,7 +111,7 @@ export default function SignupPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">{t("password")}</Label>
-              <Input id="password" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} minLength={4} title="4 digits" placeholder="4-digit PIN" required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Input id="password" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} title="6 digits" placeholder="6-digit PIN" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
             {error && <p className="text-sm text-px-error">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? t("submitting") : t("submit")}</Button>
