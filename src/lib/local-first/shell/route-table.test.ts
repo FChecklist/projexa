@@ -44,13 +44,13 @@ describe("the route table", () => {
 
   test("adding a module is ONE entry: it is matched, loaded and linked with no other change", async () => {
     const extra = defineShellRoute<{ n: number }>({
-      pattern: "/rfis/:id",
+      pattern: "/zzz-example/:id",
       title: "RFI",
       load: async () => ({ default: () => null }),
       adapter: async (_shell, params) => ({ n: Number(params.id) }),
     });
     const routes = [...SHELL_ROUTES, extra];
-    const hit = findShellRoute("/rfis/42", routes)!;
+    const hit = findShellRoute("/zzz-example/42", routes)!;
     expect(hit.params).toEqual({ id: "42" });
     expect(await hit.route.adapter!({} as never, hit.params, new URLSearchParams())).toEqual({ n: 42 });
   });
