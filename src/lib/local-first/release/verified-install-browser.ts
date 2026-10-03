@@ -3,7 +3,8 @@
 // difference is only that this one is awaited by the screen and its failures are thrown, so the screen cannot reach 100% without it.
 
 import { LOCAL_DB_VERSION } from "../local-db";
-import { deviceMetaStore } from "../device-meta";
+import { deviceMetaStore, openDeviceMeta } from "../device-meta";
+import { createIdentityStore, getDurableIdentity } from "../identity";
 import { accessToken, getReleaseVersion } from "../shared-client";
 import { ensurePersistence } from "../persistence";
 import { flushPendingInstalls, getDeviceId, installRelease, type CacheStorageLike } from "./installer";
@@ -33,6 +34,19 @@ export async function waitForControl(claim: () => Promise<unknown> = async () =>
   });
 }
 
+/** Waits (up to timeoutMs) for the identity mirror to have saved this person's sign-in on the laptop. */
+export async function waitForDurableIdentity(timeoutMs = 15_000, pollMs = 250): Promise<boolean> {
+  const store = createIdentityStore({ storage: localStorage, openMeta: () => openDeviceMeta() });
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if (await getDurableIdentity(store)) return true;
+    } catch { /* not readable yet */ }
+    if (Date.now() >= until) return false;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
 export function browserVerifiedInstallDeps(personId: string | null, localFirstOn: () => boolean, onDetail?: (d: number, t: number) => void): VerifiedInstallDeps {
   const meta = deviceMetaStore();
   const sw = createSwClient();
@@ -46,6 +60,7 @@ export function browserVerifiedInstallDeps(personId: string | null, localFirstOn
     localFirstOn,
     ensureServiceWorker: () => ensureServiceWorker(),
     waitForControl: () => waitForControl(async () => sw.claim?.()),
+    waitForIdentity: () => waitForDurableIdentity(),
     install: () =>
       withInstallLock(async () => {
         const client = registry();

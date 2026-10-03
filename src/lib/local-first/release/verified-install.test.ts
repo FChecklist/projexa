@@ -124,6 +124,13 @@ describe("verifiedInstall: the gate behind the prepare screen's 'app' step", () 
     expect(b.calls).not.toContain("persist");
   });
 
+  test("the person's sign-in must be saved on the laptop before the install counts (so it opens offline); asked before persistence", async () => {
+    const r = rig();
+    expect(await reasonOf(r.run({ waitForIdentity: async () => false }))).toBe("identity_not_saved");
+    expect(r.calls).not.toContain("persist");
+    expect((await r.run({ waitForIdentity: async () => true })).version).toBe(V1);
+  });
+
   test("persistence is asked but a refusal does not fail the install", async () => {
     const r = rig();
     r.state.persist = "denied";

@@ -23,6 +23,7 @@ export type VerifiedInstallReason =
   | "cache_incomplete"
   | "pointer_not_set"
   | "not_controlling"
+  | "identity_not_saved"
   | InstallFailure;
 
 export class VerifiedInstallError extends Error {
@@ -46,6 +47,8 @@ export type VerifiedInstallDeps = {
   waitForControl: () => Promise<boolean>;
   /** Runs installRelease with the real fetch/registry wiring (browser) or a fake (tests). Must return installRelease's own result. */
   install: () => Promise<InstallResult>;
+  /** True once the person's sign-in is saved durably on this laptop (the identity mirror), which is what lets the installed app open offline. Optional. */
+  waitForIdentity?: () => Promise<boolean>;
   /** navigator.storage.persist() (via ensurePersistence). Its answer is recorded, never required to be "granted". */
   requestPersistence: () => Promise<string>;
   onDetail?: (done: number, total: number) => void;
@@ -96,6 +99,11 @@ export async function verifiedInstall(deps: VerifiedInstallDeps): Promise<Verifi
   }
   if (!(await deps.waitForControl())) {
     throw new VerifiedInstallError("not_controlling", "The laptop worker is not in charge of this page yet.");
+  }
+  // The installed app opens offline only for a person whose sign-in is saved on the laptop (identity.ts); the mirror writes it a moment
+  // after sign-in, so "ready" must not outrun it (found by e2e/lf-ai-data.spec.ts going offline right after the screen closed).
+  if (deps.waitForIdentity && !(await deps.waitForIdentity())) {
+    throw new VerifiedInstallError("identity_not_saved", "Your sign-in is not saved on this laptop yet.");
   }
   detail(4);
 
