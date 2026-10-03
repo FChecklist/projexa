@@ -16,7 +16,7 @@ async function settled(page: Page): Promise<{ testId: string | null; state: stri
       const el = document.querySelector("main [data-testid]")
       return el ? { testId: el.getAttribute("data-testid"), state: el.getAttribute("data-state") } : { testId: null, state: null }
     })
-  // the shell draws a skeleton (no <main>), then "Loading…" inside <main>, then the screen
+  // the shell draws a skeleton (no <main>), then "LoadingÃ¢â‚¬Â¦" inside <main>, then the screen
   await expect.poll(async () => (await first()).testId, { timeout: 30_000, message: "the screen never finished loading" }).not.toMatch(/^(local-shell-loading)?$/)
   // a screen that reads more than one thing can settle in steps: take it once it stopped changing
   let last = await first()
@@ -115,12 +115,12 @@ test("offline: every module of the shell's list and every analysis entry opens (
     await expect(page.getByTestId("local-shell-home")).toBeVisible()
   })
 
-  await test.step("a real page the shell does not carry (Floor Plans: no floor-plan data is synced to the laptop): calm offline; online, handed to the server's own page", async () => {
-    await page.goto(`/local/floor-plans?projectId=${P1.id}`)
+  await test.step("a real page the shell does not carry (Payroll: deliberately not synced to the laptop): calm offline; online, handed to the server's own page", async () => {
+    await page.goto(`/local/payroll?projectId=${P1.id}`)
     await expect(page.getByTestId("local-shell-not-here")).toHaveAttribute("data-online", "0")
     // the calm page that is still open opens the server's own page by itself as soon as the laptop is back online (no click, no reload)
     await goOnline(context, prepared)
-    await expect(page).toHaveURL(new RegExp(`/floor-plans\\?projectId=${P1.id}&px-server=1$`), { timeout: 30_000 })
+    await expect(page).toHaveURL(new RegExp(`/payroll\\?projectId=${P1.id}&px-server=1$`), { timeout: 30_000 })
   })
 
   consoleWatch.check("while navigating the shell")
