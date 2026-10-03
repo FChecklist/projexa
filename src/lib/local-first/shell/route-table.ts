@@ -16,6 +16,7 @@ import { ROUTES as DESIGN_CHANGE } from "./clusters/design-change";
 import { ROUTES as OVERVIEW } from "./clusters/overview";
 import { ROUTES as PLATFORM_KNOWLEDGE } from "./clusters/platform-knowledge";
 import { ROUTES as ERP_B } from "./clusters/erp-b";
+import { ROUTES as ERP_A } from "./clusters/erp-a";
 
 export const SHELL_ROUTES: readonly ShellRoute[] = [
   // Scope of Work (BOQ): the first module in the shell.
@@ -70,6 +71,9 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   // --- ERP B: accounting, budgets, quotations, sales orders, invoices, sales, employees/HR (begin) ---
   ...ERP_B,
   // --- ERP B (end) ---
+  // --- ERP A: inventory, purchase orders, procurement, floor plans, mood boards, knowledge base (begin) ---
+  ...ERP_A,
+  // --- ERP A (end) ---
 ];
 
 /** The screen for an app path, with its parameters; null when the shell does not have one. */

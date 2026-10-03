@@ -83,12 +83,13 @@ afterEach(() => {
 });
 
 describe("the platform and knowledge group is registered in the shell", () => {
-  test("lists and objects resolve; create paths are never read as ids; GRC, KPIs and the Knowledge Base stay on the generic fallback", () => {
+  test("lists and objects resolve; create paths are never read as ids; GRC and KPIs stay on the generic fallback; the Knowledge Base now resolves", () => {
     expect(findShellRoute("/wiki/abc")!.route.pattern).toBe("/wiki/:id");
     expect(findShellRoute("/meetings/abc")!.params).toEqual({ id: "abc" });
     expect(findShellRoute("/workspace/p1")!.route.pattern).toBe("/workspace/:id");
     for (const path of ["/wiki/new", "/meetings/new"]) expect(findShellRoute(path)!.route.pattern).toBe(path);
-    for (const path of ["/grc", "/kpis", "/knowledge-base", "/projects/new"]) expect(findShellRoute(path)).toBeNull();
+    for (const path of ["/grc", "/kpis", "/projects/new"]) expect(findShellRoute(path)).toBeNull();
+    expect(findShellRoute("/knowledge-base")).not.toBeNull();
     for (const r of ROUTES) if (r.nav) expect(r.nav.order >= 90 && r.nav.order <= 99).toBe(true);
     expect(navRoutes().map((n) => n.label)).toEqual(expect.arrayContaining(["Projects", "Meetings", "Wiki", "Settings"]));
   });
