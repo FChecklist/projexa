@@ -19,7 +19,7 @@
 //                 - a release is installed AND local-first mode is on (the shell is served FIRST, no request leaves the laptop).
 //               otherwise network-first, so an online person without local-first mode sees exactly what they saw before.
 //               With no release installed there is no shell: offline gets a small, calm page instead of a browser error.
-//   message     SKIP_WAITING, USE_RELEASE, SET_MODE, SET_PERSON, CLEAR_PERSON, STATUS (replied on the message port).
+//   message     SKIP_WAITING, CLAIM, USE_RELEASE, SET_MODE, SET_PERSON, CLEAR_PERSON, STATUS (replied on the message port).
 //
 // PER-PERSON SAFETY. The worker remembers ONE record (cache `px-sw-meta`): which release is active, WHOSE it is (the signed-in
 // person's id) and whether local-first mode is on. Sign-out sends CLEAR_PERSON: the release caches and the record are deleted, so
@@ -185,6 +185,13 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
     switch (data.type) {
       case "SKIP_WAITING": {
         if (scope.skipWaiting) await scope.skipWaiting();
+        await reply(event, { ok: true, type: data.type });
+        return;
+      }
+      case "CLAIM": {
+        // A page that loaded while this worker was still activating can end up with an active worker but no controller (the claim at
+        // activation ran before the new document existed). The prepare screen asks for the claim again so it never waits on a reload.
+        if (scope.clients) await scope.clients.claim();
         await reply(event, { ok: true, type: data.type });
         return;
       }

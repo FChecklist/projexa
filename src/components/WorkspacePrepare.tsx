@@ -12,6 +12,7 @@ import { accessToken, getReleaseVersion } from "@/lib/local-first/shared-client"
 import { createReleaseClient } from "@/lib/local-first/release/release-client";
 import { createPrepareReporter, type PrepareReport } from "@/lib/local-first/prepare-report";
 import type { Replica } from "@/lib/local-first/replica";
+import { SYNC_BUSY_MESSAGE } from "@/lib/local-first/sync-busy";
 import {
   PREPARE_BUDGET_MS,
   prepareWorkspace,
@@ -71,12 +72,31 @@ export function syncFailureMessage(report: { status: string; issues: { reason: s
   return first?.message ?? "Some projects could not be copied to this laptop.";
 }
 
+async function defaultInstallApp(userId: string, onDetail: (done: number, total: number) => void, localFirstOn: () => boolean) {
+  const { runBrowserVerifiedInstall } = await import("@/lib/local-first/release/verified-install-browser");
+  return runBrowserVerifiedInstall(userId, localFirstOn, onDetail);
+}
+
+const BUSY_RETRIES = 60;
+const BUSY_WAIT_MS = 1_000;
+/** A sync that did not run because another one of this person holds the lock. */
+export function isBusyReport(report: { status: string; issues: { message: string; projectId?: string }[] }): boolean {
+  return report.status === "idle" && report.issues.some((i) => !i.projectId && i.message === SYNC_BUSY_MESSAGE);
+}
+
 export function buildSteps(
   userId: string,
   prefetch: (href: string) => void,
   replicaFor: (userId: string) => Replica = getSharedReplica,
   /** The local-first flag. Off: the "projects" step (the replica's whole sync) is not part of the plan at all. */
   localFirstOn: () => boolean = isLocalFirstEnabled,
+  /**
+   * The verified browser install (release/verified-install.ts): resolves only when the release is installed in Cache Storage with every digest
+   * verified, the worker controls the page and persistent storage was asked for; throws (with a reason) otherwise. Injected so tests need no browser.
+   */
+  installApp: (userId: string, onDetail: (done: number, total: number) => void, localFirstOn: () => boolean) => Promise<unknown> = defaultInstallApp,
+  /** Development servers have no release bundle to install (see ServiceWorkerRegister); tests can force either branch. */
+  isDevelopment: boolean = process.env.NODE_ENV === "development",
 ): PrepareStep[] {
   const steps: PrepareStep[] = [
     {
@@ -101,14 +121,24 @@ export function buildSteps(
       label: "Download your screens",
       weight: 45,
       run: async ({ signal, onDetail }) => {
-        let n = 0;
-        for (const href of WARM_ROUTES) {
-          if (signal.aborted) return;
-          prefetch(href);
-          n += 1;
-          onDetail(n, WARM_ROUTES.length);
-          await pause(250, signal); // let the browser fetch this screen's code before the next one
+        if (isDevelopment) {
+          // `next dev` builds no release bundle and never runs the worker: the only thing to do is warm the dev server's routes.
+          let n = 0;
+          for (const href of WARM_ROUTES) {
+            if (signal.aborted) return;
+            prefetch(href);
+            n += 1;
+            onDetail(n, WARM_ROUTES.length);
+            await pause(250, signal);
+          }
+          return;
         }
+        // Production: a REAL install, not a warm-up. This step is done only when the release is verified in Cache Storage, the worker controls
+        // the page and persistent storage was asked for; any failure fails the step, so the screen stays, reports why and retries (RETRY_AFTER_MS).
+        await installApp(userId, onDetail, localFirstOn);
+        if (signal.aborted) return;
+        // The HTTP-cache warm-up is kept as a cheap extra for the first visit of a screen that has no /local shell (it fetches nothing the install did not verify).
+        for (const href of WARM_ROUTES) prefetch(href);
       },
     },
     {
@@ -131,7 +161,15 @@ export function buildSteps(
       run: async ({ signal, onDetail }) => {
         // Real progress: projects finished out of projects to copy. A service that is unreachable or not
         // deployed yet fails this one step (reported on the screen); PROJEXA keeps working from the server.
-        const report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        // The sync lock is per person and "ifAvailable": a screen's own catch-up (a page that opened first and revalidates its project) can hold it
+        // for a moment, and the replica then answers "busy" without copying anything. That is not a failure of the laptop, and it is not done
+        // either: wait and ask again (found by e2e/lf-lifecycle-monitor.spec.ts once the install step delayed this one).
+        let report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        for (let tries = 0; tries < BUSY_RETRIES && !signal.aborted && isBusyReport(report); tries += 1) {
+          await pause(BUSY_WAIT_MS, signal);
+          if (signal.aborted) return;
+          report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        }
         if (signal.aborted) return;
         if (report.status === "done") return;
         // A project that cannot be read is a matter of that project's data, not of the laptop being ready: the person is let in once the

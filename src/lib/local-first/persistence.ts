@@ -26,6 +26,7 @@ import {
   type MetaStore,
 } from "./release/installer";
 import { META_KEYS, releaseCacheName } from "./release/release-constants";
+import { withInstallLock } from "./release/install-lock";
 import type { ReleaseClient } from "./release/release-client";
 import type { SwClient } from "./release/sw-client";
 
@@ -268,7 +269,7 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
     if (due) {
       const deviceId = await getDeviceId(deps.meta, deps.random);
       const registry = deps.registry ?? null;
-      report.release = await installRelease({
+      report.release = await withInstallLock(() => installRelease({
         fetchImpl: deps.fetchImpl,
         caches,
         meta: deps.meta,
@@ -281,7 +282,7 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
         },
         registry: registry ? async (wanted) => (await registry.ensureRegistered(undefined, wanted))?.current ?? null : undefined,
         recordInstall: registry ? (record) => registry.recordInstall(record) : undefined,
-      });
+      }));
       if (report.release.status !== "failed") await deps.meta.setMeta(LAST_CHECK_KEY, now()).catch(() => {});
       if (registry) {
         report.installsFlushed = await flushPendingInstalls(deps.meta, (r) => registry.recordInstall(r)).catch(() => 0);
