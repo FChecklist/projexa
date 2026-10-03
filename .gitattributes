@@ -3,3 +3,7 @@
 # (every line then ends in a carriage return). These two rules keep exactly that folder on LF; nothing else is affected.
 scripts/verify/*.sh text eol=lf
 scripts/verify/*.txt text eol=lf
+
+# phone-node scripts run on Android (Termux): always LF
+ops/phone-node/*.sh text eol=lf
+ops/phone-node/*.js text eol=lf

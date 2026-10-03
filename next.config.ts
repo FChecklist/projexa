@@ -19,6 +19,14 @@ const nextConfig: NextConfig = {
   // other first-party file instead of treating it as pre-built node_modules
   // output.
   transpilePackages: ["@fchecklist/veridian-ui-kit"],
+  // Phone-node build (docs/phone-node/RUNBOOK.md): only when PHONE_NODE_BUILD=1
+  // does the build emit a self-contained .next/standalone bundle. Every other
+  // build (local, CI, any host) is unchanged. The phone's Node is a 32-bit ARM
+  // bionic build that cannot load sharp's native binary, so image optimisation
+  // is off for that build only.
+  ...(process.env.PHONE_NODE_BUILD === "1"
+    ? { output: "standalone" as const, images: { unoptimized: true } }
+    : {}),
   // Pin the Turbopack workspace root to this checkout. Without this, Next's
   // root-inference walks up from cwd looking for a lockfile and -- when this
   // project is checked out as a git worktree alongside the main checkout
