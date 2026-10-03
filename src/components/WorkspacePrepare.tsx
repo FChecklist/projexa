@@ -12,6 +12,7 @@ import { accessToken, getReleaseVersion } from "@/lib/local-first/shared-client"
 import { createReleaseClient } from "@/lib/local-first/release/release-client";
 import { createPrepareReporter, type PrepareReport } from "@/lib/local-first/prepare-report";
 import type { Replica } from "@/lib/local-first/replica";
+import { SYNC_BUSY_MESSAGE } from "@/lib/local-first/sync-busy";
 import {
   PREPARE_BUDGET_MS,
   prepareWorkspace,
@@ -74,6 +75,13 @@ export function syncFailureMessage(report: { status: string; issues: { reason: s
 async function defaultInstallApp(userId: string, onDetail: (done: number, total: number) => void, localFirstOn: () => boolean) {
   const { runBrowserVerifiedInstall } = await import("@/lib/local-first/release/verified-install-browser");
   return runBrowserVerifiedInstall(userId, localFirstOn, onDetail);
+}
+
+const BUSY_RETRIES = 60;
+const BUSY_WAIT_MS = 1_000;
+/** A sync that did not run because another one of this person holds the lock. */
+export function isBusyReport(report: { status: string; issues: { message: string; projectId?: string }[] }): boolean {
+  return report.status === "idle" && report.issues.some((i) => !i.projectId && i.message === SYNC_BUSY_MESSAGE);
 }
 
 export function buildSteps(
@@ -153,7 +161,15 @@ export function buildSteps(
       run: async ({ signal, onDetail }) => {
         // Real progress: projects finished out of projects to copy. A service that is unreachable or not
         // deployed yet fails this one step (reported on the screen); PROJEXA keeps working from the server.
-        const report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        // The sync lock is per person and "ifAvailable": a screen's own catch-up (a page that opened first and revalidates its project) can hold it
+        // for a moment, and the replica then answers "busy" without copying anything. That is not a failure of the laptop, and it is not done
+        // either: wait and ask again (found by e2e/lf-lifecycle-monitor.spec.ts once the install step delayed this one).
+        let report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        for (let tries = 0; tries < BUSY_RETRIES && !signal.aborted && isBusyReport(report); tries += 1) {
+          await pause(BUSY_WAIT_MS, signal);
+          if (signal.aborted) return;
+          report = await replicaFor(userId).sync(signal, (p) => onDetail(p.projectsDone, p.projectsTotal));
+        }
         if (signal.aborted) return;
         if (report.status === "done") return;
         // A project that cannot be read is a matter of that project's data, not of the laptop being ready: the person is let in once the

@@ -32,6 +32,7 @@
 // Browser data is a cache and a proposal, never authority: money and approval figures are revalidated on
 // the server (owner-approved safeguard). This file only reads; edits go through outbox.ts.
 
+import { SYNC_BUSY_MESSAGE } from "./sync-busy";
 import { changeCursorKey, localDbNameFor, openLocalDb, reconcileKey, type LocalDb } from "./local-db";
 import { createRequestPacer, type RequestPacer } from "./rate-pacer";
 import {
@@ -989,7 +990,7 @@ export function createReplica(options: ReplicaOptions): Replica {
       const result = await locks.request(`px-sync:${options.userId}`, { ifAvailable: true }, async (lock) => (lock ? run(scope, signal, progressCb) : null));
       if (result) return result;
       const busy = emptyReport("idle");
-      busy.issues.push({ reason: "store", message: "Another tab is already syncing." });
+      busy.issues.push({ reason: "store", message: SYNC_BUSY_MESSAGE });
       return busy;
     };
     const p = start().finally(() => { if (inFlight === p) { inFlight = null; inFlightKey = ""; } });

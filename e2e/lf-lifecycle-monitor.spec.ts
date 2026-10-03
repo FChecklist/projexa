@@ -37,7 +37,7 @@ test("a preparation that cannot finish is seen on our side with its reason, retr
       .toBe(true);
     const failure = world.prepares.find((p) => p.status === "failed" || p.status === "retrying")!;
     expect(failure).toMatchObject({ stage: "projects", device_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) });
-    expect(["service_unreachable", "timeout"]).toContain(failure.error_class);
+    expect(["service_unreachable", "timeout"], `failure report: ${JSON.stringify(failure)}`).toContain(failure.error_class);
     const stuck = world.prepares.filter((p) => p.stage === "projects");
     expect(new Set(stuck.map((p) => p.percent)).size, "no progress while the service is down").toBe(1);
     expect(Number(stuck[0]!.percent)).toBeLessThan(100);

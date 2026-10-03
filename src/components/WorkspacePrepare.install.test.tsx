@@ -67,3 +67,23 @@ describe("the 'app' step is a real install", () => {
     expect(RETRY_AFTER_MS).toBe(15_000);
   });
 });
+
+describe("the 'projects' step and a sync lock held by another sync of the same person", () => {
+  const busy = { status: "idle", issues: [{ reason: "store", message: "Another tab is already syncing." }] };
+
+  test("a busy answer is waited out and asked again; the step passes only when a sync really ran", async () => {
+    let calls = 0;
+    const replica = (() => ({ sync: async () => { calls += 1; return calls < 3 ? busy : { status: "done", issues: [] }; } })) as never;
+    const steps = buildSteps("u1", () => {}, replica, () => true, (async () => ({})) as never, false);
+    await steps.find((s) => s.id === "projects")!.run(ctx());
+    expect(calls).toBe(3);
+  });
+
+  test("a real failure is still a failure (no retry loop on it)", async () => {
+    let calls = 0;
+    const replica = (() => ({ sync: async () => { calls += 1; return { status: "error", issues: [{ reason: "network", message: "x" }] }; } })) as never;
+    const steps = buildSteps("u1", () => {}, replica, () => true, (async () => ({})) as never, false);
+    await expect(steps.find((s) => s.id === "projects")!.run(ctx())).rejects.toThrow(/not reachable/);
+    expect(calls).toBe(1);
+  });
+});
