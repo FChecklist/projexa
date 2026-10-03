@@ -15,6 +15,7 @@ import { ROUTES as DOCUMENTS } from "./clusters/documents";
 import { ROUTES as DESIGN_CHANGE } from "./clusters/design-change";
 import { ROUTES as OVERVIEW } from "./clusters/overview";
 import { ROUTES as PLATFORM_KNOWLEDGE } from "./clusters/platform-knowledge";
+import { ROUTES as ERP_B } from "./clusters/erp-b";
 
 export const SHELL_ROUTES: readonly ShellRoute[] = [
   // Scope of Work (BOQ): the first module in the shell.
@@ -38,9 +39,9 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   ...DESIGN_CHANGE,
   // --- finance / sales / HR modules (begin) ---
   // Expenses, billing milestones and customers are read from the replica (read-only; money and approvals stay on the server).
-  // accounting, budgets, copilot, employees, finance, hr, invoices, payroll, proposals, quotations, recruitment, sales and
-  // sales-orders have NO data kind in the sync service yet: they are deliberately not registered (the shell's own "not on this
-  // laptop yet" answer already says so). See modules/finance-local.ts.
+  // copilot, payroll, proposals and recruitment have NO data kind in the sync service: they are deliberately not registered (the shell's own
+  // "not on this laptop yet" answer already says so). accounting, budgets, quotations, sales orders, invoices, sales and employees/HR have
+  // one since 0691 and live in clusters/erp-b.ts. See modules/finance-local.ts.
   defineShellRoute({
     pattern: "/expenses",
     title: "Expenses",
@@ -66,6 +67,9 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   // --- platform and knowledge modules (begin) ---
   ...PLATFORM_KNOWLEDGE,
   // --- platform and knowledge modules (end) ---
+  // --- ERP B: accounting, budgets, quotations, sales orders, invoices, sales, employees/HR (begin) ---
+  ...ERP_B,
+  // --- ERP B (end) ---
 ];
 
 /** The screen for an app path, with its parameters; null when the shell does not have one. */

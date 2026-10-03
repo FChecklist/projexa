@@ -204,9 +204,9 @@ describe("Expenses, Billing Milestones and Customers open OFFLINE from the lapto
     expect(fetchCalls).toEqual([]);
   });
 
-  test("a module of this group with no data kind in the sync service (invoices) gets the shell's own honest answer, offline, with no request", async () => {
+  test("a module of this group with no data kind in the sync service (recruitment, payroll, kpis) gets the shell's own honest answer, offline, with no request", async () => {
     await seedLaptop("manager");
-    for (const path of ["/local/invoices", "/local/payroll", "/local/sales-orders"]) {
+    for (const path of ["/local/recruitment", "/local/payroll", "/local/kpis"]) {
       go(path);
       const { findByTestId, unmount } = render(<LocalShell />);
       const screen = await findByTestId("local-shell-not-here");
