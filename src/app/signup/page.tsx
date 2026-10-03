@@ -36,7 +36,13 @@ export default function SignupPage() {
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
     if (signUpError) {
-      setError(signUpError.message);
+      // Supabase answers 422 user_already_exists for a registered address; say what to do next
+      // rather than the bare "User already registered".
+      setError(
+        signUpError.code === "user_already_exists"
+          ? "This email already has an account. Sign in instead, or use Forgot password on the sign-in page."
+          : signUpError.message
+      );
       setLoading(false);
       return;
     }
