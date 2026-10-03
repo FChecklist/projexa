@@ -13,6 +13,10 @@ import {
   approveTimeEntryOffline, createChangeOrderOffline, recordTimeEntryOffline, rejectTimeEntryOffline, submitChangeOrderOffline, submitTimeEntryOffline,
 } from "../shell/modules/design-change-writes";
 import { amendMinutesOffline, editDocumentDetailsOffline } from "../shell/modules/documents-writes";
+import {
+  advanceFfeOffline, answerRfiOffline, closeRfiOffline, createPunchItemOffline, createRfiOffline, createSiteDiaryOffline, createSubmittalOffline,
+  markPunchReadyOffline, reviewSubmittalOffline, verifyPunchClosedOffline,
+} from "../shell/modules/site-writes";
 import { LIVE_FUNCTION_IDS, LIVE_SOURCE_COMMIT, LIVE_WRITES, type LiveWrite } from "./__fixtures__/live-registry-contract";
 import registryFile from "./function-registry.json";
 import { actionOf, type RegistryFunction } from "./registry";
@@ -92,7 +96,7 @@ describe("function-registry.json (the browser AI's copy) equals the live registr
 type Captured = { functionId: string; params: Record<string, unknown> };
 
 const P = "p1";
-const KINDS = ["tasks", "rfis", "roster", "attendance", "materials", "material_receipts", "material_issues", "activities", "boq_lines", "progress", "change_orders", "timesheets", "documents", "meeting_minutes"].map((kind) => ({ kind }));
+const KINDS = ["tasks", "rfis", "roster", "attendance", "materials", "material_receipts", "material_issues", "activities", "boq_lines", "progress", "change_orders", "timesheets", "documents", "meeting_minutes", "submittals", "punch_list", "site_diaries", "ffe_items"].map((kind) => ({ kind }));
 
 const captured: Captured[] = [];
 let idb: IDBFactory;
@@ -122,6 +126,12 @@ beforeAll(async () => {
   server.upsert({ kind: "timesheets", projectId: P, id: "ts1", data: { id: "ts1", issue_id: "t1", hours: 2, spent_on: "2026-09-01" } });
   server.upsert({ kind: "documents", projectId: P, id: "d1", data: { id: "d1", name: "Contract", category: "contract", expiry_date: null } });
   server.upsert({ kind: "meeting_minutes", projectId: P, id: "mm1", data: { id: "mm1", title: "Weekly", status: "draft", published_at: null, minutes: "Old" } });
+  server.upsert({ kind: "rfis", projectId: P, id: "r2", data: { id: "r2", number: 2, subject: "Slab", question: "Depth?", status: "open", answer: null } });
+  server.upsert({ kind: "rfis", projectId: P, id: "r3", data: { id: "r3", number: 3, subject: "Sill", question: "Height?", status: "answered", answer: "1m" } });
+  server.upsert({ kind: "submittals", projectId: P, id: "s1", data: { id: "s1", number: 1, title: "Tiles", status: "pending" } });
+  server.upsert({ kind: "punch_list", projectId: P, id: "x1", data: { id: "x1", number: 1, description: "Door gap", status: "open" } });
+  server.upsert({ kind: "punch_list", projectId: P, id: "x2", data: { id: "x2", number: 2, description: "Paint", status: "ready_for_review" } });
+  server.upsert({ kind: "ffe_items", projectId: P, id: "f1", data: { id: "f1", item_name: "Chair", status: "specified", unit_cost: 100, unit_price: 150 } });
   await createReplica({ userId: "u1", client: server.client, idb, yieldFn: async () => {} }).sync();
   data = { userId: "u1", name: "Asha", email: null, role: "manager", orgId: "orgA", idb: idb as unknown as globalThis.IDBFactory, projects: [{ id: P, name: "Cedar" }] };
 
@@ -144,6 +154,17 @@ beforeAll(async () => {
     await rejectTimeEntryOffline({ projectId: P, timeEntryId: "ts1", rejectionReason: "wrong day" }, access),
     await amendMinutesOffline(data, { projectId: P, meetingId: "mm1", minutes: "New minutes" }, { outbox }),
     await editDocumentDetailsOffline(data, "documents", { projectId: P, documentId: "d1", details: { name: "Contract v2", category: "legal", expiryDate: "2027-01-01" } }, { outbox }),
+    // the site cluster (shell/modules/site-writes.ts), every optional field filled
+    await createRfiOffline(data, { projectId: P, subject: "Sill", question: "Height?", dueDate: "2026-10-09" }, { outbox }),
+    await createSubmittalOffline(data, { projectId: P, title: "Tiles", specSection: "09 30 00", type: "sample", dueDate: "2026-10-09" }, { outbox }),
+    await createPunchItemOffline(data, { projectId: P, description: "Door gap", location: "L2", trade: "joinery", priority: "high" }, { outbox }),
+    await createSiteDiaryOffline(data, { projectId: P, diaryDate: "2026-10-01", weather: "Clear", workDone: "Slab", visitors: "Client", labourCount: 12, issues: "None", instructions: "Pour Monday", materialReceived: "Cement", remarks: "ok" }, { outbox }),
+    await answerRfiOffline(data, { projectId: P, rfiId: "r2", answer: "200mm" }, { outbox }),
+    await closeRfiOffline(data, { projectId: P, rfiId: "r3" }, { outbox }),
+    await markPunchReadyOffline(data, { projectId: P, itemId: "x1" }, { outbox }),
+    await verifyPunchClosedOffline(data, { projectId: P, itemId: "x2" }, { outbox }),
+    await reviewSubmittalOffline(data, { projectId: P, submittalId: "s1", status: "approved_as_noted", comments: "see mark-up" }, { outbox }),
+    await advanceFfeOffline(data, { projectId: P, itemId: "f1", status: "ordered" }, { outbox }),
   ];
   // A writer that refused would hide its params from this check: every one must have queued.
   const refused = results.map((r, i) => ({ i, r })).filter(({ r }) => !r || ("queued" in r ? r.queued !== true : (r as { ok?: boolean }).ok !== true));
@@ -158,9 +179,9 @@ afterAll(() => {
 const RECREATE_TASK: Captured = { functionId: "create_schedule_task", params: { projectId: P, title: "T", startDate: "2026-10-01", description: "D", priority: "high", dueDate: "2026-10-05" } };
 
 describe("every write the laptop builds uses the live registry's parameter names", () => {
-  test("the rig queued every writer (16 ops, 15 function ids)", () => {
-    expect(captured).toHaveLength(16);
-    expect(new Set(captured.map((c) => c.functionId)).size).toBe(15);
+  test("the rig queued every writer (26 ops, 23 function ids)", () => {
+    expect(captured).toHaveLength(26);
+    expect(new Set(captured.map((c) => c.functionId)).size).toBe(23);
   });
 
   test("each built op: a live write, every param a declared name, every required name present", () => {

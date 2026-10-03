@@ -37,7 +37,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
  * the upload fails the response is a 207 naming both halves, so the caller can
  * say exactly what happened instead of reporting a whole failure.
  */
-export const SI_DOCUMENT_ENTITY_TYPE = "construction_site_instruction";
+const SI_DOCUMENT_ENTITY_TYPE = "construction_site_instruction";
 
 export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();

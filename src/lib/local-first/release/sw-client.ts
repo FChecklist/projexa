@@ -67,6 +67,8 @@ export type SwClient = {
   setPerson(personId: string): Promise<SwReply | null>;
   /** Sign-out: delete this person's release caches and pointer. */
   clearPerson(personId: string | null): Promise<SwReply | null>;
+  /** Take control of the open pages (clients.claim()): for a page that loaded while the worker was activating. */
+  claim?(): Promise<SwReply | null>;
   status(): Promise<SwReply | null>;
 };
 
@@ -78,6 +80,7 @@ export function createSwClient(options: { container?: SwContainerLike | null; ti
     setMode: (localFirst) => send({ type: "SET_MODE", localFirst }),
     setPerson: (personId) => send({ type: "SET_PERSON", personId }),
     clearPerson: (personId) => send({ type: "CLEAR_PERSON", ...(personId ? { personId } : {}) }),
+    claim: () => send({ type: "CLAIM" }),
     status: () => send({ type: "STATUS" }),
   };
 }

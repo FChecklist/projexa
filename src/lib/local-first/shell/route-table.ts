@@ -6,11 +6,18 @@
 
 import { defineShellRoute, type ShellRoute } from "./types";
 import { loadScopeList, loadScopeObject } from "./modules/scope-adapter";
+import { loadBilling } from "./modules/billing-adapter";
+import { loadCustomers } from "./modules/customers-adapter";
+import { loadExpenses } from "./modules/expenses-adapter";
 import { matchRoute } from "./paths";
 import { ROUTES as DELIVERY } from "./clusters/delivery";
 import { ROUTES as DOCUMENTS } from "./clusters/documents";
 import { ROUTES as DESIGN_CHANGE } from "./clusters/design-change";
 import { ROUTES as OVERVIEW } from "./clusters/overview";
+import { ROUTES as PLATFORM_KNOWLEDGE } from "./clusters/platform-knowledge";
+import { ROUTES as ERP_B } from "./clusters/erp-b";
+import { ROUTES as ERP_A } from "./clusters/erp-a";
+import { ROUTES as SITE_PROCUREMENT_DESIGN } from "./clusters/site-procurement-design";
 
 export const SHELL_ROUTES: readonly ShellRoute[] = [
   // Scope of Work (BOQ): the first module in the shell.
@@ -32,6 +39,45 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   ...DELIVERY,
   ...DOCUMENTS,
   ...DESIGN_CHANGE,
+  // --- finance / sales / HR modules (begin) ---
+  // Expenses, billing milestones and customers are read from the replica (read-only; money and approvals stay on the server).
+  // copilot, payroll, proposals and recruitment have NO data kind in the sync service: they are deliberately not registered (the shell's own
+  // "not on this laptop yet" answer already says so). accounting, budgets, quotations, sales orders, invoices, sales and employees/HR have
+  // one since 0691 and live in clusters/erp-b.ts. See modules/finance-local.ts.
+  defineShellRoute({
+    pattern: "/expenses",
+    title: "Expenses",
+    nav: { label: "Expenses", order: 300 },
+    load: () => import("./modules/ExpensesScreen"),
+    adapter: (shell) => loadExpenses(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/billing-milestones",
+    title: "Billing Milestones",
+    nav: { label: "Billing", order: 310 },
+    load: () => import("./modules/BillingMilestonesScreen"),
+    adapter: (shell) => loadBilling(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/customers",
+    title: "Customers",
+    nav: { label: "Customers", order: 320 },
+    load: () => import("./modules/CustomersScreen"),
+    adapter: (shell) => loadCustomers(shell.data),
+  }),
+  // --- finance / sales / HR modules (end) ---
+  // --- platform and knowledge modules (begin) ---
+  ...PLATFORM_KNOWLEDGE,
+  // --- platform and knowledge modules (end) ---
+  // --- ERP B: accounting, budgets, quotations, sales orders, invoices, sales, employees/HR (begin) ---
+  ...ERP_B,
+  // --- ERP B (end) ---
+  // --- ERP A: inventory, purchase orders, procurement, floor plans, mood boards, knowledge base (begin) ---
+  ...ERP_A,
+  // --- ERP A (end) ---
+  // --- site / procurement / design modules (begin) ---
+  ...SITE_PROCUREMENT_DESIGN,
+  // --- site / procurement / design modules (end) ---
 ];
 
 /** The screen for an app path, with its parameters; null when the shell does not have one. */

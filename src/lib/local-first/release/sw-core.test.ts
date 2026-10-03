@@ -535,6 +535,13 @@ for (const [label, make] of MODES) {
         expect(await message(core, undefined)).toBeUndefined();
       });
 
+      test("CLAIM claims the open pages and replies (a page that loaded while the worker was activating)", async () => {
+        const { scope, state } = makeScope();
+        const { core } = make(scope);
+        expect(await message(core, { type: "CLAIM" })).toMatchObject({ ok: true, type: "CLAIM" });
+        expect(state.claimed).toBe(1);
+      });
+
       test("a reply goes to event.source when no port was given", async () => {
         const { scope } = makeScope();
         const { core } = make(scope);

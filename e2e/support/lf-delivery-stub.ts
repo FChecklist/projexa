@@ -268,7 +268,7 @@ export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, 
 }
 
 /** The online page used for the one online "prepare" (the BOQ screen, the page lf-e8 proved): it needs only these /api answers. */
-const PREPARE_FIXTURE = {
+export const PREPARE_FIXTURE = {
   projectId: PROJECT_ID,
   boqId: BOQ_ID,
   boqTitle: "Harbor View - Fit-out",
@@ -415,8 +415,20 @@ export async function typeInto(page: Page, label: string, text: string, expect: 
 export async function typeDate(page: Page, label: string, iso: string, expect: Expect) {
   const box = page.getByLabel(label, { exact: true })
   const [y, m, d] = iso.split("-")
-  await box.focus()
-  await page.keyboard.type(`${m}${d}${y}`, { delay: 15 })
+  // A native <input type="date"> takes keystrokes in the order of the BROWSER's own date format, and Chromium takes that from the
+  // operating system's regional setting, NOT from Playwright's `locale` option (measured: a context with locale en-US / America/New_York on
+  // a Windows machine set to en-IN still read "10032026" as 10 March). Typing month-day-year into a day-first field gave the
+  // "2026-03-10 instead of 2026-10-03" the lf-delivery specs showed on a laptop with a non-US regional setting: a bug of this helper, not
+  // of the app (the field's value is always ISO and the app reads exactly that). So: try each field order the browsers use, keep the first
+  // that lands on the wanted day, and fall back to setting the value directly. The check below is still the wall.
+  const orders: string[][] = [[m, d, y], [d, m, y], [y, m, d]]
+  for (const order of orders) {
+    await box.fill("")
+    await box.focus()
+    await page.keyboard.type(order.join(""), { delay: 15 })
+    if ((await box.inputValue()) === iso) break
+  }
+  if ((await box.inputValue()) !== iso) await box.fill(iso)
   await expect(box).toHaveValue(iso)
 }
 
