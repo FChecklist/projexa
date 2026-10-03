@@ -88,7 +88,7 @@ describe("registration", () => {
     expect(findShellRoute("/rfis/abc")!.params).toEqual({ id: "abc" });
     for (const p of ["/ffe/new", "/vendors/new"]) expect(findShellRoute(p)!.route.pattern).toBe(p);
     for (const r of ROUTES) if (r.nav) expect(r.nav.order >= 60 && r.nav.order <= 79).toBe(true);
-    for (const p of ["/floor-plans", "/mood-boards", "/inventory", "/procurement", "/purchase-orders"]) expect(findShellRoute(p)).toBeNull();
+    for (const p of ["/payroll", "/recruitment", "/grc", "/kpis"]) expect(findShellRoute(p)).toBeNull();
   });
 });
 
