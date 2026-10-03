@@ -26,7 +26,7 @@ type BoqResponse = { id: string; status: string; version: number; title: string;
  * run is 2.7 s; anything an order of magnitude past that is not a slow report,
  * it is a report nobody is going to wait for.
  */
-export const REPORT_DEADLINE_MS = 30_000;
+const REPORT_DEADLINE_MS = 30_000;
 
 // Real Work Progress Report, assembled from VERIDIAN's real construction
 // data (BoQ line items + progress entries + attendance/labour-roster/
