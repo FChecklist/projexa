@@ -6,6 +6,9 @@
 
 import { defineShellRoute, type ShellRoute } from "./types";
 import { loadScopeList, loadScopeObject } from "./modules/scope-adapter";
+import { loadBilling } from "./modules/billing-adapter";
+import { loadCustomers } from "./modules/customers-adapter";
+import { loadExpenses } from "./modules/expenses-adapter";
 import { matchRoute } from "./paths";
 import { ROUTES as DELIVERY } from "./clusters/delivery";
 import { ROUTES as DOCUMENTS } from "./clusters/documents";
@@ -32,6 +35,33 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
   ...DELIVERY,
   ...DOCUMENTS,
   ...DESIGN_CHANGE,
+  // --- finance / sales / HR modules (begin) ---
+  // Expenses, billing milestones and customers are read from the replica (read-only; money and approvals stay on the server).
+  // accounting, budgets, copilot, employees, finance, hr, invoices, payroll, proposals, quotations, recruitment, sales and
+  // sales-orders have NO data kind in the sync service yet: they are deliberately not registered (the shell's own "not on this
+  // laptop yet" answer already says so). See modules/finance-local.ts.
+  defineShellRoute({
+    pattern: "/expenses",
+    title: "Expenses",
+    nav: { label: "Expenses", order: 300 },
+    load: () => import("./modules/ExpensesScreen"),
+    adapter: (shell) => loadExpenses(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/billing-milestones",
+    title: "Billing Milestones",
+    nav: { label: "Billing", order: 310 },
+    load: () => import("./modules/BillingMilestonesScreen"),
+    adapter: (shell) => loadBilling(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/customers",
+    title: "Customers",
+    nav: { label: "Customers", order: 320 },
+    load: () => import("./modules/CustomersScreen"),
+    adapter: (shell) => loadCustomers(shell.data),
+  }),
+  // --- finance / sales / HR modules (end) ---
 ];
 
 /** The screen for an app path, with its parameters; null when the shell does not have one. */
