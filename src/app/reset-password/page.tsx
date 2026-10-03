@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 // MINIMUM LENGTH is asserted here as well as by Supabase. The server is the
 // authority (its own minimum rejects short passwords with a 422), but a form
 // that only learns this after a round trip reads as a broken form.
-const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 6;
 
 export default function ResetPasswordPage() {
   const router = useRouter();
