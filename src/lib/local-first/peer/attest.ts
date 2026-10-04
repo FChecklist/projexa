@@ -31,6 +31,10 @@ function parse(body: unknown, nowMs: number): { att: StoredAttestation; keys: Pu
   };
 }
 
+// NOTE: no `userId` equality check against the attestation's `user_id`. The server's `user_id`/`sub` is the sync service's own person id
+// (compliance.users), a different id space from the browser session's Supabase auth id that names this local database; comparing them
+// rejected EVERY real attestation (found live, audit 37: /attest 200, nothing stored, no signalling ever opened). The cache is per
+// person already (the database is `localDbNameFor(session user)`), and /attest answers for the bearer token we sent.
 export function createAttestationSource(o: { meta: MetaStore; fetchAttest: () => Promise<unknown>; now?: () => number; userId: string; keys?: KeyRing }): AttestationSource {
   const now = o.now ?? (() => Date.now());
   const keys = o.keys ?? createKeyRing(o.meta);
@@ -40,7 +44,7 @@ export function createAttestationSource(o: { meta: MetaStore; fetchAttest: () =>
     keys,
     async current() {
       const att = await o.meta.getMeta<StoredAttestation>(PEER_ATTEST_KEY);
-      if (!att || att.userId !== o.userId) return null;
+      if (!att) return null;
       const check = await verifyToken(att.token, keys, now());
       if (!check.ok) return null;
       return { token: att.token, claims: check.claims, channel: att.channel };
@@ -50,9 +54,9 @@ export function createAttestationSource(o: { meta: MetaStore; fetchAttest: () =>
       inFlight = (async () => {
         try {
           const att = await o.meta.getMeta<StoredAttestation>(PEER_ATTEST_KEY);
-          if (!force && att && att.userId === o.userId && att.expiresAt - now() > REFRESH_BEFORE_MS) return true;
+          if (!force && att && att.expiresAt - now() > REFRESH_BEFORE_MS) return true;
           const parsed = parse(await o.fetchAttest(), now());
-          if (!parsed || parsed.att.userId !== o.userId) return false;
+          if (!parsed) return false;
           await keys.replace(parsed.keys);
           await o.meta.setMeta(PEER_ATTEST_KEY, parsed.att);
           return true;

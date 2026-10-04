@@ -157,6 +157,8 @@ export async function stubSync(page: Page | BrowserContext, people: Map<string, 
         server_time: now,
       });
     }
+    // Audit 37: the shell now starts background + peer sync, which asks /attest; answer it quietly (an invalid body is ignored, a 404 would be a console error)
+    if (request.method() === "POST" && path === "/attest") return json(route, origin, {})
     if (request.method() === "GET" && path === "/heads") {
       return json(route, origin, {
         heads: Object.fromEntries([...person.projects.map((p) => [p.id, 0]), ["__org__", 0]]), projects_etag: `lf-ai-${person.key}`, role: person.role,

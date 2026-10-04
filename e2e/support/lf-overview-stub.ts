@@ -253,6 +253,8 @@ export async function stubSyncService(page: Page, world: World, who: { userId: s
         release: { current: null, min_compatible: null, protocol: 2 }, server_time: now,
       })
     }
+    // Audit 37: the shell now starts background + peer sync, which asks /attest; answer it quietly (an invalid body is ignored, a 404 would be a console error)
+    if (request.method() === "POST" && path === "/attest") return json(route, origin, {})
     if (request.method() === "GET" && path === "/heads") {
       return json(route, origin, { heads: heads(), projects_etag: "ov-projects-1", role: world.role, view_class: viewClass, org_view_class: null, epoch: EPOCH, server_time: now })
     }

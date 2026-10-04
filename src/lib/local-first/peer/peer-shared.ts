@@ -6,6 +6,7 @@
 // the tab; when that tab closes, the next one takes over. Two tabs share one IndexedDB, so a second peer here would be pointless.
 
 import { createClient } from "@/lib/supabase/client";
+import { reportClientError } from "../client-error-report";
 import { LOCAL_DB_VERSION, localDbNameFor, openLocalDb } from "../local-db";
 import { getDeviceId } from "../outbox-shared";
 import { foreignOrg } from "../replica";
@@ -23,6 +24,8 @@ import { createRtcLink } from "./transport";
 const running = new Map<string, { stop: () => void }>();
 
 async function fetchAttest(): Promise<unknown> {
+  // offline: no request at all (the offline shell promises "not one request"; the cached attestation, if any, is used)
+  if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
   const token = await accessToken();
   if (!token) throw new Error("signed out");
   const res = await fetch(`${SYNC_BASE_URL}/attest`, {
@@ -91,10 +94,10 @@ export function startPeerSync(userId: string): void {
   if (locks?.request) {
     void locks.request(`px-peer-leader:${userId}`, () => new Promise<void>((resolve) => {
       releaseLock = resolve;
-      void begin().catch(() => {});
+      void begin().catch((e) => reportClientError("peer_sync_start", e));
     }));
   } else {
-    void begin().catch(() => {});
+    void begin().catch((e) => reportClientError("peer_sync_start", e));
   }
 
   running.set(userId, {
