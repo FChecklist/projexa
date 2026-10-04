@@ -16,6 +16,7 @@ import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker"
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
+import { LocalShellAiLink } from "./LocalShellAiLink";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -341,6 +342,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-3 text-xs text-px-muted">
+          {data && shell ? <LocalShellAiLink role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
           <ConnectivityMarker />
           {data?.email ? <span data-testid="local-shell-person">{data.email}</span> : null}
         </div>
