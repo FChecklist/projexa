@@ -51,7 +51,7 @@ describe("the no-browsing prompt", () => {
     const trigger = screen.getByTestId("awl-card-trigger");
     expect(trigger.textContent).toContain(AWL_CARD_LABEL);
     await act(async () => { fireEvent.click(trigger); });
-    expect(client.minted).toEqual([{ projectId: "p1", level: 0, days: 7 }]);
+    expect(client.minted).toEqual([{ projectId: "p1", level: 1, days: 7 }]);
     expect(f.calls).toEqual([`${LINK}/card.md`, `${LINK}/card-data.md?kinds=project,tasks,boq_lines`]);
     expect(clipboard.length).toBe(1);
     expect(clipboard[0]).toContain("PROJEXA work link: paste card");

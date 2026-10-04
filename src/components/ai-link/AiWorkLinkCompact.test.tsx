@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 // dynamic: `screen` binds to document.body when the module loads, which must be after happy-dom is registered above
 const { act, cleanup, fireEvent, render, screen } = await import("@testing-library/react");
 // dynamic for the same reason: Radix decides whether layout effects exist when it is first loaded (a document must be there already)
-const { AiWorkLinkCompact, AWL_ONE_CLICK_DAYS, AWL_ONE_CLICK_LEVEL } = await import("./AiWorkLinkCompact");
+const { AiWorkLinkCompact, AWL_ONE_CLICK_DAYS, AWL_ONE_CLICK_LEVEL, AWL_SAFE_LEVEL, AWL_SAFE_LABEL, AWL_ACCESS_NOTE } = await import("./AiWorkLinkCompact");
 import { AI_ASSISTANT_NAMES, AI_WORK_LINK_ROLE_NOTE } from "@/lib/ai-work-link-access";
 import { AwlError, type AwlClient, type AwlMinted } from "@/lib/ai-work-link-client";
 
@@ -126,7 +126,7 @@ describe("the user-wide button stays in view while the role is unknown", () => {
 });
 
 describe("one button: mint once with the safe defaults, copy a ready prompt, copy again as often as wanted", () => {
-  test("first click mints level 0 / 7 days and copies a prompt with the real link, naming no dialog", async () => {
+  test("first click mints the DIRECT level (1) / 7 days and copies a prompt with the real link, naming no dialog", async () => {
     const client = fakeClient();
     render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} moduleLabel="Scope" triggerLabel="AI prompt" />);
 
@@ -134,20 +134,20 @@ describe("one button: mint once with the safe defaults, copy a ready prompt, cop
     expect(screen.queryByRole("dialog")).toBeNull();
 
     expect(client.minted).toEqual([{ projectId: "p1", level: AWL_ONE_CLICK_LEVEL, days: AWL_ONE_CLICK_DAYS }]);
-    expect(AWL_ONE_CLICK_LEVEL).toBe(0);
+    expect(AWL_ONE_CLICK_LEVEL).toBe(1);
     expect(AWL_ONE_CLICK_DAYS).toBe(7);
     expect(clipboard).toHaveLength(1);
     expect(clipboard[0]).toContain(LINK);
     expect(clipboard[0]).toContain("Scope");
     expect(clipboard[0]).toContain("GET");
+    expect(clipboard[0]).toContain("everything except writing code");
 
     const confirm = await screen.findByTestId("awl-compact-confirm");
     expect(confirm.textContent).toContain(AI_ASSISTANT_NAMES);
-    expect(confirm.textContent).toContain("expires in 7 days");
+    expect(confirm.textContent).toContain("7 days");
     // The button stays (it is the "copy again" control) and says what happened.
     expect(screen.getByTestId("awl-compact-trigger").textContent).toContain("Prompt copied");
     // The complications are gone.
-    expect(screen.queryByTestId("awl-compact-change")).toBeNull();
     expect(screen.queryByTestId("awl-compact-locale-toggle")).toBeNull();
   });
 
@@ -219,5 +219,73 @@ describe("scope=\"user\" -- ONE link for the whole person, no project needed", (
     render(<AiWorkLinkCompact role="client_viewer" project={null} client={fakeClient()} scope="user" />);
     expect(screen.queryByTestId("awl-compact-trigger")).toBeNull();
     expect(screen.getByTestId("awl-compact-role-note")).toBeTruthy();
+  });
+});
+
+describe("access: direct by default, read-and-draft behind \"Change access or expiry\"", () => {
+  test("the default one-click link is minted at the direct level and the plain note about what it allows is shown near the button, not in the prompt", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="member" project={PROJECT} client={client} />);
+    expect(screen.getByTestId("awl-compact-access-note").textContent).toBe(AWL_ACCESS_NOTE);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect((client.minted[0] as { level: number }).level).toBe(1);
+    expect(clipboard[0]).not.toContain(AWL_ACCESS_NOTE);
+  });
+
+  test("if the service says this role may not choose the direct level, the link is made at level 0 instead", async () => {
+    const levels: number[] = [];
+    const base = fakeClient();
+    const client: AwlClient = {
+      ...base,
+      mint: async (input) => {
+        levels.push(input.level);
+        if (input.level === 1) throw new AwlError("Your role may not choose that level.", 403, "LEVEL_NOT_ALLOWED");
+        return base.mint(input);
+      },
+    };
+    render(<AiWorkLinkCompact role="member" project={PROJECT} client={client} />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect(levels).toEqual([1, 0]);
+    expect(clipboard).toHaveLength(1);
+  });
+
+  test("another error (a rate cap) is NOT retried at a lower level", async () => {
+    const levels: number[] = [];
+    const base = fakeClient();
+    const client: AwlClient = { ...base, mint: async (input) => { levels.push(input.level); throw new AwlError("cap", 429, "MINT_CAP_HOUR"); } };
+    render(<AiWorkLinkCompact role="member" project={PROJECT} client={client} />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect(levels).toEqual([1]);
+  });
+
+  test("\"Read and draft only (safer)\" is hidden until \"Change access or expiry\" is opened, then mints level 0 and copies the same small prompt", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="owner" project={PROJECT} client={client} />);
+    expect(screen.queryByTestId("awl-compact-safe")).toBeNull();
+    fireEvent.click(screen.getByTestId("awl-compact-change"));
+    const safe = screen.getByTestId("awl-compact-safe");
+    expect(safe.textContent).toBe(AWL_SAFE_LABEL);
+    await act(async () => void fireEvent.click(safe));
+    expect(client.minted).toEqual([{ projectId: "p1", level: AWL_SAFE_LEVEL, days: AWL_ONE_CLICK_DAYS }]);
+    expect(AWL_SAFE_LEVEL).toBe(0);
+    expect(clipboard[0]).toContain(LINK);
+    expect(clipboard[0]).toContain("everything except writing code");
+  });
+
+  test("a lower (read-only) role gets no button at all, so nothing can be minted", () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="client_viewer" project={PROJECT} client={client} />);
+    expect(screen.queryByTestId("awl-compact-trigger")).toBeNull();
+    expect(screen.queryByTestId("awl-compact-change")).toBeNull();
+    expect(client.minted).toHaveLength(0);
+  });
+
+  test("a user-wide link stays read-and-draft (the service takes only days and label) and says so", async () => {
+    const client = fakeClient();
+    render(<AiWorkLinkCompact role="owner" project={null} client={client} scope="user" />);
+    await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
+    expect(client.userMinted).toEqual([{ days: AWL_ONE_CLICK_DAYS }]);
+    expect((await screen.findByTestId("awl-compact-confirm")).textContent).toContain("Read-and-draft");
+    expect(screen.queryByTestId("awl-compact-change")).toBeNull();
   });
 });

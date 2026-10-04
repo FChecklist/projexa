@@ -32,7 +32,7 @@ test("online with a selected project, the control renders and a click mints via 
   expect(trigger.disabled).toBe(false);
   expect(trigger.textContent).toContain("AI prompt - paste in any AI");
   await act(async () => { fireEvent.click(trigger); });
-  expect(minted).toEqual([{ projectId: "p1", level: 0, days: 7 }]);
+  expect(minted).toEqual([{ projectId: "p1", level: 1, days: 7 }]);
   expect(written.length).toBe(1);
   expect(written[0]).toContain(LINK);
 });
