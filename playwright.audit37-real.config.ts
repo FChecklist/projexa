@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
 //
 // Needs a production build (the service worker is never registered by `next dev`). On the 8GB development laptop build with
 // NODE_OPTIONS=--max-old-space-size=6144 and nothing else heavy running. Test accounts: e2e/users.ts (the documented E2E test org).
-const APP_PORT = Number(process.env.AUDIT37_PORT ?? 3118);
+const APP_PORT = Number(process.env.AUDIT37_PORT ?? 3100);
 const bundlerFlag = process.env.LF_LOCAL_BUNDLER === "webpack" ? " --webpack" : "";
 const nextBin = "node node_modules/next/dist/bin/next";
 

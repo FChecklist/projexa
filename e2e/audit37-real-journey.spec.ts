@@ -21,7 +21,7 @@ test.describe.configure({ mode: "serial" });
 let context: BrowserContext;
 let page: Page;
 test.beforeAll(async ({ browser }) => {
-  context = await browser.newContext({ serviceWorkers: "allow", baseURL: `http://localhost:${process.env.AUDIT37_PORT ?? 3118}` });
+  context = await browser.newContext({ serviceWorkers: "allow", baseURL: `http://localhost:${process.env.AUDIT37_PORT ?? 3100}` });
   page = await context.newPage();
 });
 test.afterAll(async () => { await context.close(); });
@@ -42,6 +42,26 @@ test("real login installs PROJEXA on this laptop (points 6, 15)", async () => {
       { timeout: 300_000, message: "no px-release-<version> cache: the app bundle was never stored on the laptop" }
     )
     .toBe(1);
+  // the person's data really arrived (real sync service, real rows): at least one `sync:done:*` marker in the local database's meta store
+  await expect
+    .poll(
+      () => page.evaluate(async () => {
+        const [name] = (await indexedDB.databases()).map((d) => d.name ?? "").filter((n) => n.startsWith("projexa-local:"));
+        return new Promise<number>((resolve) => {
+          const open = indexedDB.open(name);
+          open.onerror = () => resolve(-1);
+          open.onsuccess = () => {
+            const d = open.result;
+            if (!d.objectStoreNames.contains("meta")) { d.close(); resolve(-1); return; }
+            const g = d.transaction("meta", "readonly").objectStore("meta").getAllKeys();
+            g.onsuccess = () => { d.close(); resolve((g.result as string[]).filter((k) => String(k).startsWith("sync:done:")).length); };
+            g.onerror = () => { d.close(); resolve(-1); };
+          };
+        });
+      }),
+      { timeout: 300_000, message: "no sync:done marker: the real data never reached the laptop (service reachable? CORS origin must be localhost:3100)" }
+    )
+    .toBeGreaterThan(0);
   await page.reload();
   await expect
     .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 60_000, message: "no service worker controls the page" })
