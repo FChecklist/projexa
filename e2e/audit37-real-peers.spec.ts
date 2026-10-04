@@ -26,7 +26,7 @@ test("two laptops of one organisation find each other (point 7)", async ({ brows
   try {
     for (const l of [a, b]) {
       await expect
-        .poll(async () => (await l.page.evaluate(async () => (await navigator.locks.query()).held?.map((x) => x.name) ?? [])).some((n) => n.startsWith("px-peer-leader:")), {
+        .poll(async () => (await l.page.evaluate(async () => (await navigator.locks.query()).held?.map((x) => x.name) ?? [])).some((n) => n?.startsWith("px-peer-leader:")), {
           timeout: 60_000, message: "a laptop is not running peer sync",
         })
         .toBe(true);
