@@ -1,4 +1,4 @@
-﻿import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, expect, test } from "bun:test";
@@ -44,6 +44,8 @@ test("offline, the control is disabled with the calm explanation and never mints
   expect(button.disabled).toBe(true);
   expect(screen.getByTestId("local-shell-ai-link-offline-note").textContent).toBe(LOCAL_SHELL_AI_LINK_OFFLINE_NOTE);
   expect(LOCAL_SHELL_AI_LINK_OFFLINE_NOTE).toContain("needs the internet");
+  expect((screen.getByTestId("local-shell-ai-card-offline-button") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByTestId("awl-card-trigger")).toBeNull();
   fireEvent.click(button);
   expect(minted).toEqual([]);
   expect(screen.queryByTestId("awl-compact-trigger")).toBeNull();

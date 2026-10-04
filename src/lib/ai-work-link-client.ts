@@ -270,3 +270,23 @@ export function getAwlClient(): AwlClient {
   if (!shared) shared = createAwlClient({ session: browserSession() })
   return shared
 }
+
+/** The record kinds the no-browsing paste card asks for: the backend's own default for GET card-data.md. A USER-WIDE link has no project,
+ *  so the backend answers it 400 -- the card text path therefore always uses a PROJECT link. */
+export const AWL_CARD_DATA_KINDS = "project,tasks,boq_lines"
+
+/** A plain, unauthenticated GET of a text page under a minted link (`card.md`, `card-data.md`). The token is already in the link's path;
+ *  it is never added to a query string, never logged, and never part of an error message. */
+export async function fetchLinkText(link: string, path: string, doFetch?: typeof fetch): Promise<string> {
+  const f: typeof fetch = doFetch ?? ((input, init) => globalThis.fetch(input, init))
+  let res: Response
+  try {
+    res = await f(`${link.replace(/\/+$/, "")}${path}`, { method: "GET", headers: { Accept: "text/markdown, text/plain" }, credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer" })
+  } catch {
+    throw new AwlError("Could not reach the AI work link service. Check your connection and try again.", 0, "NETWORK")
+  }
+  if (!res.ok) throw new AwlError(`The AI work link service answered ${res.status} for the card.`, res.status)
+  const body = await res.text()
+  if (body.trim() === "") throw unreadable()
+  return body
+}
