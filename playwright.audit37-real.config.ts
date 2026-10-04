@@ -30,6 +30,8 @@ export default defineConfig({
     navigationTimeout: 90_000,
     actionTimeout: 30_000,
     serviceWorkers: "allow",
+    // two browser profiles on ONE machine: Chromium hides host ICE candidates behind mDNS names that only resolve over multicast; real laptops on one LAN do that, a test box may not (same flag as playwright.peer.config.ts)
+    launchOptions: { args: ["--disable-features=WebRtcHideLocalIpsWithMdns"] },
   },
   projects: [{ name: "audit37-real", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
