@@ -54,6 +54,12 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   // is the answer they need; the gate could only replace it with a login form.
   "/forgot-password",
   "/reset-password",
+  // LOCAL-FIRST: the static on-laptop shell (src/app/local/page.tsx). It is one prerendered document with no server data
+  // and no cookie read; WHO the person is comes from the identity kept on the laptop (src/lib/local-first/identity.ts) and
+  // WHAT they see comes from the local database, whose rows the sync service already scoped to their role. The gate cannot
+  // run here: the whole point is that the shell opens with no network, so there is nobody to redirect to /login. A person
+  // with no identity on the laptop is sent to /login by the shell itself.
+  "/local",
 ]);
 
 // Public page families whose remaining segments are opaque tokens.
@@ -68,7 +74,8 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
 //              note "/shared/" does NOT match the "/share/" prefix above, so
 //              it needs its own entry or the page fails closed and redirects
 //              the recipient of a WhatsApp link to a login screen)
-const PUBLIC_PAGE_PREFIXES: readonly string[] = ["/auth/", "/invite/", "/share/", "/shared/"];
+//   /local/*   the same static on-laptop shell, one document for every sub-path (see PUBLIC_PAGE_PATHS above)
+const PUBLIC_PAGE_PREFIXES: readonly string[] = ["/auth/", "/invite/", "/share/", "/shared/", "/local/"];
 
 export function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");

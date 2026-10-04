@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 // MINIMUM LENGTH is asserted here as well as by Supabase. The server is the
 // authority (its own minimum rejects short passwords with a 422), but a form
 // that only learns this after a round trip reads as a broken form.
-const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 6;
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -60,7 +60,7 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setError(null);
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
+    if (!/^[0-9]{6}$/.test(password)) {
       setError(t("tooShort", { min: MIN_PASSWORD_LENGTH }));
       return;
     }
@@ -109,7 +109,7 @@ export default function ResetPasswordPage() {
                   id="password"
                   type="password"
                   required
-                  autoComplete="new-password"
+                  autoComplete="new-password" inputMode="numeric" maxLength={6} placeholder="6-digit PIN"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -120,7 +120,7 @@ export default function ResetPasswordPage() {
                   id="confirm"
                   type="password"
                   required
-                  autoComplete="new-password"
+                  autoComplete="new-password" inputMode="numeric" maxLength={6} placeholder="6-digit PIN"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                 />

@@ -214,7 +214,8 @@ describe("every sign-out clears the selected-project cookie", () => {
       // The CALL, not a prose mention of it -- AccountMenu's own header
       // comment names supabase.auth.signOut() and would otherwise match first.
       const clearAt = source.indexOf("rememberSelectedProject(null)");
-      const signOutAt = source.indexOf("await supabase.auth.signOut()");
+      // the sign-out is ONE function now (package E1): the workspace step, then the deliberate sign-out (src/lib/local-first/sign-out-everywhere.ts)
+      const signOutAt = source.indexOf("await signOutEverywhere(");
       expect(clearAt).toBeGreaterThan(-1);
       expect(signOutAt).toBeGreaterThan(-1);
       // Order matters: after signOut() the redirect may already have run.
@@ -226,7 +227,8 @@ describe("every sign-out clears the selected-project cookie", () => {
       const source = readFileSync(join(ROOT, rel), "utf8");
       expect(source).toContain('from "@/lib/boq-line-cache"');
       const clearAt = source.indexOf("await clearBoqDeviceCopiesOnSignOut()");
-      const signOutAt = source.indexOf("await supabase.auth.signOut()");
+      // the sign-out is ONE function now (package E1): the workspace step, then the deliberate sign-out (src/lib/local-first/sign-out-everywhere.ts)
+      const signOutAt = source.indexOf("await signOutEverywhere(");
       expect(clearAt).toBeGreaterThan(-1);
       expect(clearAt).toBeLessThan(signOutAt);
     });
@@ -235,13 +237,14 @@ describe("every sign-out clears the selected-project cookie", () => {
   test("M24Shell clears it on a SIGNED_OUT event, so another tab's sign-out counts too", () => {
     const source = readFileSync(join(ROOT, "src/components/shell/M24Shell.tsx"), "utf8");
     const branch = source.slice(source.indexOf('event === "SIGNED_OUT"'));
-    expect(branch.slice(0, 400)).toContain("rememberSelectedProject(null)");
+    // the cleanup now runs inside reactToSignedOut (package E1: only a DELIBERATE or ended sign-out cleans up; an unexpected one is restored from the identity mirror)
+    expect(branch.slice(0, 3000)).toContain("rememberSelectedProject(null)");
   });
 
   test("M24Shell empties the BOQ device copy on a SIGNED_OUT event too", () => {
     const source = readFileSync(join(ROOT, "src/components/shell/M24Shell.tsx"), "utf8");
     const branch = source.slice(source.indexOf('event === "SIGNED_OUT"'));
-    expect(branch.slice(0, 700)).toContain("clearBoqDeviceCopiesOnSignOut()");
+    expect(branch.slice(0, 3000)).toContain("clearBoqDeviceCopiesOnSignOut()");
   });
 
   test("no sign-out path was missed -- these four are every signOut() in the app", () => {

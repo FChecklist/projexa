@@ -131,6 +131,43 @@ jobs:
         run: bash scripts/verify/bundle-service-role-scan.sh
       - name: Self-test the bundle scanner
         run: bash scripts/verify/bundle-service-role-scan.selftest.sh
+  conformance:
+    # LOCAL-FIRST wire conformance (package FA, 2026-10-02; docs/local-first/CONFORMANCE.md). Runs the REAL laptop client against the REAL
+    # projexa-sync Edge handler of compliance-tracker on a real Postgres (PGlite, no server): src/lib/local-first/conformance/
+    # wire.integration.test.ts and parity.test.ts, which skip themselves unless CT_ROOT names a compliance-tracker checkout.
+    #
+    # NOT A REQUIRED CHECK YET, on purpose: the backend it runs against is the unmerged branch feat/lf-sync-backend, which other packages are
+    # still changing. `continue-on-error: true` keeps a red run from blocking a PR; do not add this job to branch protection until
+    # feat/lf-sync-backend is merged into compliance-tracker's main, then point `ref:` at main and drop continue-on-error.
+    name: Local-first wire conformance (non-required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: FChecklist/compliance-tracker
+          ref: feat/lf-sync-backend
+          # inside the workspace (actions/checkout refuses a path outside it); bunfig's test root is src/, so nothing here is run as projexa's own
+          path: .conformance/compliance-tracker
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      # The harness needs only PGlite and the handler's own imports from the backend checkout. A private tarball the backend lists may not be
+      # installable from here: that is reported, and the check below decides whether what the harness needs is present.
+      - name: Install the backend checkout
+        working-directory: .conformance/compliance-tracker
+        run: bun install --frozen-lockfile || echo "::warning::bun install in compliance-tracker exited non-zero (a private package?); checking what the harness needs"
+      - name: The backend checkout has what the harness needs
+        run: test -d .conformance/compliance-tracker/node_modules/@electric-sql/pglite && test -f .conformance/compliance-tracker/supabase/functions/projexa-sync/handler.ts
+      - name: Wire conformance (real client x real handler)
+        run: bun test --isolate src/lib/local-first/conformance/wire.integration.test.ts
+        env:
+          CT_ROOT: ${{ github.workspace }}/.conformance/compliance-tracker
+      - name: Parity (the fake sync server x the real handler)
+        run: bun test --isolate src/lib/local-first/conformance/parity.test.ts
+        env:
+          CT_ROOT: ${{ github.workspace }}/.conformance/compliance-tracker
   perf:
     # R67 F-28 (audit recommendation R-249) -- the per-screen latency budget.
     #
@@ -218,6 +255,38 @@ jobs:
           path: |
             perf/perf-results.json
             perf/perf-results.md
+
+  offline-e2e:
+    # LOCAL-FIRST (owner order 2026-10-02: R1 no internet, R2 our server down, R9 stays signed in, R10 hard to lose). Runs
+    # e2e/offline-local-first.spec.ts through playwright.local-first.config.ts: a PRODUCTION build (the service worker is never
+    # registered by `next dev`) with the release bundle, a local Auth stand-in, and the sync service answered in the browser. No real
+    # session, secret, Supabase project or Vercel deployment is touched; every value is a placeholder.
+    #
+    # WHY IT IS BEHIND A REPOSITORY VARIABLE (same pattern as Perf budget above). The spec was written on a laptop that could not run a
+    # production build and a browser together, so it has been read, typechecked and listed by Playwright but never executed. A required
+    # job that had never passed once would block every pull request on a fault that may be in the spec, not the product. Set
+    #   Settings > Variables > LOCAL_FIRST_E2E_ENABLED = true
+    # to run it, read the first run's failure messages (every wait names what it was waiting for), fix the spec or the product, and
+    # then it can be made required like any other job.
+    name: Offline e2e (local-first)
+    if: ${{ vars.LOCAL_FIRST_E2E_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - name: Offline and server-down, end to end
+        run: bunx playwright test -c playwright.local-first.config.ts
+      - name: Laptop to laptop, no server (WebRTC, two real browser contexts)
+        run: bunx playwright test -c playwright.peer.config.ts
+      - name: Keep the trace of a failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-first-e2e-traces
+          path: test-results/
 
   secret-scan:
     # R60 T9: replaces GitHub's own secret scanning/push protection, which
