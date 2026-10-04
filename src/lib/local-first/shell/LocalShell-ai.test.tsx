@@ -94,3 +94,14 @@ test("the /local shell starts the person's outbox, so changes waiting on the lap
   await waitFor(() => expect(peekSharedOutbox("u1")).not.toBeNull(), { timeout: 5_000 });
   releaseSharedOutbox("u1");
 });
+
+test("offline, the /local shell header shows the AI work link disabled with the calm explanation", async () => {
+  await seedLaptop((globalThis as unknown as { indexedDB: IDBFactory }).indexedDB);
+  setOnline(false);
+  (window as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM.setURL("https://px.test/local/scope?projectId=p1");
+  const { findByTestId } = render(<LocalShell />);
+  await findByTestId("scope-list");
+  const btn = (await findByTestId("local-shell-ai-link-offline-button")) as HTMLButtonElement;
+  expect(btn.disabled).toBe(true);
+  expect((await findByTestId("local-shell-ai-link-offline-note")).textContent).toContain("needs the internet");
+});
