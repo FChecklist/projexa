@@ -67,11 +67,12 @@ describe("attestation source", () => {
     now = NOW + 25 * 3_600_000; // expired: no longer presented
     expect(await src.current()).toBeNull();
   });
-  test("an attestation for another person is never stored", async () => {
+  test("the server's person id may differ from the browser session id (live: compliance id vs Supabase auth id) and is still stored", async () => {
     const signer = await createTestSigner();
     const meta = memMeta();
-    const src = createAttestationSource({ meta, userId: "u1", now: () => NOW, fetchAttest: async () => attestBody(signer, "u2") });
-    expect(await src.refresh()).toBe(false);
-    expect(await src.current()).toBeNull();
+    const src = createAttestationSource({ meta, userId: "auth-session-id", now: () => NOW, fetchAttest: async () => attestBody(signer, "server-person-id") });
+    expect(await src.refresh()).toBe(true);
+    expect((await src.current())?.claims.sub).toBe("server-person-id");
+    expect(await meta.getMeta(PEER_KEYS_KEY)).toHaveLength(1);
   });
 });
