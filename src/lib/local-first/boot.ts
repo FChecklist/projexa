@@ -241,5 +241,9 @@ export async function startLocalFirstBoot(): Promise<BootHandle> {
     },
     rememberRelease: (version) => rememberRunningRelease(version),
   };
-  return startBoot(wiring);
+  // Audit 37 point 9: data-free "usage" line (RAM, heap, storage, local vs network) once per session, then at most every 10 minutes.
+  const [{ startUsageTelemetry }, { reportClientError }] = await Promise.all([import("./usage-telemetry"), import("./client-error-report")]);
+  const stopUsage = startUsageTelemetry({ report: (kind, message, where) => reportClientError(kind, message, where) });
+  const handle = startBoot(wiring);
+  return { ...handle, stop: () => { stopUsage(); handle.stop(); } };
 }
