@@ -11,6 +11,7 @@
 // marked so the service worker does not hand the shell back) and explained calmly when it cannot.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { PeerSyncMarker } from "@/components/PeerSyncMarker";
 import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker";
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
@@ -114,6 +115,20 @@ export default function LocalShell() {
   useEffect(() => {
     if (!userId) return;
     void import("../outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
+  }, [userId]);
+
+  // AUDIT-37 (points 7, 8): the auto-sync scheduler + laptop-to-laptop peers were built but never started anywhere, so no laptop
+  // caught up with the server or talked to a colleague's laptop after its first copy. One leader tab per browser (Web Lock).
+  useEffect(() => {
+    if (!userId) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    void import("../peer/peer-shared").then((m) => {
+      if (cancelled) return;
+      m.startPeerSync(userId);
+      stop = () => m.stopPeerSync(userId);
+    }).catch(() => {});
+    return () => { cancelled = true; stop?.(); };
   }, [userId]);
 
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
@@ -268,6 +283,7 @@ export default function LocalShell() {
       {/* LOCAL-FIRST browser AI (R11, lf-e11): the same doors as every signed-in (app) page, for the person kept on this laptop -- this
           shell is what opens with no internet, so without it a person's AI could not work offline at all. */}
       <AiAttach userId={data.userId} />
+      <PeerSyncMarker className="px-2 py-1" />
       {location.path === "/" ? (
         <Home shell={shell} />
       ) : matched ? (
