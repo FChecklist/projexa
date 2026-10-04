@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 340px; margin: 0; padding: 14px; font: 13px system-ui, sans-serif; color: #1c2b3a; background: #fffdf9; }
+    h1 { font-size: 15px; margin: 0 0 6px; }
+    p { margin: 0 0 8px; color: #55657a; }
+    textarea { width: 100%; height: 110px; box-sizing: border-box; font: 12px ui-monospace, monospace; }
+    button { margin-top: 8px; padding: 7px 12px; border: 0; border-radius: 6px; background: #f5820a; color: #1c2b3a; font-weight: 600; cursor: pointer; }
+    #msg { margin-left: 8px; color: #0e7c6e; }
+  </style>
+</head>
+<body>
+  <h1>PROJEXA AI Link</h1>
+  <p>In PROJEXA click <b>AI prompt - paste in any AI</b>, then paste it here once. On ChatGPT, Claude, Gemini, DeepSeek or z.ai, the orange PROJEXA button puts it in the chat box.</p>
+  <textarea id="t" placeholder="Paste the PROJEXA AI prompt here"></textarea>
+  <div><button id="save">Save</button><button id="paste">Paste from clipboard</button><span id="msg"></span></div>
+  <script src="popup.js"></script>
+</body>
+</html>
