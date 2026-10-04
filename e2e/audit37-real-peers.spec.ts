@@ -20,9 +20,9 @@ async function laptop(browser: import("@playwright/test").Browser, who: keyof ty
   return { context, page };
 }
 
-test("two laptops of one organisation find each other (point 7)", async ({ browser }) => {
+test("two laptops of one person+class find each other (point 7; different roles are refused by design, protocol.ts wrong_view)", async ({ browser }) => {
   const a = await laptop(browser, "siteSupervisor");
-  const b = await laptop(browser, "finance");
+  const b = await laptop(browser, "siteSupervisor");
   try {
     for (const l of [a, b]) {
       await expect

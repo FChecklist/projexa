@@ -24,6 +24,8 @@ import { createRtcLink } from "./transport";
 const running = new Map<string, { stop: () => void }>();
 
 async function fetchAttest(): Promise<unknown> {
+  // offline: no request at all (the offline shell promises "not one request"; the cached attestation, if any, is used)
+  if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
   const token = await accessToken();
   if (!token) throw new Error("signed out");
   const res = await fetch(`${SYNC_BASE_URL}/attest`, {

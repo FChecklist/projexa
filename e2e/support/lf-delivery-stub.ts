@@ -205,6 +205,8 @@ export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, 
         server_time: now,
       })
     }
+    // Audit 37: the shell now starts background + peer sync, which asks /attest; answer it quietly (an invalid body is ignored, a 404 would be a console error)
+    if (request.method() === "POST" && path === "/attest") return json(route, origin, {})
     if (request.method() === "GET" && path === "/heads") {
       return json(route, origin, {
         heads: { [PROJECT_ID]: 0, ...Object.fromEntries(extra.map((p) => [p.id, 0])), __org__: 0 }, projects_etag: "lf-dl-projects-1", role, view_class: redact ? "deliveryviewer01" : "deliverymember01", org_view_class: null,
