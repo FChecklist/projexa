@@ -8,6 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { createIdentityStore } from "@/lib/local-first/identity";
+import { openDeviceMeta } from "@/lib/local-first/device-meta";
+import { rememberPinAfterOnlineLogin, unlockOffline } from "@/lib/local-first/offline-pin";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,6 +24,19 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    // Offline: open this laptop's own copy with the passcode kept from the last online sign-in (offline-pin.ts). Online is unchanged.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const identityStore = createIdentityStore({ storage: window.localStorage, openMeta: () => openDeviceMeta() });
+      const result = await unlockOffline({ storage: window.localStorage, identityStore }, email, password);
+      if (!result.ok) {
+        setError(result.notice);
+        setLoading(false);
+        return;
+      }
+      window.location.assign("/dashboard");
+      return;
+    }
+
     const supabase = createClient();
 
     const { data, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
@@ -59,6 +75,10 @@ export default function LoginPage() {
         }
       }
     }
+
+    // Keep a salted hash of the passcode on this laptop so it can sign back in offline (best effort, never blocks).
+    const meta = data.session.user.user_metadata as Record<string, unknown> | null;
+    await rememberPinAfterOnlineLogin(window.localStorage, email, password, { userId: data.session.user.id, name: typeof meta?.name === "string" ? meta.name : null });
 
     router.push("/dashboard");
     router.refresh();
