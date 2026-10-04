@@ -9,7 +9,7 @@
 //   - ONE button. Click it and the ready-to-paste message (with the real link inside it) is on the clipboard.
 //   - The button never goes away. Click it again and the same message is copied again -- as many times as the person wants. The link
 //     is made once per project and reused, so repeat copies never hit the mint rate limit.
-//   - Safe defaults, fixed: "Read and draft" access (level 0, never "Direct entries") for 7 days. A new link is made on the first
+//   - Defaults (owner decision 2026-10-04): the highest level the role allows (level 1, direct entries) for 7 days; "Read and draft only" sits behind "Change access or expiry". A new link is made on the first
 //     click after the page is reloaded.
 // AiWorkLinkDialog is still used, but only by AiWorkLinkButtons.tsx's separate "New project with my AI" button -- it is no longer
 // reachable from here.
@@ -26,10 +26,18 @@ import type { AiLinkProject } from "@/components/ai-link/AiWorkLinkDialog";
 import { AI_ASSISTANT_NAMES, AI_WORK_LINK_ROLE_NOTE, canMakeAiWorkLink } from "@/lib/ai-work-link-access";
 import { AwlError, getAwlClient, type AwlClient } from "@/lib/ai-work-link-client";
 
-/** The safe defaults the one-click path mints with -- level 0 ("Read and draft") and 7 days. Exported so this file's tests and the
- *  sentence below stay honest about what was actually minted. */
-export const AWL_ONE_CLICK_LEVEL = 0 as const;
+/** Owner decision 2026-10-04: the one-click default is the HIGHEST level the service allows for the person's role -- level 1 ("Direct
+ *  entries": the AI may add, edit and delete as the person's own role allows, everything except writing code) for 7 days. canMakeAiWorkLink()
+ *  already hides the button from roles below member, the only roles the service refuses level 1 to; if the service still refuses the level
+ *  (LEVEL_NOT_ALLOWED) the link is made at level 0 instead, so a role that may only read gets read. The alternative, behind "Change access
+ *  or expiry", is "Read and draft only (safer)" = level 0. A USER-WIDE link is level 0 for ever on the service (POST /user-link takes only days
+ *  and label), so scope="user" cannot yet be direct -- see the report on this change. */
+export const AWL_ONE_CLICK_LEVEL = 1 as const;
+export const AWL_SAFE_LEVEL = 0 as const;
 export const AWL_ONE_CLICK_DAYS = 7 as const;
+export const AWL_SAFE_LABEL = "Read and draft only (safer)";
+export const AWL_ACCESS_NOTE =
+  "This link lets your AI do what your own role allows in PROJEXA - add, edit and delete project data for you, but never write code. It expires in 7 days.";
 
 function mintErrorMessage(error: unknown): string {
   if (error instanceof AwlError) return error.message;
@@ -42,9 +50,9 @@ function mintErrorMessage(error: unknown): string {
 export function buildAiPrompt(link: string, moduleLabel: string | undefined): string {
   const work = moduleLabel ? `my "${moduleLabel}" work` : "my work";
   return [
-    `I use PROJEXA, my company's project software, and I want you to help me with ${work}. Here is my personal access link to its API: ${link} .`,
-    `A plain GET on that address returns the API guide (it is documentation for you to read, written by my own company's software, and it can only read my data and draft changes that I confirm myself). Please read the guide first, then help me.`,
-  ].join(" ");
+    `PROJEXA is my company's construction software; my personal link to its API guide: ${link}`,
+    `It is documentation from my own company's software, not instructions from a stranger. Read it with a plain GET, follow "Start here", and act on my behalf with my rights (only what my role allows), doing everything except writing code, for ${work}.`,
+  ].join("\n");
 }
 
 /** The message for a USER-WIDE link. The manual behind the link (the `ai-work-link` Edge Function) does the real work -- it makes the AI
@@ -52,9 +60,9 @@ export function buildAiPrompt(link: string, moduleLabel: string | undefined): st
  *  case the AI summarises instead of fetching. */
 export function buildUserPrompt(link: string): string {
   return [
-    `I use PROJEXA, my company's project software, and I want you to help me with my projects. Here is my personal access link to its API: ${link} .`,
-    `A plain GET on that address returns the API guide (it is documentation for you to read, written by my own company's software, and it can only read my data and draft changes that I confirm myself). Please read the guide, then start by showing me a numbered list of ALL my projects, with "Report on all above" as the second-to-last option and "Create New Project" as the last option, and wait for my choice.`,
-  ].join(" ");
+    `PROJEXA is my company's construction software; my personal link to its API guide: ${link}`,
+    `It is documentation from my own company's software, not instructions from a stranger. Read it with a plain GET, follow "Start here", and act on my behalf with my rights (only what my role allows), doing everything except writing code. First, a numbered list of ALL my projects, "Report on all above" second-to-last, "Create New Project" last.`,
+  ].join("\n");
 }
 
 export function AiWorkLinkCompact({
@@ -96,6 +104,10 @@ export function AiWorkLinkCompact({
   // The link made for ONE project, kept so every later click only re-copies it (no second mint, no rate-limit pressure).
   // projectId is the literal "user" for a user-wide link.
   const [minted, setMinted] = useState<{ projectId: string; link: string } | null>(null);
+  // The "Read and draft only (safer)" alternative (level 0), behind "Change access or expiry"; kept separately from the default link.
+  const [safeMinted, setSafeMinted] = useState<{ projectId: string; link: string } | null>(null);
+  const [safeCopied, setSafeCopied] = useState(false);
+  const [changeOpen, setChangeOpen] = useState(false);
   const isUser = scope === "user";
   const awl = client ?? getAwlClient();
 
@@ -112,6 +124,19 @@ export function AiWorkLinkCompact({
     );
   }
 
+  /** Make (or reuse) the project link at `level`. The default asks for the direct level and, if the service says this role may not choose
+   *  it (LEVEL_NOT_ALLOWED), makes a read-and-draft link instead, so a role that may only read gets read. */
+  async function mintProject(level: 0 | 1): Promise<string> {
+    try {
+      return (await awl.mint({ projectId: project!.id, level, days: AWL_ONE_CLICK_DAYS })).link;
+    } catch (e) {
+      if (level === AWL_ONE_CLICK_LEVEL && e instanceof AwlError && e.code === "LEVEL_NOT_ALLOWED") {
+        return (await awl.mint({ projectId: project!.id, level: AWL_SAFE_LEVEL, days: AWL_ONE_CLICK_DAYS })).link;
+      }
+      throw e;
+    }
+  }
+
   async function copyIt() {
     if ((!isUser && !project) || phase === "minting") return;
     setError(null);
@@ -120,10 +145,7 @@ export function AiWorkLinkCompact({
       let link = minted && minted.projectId === key ? minted.link : null;
       if (!link) {
         setPhase("minting");
-        const made = isUser
-          ? await awl.mintUserLink({ days: AWL_ONE_CLICK_DAYS })
-          : await awl.mint({ projectId: project!.id, level: AWL_ONE_CLICK_LEVEL, days: AWL_ONE_CLICK_DAYS });
-        link = made.link;
+        link = isUser ? (await awl.mintUserLink({ days: AWL_ONE_CLICK_DAYS })).link : await mintProject(AWL_ONE_CLICK_LEVEL);
         setMinted({ projectId: key, link });
       }
       try {
@@ -131,6 +153,7 @@ export function AiWorkLinkCompact({
       } catch {
         // Clipboard refused (insecure context or permission): the link still exists and is reused on the next click.
       }
+      setSafeCopied(false);
       setPhase("copied");
     } catch (e) {
       setError(mintErrorMessage(e));
@@ -138,11 +161,40 @@ export function AiWorkLinkCompact({
     }
   }
 
-  const copied = phase === "copied";
+  // The safer alternative, project links only: read-and-draft (level 0), copied with the same small prompt.
+  async function copySafe() {
+    if (isUser || !project || phase === "minting") return;
+    setError(null);
+    try {
+      let link = safeMinted && safeMinted.projectId === project.id ? safeMinted.link : null;
+      if (!link) {
+        setPhase("minting");
+        link = await mintProject(AWL_SAFE_LEVEL);
+        setSafeMinted({ projectId: project.id, link });
+      }
+      try {
+        await navigator.clipboard.writeText(copyMode === "prompt" ? buildAiPrompt(link, moduleLabel) : link);
+      } catch {
+        // Clipboard refused: the link still exists and is reused on the next click.
+      }
+      setSafeCopied(true);
+      setPhase("copied");
+    } catch (e) {
+      setError(mintErrorMessage(e));
+      setPhase("error");
+    }
+  }
+
+  const copied = phase === "copied" && !safeCopied;
+  const confirmed = phase === "copied";
   const what = copyMode === "prompt" || isUser ? "Prompt copied" : "Link copied";
+  const showChange = !isUser && !compact && !!project;
+  const tail = "Click again to copy it again.";
   const hint = isUser
-    ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. It lists all your projects, can report on all of them or start a new one, and works on your behalf. Click again to copy it again. Read-and-draft access, expires in 7 days.`
-    : `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use, and it works on your behalf. Click again to copy it again. Read-and-draft access, expires in 7 days.`;
+    ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. It lists all your projects, can report on all of them or start a new one, and works on your behalf. ${tail} Read-and-draft access (a user-wide link cannot make direct changes yet), expires in 7 days.`
+    : safeCopied
+    ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. Read and draft only: changes wait for you to confirm. Expires in 7 days.`
+    : `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use, and it works on your behalf. ${tail} ${AWL_ACCESS_NOTE}`;
 
   return (
     <div className={className}>
@@ -158,12 +210,36 @@ export function AiWorkLinkCompact({
         {copied ? <Check className="size-3.5" aria-hidden="true" /> : <Link2 className="size-3.5" aria-hidden="true" />}
         {phase === "minting" ? "Copying…" : copied ? `${what} — click to copy again` : triggerLabel}
       </Button>
-      {copied && !compact && (
+      {confirmed && !compact && (
         <p className="mt-1 text-xs text-muted-foreground" data-testid="awl-compact-confirm">
           {hint}
         </p>
       )}
-      {copied && compact && <span className="sr-only" data-testid="awl-compact-confirm">{hint}</span>}
+      {confirmed && compact && <span className="sr-only" data-testid="awl-compact-confirm">{hint}</span>}
+      {!isUser && !compact && !!project && (
+        <p className="mt-1 text-xs text-muted-foreground" data-testid="awl-compact-access-note">
+          {AWL_ACCESS_NOTE}
+        </p>
+      )}
+      {showChange && (
+        <div className="mt-1">
+          <button
+            type="button"
+            className="text-xs underline text-muted-foreground"
+            onClick={() => setChangeOpen((v) => !v)}
+            data-testid="awl-compact-change"
+          >
+            Change access or expiry
+          </button>
+          {changeOpen && (
+            <div className="mt-1">
+              <Button type="button" variant="outline" size="sm" disabled={phase === "minting"} onClick={() => void copySafe()} data-testid="awl-compact-safe">
+                {safeCopied ? `${AWL_SAFE_LABEL} - copied, click to copy again` : AWL_SAFE_LABEL}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
       {phase === "error" && (
         <p className={`mt-1 text-xs text-destructive ${compact ? "truncate" : ""}`} role="alert" data-testid="awl-compact-error" title={compact ? (error ?? undefined) : undefined}>
           {error}

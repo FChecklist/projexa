@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "PROJEXA AI Link",
-  "version": "0.1.0",
-  "description": "One click puts your PROJEXA AI work link into ChatGPT, Claude, Gemini, DeepSeek or z.ai, so that AI can work on your PROJEXA projects.",
+  "version": "0.2.0",
+  "description": "One click puts a small PROJEXA prompt and your PROJEXA guide into ChatGPT, Claude, Gemini, DeepSeek or z.ai, so that AI can work on your PROJEXA projects.",
   "permissions": ["storage", "clipboardRead"],
+  "host_permissions": ["https://*.supabase.co/functions/v1/ai-work-link/*"],
   "action": { "default_popup": "popup.html", "default_title": "PROJEXA AI Link" },
   "content_scripts": [
     {
@@ -15,7 +16,7 @@
         "https://chat.deepseek.com/*",
         "https://chat.z.ai/*"
       ],
-      "js": ["content.js"],
+      "js": ["lib.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

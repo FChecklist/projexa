@@ -1,9 +1,12 @@
-// PROJEXA AI Link (Audit 37, point 36). Adds a small "PROJEXA" button to chat AI pages. One click puts the saved PROJEXA AI prompt (the text
-// PROJEXA's "AI prompt - paste in any AI" button copies, which contains the work link) into the chat box. The person sends it themselves.
-// Nothing leaves the browser: the prompt is read from the extension's own storage, written into the page's chat box, never sent anywhere.
+// PROJEXA AI Link (Audit 37, point 36). Adds a small "PROJEXA" button to chat AI pages. One click fetches the person's own PROJEXA guide
+// (a plain GET of their saved work link) and puts ONE message in the chat box: the small prompt plus the guide, so even an AI that cannot
+// open links has everything. The person sends it themselves. The only network request is that one GET; nothing else leaves the browser.
 (function () {
   if (window.__projexaAiLink) return;
   window.__projexaAiLink = true;
+
+  var L = window.PROJEXA_AI_LINK_LIB; // lib.js is loaded first by the manifest
+  if (!L) return;
 
   var BOX_SELECTORS = [
     "#prompt-textarea",                      // ChatGPT
@@ -35,9 +38,8 @@
   }
 
   function toast(button, msg) {
-    var old = button.textContent;
     button.textContent = msg;
-    setTimeout(function () { button.textContent = old; }, 2500);
+    setTimeout(function () { button.textContent = "PROJEXA"; }, 3500);
   }
 
   function addButton() {
@@ -46,16 +48,32 @@
     b.id = "projexa-ai-link-btn";
     b.type = "button";
     b.textContent = "PROJEXA";
-    b.title = "Put my PROJEXA AI prompt in the chat box";
+    b.title = "Put my PROJEXA prompt and guide in the chat box";
     b.style.cssText = "position:fixed;right:16px;bottom:96px;z-index:2147483647;padding:8px 12px;border:0;border-radius:999px;" +
       "background:#f5820a;color:#1c2b3a;font:600 13px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)";
     b.addEventListener("click", function () {
-      chrome.storage.local.get("prompt", function (r) {
-        var text = r && r.prompt;
-        if (!text) { toast(b, "Open the PROJEXA extension and paste your prompt once"); return; }
+      if (b.dataset.busy) return;
+      chrome.storage.local.get(["link", "prompt"], function (r) {
+        // `prompt` is what version 0.1 saved (a whole pasted prompt); the link is taken out of it.
+        var link = (r && r.link) || L.extractLink(r && r.prompt);
+        if (!link) { toast(b, "Open the PROJEXA extension and paste your link once"); return; }
         var box = findBox();
         if (!box) { toast(b, "No chat box found on this page"); return; }
-        toast(b, putText(box, text) ? "Prompt added - press send" : "Could not add it");
+        b.dataset.busy = "1";
+        b.textContent = "Fetching guide...";
+        // The ONE network request this extension makes: a plain GET of the person's own link. The link is never logged.
+        fetch(link, { method: "GET", credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer", headers: { Accept: "text/markdown, text/plain, */*" } })
+          .then(function (res) { if (!res.ok) throw new Error("status " + res.status); return res.text(); })
+          .then(function (text) { return L.buildMessage(link, text, L.MAX_GUIDE_CHARS); },
+                function () { return L.buildMessage(link, null, L.MAX_GUIDE_CHARS); })
+          .then(function (m) {
+            delete b.dataset.busy;
+            var ok = putText(box, m.text);
+            toast(b, !ok ? "Could not add it"
+              : !m.withGuide ? "Guide not fetched - prompt only. Press send"
+              : m.cut ? "Prompt + guide (cut) added - press send"
+              : "Prompt + guide added - press send");
+          });
       });
     });
     document.body.appendChild(b);

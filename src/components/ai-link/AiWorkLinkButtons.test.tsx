@@ -115,7 +115,7 @@ describe("what each button does", () => {
 
     await act(async () => void fireEvent.click(trigger));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(client.minted).toEqual([{ projectId: "p1", level: 0, days: 7 }]);
+    expect(client.minted).toEqual([{ projectId: "p1", level: 1, days: 7 }]);
     expect(clipboard).toHaveLength(1);
     expect(clipboard[0]).toContain("https://example.supabase.co/functions/v1/ai-work-link/pxa_token");
     expect(await screen.findByTestId("awl-compact-confirm")).toBeTruthy();
