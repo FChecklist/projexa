@@ -1,0 +1,21 @@
+AUDIT-100 B60 local real-browser evidence (2026-10-05T19:56Z), commit base edfabc66 + this branch
+Rig: production build (next build --webpack) with NEXT_PUBLIC_PX_STATIC_BASE=http://127.0.0.1:3198, app on localhost:3197, static host stand-in e2e/support/static-host-server.mjs serving .static-pages (scripts/stage-static-pages.mjs output, release 2026.10.05-001, 747 files). Browser: Microsoft Edge (Playwright channel msedge; bundled Chromium cannot launch on this laptop).
+
+== GREEN run (bunx playwright test -c playwright.static-host.config.ts, servers started by hand)
+B60 measured: app-origin static=0 static-host requests=58 static-host answered from the laptop=159 release files=747
+  ok 1 [edge] › e2e\lf-static-host.spec.ts:57:5 › B60: with the static host switched on, install + daily use fetch ZERO static files from the app origin, the app works offline, and every byte is verified (32.7s)
+  ok 2 [edge] › e2e\lf-static-host.spec.ts:124:5 › B60: a static host that DROPS the bundle or serves ONE wrong byte is refused (nothing installed), and the real bytes install on the next start (34.6s)
+  2 passed (1.6m)
+
+== SEEN TO FAIL 1: service worker's static-host branch disabled in the built route (if(!b.staticOrigin|| -> if(true||)
+  x  1 [edge] › e2e\lf-static-host.spec.ts:57:5 › B60: with the static host switched on, install + daily use fetch ZERO static files from the app origin, the app works offline, and every byte is verified (48.3s)
+    Error: expect(locator).toHaveCount(expected) failed
+    Received: 0
+    test-results\lf-static-host-B60-with-th-e868d--and-every-byte-is-verified-edge\test-failed-1.png
+  1 failed
+
+== SEEN TO FAIL 2: next start without NEXT_PUBLIC_PX_STATIC_BASE at runtime (half the page's assets fall back to the app origin)
+B60 measured: app-origin static=6 static-host requests=53 static-host answered from the laptop=177 release files=747
+      114 |     console.log(`B60 measured: app-origin static=${fromApp.length} static-host requests=${fromStatic.length} static-host answered from the laptop=${fromCache.length} release files=${n.files.length}`);
+    > 115 |     expect(fromApp, "a static file was fetched from the app origin (Vercel in production)").toEqual([]);
+    test-results\lf-static-host-B60-with-th-e868d--and-every-byte-is-verified-edge\test-failed-1.png

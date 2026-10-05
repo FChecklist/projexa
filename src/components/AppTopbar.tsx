@@ -43,6 +43,7 @@ import { rememberSelectedProject } from "@/lib/project-cookie";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { SIGN_OUT_AND_DELETE_LABEL, signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import Image from "next/image";
+import { publicFileUrl } from "@/lib/local-first/release/release-constants";
 
 type OrganizationInfo = { email: string; organization: { name: string } };
 
@@ -126,7 +127,7 @@ export function AppTopbar({
 
   return (
     <AppHeader
-      logo={<Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} className="rounded-sm" />}
+      logo={<Image src={publicFileUrl("/logo-mark.svg")} unoptimized alt="PROJEXA" width={28} height={28} className="rounded-sm" />}
       productName="PROJEXA"
       onToggleSidebar={onToggleSidebar}
       sidebarCollapsed={sidebarCollapsed}
