@@ -29,6 +29,19 @@ export const MAX_FILE_BYTES = 60 * 1024 * 1024;
 
 export const fileDbNameFor = (userId: string): string => `projexa-files:${userId}`;
 
+/** What the person reads when the browser refuses to store a file because this site's storage is full (B27). */
+export const STORAGE_FULL_MESSAGE =
+  "This laptop has no room left to keep this file. Remove a kept file, or free some space on the laptop, then try again. You can still open it online.";
+/** Any other refusal to store the file. */
+export const FILE_NOT_KEPT_MESSAGE = "This file could not be kept on this laptop right now. You can still open it online.";
+
+/** True for the browser's "storage is full" refusal (a QuotaExceededError, however the browser wraps it). */
+export function isQuotaError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: unknown; code?: unknown; message?: unknown };
+  return e.name === "QuotaExceededError" || e.code === 22 || (typeof e.message === "string" && /quota/i.test(e.message));
+}
+
 export type KeptFile = {
   docId: string;
   orgId: string;
@@ -121,28 +134,34 @@ export async function openFileCache(userId: string, deps: { idb?: IDBFactory; no
       const size = input.bytes.byteLength;
       if (size === 0) return { ok: false, message: "The file is empty." };
       if (size > caps.maxFile) return { ok: false, message: `This file is too large to keep on this laptop (over ${Math.max(1, Math.round(caps.maxFile / 1024 / 1024))} MB). Open it online.` };
-      const existing = await all();
-      const others = existing.filter((f) => f.docId !== input.docId);
-      if (input.pinned) {
-        const pinnedTotal = others.filter((f) => f.pinned).reduce((s, f) => s + f.size, 0);
-        if (pinnedTotal + size > caps.pinned) return { ok: false, message: "This laptop already keeps as many files as it may. Remove a kept file first." };
+      try {
+        const existing = await all();
+        const others = existing.filter((f) => f.docId !== input.docId);
+        if (input.pinned) {
+          const pinnedTotal = others.filter((f) => f.pinned).reduce((s, f) => s + f.size, 0);
+          if (pinnedTotal + size > caps.pinned) return { ok: false, message: "This laptop already keeps as many files as it may. Remove a kept file first." };
+        }
+        const previous = existing.find((f) => f.docId === input.docId);
+        const file: KeptFile = { ...input, size, pinned: input.pinned || Boolean(previous?.pinned), keptAt: previous?.keptAt ?? now(), openedAt: now() };
+        // Recent (unpinned) files beyond the cap: the least recently opened go first, never the one just kept.
+        const recent = [...others.filter((f) => !f.pinned), ...(file.pinned ? [] : [file])].sort((a, b) => b.openedAt - a.openedAt);
+        const drop: string[] = [];
+        let total = 0;
+        for (const f of recent) {
+          total += f.size;
+          if (total > caps.recent && f.docId !== file.docId) drop.push(f.docId);
+        }
+        const tx = db.transaction(FILES_STORE, "readwrite");
+        const store = tx.objectStore(FILES_STORE);
+        store.put(file);
+        for (const id of drop) store.delete(id);
+        await txDone(tx);
+        return { ok: true };
+      } catch (err) {
+        // AUDIT-100 B27: the BROWSER's own storage cap (the disk is full, or the browser gives this site no more room) aborts the write
+        // with a QuotaExceededError. That used to escape as an unhandled rejection: the button did nothing and the person was told nothing.
+        return { ok: false, message: isQuotaError(err) ? STORAGE_FULL_MESSAGE : FILE_NOT_KEPT_MESSAGE };
       }
-      const previous = existing.find((f) => f.docId === input.docId);
-      const file: KeptFile = { ...input, size, pinned: input.pinned || Boolean(previous?.pinned), keptAt: previous?.keptAt ?? now(), openedAt: now() };
-      // Recent (unpinned) files beyond the cap: the least recently opened go first, never the one just kept.
-      const recent = [...others.filter((f) => !f.pinned), ...(file.pinned ? [] : [file])].sort((a, b) => b.openedAt - a.openedAt);
-      const drop: string[] = [];
-      let total = 0;
-      for (const f of recent) {
-        total += f.size;
-        if (total > caps.recent && f.docId !== file.docId) drop.push(f.docId);
-      }
-      const tx = db.transaction(FILES_STORE, "readwrite");
-      const store = tx.objectStore(FILES_STORE);
-      store.put(file);
-      for (const id of drop) store.delete(id);
-      await txDone(tx);
-      return { ok: true };
     },
     async setPinned(docId, pinned) {
       const tx = db.transaction(FILES_STORE, "readwrite");
