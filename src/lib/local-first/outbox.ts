@@ -56,6 +56,7 @@ import { SyncError, type PushOp, type PushResult, type SyncClient, type SyncServ
 import { asTaskErrorCode, resolveTaskError, sanitiseBackendMessage } from "@/lib/task-errors";
 import { asData, beforeOf, decide, effectFromParams, effectOf, fieldValue, overlay, withoutFields, type Data } from "./outbox-merge";
 import { opTooLarge, syncCodeSentence, textLimitProblem, textTooLongMessage } from "./outbox-words";
+import { reportFault } from "./sync-fault-report";
 
 // ─── public types ────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -811,6 +812,7 @@ export function createOutbox(options: OutboxOptions): Outbox {
             await noteWaiting(db, report);
             return;
           }
+          reportFault("outbox:push", err); // B57: a 5xx / timeout / bad answer while online is a fault we want to hear about
           // Anything else: nothing is known about what the server did. Keep every op, same op_id, try again later
           // (a whole-request refusal that will not change by itself is counted, then the person is asked).
           for (const op of batch) {
@@ -910,6 +912,7 @@ export function createOutbox(options: OutboxOptions): Outbox {
         await onePass(total);
       } catch (err) {
         total.error = err instanceof Error ? err.message : String(err);
+        reportFault("outbox:pass", err);
       }
       await refreshState(state.status === "flushing" ? "idle" : state.status);
       total.status = state.status;

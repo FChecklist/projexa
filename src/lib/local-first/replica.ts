@@ -42,6 +42,7 @@ import {
 // lf-e7: the organisation kinds and the role / class / epoch rules live in their own files; this one only calls them.
 import { ORG_CHECK_KEY, applyClasses, assertPageClass, classSignal, isClassSignal, noteEpoch, resetEverything, resetProject, type ClassSignal } from "./replica-class";
 import { ORG_CHECK_EVERY_MS, checkOrganisation, orgKindsOf } from "./replica-org";
+import { reportFault } from "./sync-fault-report";
 
 export { changeCursorKey, reconcileKey };
 
@@ -952,6 +953,7 @@ export function createReplica(options: ReplicaOptions): Replica {
       if (cooling) await db.setMeta(COOLDOWN_KEY, null); // a clean run ends the breaker's escalation
       return finish("done");
     } catch (err) {
+      reportFault("replica:sync", err); // B57: the pull failed for a reason that is not "offline" / "signed out"
       if (err instanceof SyncError) {
         report.issues.push({ reason: err.kind, message: err.message });
         // The manifest itself failed (after the client's retries): the same stop as a tripped breaker (cost:COST-04).

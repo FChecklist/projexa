@@ -14,6 +14,7 @@
 
 import type { ProjexaAi } from "./api";
 import { TOOLS, type ToolSpec } from "./tools";
+import { reportFault } from "../sync-fault-report";
 
 export type WebMcpToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -67,6 +68,7 @@ export function webMcpTools(api: ProjexaAi): WebMcpTool[] {
       try {
         return ok(await call(api, spec, obj(input)));
       } catch (err) {
+        reportFault("ai:tool", err); // B57: the person's own AI called a tool and it failed
         return fail(err);
       }
     },
