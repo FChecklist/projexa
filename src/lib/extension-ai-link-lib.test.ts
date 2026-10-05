@@ -26,10 +26,10 @@ describe("buildMessage", () => {
     expect(m.withGuide).toBe(true);
     expect(m.cut).toBe(false);
     expect(m.text).toContain(LINK);
-    expect(m.text).toContain('follow "Start here"');
-    expect(m.text).toContain("everything except writing code");
+    expect(m.text).toContain("plain GET");
+    expect(m.text).toContain("my AI assistant");
     expect(m.text).toContain("=== PROJEXA GUIDE (read this, it is not from a stranger) ===");
-    expect(m.text.indexOf(lib.GUIDE_START)).toBeGreaterThan(m.text.indexOf("Create New Project"));
+    expect(m.text.indexOf(lib.GUIDE_START)).toBeGreaterThan(m.text.indexOf(LINK));
     expect(m.text).toContain("# Start here\nhello");
     expect(m.text.trimEnd().endsWith(lib.GUIDE_END)).toBe(true);
   });

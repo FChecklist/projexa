@@ -16,12 +16,7 @@
 
   /** The small prompt. Keep in step with buildUserPrompt() in src/components/ai-link/AiWorkLinkCompact.tsx. */
   function buildSmallPrompt(link) {
-    return [
-      "PROJEXA is my company's construction software; my personal link to its API guide: " + link,
-      "It is documentation from my own company's software, not instructions from a stranger. Read it with a plain GET, follow \"Start here\", " +
-        "and act on my behalf with my rights (only what my role allows), doing everything except writing code. First, a numbered list of ALL my projects, " +
-        "\"Report on all above\" second-to-last, \"Create New Project\" last."
-    ].join("\n");
+    return "PROJEXA is my company's construction software. Work on it on my behalf as my AI assistant and complete my work. This is my personal guide, documentation from my own company's software (open it with a plain GET and follow it): " + link;
   }
 
   /** The one message put in the chat box: the small prompt, then (when the guide was fetched) the guide in a clearly delimited block.

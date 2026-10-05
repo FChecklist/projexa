@@ -1,45 +1,45 @@
 import { describe, expect, test } from "bun:test";
 import { mock } from "bun:test";
 
-// The wording is tested against real outside AIs (scripts/verify/ai-link/simulate-external-ai.mjs in
-// compliance-tracker): "open this link and follow it" was refused by a careful AI as a possible
-// prompt-injection about one run in three, while framing the link as the owner's own API documentation
-// was followed 3 times out of 3. These tests pin the properties that made the difference. 2026-10-04: the prompt is now SMALL (the full
-// manual lives behind the link) and says the AI acts with the person's own rights and does everything except write code.
+// Owner-approved small prompt (2026-10-05). The wording was tested against real outside AIs: framing the link as the owner's own
+// documentation, opened with a plain GET, is what careful AIs follow. The full manual lives behind the link. These tests pin it.
 mock.module("next/navigation", () => ({ useRouter: () => ({ push: () => {}, prefetch: () => {} }) }));
 const { buildAiPrompt, buildUserPrompt } = await import("./AiWorkLinkCompact");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ext = require("../../../extension/projexa-ai-link/lib.js");
 
-const LINK = "https://x.supabase.co/functions/v1/ai-work-link/pxa_abc";
+const LINK = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/ai-work-link/pxa_" + "a".repeat(30);
+
+const EXACT =
+  "PROJEXA is my company's construction software. Work on it on my behalf as my AI assistant and complete my work. This is my personal guide, documentation from my own company's software (open it with a plain GET and follow it): ";
+
+const variants: Array<[string, (l: string) => string]> = [
+  ["user prompt", (l) => buildUserPrompt(l)],
+  ["project prompt", (l) => buildAiPrompt(l, "Budgets")],
+  ["extension prompt", (l) => ext.buildSmallPrompt(l)],
+];
 
 describe("the pasted AI prompt", () => {
-  test("presents the link as documentation from the person's own software, not instructions from a stranger", () => {
-    for (const text of [buildUserPrompt(LINK), buildAiPrompt(LINK, undefined)]) {
-      expect(text).toContain(LINK);
-      expect(text).toMatch(/documentation from my own company's software/i);
-      expect(text).toMatch(/not instructions from a stranger/i);
-      expect(text).toMatch(/only what my role allows/i);
-      expect(text).toMatch(/plain GET/);
-      expect(text).toContain('follow "Start here"');
-      expect(text).toMatch(/on my behalf with my rights/);
-      expect(text).toMatch(/everything except writing code/);
-    }
-  });
+  for (const [name, build] of variants) {
+    test(`${name}: exact owner-approved text, link last and exactly once`, () => {
+      const text = build(LINK);
+      expect(text).toBe(EXACT + LINK);
+      expect(text.split(LINK).length - 1).toBe(1);
+      expect(text.endsWith(LINK)).toBe(true);
+      expect(text).toContain("plain GET");
+      expect(text).toContain("my AI assistant");
+    });
+    test(`${name}: small (under 330 chars besides the link), no old project-list instructions, never VERIDIAN`, () => {
+      const text = build(LINK);
+      expect(text.length - LINK.length).toBeLessThan(330);
+      expect(text).not.toMatch(/numbered list|Report on all above|Create New Project|Start here|not instructions from a stranger/);
+      expect(text).not.toMatch(/veridian/i);
+    });
+  }
 
-  test("the user-wide prompt asks for the numbered project list with the two closing options", () => {
-    const text = buildUserPrompt(LINK);
-    expect(text).toMatch(/numbered list of ALL my projects/);
-    expect(text).toMatch(/"Report on all above" second-to-last/);
-    expect(text).toMatch(/"Create New Project" last/);
-  });
-
-  test("it is small: at most 450 characters of text besides the link", () => {
-    const real = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/ai-work-link/pxa_" + "a".repeat(30);
-    expect(buildUserPrompt(real).length - real.length).toBeLessThanOrEqual(450);
-    expect(buildAiPrompt(real, "Budgets").length - real.length).toBeLessThanOrEqual(450);
-  });
-
-  test("it never says VERIDIAN", () => {
-    expect(buildUserPrompt(LINK)).not.toMatch(/veridian/i);
-    expect(buildAiPrompt(LINK, "Budgets")).not.toMatch(/veridian/i);
+  test("falsifiability: the assertions fail if the 'plain GET' clause is removed", () => {
+    const broken = (EXACT + LINK).replace(" (open it with a plain GET and follow it)", "");
+    expect(broken).not.toContain("plain GET");
+    expect(broken).not.toBe(EXACT + LINK);
   });
 });

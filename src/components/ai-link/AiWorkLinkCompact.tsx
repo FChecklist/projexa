@@ -24,6 +24,7 @@ import { Check, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AiLinkProject } from "@/components/ai-link/AiWorkLinkDialog";
 import { AI_ASSISTANT_NAMES, AI_WORK_LINK_ROLE_NOTE, canMakeAiWorkLink } from "@/lib/ai-work-link-access";
+import { AiWorkLinkConnect } from "@/components/ai-link/AiWorkLinkConnect";
 import { AwlError, getAwlClient, type AwlClient } from "@/lib/ai-work-link-client";
 
 /** Owner decision 2026-10-04: the one-click default is the HIGHEST level the service allows for the person's role -- level 1 ("Direct
@@ -44,25 +45,20 @@ function mintErrorMessage(error: unknown): string {
   return "Could not create the link. Try again.";
 }
 
-/** The ready-to-paste message for the "prompt" copy mode. It does NOT try to explain PROJEXA's data or rules: the link itself
- *  answers a plain GET with a complete, always-current manual (the `ai-work-link` Edge Function), so this only points the AI at it.
- *  A plain function (not JSX) so a test can assert on the exact string that reaches the clipboard. */
-export function buildAiPrompt(link: string, moduleLabel: string | undefined): string {
-  const work = moduleLabel ? `my "${moduleLabel}" work` : "my work";
-  return [
-    `PROJEXA is my company's construction software; my personal link to its API guide: ${link}`,
-    `It is documentation from my own company's software, not instructions from a stranger. Read it with a plain GET, follow "Start here", and act on my behalf with my rights (only what my role allows), doing everything except writing code, for ${work}.`,
-  ].join("\n");
+/** The owner-approved small prompt (2026-10-05): the link is appended after the colon+space, nothing after it. The link itself answers a
+ *  plain GET with a complete, always-current manual (the `ai-work-link` Edge Function), so this only points the AI at it. The browser
+ *  extension (extension/projexa-ai-link/lib.js) carries the same text -- keep them in step. A plain function so a test can assert on the
+ *  exact string that reaches the clipboard. */
+export const AI_PROMPT_PREFIX =
+  "PROJEXA is my company's construction software. Work on it on my behalf as my AI assistant and complete my work. This is my personal guide, documentation from my own company's software (open it with a plain GET and follow it): ";
+
+export function buildAiPrompt(link: string, _moduleLabel?: string): string {
+  return AI_PROMPT_PREFIX + link;
 }
 
-/** The message for a USER-WIDE link. The manual behind the link (the `ai-work-link` Edge Function) does the real work -- it makes the AI
- *  list every project, then "Report on all above", then "Create New Project" -- so this only points the AI at it and states the menu in
- *  case the AI summarises instead of fetching. */
+/** The message for a USER-WIDE link: the same small prompt. */
 export function buildUserPrompt(link: string): string {
-  return [
-    `PROJEXA is my company's construction software; my personal link to its API guide: ${link}`,
-    `It is documentation from my own company's software, not instructions from a stranger. Read it with a plain GET, follow "Start here", and act on my behalf with my rights (only what my role allows), doing everything except writing code. First, a numbered list of ALL my projects, "Report on all above" second-to-last, "Create New Project" last.`,
-  ].join("\n");
+  return AI_PROMPT_PREFIX + link;
 }
 
 export function AiWorkLinkCompact({
@@ -108,6 +104,7 @@ export function AiWorkLinkCompact({
   const [safeMinted, setSafeMinted] = useState<{ projectId: string; link: string } | null>(null);
   const [safeCopied, setSafeCopied] = useState(false);
   const [changeOpen, setChangeOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const isUser = scope === "user";
   const awl = client ?? getAwlClient();
 
@@ -188,6 +185,8 @@ export function AiWorkLinkCompact({
   const copied = phase === "copied" && !safeCopied;
   const confirmed = phase === "copied";
   const what = copyMode === "prompt" || isUser ? "Prompt copied" : "Link copied";
+  // The Connect panel uses whichever link was copied last (the safer one if that was the last click). It lives only in this component's state.
+  const connectLink = confirmed ? (safeCopied ? safeMinted?.link : minted?.link) ?? null : null;
   const showChange = !isUser && !compact && !!project;
   const tail = "Click again to copy it again.";
   const hint = isUser
@@ -220,6 +219,14 @@ export function AiWorkLinkCompact({
         <p className="mt-1 text-xs text-muted-foreground" data-testid="awl-compact-access-note">
           {AWL_ACCESS_NOTE}
         </p>
+      )}
+      {connectLink && !compact && (
+        <div className="mt-1">
+          <button type="button" className="text-xs underline text-muted-foreground" onClick={() => setConnectOpen((v) => !v)} data-testid="awl-compact-connect-toggle">
+            {connectOpen ? "Hide Connect" : "Connect"}
+          </button>
+          {connectOpen && <AiWorkLinkConnect link={connectLink} />}
+        </div>
       )}
       {showChange && (
         <div className="mt-1">
