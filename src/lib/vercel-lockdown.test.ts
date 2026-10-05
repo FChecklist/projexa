@@ -94,11 +94,73 @@ afterAll(() => {
   rmSync(repo, { recursive: true, force: true })
 })
 
-describe("Vercel deploy gate (2026-09-30, owner-directed go-live) -- branch + path", () => {
-  test("git.deploymentEnabled is not relied upon (still gone since R87)", () => {
+// 2026-10-06 (AUDIT-100, owner as PM: "100% proper fix ... main must keep auto-deploying on real code
+// changes; no manual deploys, no Vercel dashboard changes, no spend"). Measured via the Vercel API
+// (read-only list_deployments): the Hobby team created ~128 deployment records in 24h, ~100 of them
+// CANCELED records for non-main pushes (audit100/*, fix/*, test/* ...) across BOTH projects. The
+// ignoreCommand above stops the BUILD, but the deployment RECORD is still created and still counts
+// toward Hobby's daily deployment cap, so main merges af4c39b6 and f053fbe5 were refused with
+// "Deployment rate limited: retry in 24 hours" while branch pushes kept taking the slots.
+//
+// Fix: git.deploymentEnabled stops non-main pushes from creating a deployment at all. Vercel's
+// documented semantics (vercel.com/docs/project-configuration/git-configuration): keys are minimatch
+// globs; an unmatched branch defaults to true; "if a branch matches multiple patterns, a deployment
+// occurs if at least one matching rule is set to true". So `"main": true` keeps main deploying no
+// matter what the catch-all says, and the catch-all must be `**`, not `*`: a bare `*` does not cross
+// `/`, which is exactly the R87 bug (every real branch here is `type/name`, so `"*": false` never
+// matched one). The ignoreCommand stays as a second layer.
+const minimatch = require("minimatch") as (path: string, pattern: string) => boolean
+
+/** Vercel's documented rule for git.deploymentEnabled (object form): unmatched -> true; matched -> true if any matching key is true. */
+function vercelWouldDeploy(deploymentEnabled: unknown, branch: string): boolean {
+  if (deploymentEnabled === undefined) return true
+  if (typeof deploymentEnabled === "boolean") return deploymentEnabled
+  const matching = Object.entries(deploymentEnabled as Record<string, boolean>).filter(([pattern]) => minimatch(branch, pattern))
+  if (matching.length === 0) return true
+  return matching.some(([, enabled]) => enabled === true)
+}
+
+// Real branch-name shapes seen in this project's own deployment list on 2026-10-05/06, plus edge cases.
+const NON_MAIN_BRANCHES = [
+  "audit100/a3-vercel-steps",
+  "audit100/b8-deletes-pass",
+  "test/audit100-a4-assistant-chat-e2e",
+  "fix/local-shell-account-menu",
+  "audit37/connect-tab",
+  "chore/vercel-no-branch-deployments",
+  "dependabot/npm_and_yarn/next-16.0.1",
+  "w-test/deep/nested/name",
+  "some-feature-branch",
+  "main-hotfix",
+  "mainline",
+  "release/main",
+]
+
+describe("Vercel git.deploymentEnabled (2026-10-06) -- only main creates deployments", () => {
+  test("pinned: main true, catch-all '**' false", () => {
     const v = readVercelJson()
-    expect(v.git).toBeUndefined()
+    expect(v.git?.deploymentEnabled).toEqual({ main: true, "**": false })
   })
+
+  test("main deploys", () => {
+    const v = readVercelJson()
+    expect(vercelWouldDeploy(v.git?.deploymentEnabled, "main")).toBe(true)
+  })
+
+  for (const branch of NON_MAIN_BRANCHES) {
+    test(`non-main branch '${branch}' creates no deployment`, () => {
+      const v = readVercelJson()
+      expect(vercelWouldDeploy(v.git?.deploymentEnabled, branch)).toBe(false)
+    })
+  }
+
+  test("the matcher itself reproduces the R87 bug: a bare '*' does not match names with '/'", () => {
+    expect(vercelWouldDeploy({ main: true, "*": false }, "audit100/a3-vercel-steps")).toBe(true)
+    expect(vercelWouldDeploy({ main: true, "**": false }, "audit100/a3-vercel-steps")).toBe(false)
+  })
+})
+
+describe("Vercel deploy gate (2026-09-30, owner-directed go-live) -- branch + path", () => {
 
   test("ignoreCommand exists and branches on both VERCEL_GIT_COMMIT_REF and git diff", () => {
     const v = readVercelJson()
