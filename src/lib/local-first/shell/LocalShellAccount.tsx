@@ -47,7 +47,7 @@ export function LocalShellAccount({ data }: { data: ShellData }) {
         <span data-testid="local-shell-person" className="max-w-[16rem] truncate">{who}</span>
         <span aria-hidden className="text-px-muted">▾</span>
       </summary>
-      <div className="absolute right-0 z-20 mt-1 w-72 rounded-xl border-2 border-[#C4B5FD] bg-[#FAF7FF] p-3 text-sm shadow-lg">
+      <div className="fixed inset-x-2 z-20 mt-1 sm:absolute sm:inset-x-auto sm:right-0 sm:w-72 rounded-xl border-2 border-[#C4B5FD] bg-[#FAF7FF] p-3 text-sm shadow-lg">
         <p className="truncate font-medium text-px-ink">{data.name ?? who}</p>
         {data.name && data.email ? <p className="truncate text-xs text-px-muted">{data.email}</p> : null}
         {role ? <p className="mt-1 text-xs text-px-muted">{role}</p> : null}

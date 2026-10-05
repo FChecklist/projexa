@@ -346,7 +346,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
               ) : null}
             </label>
           ) : null}
-          <div className="ml-auto flex items-start gap-4 text-xs text-px-muted">
+          <div className="ml-auto flex max-w-full flex-wrap items-start gap-x-4 gap-y-2 text-xs text-px-muted">
             {data && shell ? <LocalShellAiBar role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
             <ConnectivityMarker />
             {data ? <LocalShellAccount data={data} /> : null}

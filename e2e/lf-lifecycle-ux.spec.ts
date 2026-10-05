@@ -83,7 +83,7 @@ async function readHeaderColours(page: Page) {
 }
 
 test("bright, lively colours: the install screen, the header, the account control and the AI buttons (and the check can fail)", async ({ page, context }) => {
-  const world = createWorld({ role: "manager" })
+  const world = createWorld({ role: "owner" })
   const net: Net = { mode: "up" }
   const session = await signInLocally(context, "ux-colours@example.invalid")
   await stubSyncService(page, world, session, net)
@@ -157,7 +157,7 @@ test("bright, lively colours: the install screen, the header, the account contro
 })
 
 test("phone screen (375 x 812): no sideways page scroll; switcher, account, AI buttons and the Connectors panel all fit", async ({ page, context }) => {
-  const world = createWorld({ role: "manager" })
+  const world = createWorld({ role: "owner" })
   const net: Net = { mode: "up" }
   const session = await signInLocally(context, "ux-phone@example.invalid")
   await stubSyncService(page, world, session, net)
