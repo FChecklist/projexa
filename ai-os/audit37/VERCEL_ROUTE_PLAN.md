@@ -91,13 +91,13 @@ The Supabase Edge Function `projexa-api` (compliance-tracker `supabase/functions
 (`src/lib/projexa-api-parity.test.ts`, 122 cases; live smoke 24/24 identical). On https://projexa-ai.com the browser calls it through
 `src/lib/px-api.ts`; the Next handlers stay as the same-origin fallback. Shell-reachable routes answered by Vercel: 8 -> 1 (the beacon).
 
-BATCHES 2 + 3 (2026-10-06): the 73 most-used plain proxies of the online screens moved the same way (A2_PROGRESS.md): 80 routes answered by
-the edge on the production origins; **Vercel-served /api routes 304 -> 264 -> 231** (`vercel_served_routes_budget`, may only go down).
+BATCHES 2-4 (2026-10-06): all 106 plain proxies of the online screens moved the same way (A2_PROGRESS.md): 113 routes answered by
+the edge on the production origins; **Vercel-served /api routes 304 -> 264 -> 231 -> 198** (`vercel_served_routes_budget`, may only go down).
 
-Remaining, in order (measured 2026-10-06 on this tree; 311 route files: 282 VERIDIAN proxies of which 80 moved, 17 own logic, 12 Supabase):
-1. The other 33 PLAIN proxies (`bun scripts/projexa-api-candidates.mjs` lists them, each with its derived spec): same recipe, batch 3+.
-   Each batch: routes json + parity `REQUESTS`, record, regenerate, compliance-tracker PR, DEPLOY, live smoke, THEN the client list here,
-   and its direct `fetch()` callers -> `viaPxApi`. Rank by real use first (step 6 above).
+Remaining, in order (measured 2026-10-06 on this tree; 311 route files: 282 VERIDIAN proxies of which 113 moved, 17 own logic, 12 Supabase):
+1. No PLAIN proxy is left (`bun scripts/projexa-api-candidates.mjs` prints the reason each of the other 169 proxies is not plain). The
+   recipe for every later batch: routes json + parity `REQUESTS`, record, regenerate, compliance-tracker PR, DEPLOY, live smoke, THEN the
+   client list here and its direct `fetch()` callers -> `viaPxApi`.
 2. The generator needs three more spec keys before the rest can move: `root` (20 routes call `/api/v1/*` outside `/projexa`), an
    `error_extra` field list (3 routes forward a named upstream field, e.g. `conflicts[]`), and per-method role sets for the 21 routes with their
    own `requireRole()` beyond the write table.

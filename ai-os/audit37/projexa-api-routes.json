@@ -612,6 +612,241 @@
       "methods": {
         "POST": { "upstream": "/journal-entries/{id}/submit", "fallback": "Failed to submit journal entry" }
       }
+    },
+    {
+      "route": "/api/labour-roster/trades",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/labour-roster/trades", "error_style": "plain", "fallback": "Failed to load the trade list" }
+      }
+    },
+    {
+      "route": "/api/leads/:id/history",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/leads/{id}/history", "fallback": "Failed to load lead history" }
+      }
+    },
+    {
+      "route": "/api/leads/bulk-reassign",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/leads/bulk-reassign", "body": "json", "fallback": "Failed to bulk-reassign leads" }
+      }
+    },
+    {
+      "route": "/api/meetings/:id",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/meetings/{id}", "fallback": "Failed to load meeting" },
+        "PATCH": { "upstream": "/meetings/{id}", "body": "json", "fallback": "Failed to update meeting" }
+      }
+    },
+    {
+      "route": "/api/meetings/:id/outcomes",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/meetings/{id}/outcomes", "body": "json", "success_status": 201, "fallback": "Failed to add outcome" }
+      }
+    },
+    {
+      "route": "/api/moms/share-links/:linkId",
+      "batch": 4,
+      "methods": {
+        "DELETE": { "upstream": "/veri-meetings/share-links/{linkId}", "fallback": "Failed to revoke share link" }
+      }
+    },
+    {
+      "route": "/api/mood-boards/:id/items/:itemId",
+      "batch": 4,
+      "methods": {
+        "DELETE": { "upstream": "/mood-boards/{id}/items/{itemId}", "fallback": "Failed to remove item" }
+      }
+    },
+    {
+      "route": "/api/opportunities/:id/history",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/opportunities/{id}/history", "fallback": "Failed to load opportunity history" }
+      }
+    },
+    {
+      "route": "/api/opportunities/bulk-reassign",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/opportunities/bulk-reassign", "body": "json", "fallback": "Failed to bulk-reassign opportunities" }
+      }
+    },
+    {
+      "route": "/api/procurement/requisitions/:id",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/procurement/requisitions/{id}", "fallback": "Failed to load purchase requisition" }
+      }
+    },
+    {
+      "route": "/api/procurement/rfqs/:id/comparison",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/procurement/rfqs/{id}/comparison", "fallback": "Failed to compare RFQ quotations" }
+      }
+    },
+    {
+      "route": "/api/profit-and-loss",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/profit-and-loss", "forward_search": true, "fallback": "Failed to generate P&L statement" }
+      }
+    },
+    {
+      "route": "/api/profit-and-loss-by-project",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/profit-and-loss-by-project", "forward_search": true, "fallback": "Failed to generate per-project P&L" }
+      }
+    },
+    {
+      "route": "/api/project-budgets/:id",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/project-budgets/{id}", "fallback": "Failed to load budget" },
+        "PATCH": { "upstream": "/project-budgets/{id}", "body": "json", "fallback": "Failed to update budget" }
+      }
+    },
+    {
+      "route": "/api/project-budgets/:id/cancel",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/project-budgets/{id}/cancel", "fallback": "Failed to cancel budget" }
+      }
+    },
+    {
+      "route": "/api/project-budgets/:id/submit",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/project-budgets/{id}/submit", "fallback": "Failed to submit budget" }
+      }
+    },
+    {
+      "route": "/api/quotations/:id/convert",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/quotations/{id}/convert", "body": "json", "success_status": 201, "fallback": "Failed to convert quotation to a sales order" }
+      }
+    },
+    {
+      "route": "/api/reports/catalog",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/reports/catalog", "fallback": "Failed to load report catalog" }
+      }
+    },
+    {
+      "route": "/api/sales-invoices/:id/cancel",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/sales-invoices/{id}/cancel", "fallback": "Failed to cancel invoice" }
+      }
+    },
+    {
+      "route": "/api/sales-invoices/:id/payments",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/sales-invoices/{id}/payments", "body": "json", "success_status": 201, "fallback": "Failed to record payment" }
+      }
+    },
+    {
+      "route": "/api/sales-invoices/:id/submit",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/sales-invoices/{id}/submit", "body": "json", "fallback": "Failed to submit invoice" }
+      }
+    },
+    {
+      "route": "/api/sales-orders/bulk-status",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/sales-orders/bulk-status", "body": "json", "fallback": "Failed to bulk-update sales order status" }
+      }
+    },
+    {
+      "route": "/api/sales-pipeline",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/sales-pipeline", "fallback": "Failed to load sales pipeline overview" }
+      }
+    },
+    {
+      "route": "/api/schedule/baselines/:id",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/schedule/baselines/{id}", "fallback": "Failed to load baseline comparison" }
+      }
+    },
+    {
+      "route": "/api/schedule/sprints/:id",
+      "batch": 4,
+      "methods": {
+        "PATCH": { "upstream": "/schedule/sprints/{id}", "body": "json", "fallback": "Failed to update sprint" }
+      }
+    },
+    {
+      "route": "/api/schedule/tasks/:id/completion",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/schedule/{id}/completion", "error_style": "plain", "fallback": "Failed to load this activity's progress source" },
+        "PATCH": { "upstream": "/schedule/{id}/completion", "body": "json", "error_style": "plain", "fallback": "Failed to set this activity's completion" }
+      }
+    },
+    {
+      "route": "/api/schedule/types",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/schedule/types", "fallback": "Failed to load task types" }
+      }
+    },
+    {
+      "route": "/api/scope/:id/approve",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/scope/{id}/approve", "acting_user": "explicit", "fallback": "Failed to approve BOQ" }
+      }
+    },
+    {
+      "route": "/api/scope/:id/submit",
+      "batch": 4,
+      "methods": {
+        "POST": { "upstream": "/scope/{id}/submit", "acting_user": "explicit", "fallback": "Failed to submit BOQ for approval" }
+      }
+    },
+    {
+      "route": "/api/site-instructions/:id",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/site-instructions/{id}", "fallback": "Failed to load site instruction" }
+      }
+    },
+    {
+      "route": "/api/tax-templates",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/tax-templates", "fallback": "Failed to load tax templates" }
+      }
+    },
+    {
+      "route": "/api/trial-balance",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/trial-balance", "forward_search": true, "fallback": "Failed to generate trial balance" }
+      }
+    },
+    {
+      "route": "/api/wiki/:id",
+      "batch": 4,
+      "methods": {
+        "GET": { "upstream": "/wiki/{id}", "fallback": "Failed to load wiki page" },
+        "PATCH": { "upstream": "/wiki/{id}", "body": "json", "fallback": "Failed to update wiki page" }
+      }
     }
   ]
 }

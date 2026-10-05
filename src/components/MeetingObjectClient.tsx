@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Users } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type AgendaItem = { id: string; position: number; title: string; issueId: string | null; durationMinutes: number | null };
 type Outcome = { id: string; notes: string | null; createdAt: string };
 type Participant = { id: string; userId: string; responseStatus: string | null };
@@ -76,7 +77,7 @@ export default function MeetingObjectClient({ meetingId }: { meetingId: string }
     if (!draft.title.trim() || !draft.scheduledAt) { toast.error("Title and date/time are required"); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/meetings/${meetingId}`, {
+      const res = await viaPxApi(`/api/meetings/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: draft.title.trim(), scheduledAt: new Date(draft.scheduledAt).toISOString(), durationMinutes: draft.durationMinutes ? Number(draft.durationMinutes) : null }),
       });
@@ -96,7 +97,7 @@ export default function MeetingObjectClient({ meetingId }: { meetingId: string }
     if (!outcomeNotes.trim()) return;
     setAddingOutcome(true);
     try {
-      const res = await fetch(`/api/meetings/${meetingId}/outcomes`, {
+      const res = await viaPxApi(`/api/meetings/${meetingId}/outcomes`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: outcomeNotes }),
       });

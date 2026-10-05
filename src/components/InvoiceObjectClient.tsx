@@ -26,6 +26,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 
+import { viaPxApi } from "@/lib/px-api";
 type InvoiceItem = { id: string; description: string; quantity: string; rate: string; amount: string; hsnSacCode: string | null };
 type Invoice = {
   id: string; invoiceNumber: number; customerId: string; customerName: string | null; postingDate: string; dueDate: string | null;
@@ -76,7 +77,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
     if (!revenueAccountId) { toast.error("Choose a revenue account first"); return; }
     setActionBusy("submit");
     try {
-      const res = await fetch(`/api/sales-invoices/${invoiceId}/submit`, {
+      const res = await viaPxApi(`/api/sales-invoices/${invoiceId}/submit`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ revenueAccountId }),
       });
@@ -95,7 +96,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
     if (!paymentAmount || !paymentAccountId) { toast.error("Amount and bank/cash account are required"); return; }
     setActionBusy("payment");
     try {
-      const res = await fetch(`/api/sales-invoices/${invoiceId}/payments`, {
+      const res = await viaPxApi(`/api/sales-invoices/${invoiceId}/payments`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: Number(paymentAmount), bankOrCashAccountId: paymentAccountId, postingDate: paymentDate }),
       });
@@ -114,7 +115,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
   async function cancelInvoice() {
     setActionBusy("cancel");
     try {
-      const res = await fetch(`/api/sales-invoices/${invoiceId}/cancel`, { method: "POST" });
+      const res = await viaPxApi(`/api/sales-invoices/${invoiceId}/cancel`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to cancel invoice");
       toast.success("Invoice cancelled");

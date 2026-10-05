@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type LineItem = { id: string; accountId: string; annualAmount: string };
 type Budget = {
   id: string; name: string; fiscalYearId: string; companyId: string | null; costCenterId: string | null;
@@ -72,7 +73,7 @@ export default function BudgetObjectClient({ budgetId }: { budgetId: string }) {
 
   async function handleSave() {
     try {
-      const res = await fetch(`/api/project-budgets/${budgetId}`, {
+      const res = await viaPxApi(`/api/project-budgets/${budgetId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lineItems: draftLines.map((l) => ({ accountId: l.accountId, annualAmount: Number(l.annualAmount) })) }),
       });

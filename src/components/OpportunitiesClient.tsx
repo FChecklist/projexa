@@ -84,7 +84,7 @@ export default function OpportunitiesClient() {
   async function bulkReassign() {
     if (!selected.size || !bulkOwnerId.trim()) return;
     try {
-      const res = await fetch("/api/opportunities/bulk-reassign", {
+      const res = await viaPxApi("/api/opportunities/bulk-reassign", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ opportunityIds: Array.from(selected), ownerId: bulkOwnerId }),
       });

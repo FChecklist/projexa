@@ -47,3 +47,11 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   16 more direct fetch() sites in 11 components -> viaPxApi. Inventory: 80 routes `edge:projexa-api`; Vercel-served 264 -> 231 (budget 231).
   SEEN TO FAIL: `/journal-entries/[id]/submit` ORG_ADMIN -> FIELD, Next side (recorder: pm 200 vs 403) and edge copy (parity "POST
   /api/journal-entries/:id/submit as pm / as site_engineer" + hash); both reverted.
+- BATCH 4 (2026-10-06, branch `audit100/a2-batch-4`, stacked on batch 3): the LAST 33 plain proxies (every route
+  `scripts/projexa-api-candidates.mjs` calls PLAIN today is now on the edge): lead / opportunity history and bulk reassign, meetings,
+  MoM share-link revoke, mood-board item delete, requisition and RFQ comparison, P&L (+ by project), project budget read/edit/submit/cancel,
+  quotation convert, report catalog, sales-invoice submit/cancel/payments, sales-order bulk status, sales pipeline, schedule baselines /
+  sprint edit / task completion / types, BOQ submit + approve (explicit acting person), site instruction, tax templates, trial balance,
+  wiki page. No new spec key. Parity 1422 cases (the 1126 unchanged); 15 more direct fetch() sites -> viaPxApi. Inventory: 113 routes
+  `edge:projexa-api`; Vercel-served 231 -> 198 (budget 198). SEEN TO FAIL: `/scope/[id]/approve` PM_OR_ABOVE -> ANY_ROLE on the Next side
+  (recorder fails) and in the edge copy (parity "POST /api/scope/:id/approve as site_engineer / member / client_viewer" + hash); reverted.

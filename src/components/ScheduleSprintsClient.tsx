@@ -28,6 +28,7 @@ import { PaneErrorCard, PaneWaitingCaption } from "@/components/PaneState";
 import { ListStateRegion } from "@/components/ListScreenFrame";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Sprint = {
   id: string; name: string; goal: string | null; startDate: string | null; endDate: string | null;
   status: string; progressSnapshot: { total: number; completed: number; cancelled: number; remaining: number } | null;
@@ -83,7 +84,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
 
   async function closeSprint(sprintId: string) {
     try {
-      const res = await fetch(`/api/schedule/sprints/${encodeURIComponent(sprintId)}`, {
+      const res = await viaPxApi(`/api/schedule/sprints/${encodeURIComponent(sprintId)}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "close" }),
       });

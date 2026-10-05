@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "fdf5e8c4e814e4ad08aef4f1b483438662b1bf0a2e2a1499f51c9a7a27a6bc27"
+export const SOURCE_SHA256 = "89a278e8a74fa3dceb382a181752917ebef248476fd8e9f8e5eb7c0db18a44c7"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -318,6 +318,39 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/inventory/stock-entries","methods":{"GET":{"upstream":"/inventory/stock-entries","forward_search":true,"fallback":"Failed to load stock entries"},"POST":{"upstream":"/inventory/stock-entries","body":"json","success_status":201,"fallback":"Failed to record stock entry"}}},
   {"route":"/api/journal-entries/:id","methods":{"GET":{"upstream":"/journal-entries/{id}","fallback":"Failed to load journal entry"}}},
   {"route":"/api/journal-entries/:id/submit","methods":{"POST":{"upstream":"/journal-entries/{id}/submit","fallback":"Failed to submit journal entry"}}},
+  {"route":"/api/labour-roster/trades","methods":{"GET":{"upstream":"/labour-roster/trades","error_style":"plain","fallback":"Failed to load the trade list"}}},
+  {"route":"/api/leads/:id/history","methods":{"GET":{"upstream":"/leads/{id}/history","fallback":"Failed to load lead history"}}},
+  {"route":"/api/leads/bulk-reassign","methods":{"POST":{"upstream":"/leads/bulk-reassign","body":"json","fallback":"Failed to bulk-reassign leads"}}},
+  {"route":"/api/meetings/:id","methods":{"GET":{"upstream":"/meetings/{id}","fallback":"Failed to load meeting"},"PATCH":{"upstream":"/meetings/{id}","body":"json","fallback":"Failed to update meeting"}}},
+  {"route":"/api/meetings/:id/outcomes","methods":{"POST":{"upstream":"/meetings/{id}/outcomes","body":"json","success_status":201,"fallback":"Failed to add outcome"}}},
+  {"route":"/api/moms/share-links/:linkId","methods":{"DELETE":{"upstream":"/veri-meetings/share-links/{linkId}","fallback":"Failed to revoke share link"}}},
+  {"route":"/api/mood-boards/:id/items/:itemId","methods":{"DELETE":{"upstream":"/mood-boards/{id}/items/{itemId}","fallback":"Failed to remove item"}}},
+  {"route":"/api/opportunities/:id/history","methods":{"GET":{"upstream":"/opportunities/{id}/history","fallback":"Failed to load opportunity history"}}},
+  {"route":"/api/opportunities/bulk-reassign","methods":{"POST":{"upstream":"/opportunities/bulk-reassign","body":"json","fallback":"Failed to bulk-reassign opportunities"}}},
+  {"route":"/api/procurement/requisitions/:id","methods":{"GET":{"upstream":"/procurement/requisitions/{id}","fallback":"Failed to load purchase requisition"}}},
+  {"route":"/api/procurement/rfqs/:id/comparison","methods":{"GET":{"upstream":"/procurement/rfqs/{id}/comparison","fallback":"Failed to compare RFQ quotations"}}},
+  {"route":"/api/profit-and-loss","methods":{"GET":{"upstream":"/profit-and-loss","forward_search":true,"fallback":"Failed to generate P&L statement"}}},
+  {"route":"/api/profit-and-loss-by-project","methods":{"GET":{"upstream":"/profit-and-loss-by-project","forward_search":true,"fallback":"Failed to generate per-project P&L"}}},
+  {"route":"/api/project-budgets/:id","methods":{"GET":{"upstream":"/project-budgets/{id}","fallback":"Failed to load budget"},"PATCH":{"upstream":"/project-budgets/{id}","body":"json","fallback":"Failed to update budget"}}},
+  {"route":"/api/project-budgets/:id/cancel","methods":{"POST":{"upstream":"/project-budgets/{id}/cancel","fallback":"Failed to cancel budget"}}},
+  {"route":"/api/project-budgets/:id/submit","methods":{"POST":{"upstream":"/project-budgets/{id}/submit","fallback":"Failed to submit budget"}}},
+  {"route":"/api/quotations/:id/convert","methods":{"POST":{"upstream":"/quotations/{id}/convert","body":"json","success_status":201,"fallback":"Failed to convert quotation to a sales order"}}},
+  {"route":"/api/reports/catalog","methods":{"GET":{"upstream":"/reports/catalog","fallback":"Failed to load report catalog"}}},
+  {"route":"/api/sales-invoices/:id/cancel","methods":{"POST":{"upstream":"/sales-invoices/{id}/cancel","fallback":"Failed to cancel invoice"}}},
+  {"route":"/api/sales-invoices/:id/payments","methods":{"POST":{"upstream":"/sales-invoices/{id}/payments","body":"json","success_status":201,"fallback":"Failed to record payment"}}},
+  {"route":"/api/sales-invoices/:id/submit","methods":{"POST":{"upstream":"/sales-invoices/{id}/submit","body":"json","fallback":"Failed to submit invoice"}}},
+  {"route":"/api/sales-orders/bulk-status","methods":{"POST":{"upstream":"/sales-orders/bulk-status","body":"json","fallback":"Failed to bulk-update sales order status"}}},
+  {"route":"/api/sales-pipeline","methods":{"GET":{"upstream":"/sales-pipeline","fallback":"Failed to load sales pipeline overview"}}},
+  {"route":"/api/schedule/baselines/:id","methods":{"GET":{"upstream":"/schedule/baselines/{id}","fallback":"Failed to load baseline comparison"}}},
+  {"route":"/api/schedule/sprints/:id","methods":{"PATCH":{"upstream":"/schedule/sprints/{id}","body":"json","fallback":"Failed to update sprint"}}},
+  {"route":"/api/schedule/tasks/:id/completion","methods":{"GET":{"upstream":"/schedule/{id}/completion","error_style":"plain","fallback":"Failed to load this activity's progress source"},"PATCH":{"upstream":"/schedule/{id}/completion","body":"json","error_style":"plain","fallback":"Failed to set this activity's completion"}}},
+  {"route":"/api/schedule/types","methods":{"GET":{"upstream":"/schedule/types","fallback":"Failed to load task types"}}},
+  {"route":"/api/scope/:id/approve","methods":{"POST":{"upstream":"/scope/{id}/approve","acting_user":"explicit","fallback":"Failed to approve BOQ"}}},
+  {"route":"/api/scope/:id/submit","methods":{"POST":{"upstream":"/scope/{id}/submit","acting_user":"explicit","fallback":"Failed to submit BOQ for approval"}}},
+  {"route":"/api/site-instructions/:id","methods":{"GET":{"upstream":"/site-instructions/{id}","fallback":"Failed to load site instruction"}}},
+  {"route":"/api/tax-templates","methods":{"GET":{"upstream":"/tax-templates","fallback":"Failed to load tax templates"}}},
+  {"route":"/api/trial-balance","methods":{"GET":{"upstream":"/trial-balance","forward_search":true,"fallback":"Failed to generate trial balance"}}},
+  {"route":"/api/wiki/:id","methods":{"GET":{"upstream":"/wiki/{id}","fallback":"Failed to load wiki page"},"PATCH":{"upstream":"/wiki/{id}","body":"json","fallback":"Failed to update wiki page"}}},
 ]
 
 /** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */

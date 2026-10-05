@@ -101,6 +101,7 @@ import {
   groupOrgUsers, initialsOf, roleLabelOf, type OrgUser,
 } from "@/lib/org-user-picker";
 
+import { viaPxApi } from "@/lib/px-api";
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
 type Meeting = {
@@ -546,7 +547,7 @@ export default function MoMObjectClient({
   async function revokeLink(linkId: string) {
     setBusy(`revoke-${linkId}`);
     try {
-      const res = await fetch(`/api/moms/share-links/${linkId}`, { method: "DELETE" });
+      const res = await viaPxApi(`/api/moms/share-links/${linkId}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to revoke share link");
       clearNote("share");
