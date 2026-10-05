@@ -6,7 +6,8 @@ import { createTestServer } from "./support/lf-peer-sign";
 // by the backend's own signing code (e2e/support/lf-peer-sign.ts).
 //   (e) a higher version replaces, an older one does not (both directions in one exchange), a row with a pending local edit (dirty, in the
 //       outbox) is neither overwritten nor sent; a deletion does NOT travel laptop to laptop (CONTRACT.md section 4: peers never deliver
-//       tombstones) -- see the RISKS section of the lf-e9 report for what that means for a row deleted on one laptop;
+//       tombstones; AUDIT-100 B8 adds only an unsigned `gone` HINT the receiver checks with the server, and a local tombstone that stops a
+//       stale peer re-delivering a row the server deleted: e2e/lf-peer-deletes.spec.ts);
 //   (f) a /heads answer with another epoch (the server's version tables were re-created) makes the laptop drop its copy (pending edits kept)
 //       and take a fresh one, through the REAL server step and reset-copy.
 // Run: bunx playwright test -c playwright.peer.config.ts
