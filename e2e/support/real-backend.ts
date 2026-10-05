@@ -16,7 +16,7 @@ export async function loginAndPrepare(page: Page, who: UserKey): Promise<void> {
     await page.locator("#password").fill(USERS[who].password);
     await page.locator('button[type="submit"]').click();
     try {
-      await page.waitForURL(/\/(dashboard|local|scope|prepare)/, { timeout: 60_000 });
+      await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 }); // (a "Failed to fetch" under the form leaves the page on /login)
       break;
     } catch (err) {
       if (attempt >= 5) throw err;

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { createIdentityStore } from "@/lib/local-first/identity";
 import { openDeviceMeta } from "@/lib/local-first/device-meta";
 import { rememberPinAfterOnlineLogin, unlockOffline } from "@/lib/local-first/offline-pin";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -80,7 +81,8 @@ export default function LoginPage() {
     const meta = data.session.user.user_metadata as Record<string, unknown> | null;
     await rememberPinAfterOnlineLogin(window.localStorage, email, password, { userId: data.session.user.id, name: typeof meta?.name === "string" ? meta.name : null });
 
-    router.push("/dashboard");
+    // AUDIT-100 B6/B56: go back to where the person was sent from (an invitation link, a signed-in page), same-origin paths only.
+    router.push(safeRedirectPath(new URLSearchParams(window.location.search).get("redirectTo")));
     router.refresh();
   }
 
