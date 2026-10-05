@@ -12,7 +12,11 @@ import { Resend } from "resend";
 // takes on Vercel deploys). FROM_DOMAIN is an env var for that reason: the
 // code is ready the moment the subdomain exists and Resend is configured
 // against it, without another code change.
-const FROM_DOMAIN = process.env.EMAIL_FROM_DOMAIN ?? "send.projexa-ai.com";
+//
+// AUDIT-100 B55 (2026-10-06): the default sender is now the one Resend has VERIFIED for this account (send.veridian-aios.com -- the same
+// sender PROJEXA's Supabase Auth mail uses since A24, 2026-10-05). send.projexa-ai.com was never set up, so a default on it could only fail.
+// EMAIL_FROM / EMAIL_FROM_DOMAIN still override it.
+const FROM_DOMAIN = process.env.EMAIL_FROM_DOMAIN ?? "send.veridian-aios.com";
 export const FROM = process.env.EMAIL_FROM ?? `PROJEXA <noreply@${FROM_DOMAIN}>`;
 export const REPLY_DOMAIN = process.env.EMAIL_REPLY_DOMAIN ?? "reply.projexa-ai.com";
 
@@ -28,28 +32,31 @@ export interface EmailPayload {
   to: string;
   subject: string;
   html: string;
+  /** Plain-text part. Optional; Resend derives one from the HTML when it is absent. */
+  text?: string;
   replyTo?: string;
 }
 
 /** Same graceful-no-op-without-a-key posture as compliance-tracker's src/lib/email.ts -- local dev and a cold-started environment never crash on a missing key, they just don't send. */
-export async function sendEmail(payload: EmailPayload): Promise<{ sent: boolean }> {
+export async function sendEmail(payload: EmailPayload): Promise<{ sent: boolean; id?: string }> {
   const client = getResend();
   if (!client) {
     console.warn("[email] RESEND_API_KEY not set -- email skipped:", payload.subject);
     return { sent: false };
   }
-  const { error } = await client.emails.send({
+  const { data, error } = await client.emails.send({
     from: FROM,
     to: payload.to,
     subject: payload.subject,
     html: payload.html,
+    ...(payload.text ? { text: payload.text } : {}),
     ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
   });
   if (error) {
     console.error("[email] send error:", error);
     return { sent: false };
   }
-  return { sent: true };
+  return { sent: true, ...(data?.id ? { id: data.id } : {}) };
 }
 
 export function emailTemplate(title: string, bodyHtml: string, actions: Array<{ label: string; url: string }> = []): string {
