@@ -179,7 +179,12 @@ test.afterAll(async () => {
   const deleted: string[] = [];
   const step = async (what: string, fn: () => Promise<unknown>) => fn().then(() => deleted.push(what)).catch((e) => deleted.push(`FAILED ${what}: ${(e as Error).message}`));
   if (veridianUserId) {
-    await step("VERIDIAN platform.user_ai_links rows of the throwaway user", () => vsql(`delete from platform.user_ai_links where user_id = ${lit(veridianUserId)}`));
+    // A link that was USED has a row in platform.ai_work_link_call, which is append-only by design (its guard trigger refuses deletes, and
+    // this spec does not route around a guardrail): such a link is revoked and kept as the audit record of its own use (it holds only the
+    // sha256 of the token). A link that was never used is deleted.
+    await step("VERIDIAN: revoke every link of the throwaway user", () => vsql(`update platform.user_ai_links set status = 'revoked', revoked_at = coalesce(revoked_at, now()) where user_id = ${lit(veridianUserId)}`));
+    await step("VERIDIAN: delete the throwaway user's links that were never used", () =>
+      vsql(`delete from platform.user_ai_links l where l.user_id = ${lit(veridianUserId)} and not exists (select 1 from platform.ai_work_link_call c where c.link_id = l.id) and not exists (select 1 from platform.ai_work_link_intent i where i.link_id = l.id)`));
     await step(`VERIDIAN compliance.users ${veridianUserId}`, () => vsql(`delete from compliance.users where id = ${lit(veridianUserId)}`));
   }
   if (veridianOrgId) await step(`VERIDIAN compliance.organisations ${veridianOrgId}`, () => vsql(`delete from compliance.organisations where id = ${lit(veridianOrgId)}`));
@@ -192,8 +197,10 @@ test.afterAll(async () => {
     profiles: ids.length ? (await rest(`profiles?id=in.(${ids.join(",")})&select=id`)).length : 0,
     memberships: ids.length ? (await rest(`memberships?user_id=in.(${ids.join(",")})&select=id`)).length : 0,
     veridian: veridianOrgId
-      ? Number((await vsql<{ n: number }>(`select (select count(*) from compliance.organisations where id = ${lit(veridianOrgId)}) + (select count(*) from compliance.users where id = ${lit(veridianUserId)} or org_id = ${lit(veridianOrgId)}) + (select count(*) from platform.user_ai_links where user_id = ${lit(veridianUserId)} or org_id = ${lit(veridianOrgId)}) as n`))[0].n)
+      ? Number((await vsql<{ n: number }>(`select (select count(*) from compliance.organisations where id = ${lit(veridianOrgId)}) + (select count(*) from compliance.users where id = ${lit(veridianUserId)} or org_id = ${lit(veridianOrgId)}) + (select count(*) from platform.user_ai_links where (user_id = ${lit(veridianUserId)} or org_id = ${lit(veridianOrgId)}) and status <> 'revoked') as n`))[0].n)
       : 0,
+    // the used link kept as an audit record (revoked, hash only): reported, not counted as left behind
+    retainedRevokedLinks: veridianUserId ? Number((await vsql<{ n: number }>(`select count(*) as n from platform.user_ai_links where user_id = ${lit(veridianUserId)} and status = 'revoked'`))[0].n) : 0,
   };
   console.log(`[b55 cleanup] run ${RUN}:\n  - ${deleted.join("\n  - ")}\n  left behind: ${JSON.stringify(left)}`);
   expect(left.organizations + left.profiles + left.memberships + left.veridian, "the cleanup left rows behind").toBe(0);

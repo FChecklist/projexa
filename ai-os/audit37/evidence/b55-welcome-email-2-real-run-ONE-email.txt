@@ -1,0 +1,60 @@
+
+Running 4 tests using 1 worker
+
+  ok 1 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:202:5 › an org owner invites a person as client_viewer through the real route (3.9s)
+  ok 2 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:216:5 › the invitee accepts in the browser: attached, ONE 24-hour read-only 'Welcome email' link minted for them (7.6s)
+[b55] Resend e-mail 01a10dcb-fe78-7425-aba4-bba3c2a64d17: last_event=delivered, from=PROJEXA <noreply@send.veridian-aios.com>, subject ok
+[b55] GET of the e-mailed link: 200 text/plain; charset=utf-8, 31939 chars, says level 0 (read only)
+[b55] GET after revoke: 410
+  ok 3 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:231:5 › Resend: exactly ONE e-mail, from the verified sender, delivered; its prompt box holds the person's link, never in an href (12.0s)
+[b55 cleanup] run muvprlkclq2r:
+  - FAILED VERIDIAN platform.user_ai_links rows of the throwaway user: VERIDIAN SQL -> 400 {"message":"Failed to run sql query: ERROR:  23503: update or delete on table \"user_ai_links\" violates foreign key constraint \"ai_work_link_call_link_fk\" on table \"ai_work_link_call\"\nDETAIL:  K
+  - VERIDIAN compliance.users 663b0985-4883-4570-b5c7-8912ca46242d
+  - VERIDIAN compliance.organisations 1b8b1bb5-4621-4883-8dd9-79326d119b06
+  - PROJEXA organization 67e8e945-1c17-4254-a8dd-81b83bf33efb (+ memberships, org_invites: ON DELETE CASCADE)
+  - PROJEXA security_audit_log rows of the throwaway accounts
+  - PROJEXA auth user admin 78c85511-239e-4354-8843-e7ddd60153e3 (+ profile)
+  - PROJEXA auth user invitee b47e9bee-02db-4d5f-92ee-d23bbe3900b7 (+ profile)
+  left behind: {"organizations":0,"profiles":0,"memberships":0,"veridian":1}
+  x  4 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:279:5 › accepting the same invitation again is refused and sends NOTHING: still one e-mail, still one link (22.5s)
+
+
+  1) [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:279:5 › accepting the same invitation again is refused and sends NOTHING: still one e-mail, still one link 
+
+    Error: the cleanup left rows behind
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+      197 |   };
+      198 |   console.log(`[b55 cleanup] run ${RUN}:\n  - ${deleted.join("\n  - ")}\n  left behind: ${JSON.stringify(left)}`);
+    > 199 |   expect(left.organizations + left.profiles + left.memberships + left.veridian, "the cleanup left rows behind").toBe(0);
+          |                                                                                                                 ^
+      200 | });
+      201 |
+      202 | test("an org owner invites a person as client_viewer through the real route", async () => {
+        at C:\ct\px-b55\e2e\audit37-real-b55-welcome-email.spec.ts:199:113
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\audit37-real-b55-welcome-e-299e9-l-one-e-mail-still-one-link-audit37-real-edge\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\audit37-real-b55-welcome-e-299e9-l-one-e-mail-still-one-link-audit37-real-edge\test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\audit37-real-b55-welcome-e-299e9-l-one-e-mail-still-one-link-audit37-real-edge\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\audit37-real-b55-welcome-e-299e9-l-one-e-mail-still-one-link-audit37-real-edge\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\audit37-real-b55-welcome-e-299e9-l-one-e-mail-still-one-link-audit37-real-edge\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:279:5 › accepting the same invitation again is refused and sends NOTHING: still one e-mail, still one link 
+  3 passed (1.2m)
