@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X, ArrowRight, Sparkles } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
+import { publicFileUrl } from "@/lib/local-first/release/release-constants";
 
 // 2026-09-16: "How It Works" dropped from the header per the owner's
 // direction (the standalone /how-it-works route still exists and still
@@ -50,7 +51,7 @@ export function MarketingHeader() {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-px-ink/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2">
-          <Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} />
+          <Image src={publicFileUrl("/logo-mark.svg")} unoptimized alt="PROJEXA" width={28} height={28} />
           <span className="font-heading text-lg font-semibold text-white">PROJEXA</span>
         </Link>
 

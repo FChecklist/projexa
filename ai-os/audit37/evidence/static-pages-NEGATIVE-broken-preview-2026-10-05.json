@@ -1,0 +1,121 @@
+{
+ "kind": "AUDIT-100 B60 static host live evidence",
+ "started": "2026-10-05T19:39:40.859Z",
+ "host": "https://b60-negative.projexa-static.pages.dev",
+ "app_origin": "https://projexa-ai.com",
+ "project_ref": "pcrjmlpuqsbocqfwoxod",
+ "checks": {
+  "manifest": {
+   "status": 200,
+   "release_version": "2026.10.05-796",
+   "digest_self_consistent": true,
+   "app_origin_release": "2026.10.05-796",
+   "same_as_app_origin": true,
+   "registered": false,
+   "registry_digest_equal": false,
+   "registry_current_release": "2026.10.05-872",
+   "is_registry_current": false,
+   "registry_files_equal_manifest": false,
+   "files_in_release": 384,
+   "note": "this release is not registered yet (lazy: the first signed-in laptop that asks registers it); bytes are checked against the manifest the app origin serves, which is what will be registered"
+  },
+  "files": {
+   "checked": 383,
+   "bytes": 8835796,
+   "bad": [
+    {
+     "path": "_next/static/immutable/chunks/0-5gr1m8xygb2.js",
+     "status": 200,
+     "size": 7175,
+     "sha256": "1a40aec03e3f257301f2dccbdcf4a54bdf2377f2285fc03444f8e6db01dd7a94",
+     "registered": {
+      "sha256": "169545fa637443dcb5ce4efee064931d840114772b77020d86f2e5063eab374d",
+      "size": 7175
+     }
+    },
+    {
+     "path": "logo-mark.svg",
+     "status": 404,
+     "size": 128,
+     "sha256": "97ed924d14f2cbf757130889b31b96f330f0d9906bfeedfebcfae2865db15e00",
+     "registered": {
+      "sha256": "e0dcaba2c9fec23c7c88361a6c98840f4b0165fb11ac9dd381dcfffbd6a0659e",
+      "size": 309
+     }
+    }
+   ],
+   "shell_not_on_host": true,
+   "reference": "app-origin manifest (not registered yet)",
+   "bundle": {
+    "path": "_release/px-2026.10.05-796.tar.gz",
+    "status": 200,
+    "size": 2776882,
+    "sha256_equal_reference": true
+   }
+  },
+  "headers": {
+   "js": {
+    "path": "/_next/static/immutable/chunks/0-5gr1m8xygb2.js",
+    "status": 200,
+    "acao": "*",
+    "cache_control": "public, max-age=31536000, immutable",
+    "content_type": "application/javascript"
+   },
+   "js_install_fetch": {
+    "path": "/_next/static/immutable/chunks/0-5gr1m8xygb2.js?px-install=1",
+    "status": 200,
+    "acao": "*",
+    "cache_control": "public, max-age=31536000, immutable",
+    "content_type": "application/javascript"
+   },
+   "font": {
+    "path": "/_next/static/immutable/media/0c8f209abc35ee02-s.p.0q59resy_4ije.woff2",
+    "status": 200,
+    "acao": "*",
+    "cache_control": "public, max-age=31536000, immutable",
+    "content_type": "font/woff2"
+   },
+   "bundle": {
+    "path": "/_release/px-2026.10.05-796.tar.gz",
+    "status": 200,
+    "acao": "*",
+    "cache_control": "public, max-age=31536000, immutable",
+    "content_type": "application/gzip"
+   },
+   "manifest": {
+    "path": "/_release/release.json",
+    "status": 200,
+    "acao": "*",
+    "cache_control": "no-cache",
+    "content_type": "application/json"
+   },
+   "public_file": {
+    "path": "/logo-mark.svg",
+    "status": 404,
+    "acao": "*",
+    "cache_control": "no-store",
+    "content_type": "text/html; charset=utf-8"
+   },
+   "missing": {
+    "path": "/_next/static/chunks/does-not-exist-b60.js",
+    "status": 404,
+    "acao": "*",
+    "cache_control": "no-store",
+    "content_type": "text/html; charset=utf-8"
+   },
+   "verdict": {
+    "cors_on_every_kind": true,
+    "code_and_bundle_immutable": true,
+    "manifest_revalidated": true,
+    "js_is_javascript": true,
+    "install_fetch_served": true,
+    "missing_is_404": true
+   }
+  }
+ },
+ "finished": "2026-10-05T19:40:32.691Z",
+ "ok": false,
+ "failed": [
+  "files"
+ ]
+}
