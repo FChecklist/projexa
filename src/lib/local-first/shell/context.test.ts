@@ -28,6 +28,18 @@ describe("the shell's data comes from this laptop", () => {
     expect(projectLabel("0123456789abcdef", "  ")).toBe("Project 01234567");
   });
 
+  test("AUDIT-100 B10: a project the replica copied today is named from the replica's own manifest, not 'Project <id>' until tomorrow", () => {
+    // the cached names are a day old: they know p1 and p2 only; the replica's last sync brought p3 with its name
+    const data = buildShellData({ identity: identity(), replica: replica({ projectIds: ["p1", "p2", "p3"], projectNames: { p1: "Cedar Heights Villa (renamed)", p3: "Riverside Annex" } }), names: names() });
+    expect(data.projects).toEqual([
+      { id: "p1", name: "Cedar Heights Villa (renamed)" }, // the replica's name is the newer one
+      { id: "p2", name: "Project p2" }, // named nowhere: still tellable apart
+      { id: "p3", name: "Riverside Annex" },
+    ]);
+    // another person's replica names nothing here
+    expect(buildShellData({ identity: identity(), replica: replica({ userId: "someone-else", projectNames: { p1: "Theirs" } }), names: names() }).projects.map((p) => p.name)).toEqual(["Cedar Heights Villa", "Project p2"]);
+  });
+
   test("without a replica manifest yet, the cached manifest names the projects; with neither there are none", () => {
     expect(buildShellData({ identity: identity(), replica: null, names: names() }).projects.map((p) => p.id)).toEqual(["p1", "p2"]);
     const none = buildShellData({ identity: identity(), replica: null, names: null });
