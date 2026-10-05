@@ -76,6 +76,10 @@ Signed message (UTF-8): `px2|<org>|<project>|<kind>|<id>|<version>|<updated_at>|
 - `after_seq: null` returns no changes, `next_seq = head_seq` = the project's current head (read it BEFORE the first full pull and store it, so nothing is missed in between).
 - An empty page answers `next_seq = after_seq`; otherwise `next_seq` is the last `seq` of the page.
 - `D` is a tombstone: delete the local row. `I`/`U`: if the local `serverVersion` is lower, fetch the row (`ids` mode). Only the 28 synced kinds appear.
+- **Local tombstones (laptop rule, AUDIT-100 B8, local-db schema 5).** Every server delete the laptop applies -- a `D`, a pull item `deleted: true`, an id-list reconcile, a
+  peer hint the server confirmed -- and the person's own `delete_*` once the server applied it, leaves a local tombstone `{kind, id, version, deletedAt}` in the person's own
+  database. No pull, feed or peer write stores that record again at the tombstone's version or older; a NEWER server version (a real restore) replaces it. Tombstones last
+  30 days (`TOMBSTONE_TTL_MS`) and at most 5,000 are kept (oldest first); a project leaving the laptop (lost access, reset, new epoch) takes its tombstones with it.
 - **Overlap (laptop rule).** `seq` is taken when a row is written, not when its transaction commits, so a long transaction becomes visible with seqs BELOW a position a laptop
   already holds (`drizzle/0679` header, KNOWN LIMIT). The backend now serves the feed under a commit-order-safe horizon (drizzle/0679, package D3: change rows carry their transaction id and a page never passes an open transaction), so the overlap is only a safety margin; a laptop still re-asks the first page of every run from
   `max(0, position - 200)` (`replica.ts CHANGE_FEED_OVERLAP`; it may be set to 0 once the deployed backend is confirmed to carry D3). Re-reading is idempotent (versions already held are skipped).
@@ -91,7 +95,9 @@ is null below rank 3. **The laptop's sync engine does not consume organisation k
 - A person only ever sees changes of projects they may read now (same bind as pull); one answer (404) for a project they may not.
 
 `POST /ids {project_id, kind, after_id, limit 1..5000}` -> `{ids, has_more, next_id, server_time}` (`next_id` = the page's last id): full id inventory, the repair path for
-deletes made before change tracking existed. Run at most once per project and kind per day.
+deletes made before change tracking existed. Run at most once per project and kind per day (weekly for a kind whose feed carries its deletes). AUDIT-100 B8: a
+(project, kind) that took rows from a PEER since its last reconcile is reconciled at its next run, a one-project run included, at most hourly (`PEER_RECONCILE_EVERY_MS`,
+inside the per-run budget of 12): a signed row a stale peer handed back after this laptop's tombstone expired is dropped even though the feed position is past its `D`.
 
 ## 2. Push
 
@@ -165,7 +171,11 @@ The laptop installs by downloading the bundle (or only the files whose `file_ver
 ## 4. Peers (laptop <-> laptop)
 
 `POST /attest {}` -> `{token, expires_at, org_id, user_id, view_class, projects, channel, public_keys:[{kid,alg,jwk,active}], server_time}`; `token` is a compact ES256 JWS, `typ:"px-peer"`, claims `{sub, org, projects, view, iat, exp}`, valid **24 hours** (`sign.ts ATTEST_TTL_SECONDS = 86400`, by design). `user_id` and the token's `sub` are the VERIDIAN person id (as `manifest.user.id`), not the sign-in id. The laptop keeps the token and the public keys and asks for a new token only when fewer than 2 hours are left (`peer/attest.ts`): about one call a day, and peers keep working through a server outage until it expires. `503` when no signing key is loaded.
-Signalling and presence use a Supabase Realtime channel named `px:<channel>` (the name is not guessable without the server key); the data itself goes over a WebRTC data channel. Every peer starts with `hello {token}`; a peer that does not present a valid, unexpired token of the SAME `org` and the SAME `view` is dropped. A peer only ever receives rows of projects present in BOTH tokens, only rows that carry a valid server `sig`, and never a `dirty` row. When no direct link can be made, laptops simply use the server (Supabase is the relay). Peers never deliver tombstones or version numbers of their own; they hand over signed rows only, and a row is applied only if its `version` is higher than the local one.
+Signalling and presence use a Supabase Realtime channel named `px:<channel>` (the name is not guessable without the server key); the data itself goes over a WebRTC data channel. Every peer starts with `hello {token}`; a peer that does not present a valid, unexpired token of the SAME `org` and the SAME `view` is dropped. A peer only ever receives rows of projects present in BOTH tokens, only rows that carry a valid server `sig`, and never a `dirty` row. When no direct link can be made, laptops simply use the server (Supabase is the relay). Peers never deliver tombstones or version numbers of their own; they hand over signed rows only, and a row is applied only if its `version` is higher than the local one
+**and** no local tombstone covers it (AUDIT-100 B8: a row the server deleted is refused as `deleted`; a laptop also lists its tombstones in `want.known`, so a peer does not
+even offer such a row). Deletions are not signed by the server, so a laptop tells a peer about its tombstones only as a **hint** (`gone {project, kind, ids:[[id, version]]}`,
+sent with a `want`): the peer deletes nothing on that word, it stops handing those rows on and asks the server about them (one `/pull` by ids per kind, at most 160 ids a
+run) at its next sync, and removes them (with a tombstone) only when the server no longer serves them. An older laptop ignores `gone`.
 
 ## 5. Jobs (work offload to an online laptop)
 

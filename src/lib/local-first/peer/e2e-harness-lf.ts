@@ -7,8 +7,9 @@
 // refusal and rejection (network.stats()), the stored record with its version / signatures / dirty flag, the auto-sync assembly with a
 // counted (and unreachable) server, and the epoch reset of the server step.
 
-import { changeCursorKey, localDbNameFor, openLocalDb, type LocalDb } from "../local-db";
-import { foreignOrg, LAST_SYNC_KEY, MANIFEST_KEY, type StoredManifest } from "../replica";
+import { PEER_SUSPECT_KEY, changeCursorKey, localDbNameFor, openLocalDb, type LocalDb, type PeerSuspect } from "../local-db";
+import { createReplica, foreignOrg, LAST_SYNC_KEY, MANIFEST_KEY, type StoredManifest } from "../replica";
+import { createStubService, type StubService } from "./__fixtures__/stub-service";
 import { createAutoSync, type AutoSync } from "./auto-sync";
 import { createLocalDbPeerStore } from "./localdb-store";
 import { createPeerNetwork, type NetworkStats, type PeerNetwork } from "./network";
@@ -41,6 +42,8 @@ let net: PeerNetwork | null = null;
 let auto: AutoSync | null = null;
 let conn: (SignalConnection & { deliver(m: SignalEnvelope): void }) | null = null;
 const refusals: Array<{ peer: string; reason: string }> = [];
+/** AUDIT-100 B8: this laptop's view of the sync service (a stub: rows, the change feed with its D tombstones, ids), for the REAL replica. */
+let stub: StubService | null = null;
 const counters = { serverStep: 0, attestFetch: 0, fetch: 0 };
 /** startAutoReal: which real signalling provider connected, and which failed (with why). */
 const providerLog: { connected: string[]; failed: Array<{ name: string; error: string }> } = { connected: [], failed: [] };
@@ -246,6 +249,21 @@ const harness = {
     }
     return out;
   },
+  // ── AUDIT-100 B8: the server side of a delete, through the REAL replica (replica.ts) against a stub service ──
+  stubInit(o: { projects: string[]; kinds: string[] }) { stub = createStubService({ org: me.org, ...o }); },
+  stubPut(row: SignedRow) { stub!.put(row); },
+  stubRemove(project: string, kind: string, id: string, version: number) { stub!.remove(project, kind, id, version); },
+  stubAdvance(project: string, n: number) { stub!.advance(project, n); },
+  stubCalls() { return stub!.calls.slice(); },
+  /** One whole sync of this laptop's replica against the stub service: pull, change feed (deletes), peer hints, id reconcile. */
+  async serverSync() {
+    const r = await createReplica({ userId: me.userId, client: stub!.client(me.userId), idb: indexedDB, pacer: null }).sync();
+    return { status: r.status, issues: r.issues.map((i) => i.message) };
+  },
+  /** This laptop's tombstones of (project, kind), as `id@version`. */
+  async tombstones(kind: string, project: string) { return (await db!.listTombstones(me.org, kind, project)).map((t) => `${t.id}@${t.version}`).sort(); },
+  /** The rows a peer said were deleted, still to be checked with the server. */
+  async suspects() { return ((await db!.getMeta<PeerSuspect[]>(PEER_SUSPECT_KEY)) ?? []).map((s) => `${s.kind}:${s.id}`).sort(); },
   stop() { auto?.stop(); net?.close(); auto = null; net = null; },
 };
 
