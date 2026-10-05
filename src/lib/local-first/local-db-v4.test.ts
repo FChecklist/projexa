@@ -81,7 +81,7 @@ function unguarded(db: LocalDb): LocalDb {
 
 describe("local database schema 4", () => {
   test("is version 4, and a database made by schema 3 keeps every record, op and meta value through the upgrade", async () => {
-    expect(LOCAL_DB_VERSION).toBe(4);
+    expect(LOCAL_DB_VERSION).toBeGreaterThanOrEqual(4); // schema 5 (local-db-v5.test.ts) only ADDS the tombstones store
     const idb = new IDBFactory();
     await makeV3Database(idb, "px-v3");
     const db = await openLocalDb(idb, "px-v3");

@@ -45,3 +45,9 @@
 - Deleted 11 leftover RFIs: subject `B7 online RFI audit100-<ts>` / `B18 offline RFI audit100-<ts>`, all older than 60 min.
 - Deleted 3 leftover meetings from the earlier B8 attempts (`vy0p6dho...`, `e9oz3fze...`, `aufz17yy...`).
 - The two meetings from these runs (above) were deleted after the evidence was recorded.
+
+## Laptop fix (2026-10-06, branch `audit100/b8-laptop-tombstones`)
+- `src/lib/local-first/local-db.ts` schema 5: a `tombstones` store. Every server delete (feed `D`, pull `deleted`, `/ids` reconcile, server-confirmed peer hint) and the person's own applied `delete_*` leaves `{kind, id, version, deletedAt}`; `putRecords` never stores that record again at that version or older (a newer server version replaces the tombstone). Bounded: 30 days, at most 5,000, cleared with the project.
+- `src/lib/local-first/peer/protocol.ts`: a row covered by a tombstone is refused (`deleted`); tombstones go in `want.known`; a `gone` HINT (unsigned, so it deletes nothing) tells the stale laptop, which stops sharing the row and asks the server by id (`replica.ts verifySuspects`).
+- `src/lib/local-first/replica.ts`: a pair that took peer rows is reconciled against `/ids` at its next run (one-project runs included, at most hourly, inside the budget).
+- Tests, each seen failing on the old code: `src/lib/local-first/peer/tombstones.test.ts`, `src/lib/local-first/local-db-v5.test.ts`, `e2e/lf-peer-deletes.spec.ts` (real Chromium, two laptops, real peer link). The real-backend laptop leg in `e2e/audit37-real-b8-kinds-deletes.spec.ts` is an ordinary test again, kept for a by-hand run.
