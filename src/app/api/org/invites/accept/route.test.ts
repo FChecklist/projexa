@@ -29,8 +29,22 @@ mock.module("@/lib/supabase/server", () => ({
 mock.module("@/lib/supabase/get-claims-with-retry", () => ({ getClaimsWithRetry: async () => claims }));
 mock.module("@/lib/email/invite-welcome", () => ({
   sendInviteWelcome: async (_supabase: unknown, person: unknown, organizationId: string) => {
+    order.push("welcome");
     welcomeCalls.push({ person, organizationId });
     return welcomeImpl();
+  },
+  freshSession: () => ({ accessToken: async () => sessionToken, refresh: async () => sessionToken }),
+}));
+// AUDIT-100 (link-invited-members): the member link step, recorded (its own behaviour is src/lib/veridian-member-link.test.ts)
+let sessionToken: string | null = "session-tok";
+let linkCalls: Array<string | null | undefined> = [];
+let linkImpl: () => Promise<{ linked: boolean; outcome: string }>;
+let order: string[] = [];
+mock.module("@/lib/veridian-member-link", () => ({
+  requestMemberLink: async (token: string | null | undefined) => {
+    order.push("link");
+    linkCalls.push(token);
+    return linkImpl();
   },
 }));
 
@@ -45,6 +59,10 @@ beforeEach(() => {
   rpcCalls = [];
   welcomeCalls = [];
   welcomeImpl = async () => ({ status: "sent", emailId: "em_1", linkId: "l1", level: 0 });
+  sessionToken = "session-tok";
+  linkCalls = [];
+  linkImpl = async () => ({ linked: true, outcome: "created" });
+  order = [];
 });
 
 describe("POST /api/org/invites/accept", () => {
@@ -129,5 +147,61 @@ describe("the welcome e-mail with the AI prompt (B55)", () => {
     const res = await POST(request({ token: "tok-abc" }));
     expect(res.status).toBe(200);
     expect(welcomeCalls).toEqual([{ person: { email: null }, organizationId: "org-42" }]);
+    expect(linkCalls).toEqual(["session-tok"]);
+  });
+});
+
+describe("the new member gets their own VERIDIAN user (AUDIT-100 link-invited-members)", () => {
+  test("a successful accept links the member ONCE, with the person's own session token, BEFORE the welcome e-mail mints their link", async () => {
+    const res = await POST(request({ token: "tok-abc" }));
+    expect(res.status).toBe(200);
+    expect(linkCalls).toEqual(["session-tok"]);
+    expect(order).toEqual(["link", "welcome"]);
+  });
+
+  test("a refused, used, expired or unknown invitation, a visitor and a bad body link nobody", async () => {
+    for (const error of [{ code: "P0001", message: "This invitation has already been used." }, { code: "P0002", message: "This invitation link is not valid." }]) {
+      rpcResult = { data: null, error };
+      await POST(request({ token: "tok-abc" }));
+    }
+    claims = { data: null, error: new Error("no session") };
+    await POST(request({ token: "tok-abc" }));
+    claims = { data: { claims: { sub: "user-1", email: "new.person@example.com" } }, error: null };
+    await POST(request({}));
+    expect(linkCalls).toEqual([]);
+  });
+
+  test("the link step never changes the answer: not linked, throwing, or no session -> still 200, and the welcome still runs", async () => {
+    for (const impl of [
+      async () => ({ linked: false, outcome: "email_taken" }),
+      async () => ({ linked: false, outcome: "http_503" }),
+      async () => { throw new Error("edge down"); },
+    ]) {
+      linkImpl = impl;
+      const res = await POST(request({ token: "tok-abc" }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ organizationId: "org-42" });
+    }
+    sessionToken = null;
+    expect((await POST(request({ token: "tok-abc" }))).status).toBe(200);
+    expect(linkCalls).toEqual(["session-tok", "session-tok", "session-tok", null]);
+    expect(welcomeCalls).toHaveLength(4);
+  });
+
+  test("a link step that hangs is cut off by its budget: the accept still answers 200 (never blocks)", async () => {
+    linkImpl = () => new Promise(() => {});
+    const started = Date.now();
+    const res = await POST(request({ token: "tok-abc" }));
+    expect(res.status).toBe(200);
+    expect(Date.now() - started).toBeLessThan(12_000);
+    expect(welcomeCalls).toHaveLength(1);
+  }, 20_000);
+
+  test("no e-mail on the session: the link step still runs (the service decides), the accept is unchanged", async () => {
+    claims = { data: { claims: { sub: "user-1" } }, error: null };
+    const res = await POST(request({ token: "tok-abc" }));
+    expect(res.status).toBe(200);
+    expect(welcomeCalls).toEqual([{ person: { email: null }, organizationId: "org-42" }]);
+    expect(linkCalls).toEqual(["session-tok"]);
   });
 });
