@@ -7,7 +7,7 @@ import { ALL_ORG_ROLES } from "./authz/roles";
 import { GENERATED_PATH, INVENTORY_PATH, lf, render, ROUTES_PATH, validateRoutes } from "../../scripts/projexa-api-edge.mjs";
 import * as generated from "../../ai-os/audit37/projexa-api/policy.generated";
 import { REQUESTS } from "./projexa-api-parity-cases";
-import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ROUTES } from "./px-api";
+import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ORIGINS, PX_EDGE_ROUTES } from "./px-api";
 
 // AUDIT-100 A2: the Supabase Edge Function `projexa-api` (compliance-tracker supabase/functions/projexa-api) enforces THIS repo's role policy
 // and answers only THIS repo's listed routes. Its table is generated here (scripts/projexa-api-edge.mjs) and copied byte for byte; these tests
@@ -100,8 +100,19 @@ describe("the browser switch (src/lib/px-api.ts)", () => {
     expect(seen[0]!.url).toBe("/api/exceptions?projectId=p");
     expect(seen[0]!.init.credentials).toBe("same-origin");
     expect(new Headers(seen[0]!.init.headers).get("authorization")).toBeNull();
-    expect(pxApiBase("")).toBe("");
-    expect(pxApiBase(undefined)).toBe(PX_API_DEFAULT_BASE);
+    expect(pxApiBase("", "https://projexa-ai.com")).toBe("");
+  });
+
+  test("phase 3 default: the edge function on the production origins only; an explicit base (or the kill switch \"\") always wins", () => {
+    expect(PX_API_DEFAULT_BASE).toBe(PX_API_EDGE_URL);
+    expect(pxApiBase(undefined, "https://projexa-ai.com")).toBe(PX_API_EDGE_URL);
+    expect(pxApiBase(undefined, "https://www.projexa-ai.com")).toBe(PX_API_EDGE_URL);
+    // a preview deployment, the e2e rig, local dev, a server render: same origin (the function's CORS would refuse them anyway)
+    for (const origin of ["https://projexa-git-x.vercel.app", "http://localhost:3117", "http://localhost:3100", null]) expect(pxApiBase(undefined, origin)).toBe("");
+    expect(pxApiBase("", "https://projexa-ai.com")).toBe("");
+    expect(pxApiBase(" https://example.test/fn/ ", null)).toBe("https://example.test/fn");
+    // the function answers exactly these origins (compliance-tracker supabase/functions/projexa-api/handler.ts ALLOWED_ORIGINS)
+    expect([...PX_EDGE_ORIGINS].sort()).toEqual(["https://projexa-ai.com", "https://www.projexa-ai.com"]);
   });
 
   test("base set: a listed route goes to the function with the bearer token and NO cookie; an unlisted route or method stays same-origin", async () => {

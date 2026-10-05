@@ -12,7 +12,9 @@ type Inventory = {
   shell_api_references: string[];
   install_phase_api_allowlist: string[];
   daily_use_api_allowlist: string[];
-  routes: { route: string; why: string; plan: string; shell_reachable: boolean; methods: string[] }[];
+  daily_use_api_allowlist_production: string[];
+  shell_vercel_routes_budget: number;
+  routes: { route: string; why: string; plan: string; shell_reachable: boolean; methods: string[]; served_by?: string }[];
 };
 const inventory = (): Inventory => JSON.parse(readFileSync(INVENTORY_PATH as string, "utf8"));
 const copy = (): Inventory => structuredClone(inventory());
@@ -82,5 +84,31 @@ describe("Vercel route inventory (A2/A3)", () => {
     expect(shellApiReferences.length).toBeGreaterThanOrEqual(5);
     expect(shellApiReferences).toContain("/api/local-first/client-error");
     expect(readFileSync(join(import.meta.dir, "..", "lib", "local-first", "usage-telemetry.ts"), "utf8").length).toBeGreaterThan(0);
+  });
+
+  test("A2: the shell's proxy routes are answered by the edge function on the production origins; only the beacon stays on Vercel (measured 8 -> 1)", () => {
+    const inv = inventory();
+    const shell = inv.routes.filter((r) => r.shell_reachable);
+    expect(shell.length).toBe(8);
+    const onVercel = shell.filter((r) => r.served_by !== "edge:projexa-api").map((r) => r.route);
+    expect(onVercel).toEqual(["/api/local-first/client-error"]);
+    expect(inv.shell_vercel_routes_budget).toBeLessThanOrEqual(1);
+    // the production daily list is the rig's list minus the edge-served routes
+    const edge = inv.routes.filter((r) => r.served_by === "edge:projexa-api").map((r) => r.route);
+    const expected = inv.daily_use_api_allowlist.filter((e) => !edge.some((r) => routeMatches(e.split(" ")[1]!, r)));
+    expect(inv.daily_use_api_allowlist_production).toEqual(expected);
+    expect(inv.daily_use_api_allowlist_production).toEqual(["POST /api/local-first/client-error"]);
+  });
+
+  test("CAN FAIL: a shell route put back on Vercel breaks the budget; a served_by that disagrees with the edge's list is reported", () => {
+    const inv = copy();
+    const dash = inv.routes.find((r) => r.route === "/api/dashboard/project/:projectId")!;
+    dash.served_by = "vercel";
+    const problems = check(inv) as string[];
+    expect(problems.some((p) => p.includes("still answered by Vercel") && p.includes("budget is 1"))).toBe(true);
+    expect(problems.some((p) => p.includes("/api/dashboard/project/:projectId is answered by the edge function"))).toBe(true);
+    const inv2 = copy();
+    inv2.routes.find((r) => r.route === "/api/shell")!.served_by = "edge:projexa-api";
+    expect((check(inv2) as string[]).some((p) => p.includes("/api/shell says served_by"))).toBe(true);
   });
 });

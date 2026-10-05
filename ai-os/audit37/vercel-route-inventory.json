@@ -37,8 +37,12 @@
     ],
     "projexa-document-extract": [
       "document text extraction"
+    ],
+    "projexa-api": [
+      "the proxy-class /api routes of ai-os/audit37/projexa-api-routes.json (AUDIT-100 A2)"
     ]
   },
+  "shell_vercel_routes_budget": 1,
   "shell_api_references": [
     "/api/dashboard/project",
     "/api/documents/:id",
@@ -59,6 +63,9 @@
     "GET /api/dashboard/project/:id",
     "POST /api/local-first/client-error"
   ],
+  "daily_use_api_allowlist_production": [
+    "POST /api/local-first/client-error"
+  ],
   "routes": [
     {
       "route": "/api/access-review",
@@ -69,6 +76,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -80,6 +88,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -91,6 +100,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -102,6 +112,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "the AI assistant and its tools: the user's own AI is reached through the AI Work Link edge function; these routes are the legacy in-app chat",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -113,6 +124,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -125,6 +137,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "legacy in-app assistant: server only",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -137,6 +150,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -148,6 +162,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -159,6 +174,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -170,6 +186,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -181,6 +198,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -193,6 +211,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -204,6 +223,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -215,6 +235,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -226,6 +247,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -237,6 +259,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -249,6 +272,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -261,6 +285,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -273,6 +298,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -284,6 +310,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -295,6 +322,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -307,6 +335,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -319,6 +348,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -330,6 +360,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -341,6 +372,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -353,6 +385,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -365,6 +398,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -376,6 +410,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -387,6 +422,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -398,6 +434,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -409,6 +446,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "public contact form: needs a server to send mail",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -421,6 +459,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -433,6 +472,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -444,6 +484,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -456,6 +497,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -467,6 +509,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -478,6 +521,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -489,6 +533,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -501,6 +546,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -514,6 +560,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -525,6 +572,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -536,6 +584,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "server-side logic of an online-only screen",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -547,6 +596,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -558,6 +608,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -569,6 +620,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -580,6 +632,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -591,8 +644,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "dashboard-adapter.ts asks for the server-computed figures of one project (money-weighted progress, budget vs actual) while online and keeps the answer as a snapshot (snapshot-cache.ts) that the screen shows offline. Measured: one call when the Dashboard opens online.",
-      "plan": "edge-candidate: serve the same figures from the projexa-read Edge Function (step 2 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/design-materials",
@@ -603,6 +657,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -614,6 +669,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -626,6 +682,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -638,8 +695,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "documents-file-cache.ts reads a document row to get a short-lived signed URL for its file (private bucket) when a person pins or opens a file.",
-      "plan": "edge-candidate: an Edge Function mints the signed URL (step 4 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/documents/:id/dispose",
@@ -649,6 +707,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "edge-candidate: the on-laptop shell asks for it while online (a snapshot or a write); move to a Supabase Edge Function (see ai-os/audit37/VERCEL_ROUTE_PLAN.md)"
     },
@@ -660,6 +719,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "edge-candidate: the on-laptop shell asks for it while online (a snapshot or a write); move to a Supabase Edge Function (see ai-os/audit37/VERCEL_ROUTE_PLAN.md)"
     },
@@ -672,6 +732,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -685,6 +746,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -696,8 +758,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "documents-file-cache.ts asks for the signed URL of a drawing file when a person pins or opens it.",
-      "plan": "edge-candidate: same signed-URL Edge Function as documents (step 4 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/drawings/export",
@@ -707,6 +770,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -719,6 +783,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "email delivery / inbound mail needs a server (secret keys, public webhook address)",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -730,6 +795,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "email delivery / inbound mail needs a server (secret keys, public webhook address)",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -741,6 +807,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "email delivery / inbound mail needs a server (secret keys, public webhook address)",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -753,6 +820,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -765,6 +833,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -776,8 +845,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "analysis-adapter.ts snapshot of the 28 project checks (needs server-side rules across modules) while online; cached for offline.",
-      "plan": "edge-candidate: projexa-read Edge Function (step 2 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/expenses",
@@ -788,6 +858,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -800,6 +871,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -812,6 +884,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -823,6 +896,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -834,6 +908,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -845,6 +920,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -857,6 +933,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -869,6 +946,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -880,6 +958,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -892,6 +971,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -903,6 +983,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -915,6 +996,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -926,6 +1008,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -938,6 +1021,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -950,6 +1034,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -961,6 +1046,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -973,6 +1059,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -984,6 +1071,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -995,6 +1083,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "third-party connection (Google Sheets) with secrets and webhooks: server only",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1006,6 +1095,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "third-party connection (Google Sheets) with secrets and webhooks: server only",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1017,6 +1107,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "third-party connection (Google Sheets) with secrets and webhooks: server only",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1028,6 +1119,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "third-party connection (Google Sheets) with secrets and webhooks: server only",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1039,6 +1131,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "third-party connection (Google Sheets) with secrets and webhooks: server only",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1051,6 +1144,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1062,6 +1156,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1073,6 +1168,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1085,6 +1181,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1097,6 +1194,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1109,6 +1207,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1120,6 +1219,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1131,6 +1231,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1143,6 +1244,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1155,6 +1257,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1166,6 +1269,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1178,6 +1282,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1189,6 +1294,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1201,6 +1307,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1212,6 +1319,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1224,6 +1332,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1236,6 +1345,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1247,6 +1357,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1258,6 +1369,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1270,6 +1382,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1282,6 +1395,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1293,6 +1407,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1304,6 +1419,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1316,6 +1432,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1328,6 +1445,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1339,6 +1457,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1350,6 +1469,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": true,
+      "served_by": "vercel",
       "why": "the laptop reports caught errors and a data-free usage line (heap, storage, request counts): once per session, then at most every 10 minutes while the tab is visible (usage-telemetry.ts). Measured: 1 call per visit window.",
       "plan": "keep on Vercel: tiny, rate-limited by the client; could move to the projexa-sync /prepare route later"
     },
@@ -1361,6 +1481,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "a small data-free beacon from the laptop (errors, usage numbers, install progress): it must reach us while online and costs one tiny invocation",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1372,6 +1493,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1384,6 +1506,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1396,6 +1519,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1408,6 +1532,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1420,6 +1545,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1432,6 +1558,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1444,6 +1571,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1456,6 +1584,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1467,6 +1596,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1479,6 +1609,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1490,6 +1621,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1501,6 +1633,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1513,6 +1646,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1526,6 +1660,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1537,6 +1672,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1548,6 +1684,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1559,6 +1696,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1571,6 +1709,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1582,6 +1721,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1594,6 +1734,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1607,6 +1748,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1618,6 +1760,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1629,6 +1772,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "legacy top bar bell, called by the server-rendered pages. Not called by the on-laptop shell. Measured: once during the first install.",
       "plan": "keep until the legacy pages are gone; not part of daily use"
     },
@@ -1640,6 +1784,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1652,6 +1797,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1664,6 +1810,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1675,6 +1822,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1686,6 +1834,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1697,6 +1846,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "server-side logic of an online-only screen",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1708,6 +1858,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1719,6 +1870,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1731,6 +1883,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1742,6 +1895,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1753,6 +1907,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1764,6 +1919,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1775,6 +1931,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1787,6 +1944,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1798,6 +1956,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "server-side logic of an online-only screen",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1810,6 +1969,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1822,6 +1982,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "server-side logic of an online-only screen",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1833,6 +1994,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1845,6 +2007,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1857,6 +2020,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1868,6 +2032,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1879,6 +2044,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1890,6 +2056,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1901,6 +2068,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1913,6 +2081,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1924,6 +2093,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1935,6 +2105,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1946,6 +2117,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1958,6 +2130,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1970,6 +2143,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1982,6 +2156,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -1994,6 +2169,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2007,8 +2183,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "documents-file-cache.ts reads a permit row to get the signed URL of its scan when a person pins or opens it.",
-      "plan": "edge-candidate: same signed-URL Edge Function as documents (step 4 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/pill-usage",
@@ -2019,6 +2196,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2031,6 +2209,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2043,6 +2222,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2055,6 +2235,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2066,6 +2247,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2077,6 +2259,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2089,6 +2272,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2102,6 +2286,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2113,6 +2298,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2125,6 +2311,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2137,6 +2324,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2148,6 +2336,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2159,6 +2348,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2171,6 +2361,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2182,6 +2373,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2193,6 +2385,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2204,6 +2397,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2215,6 +2409,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2226,6 +2421,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2237,6 +2433,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2249,6 +2446,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2261,6 +2459,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2272,6 +2471,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2283,6 +2483,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2294,6 +2495,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2306,6 +2508,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2317,6 +2520,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2329,6 +2533,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2340,6 +2545,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2352,6 +2558,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2363,6 +2570,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2375,6 +2583,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2387,6 +2596,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2399,6 +2609,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2411,6 +2622,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2423,6 +2635,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2434,6 +2647,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2445,6 +2659,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2456,6 +2671,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2468,6 +2684,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2479,6 +2696,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2490,6 +2708,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2502,6 +2721,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2513,6 +2733,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2525,6 +2746,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2536,6 +2758,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2548,6 +2771,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2559,6 +2783,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2570,6 +2795,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2581,6 +2807,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2592,6 +2819,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2603,6 +2831,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2614,8 +2843,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "analysis-adapter.ts snapshot of the BOQ analysis while online; cached for offline.",
-      "plan": "edge-candidate: projexa-read Edge Function (step 2 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/reports/budget-variance/export",
@@ -2625,6 +2855,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2636,6 +2867,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2647,6 +2879,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2658,6 +2891,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2670,6 +2904,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2682,6 +2917,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2694,6 +2930,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2706,6 +2943,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2718,6 +2956,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2729,6 +2968,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2740,6 +2980,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2751,6 +2992,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2762,6 +3004,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2773,6 +3016,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2785,6 +3029,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2797,6 +3042,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2808,6 +3054,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2819,6 +3066,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2830,6 +3078,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2842,6 +3091,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2853,6 +3103,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2864,6 +3115,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2875,6 +3127,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2887,6 +3140,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2898,6 +3152,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2911,6 +3166,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2923,6 +3179,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2935,6 +3192,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2947,6 +3205,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2958,6 +3217,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2970,6 +3230,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2982,6 +3243,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -2995,6 +3257,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3006,6 +3269,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3017,6 +3281,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3028,6 +3293,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3039,6 +3305,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3051,6 +3318,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3063,6 +3331,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3075,6 +3344,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3086,6 +3356,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3097,6 +3368,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3108,8 +3380,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
+      "served_by": "edge:projexa-api",
       "why": "pending-edits.ts sends a BOQ line edit here only while online and the server is reachable; offline it waits in the outbox and is pushed through projexa-sync /push.",
-      "plan": "edge-candidate: send the online edit through the same /push op the outbox already uses, then delete this call (step 3 of VERCEL_ROUTE_PLAN.md)"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/scope/lines",
@@ -3119,6 +3392,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3131,6 +3405,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3143,6 +3418,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3154,6 +3430,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "server-side logic of an online-only screen",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3165,6 +3442,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3176,6 +3454,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "the legacy server-rendered pages bootstrap their top bar from it (organisation, projects, notifications, pills). The on-laptop /local shell never calls it. Measured: once, during the first install, which opens on a legacy page.",
       "plan": "keep until the legacy pages are gone; not part of daily use"
     },
@@ -3188,6 +3467,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3199,6 +3479,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3211,6 +3492,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3222,6 +3504,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3234,6 +3517,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3246,6 +3530,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3258,6 +3543,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "legacy top bar task counter, called by the server-rendered pages. Not called by the on-laptop shell. Measured: once during the first install.",
       "plan": "keep until the legacy pages are gone; not part of daily use"
     },
@@ -3269,6 +3555,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3280,6 +3567,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3292,6 +3580,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3305,6 +3594,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3316,6 +3606,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3327,6 +3618,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3338,6 +3630,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3349,6 +3642,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3360,6 +3654,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3372,6 +3667,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3384,6 +3680,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3395,6 +3692,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3406,6 +3704,7 @@
       ],
       "backend": "own-logic",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "server-side logic of an online-only screen",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3418,6 +3717,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3430,6 +3730,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3443,6 +3744,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3455,6 +3757,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3467,6 +3770,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3478,6 +3782,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3490,6 +3795,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3502,6 +3808,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3513,6 +3820,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3525,6 +3833,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3537,6 +3846,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3549,6 +3859,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3562,6 +3873,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3574,6 +3886,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3586,6 +3899,7 @@
       ],
       "backend": "supabase",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "talks to Supabase with the signed-in person's session on the server",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3597,6 +3911,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3608,6 +3923,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3619,6 +3935,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
@@ -3630,6 +3947,7 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
+      "served_by": "vercel",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     }

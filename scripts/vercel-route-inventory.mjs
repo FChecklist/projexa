@@ -13,6 +13,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 export const INVENTORY_PATH = join(ROOT, "ai-os", "audit37", "vercel-route-inventory.json");
+/** AUDIT-100 A2: the routes the Supabase Edge Function projexa-api answers on the production origins (src/lib/px-api.ts). */
+export const EDGE_ROUTES_PATH = join(ROOT, "ai-os", "audit37", "projexa-api-routes.json");
+export const EDGE_SERVED = "edge:projexa-api";
+const EDGE_PLAN = "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted";
+function edgeRoutes() {
+  return existsSync(EDGE_ROUTES_PATH) ? JSON.parse(readFileSync(EDGE_ROUTES_PATH, "utf8")).routes.map((r) => r.route) : [];
+}
 const API_DIR = join(ROOT, "src", "app", "api");
 const SHELL_DIRS = [join(ROOT, "src", "lib", "local-first"), join(ROOT, "src", "app", "local")];
 
@@ -118,14 +125,16 @@ export function build(previous) {
   const entries = routes.map((r) => {
     const prev = old.get(r.route);
     const shellReachable = shellApiReferences.some((ref) => routeMatches(ref, r.route));
+    const edge = edgeRoutes().includes(r.route);
     return {
       route: r.route,
       file: r.file,
       methods: r.methods,
       backend: r.backend,
       shell_reachable: shellReachable,
+      served_by: edge ? EDGE_SERVED : "vercel",
       why: prev?.why ?? defaultWhy(r),
-      plan: shellReachable ? (prev?.plan ?? SHELL_PLAN) : (prev?.plan ?? "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"),
+      plan: edge ? EDGE_PLAN : shellReachable ? (prev?.plan ?? SHELL_PLAN) : (prev?.plan ?? "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"),
     };
   });
   return {
@@ -140,11 +149,16 @@ export function build(previous) {
       "projexa-timer": ["timer rates"],
       "projexa-scheduler-bridge": ["scheduler"],
       "projexa-document-extract": ["document text extraction"],
+      "projexa-api": ["the proxy-class /api routes of ai-os/audit37/projexa-api-routes.json (AUDIT-100 A2)"],
     },
+    // AUDIT-100 A2: shell-reachable routes still answered by Vercel on the production origins (the beacon); the guard holds it
+    shell_vercel_routes_budget: previous?.shell_vercel_routes_budget ?? 1,
     shell_api_references: shellApiReferences,
     // measured by e2e/lf-lifecycle-vercel-budget.spec.ts: the only /api calls a first install and a daily walk of the shell may make
     install_phase_api_allowlist: previous?.install_phase_api_allowlist ?? [],
     daily_use_api_allowlist: previous?.daily_use_api_allowlist ?? [],
+    // what a daily walk sends to Vercel on the production origins: the rig list minus the edge-served routes
+    daily_use_api_allowlist_production: previous?.daily_use_api_allowlist_production ?? [],
     routes: entries,
   };
 }
@@ -166,6 +180,16 @@ export function check(inventory) {
   for (const ref of shellApiReferences) if (!listed.includes(ref)) problems.push(`the on-laptop shell code now references ${ref}, which is not in shell_api_references: a new Vercel call from the laptop`);
   for (const ref of listed) if (!shellApiReferences.includes(ref)) problems.push(`shell_api_references lists ${ref} but no shell code references it any more: remove it`);
   for (const ref of listed) if (!routes.some((r) => routeMatches(ref, r.route))) problems.push(`shell_api_references lists ${ref}, which is not a route`);
+  // AUDIT-100 A2: served_by agrees with the edge function's route list, both ways; the shell's Vercel routes stay within the budget
+  const edge = edgeRoutes();
+  for (const r of inventory.routes ?? []) {
+    const isEdge = edge.includes(r.route);
+    if (isEdge && r.served_by !== EDGE_SERVED) problems.push(`${r.route} is answered by the edge function (projexa-api-routes.json) but the inventory says served_by ${r.served_by}`);
+    if (!isEdge && r.served_by === EDGE_SERVED) problems.push(`${r.route} says served_by ${EDGE_SERVED} but the edge function does not answer it`);
+  }
+  const shellOnVercel = (inventory.routes ?? []).filter((r) => r.shell_reachable && r.served_by !== EDGE_SERVED);
+  const budget = inventory.shell_vercel_routes_budget ?? 0;
+  if (shellOnVercel.length > budget) problems.push(`${shellOnVercel.length} shell-reachable routes are still answered by Vercel (${shellOnVercel.map((r) => r.route).join(", ")}), the budget is ${budget}`);
   return problems;
 }
 

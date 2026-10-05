@@ -56,6 +56,7 @@ import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySel
 // into. Rendered unconditionally below, at every BOQ stage/status -- never
 // behind a tab, toggle or collapse (2-01).
 import BoqDualViewGrid from "@/components/BoqDualViewGrid";
+import { viaPxApi } from "@/lib/px-api";
 
 // Real StatusTone values only ("needs-you" | "running" | "waiting" | "done" |
 // "late" | "neutral" -- veridian-ui-kit/screens/types.ts). "submitted"
@@ -234,7 +235,7 @@ export default function ScopeObjectClient({
   ) {
     setSavingRowId(rowId);
     try {
-      const res = await fetch(`/api/scope/line-items/${rowId}`, {
+      const res = await viaPxApi(`/api/scope/line-items/${rowId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
       });
       const data = await res.json();

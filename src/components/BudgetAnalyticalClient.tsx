@@ -74,6 +74,7 @@ import {
   type BudgetLine,
   type BudgetReport,
 } from "@/lib/budget-lines";
+import { viaPxApi } from "@/lib/px-api";
 
 type Vendor = { id: string; vendorName: string };
 
@@ -154,7 +155,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
     setSavingLineId(lineItemId);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/scope/line-items/${encodeURIComponent(lineItemId)}`, {
+      const res = await viaPxApi(`/api/scope/line-items/${encodeURIComponent(lineItemId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
