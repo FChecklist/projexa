@@ -113,6 +113,9 @@ test.describe("header AI buttons and the Connect panel (real browser)", () => {
       expect(seen.bodies.length).toBe(mintsBefore);
     });
 
+    // every link the header makes asks for the same 7 days (the Connectors panel mints through its own code path, not only the Copy button)
+    expect(seen.bodies).toEqual(seen.bodies.map(() => ({ days: 7 })));
+
     void laptop;
   });
 
@@ -130,6 +133,7 @@ test.describe("header AI buttons and the Connect panel (real browser)", () => {
     await page.getByTestId("local-shell-connectors").click();
     await expect(page.getByTestId("awl-connect-value-openapi")).toHaveText(`${LINK}/openapi.json`);
     expect(seen.bodies.length).toBeGreaterThanOrEqual(1);
+    expect(seen.bodies).toEqual(seen.bodies.map(() => ({ days: 7 })));
   });
 
   test("a refusal from the service is shown in plain words, and the next click can try again", async ({ page, context }) => {
