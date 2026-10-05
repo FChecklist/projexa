@@ -19,9 +19,10 @@ import { apiRoutes, countByDest, leftTheLaptop, routeKey, trackTraffic, type See
 // open and the data-free usage beacon; the rest goes to the Supabase Edge Function (about 3 requests per page load).
 
 type Inventory = {
-  routes: { route: string }[]
+  routes: { route: string; served_by?: string }[]
   install_phase_api_allowlist: string[]
   daily_use_api_allowlist: string[]
+  daily_use_api_allowlist_production: string[]
 }
 const inventory: Inventory = JSON.parse(readFileSync(join(process.cwd(), "ai-os", "audit37", "vercel-route-inventory.json"), "utf8"))
 
@@ -34,6 +35,15 @@ function apiViolations(seen: Seen[], allowed: string[]): string[] {
 }
 
 const BEACON = "POST /api/local-first/client-error"
+
+// AUDIT-100 A2: on the production origins (projexa-ai.com) src/lib/px-api.ts sends the edge-served routes to the Supabase Edge Function projexa-api;
+// this rig runs on localhost, where the switch keeps them same-origin, so the rig still SEES them as /api calls. What production sends to Vercel is
+// therefore the rig's /api calls minus the edge-served routes, and that must stay inside daily_use_api_allowlist_production (the beacon only).
+const EDGE_SERVED = inventory.routes.filter((r) => r.served_by === "edge:projexa-api").map((r) => norm(r.route))
+function productionVercelViolations(seen: Seen[]): string[] {
+  const onVercel = Object.keys(apiRoutes(leftTheLaptop(seen))).filter((k) => !EDGE_SERVED.includes(norm(k.split(" ")[1]!)))
+  return onVercel.filter((k) => !inventory.daily_use_api_allowlist_production.map(norm).includes(norm(k)))
+}
 
 test.use({ timezoneId: "UTC" })
 
@@ -83,6 +93,7 @@ test("A2/A3: after the one-time install, a daily walk of every shell module (onl
     expect(countByDest(left)["vercel-page"], "a module click loaded an app page from the server").toBe(0)
     expect(countByDest(left)["vercel-static"], "a module click downloaded a static file the laptop should hold").toBe(0)
     expect(apiViolations(clicks, inventory.daily_use_api_allowlist)).toEqual([])
+    expect(productionVercelViolations(clicks), "A2: in production these would still reach Vercel").toEqual([])
     expect(countByDest(left)["edge-sync"], "module clicks asked the sync service more than the budget (12)").toBeLessThanOrEqual(12)
     console.log(`A2 clicks x${entries.length}: ${JSON.stringify(countByDest(left))} api=${JSON.stringify(apiRoutes(left))}`)
   })
@@ -101,6 +112,7 @@ test("A2/A3: after the one-time install, a daily walk of every shell module (onl
     expect(c["vercel-page"], "a fresh load fetched an app page from the server").toBe(0)
     expect(c["vercel-static"], "a fresh load fetched static files from the server").toBe(0)
     expect(apiViolations(seen, inventory.daily_use_api_allowlist), "an /api call outside the documented list").toEqual([])
+    expect(productionVercelViolations(seen), "A2: in production these would still reach Vercel").toEqual([])
     expect(c["vercel-api"], "more /api calls than the budget (6) for a full walk").toBeLessThanOrEqual(6)
     expect(c["edge-sync"] / entries.length, "sync requests per page load above the budget (5)").toBeLessThanOrEqual(5)
     expect(c["edge-other"] + c.other, "the laptop talked to a host nobody named").toBe(0)
@@ -126,5 +138,8 @@ test("the measuring can fail: a call to Vercel that nobody named is caught as a 
   expect(seen.some((s) => s.path === "/zz-budget-probe-page" && s.dest === "vercel-page"), "the unnamed page request was not seen as an app page").toBe(true)
   expect(routeKey("/api/dashboard/project/ov-p1-harbor")).toBe("/api/dashboard/project/:id")
   expect(inInventory("GET /api/zz-budget-probe")).toBe(false)
+  // A2: the dashboard snapshot is edge-served (not a production Vercel call); the unnamed probe still is one
+  expect(productionVercelViolations(seen)).toContain("GET /api/zz-budget-probe")
+  expect(EDGE_SERVED).toContain(norm("/api/dashboard/project/:projectId"))
   traffic.stop()
 })

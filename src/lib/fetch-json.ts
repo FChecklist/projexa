@@ -20,6 +20,7 @@
 //
 // So: read the status first, and keep the backend's own words.
 
+import { viaPxApi } from "@/lib/px-api";
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
@@ -49,7 +50,7 @@ export async function fetchJson<T = any>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
-  const res = await fetch(input, init);
+  const res = await viaPxApi(input, init);
 
   // Parse defensively: an error response is not guaranteed to be JSON at all
   // (a proxy 502, an HTML error page). A parse failure must not mask the status.

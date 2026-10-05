@@ -139,6 +139,7 @@ import {
   spendTone,
   type ProjectValueSource,
 } from "@/lib/dashboard-kpi";
+import { viaPxApi } from "@/lib/px-api";
 
 // R46 P8 seq125 (M28 registry-model, DASHBOARD archetype -- function_id
 // "dashboard.dashboard", first DASHBOARD conversion this session):
@@ -266,7 +267,7 @@ class ReadFailed extends Error {
 }
 
 async function readJson<T>(url: string, signal: AbortSignal, fallbackMessage: string): Promise<T> {
-  const res = await fetch(url, { signal });
+  const res = await viaPxApi(url, { signal });
   const body = await res.json().catch(() => null);
   // R67 D-65: the STATUS is read before the body. An error body parses
   // perfectly well, and reading it as data is how a failed request becomes a

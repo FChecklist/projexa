@@ -15,6 +15,8 @@
 // When the outbox lands, a ShellWriter backed by it replaces createEditQueue() in shell/context.ts and nothing in the screens changes.
 
 import type { MetaStore } from "../release/installer";
+// AUDIT-100 A2: the one switch between the Vercel /api routes and the projexa-api Edge Function (same contract).
+import { viaPxApi } from "@/lib/px-api";
 
 export const EDITS_META_KEY = "shell:edits";
 export const NOTICES_META_KEY = "shell:edit-notices";
@@ -67,7 +69,7 @@ async function refusalText(res: Response): Promise<string> {
 const REFUSAL_STATUSES = new Set([400, 403, 404, 409, 422]);
 
 export function createEditQueue(deps: EditQueueDeps): ShellWriter {
-  const doFetch = deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+  const doFetch = deps.fetchImpl ?? viaPxApi;
   const now = deps.now ?? (() => Date.now());
   const newId = deps.newId ?? (() => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${now()}-${Math.random().toString(36).slice(2)}`));
   let running: Promise<FlushResult> | null = null;

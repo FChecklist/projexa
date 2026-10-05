@@ -1,0 +1,5241 @@
+{
+ "_about": "AUDIT-100 A2 parity contract. Recorded from the REAL PROJEXA Next pipeline by src/lib/projexa-api-parity.test.ts (projexa repo); replayed against the edge function by compliance-tracker src/lib/services/projexa-api-edge-parity.test.ts. Do not edit by hand.",
+ "identities": {
+  "owner": {
+   "sub": "00000000-0000-4000-8000-000000000001",
+   "email": "owner@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "owner"
+   }
+  },
+  "admin": {
+   "sub": "00000000-0000-4000-8000-000000000002",
+   "email": "admin@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "admin"
+   }
+  },
+  "pm": {
+   "sub": "00000000-0000-4000-8000-000000000003",
+   "email": "pm@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "pm"
+   }
+  },
+  "site_engineer": {
+   "sub": "00000000-0000-4000-8000-000000000004",
+   "email": "site@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "site_engineer"
+   }
+  },
+  "member": {
+   "sub": "00000000-0000-4000-8000-000000000005",
+   "email": "member@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "member"
+   }
+  },
+  "client_viewer": {
+   "sub": "00000000-0000-4000-8000-000000000006",
+   "email": null,
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "client_viewer"
+   }
+  },
+  "no_org": {
+   "sub": "00000000-0000-4000-8000-000000000007",
+   "email": "nobody@a.test",
+   "membership": null
+  },
+  "wrong_org": {
+   "sub": "00000000-0000-4000-8000-000000000008",
+   "email": "pm@b.test",
+   "membership": {
+    "organization_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "role": "pm"
+   }
+  },
+  "membership_error": {
+   "sub": "00000000-0000-4000-8000-000000000009",
+   "email": "flaky@a.test",
+   "membership": "error"
+  },
+  "no_key": {
+   "sub": "00000000-0000-4000-8000-000000000010",
+   "email": "owner@c.test",
+   "membership": {
+    "organization_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "role": "owner"
+   }
+  }
+ },
+ "org_keys": {
+  "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": "key-org-a",
+  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb": "key-org-b"
+ },
+ "upstream_base": "https://upstream.test/api/v1/projexa",
+ "cases": [
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as owner",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as admin",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as pm",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as site_engineer",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as member",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000005",
+      "acting_email": "member@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as client_viewer",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000006",
+      "acting_email": null,
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as signed_out",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId as no_org",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as owner",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/exceptions?projectId=p%201",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as admin",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/exceptions?projectId=p%201",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as pm",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/exceptions?projectId=p%201",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as site_engineer",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/exceptions?projectId=p%201",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as member",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/exceptions?projectId=p%201",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000005",
+      "acting_email": "member@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as client_viewer",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/exceptions?projectId=p%201",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000006",
+      "acting_email": null,
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as signed_out",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions as no_org",
+    "method": "GET",
+    "path": "/api/exceptions?projectId=p%201",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as owner",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?projectId=p-1&sortBy=margin",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as admin",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?projectId=p-1&sortBy=margin",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as pm",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?projectId=p-1&sortBy=margin",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as site_engineer",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?projectId=p-1&sortBy=margin",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as member",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?projectId=p-1&sortBy=margin",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000005",
+      "acting_email": "member@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as client_viewer",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?projectId=p-1&sortBy=margin",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000006",
+      "acting_email": null,
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as signed_out",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis as no_org",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as owner",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as admin",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as pm",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as site_engineer",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as member",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as client_viewer",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as signed_out",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id as no_org",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as owner",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/documents/d-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as admin",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/documents/d-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as pm",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/documents/d-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as site_engineer",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/documents/d-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as member",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/documents/d-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000005",
+      "acting_email": "member@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as client_viewer",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/documents/d-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000006",
+      "acting_email": null,
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as signed_out",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/documents/:id as no_org",
+    "method": "GET",
+    "path": "/api/documents/d-1",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as owner",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/documents/d%2F1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "name": "Permit scan.pdf",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as admin",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/documents/d%2F1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": "application/json",
+      "body": {
+       "name": "Permit scan.pdf",
+       "actorEmail": "admin@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as pm",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/documents/d%2F1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": "application/json",
+      "body": {
+       "name": "Permit scan.pdf",
+       "actorEmail": "pm@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as site_engineer",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/documents/d%2F1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": "application/json",
+      "body": {
+       "name": "Permit scan.pdf",
+       "actorEmail": "site@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as member",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as client_viewer",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as signed_out",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/documents/:id as no_org",
+    "method": "PATCH",
+    "path": "/api/documents/d%2F1",
+    "body": {
+     "name": "Permit scan.pdf",
+     "actorEmail": "evil@x.test"
+    },
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as owner",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as admin",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as pm",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as site_engineer",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as member",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000005",
+      "acting_email": "member@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as client_viewer",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000006",
+      "acting_email": null,
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as signed_out",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url as no_org",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as owner",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as admin",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as pm",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as site_engineer",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000004",
+      "acting_email": "site@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as member",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000005",
+      "acting_email": "member@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as client_viewer",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000006",
+      "acting_email": null,
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as signed_out",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/permits/:id as no_org",
+    "method": "GET",
+    "path": "/api/permits/pm-1",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as owner",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as admin",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "admin@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as pm",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "pm@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as site_engineer",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as member",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as client_viewer",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as signed_out",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id as no_org",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as owner",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "DELETE",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as admin",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "admin",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "DELETE",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000002",
+      "acting_email": "admin@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as pm",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "DELETE",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as site_engineer",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "site_engineer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as member",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "member",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as client_viewer",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "client_viewer",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as signed_out",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "signed_out",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "DELETE /api/permits/:id as no_org",
+    "method": "DELETE",
+    "path": "/api/permits/pm-1",
+    "who": "no_org",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: another organisation's record",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "wrong_org",
+    "upstream": {
+     "kind": "json",
+     "status": 404,
+     "body": {
+      "error": "Not found"
+     }
+    }
+   },
+   "expect": {
+    "status": 404,
+    "body": {
+     "error": "Not found",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-b",
+      "acting_user": "00000000-0000-4000-8000-000000000008",
+      "acting_email": "pm@b.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: membership read fails",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "membership_error",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Could not verify organization membership, please retry"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: organisation has no VERIDIAN key",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "no_key",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "No VERIDIAN credentials configured for organization cccccccc-cccc-4ccc-8ccc-cccccccccccc, and per-org requests may not fall back to a shared key (AR-04)",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: upstream 400 rule refusal",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 400,
+     "body": {
+      "code": "BOQ_LINE_REQUIRED",
+      "missing": [
+       "boqLineId"
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "VERIDIAN API request failed (400)",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: upstream 409 with message",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 409,
+     "body": {
+      "error": "Changed by someone else"
+     }
+    }
+   },
+   "expect": {
+    "status": 409,
+    "body": {
+     "error": "Changed by someone else",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: upstream 500",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "boom"
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "boom",
+     "code": "UPSTREAM_500"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: upstream storage unconfigured",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "supabaseKey is required."
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "The construction data service's file storage is not configured. Nothing was lost — this needs an administrator.",
+     "code": "STORAGE_UNAVAILABLE"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: upstream 502 not JSON",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 502,
+     "status_text": "Bad Gateway",
+     "text": "<html>bad gateway</html>"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Bad Gateway",
+     "code": "UPSTREAM_500"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: upstream 200 not JSON",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 200,
+     "status_text": "OK",
+     "text": "not json"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Failed to load project dashboard",
+     "code": "NETWORK"
+    },
+    "retry_after": "5",
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/dashboard/project/:projectId: connection refused",
+    "method": "GET",
+    "path": "/api/dashboard/project/p-1",
+    "who": "owner",
+    "upstream": {
+     "kind": "refused"
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Couldn't reach the construction data service. Please retry.",
+     "code": "NETWORK"
+    },
+    "retry_after": "5",
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     },
+     {
+      "method": "GET",
+      "path": "/dashboard/p-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: another organisation's record",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "wrong_org",
+    "upstream": {
+     "kind": "json",
+     "status": 404,
+     "body": {
+      "error": "Not found"
+     }
+    }
+   },
+   "expect": {
+    "status": 404,
+    "body": {
+     "error": "Not found",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-b",
+      "acting_user": "00000000-0000-4000-8000-000000000008",
+      "acting_email": "pm@b.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: membership read fails",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "membership_error",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Could not verify organization membership, please retry"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: organisation has no VERIDIAN key",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "no_key",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "No VERIDIAN credentials configured for organization cccccccc-cccc-4ccc-8ccc-cccccccccccc, and per-org requests may not fall back to a shared key (AR-04)",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: upstream 400 rule refusal",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 400,
+     "body": {
+      "code": "BOQ_LINE_REQUIRED",
+      "missing": [
+       "boqLineId"
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "VERIDIAN API request failed (400)",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: upstream 409 with message",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 409,
+     "body": {
+      "error": "Changed by someone else"
+     }
+    }
+   },
+   "expect": {
+    "status": 409,
+    "body": {
+     "error": "Changed by someone else",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: upstream 500",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "boom"
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "boom",
+     "code": "UPSTREAM_500"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: upstream storage unconfigured",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "supabaseKey is required."
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "The construction data service's file storage is not configured. Nothing was lost — this needs an administrator.",
+     "code": "STORAGE_UNAVAILABLE"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: upstream 502 not JSON",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 502,
+     "status_text": "Bad Gateway",
+     "text": "<html>bad gateway</html>"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Bad Gateway",
+     "code": "UPSTREAM_500"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: upstream 200 not JSON",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 200,
+     "status_text": "OK",
+     "text": "not json"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Failed to update line item budget",
+     "code": "NETWORK"
+    },
+    "retry_after": "5",
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/scope/line-items/:id: connection refused",
+    "method": "PATCH",
+    "path": "/api/scope/line-items/li-1",
+    "body": {
+     "qtyProject": "3",
+     "actorEmail": "someone@else.test"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "refused"
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Couldn't reach the construction data service. Please retry.",
+     "code": "NETWORK"
+    },
+    "retry_after": "5",
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/scope/line-items/li-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "qtyProject": "3",
+       "actorEmail": "someone@else.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: another organisation's record",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "wrong_org",
+    "upstream": {
+     "kind": "json",
+     "status": 404,
+     "body": {
+      "error": "Not found"
+     }
+    }
+   },
+   "expect": {
+    "status": 404,
+    "body": {
+     "error": "Not found"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-b",
+      "acting_user": "00000000-0000-4000-8000-000000000008",
+      "acting_email": "pm@b.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: membership read fails",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "membership_error",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Could not verify organization membership, please retry"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: organisation has no VERIDIAN key",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "no_key",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "No VERIDIAN credentials configured for organization cccccccc-cccc-4ccc-8ccc-cccccccccccc, and per-org requests may not fall back to a shared key (AR-04)"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: upstream 400 rule refusal",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 400,
+     "body": {
+      "code": "BOQ_LINE_REQUIRED",
+      "missing": [
+       "boqLineId"
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "VERIDIAN API request failed (400)"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: upstream 409 with message",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 409,
+     "body": {
+      "error": "Changed by someone else"
+     }
+    }
+   },
+   "expect": {
+    "status": 409,
+    "body": {
+     "error": "Changed by someone else"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: upstream 500",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "boom"
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "boom"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: upstream storage unconfigured",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "supabaseKey is required."
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "The construction data service's file storage is not configured. Nothing was lost — this needs an administrator."
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: upstream 502 not JSON",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 502,
+     "status_text": "Bad Gateway",
+     "text": "<html>bad gateway</html>"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Bad Gateway"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: upstream 200 not JSON",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 200,
+     "status_text": "OK",
+     "text": "not json"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Couldn't open this drawing's file"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/drawings/:id/document-url: connection refused",
+    "method": "GET",
+    "path": "/api/drawings/dr-1/document-url",
+    "who": "owner",
+    "upstream": {
+     "kind": "refused"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Couldn't reach the construction data service. Please retry."
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     },
+     {
+      "method": "GET",
+      "path": "/drawings/dr-1/document-url",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: another organisation's record",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "wrong_org",
+    "upstream": {
+     "kind": "json",
+     "status": 404,
+     "body": {
+      "error": "Not found"
+     }
+    }
+   },
+   "expect": {
+    "status": 404,
+    "body": {
+     "error": "Not found",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-b",
+      "acting_user": "00000000-0000-4000-8000-000000000008",
+      "acting_email": "pm@b.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "pm@b.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: membership read fails",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "membership_error",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Could not verify organization membership, please retry"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: organisation has no VERIDIAN key",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "no_key",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "No VERIDIAN credentials configured for organization cccccccc-cccc-4ccc-8ccc-cccccccccccc, and per-org requests may not fall back to a shared key (AR-04)",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: upstream 400 rule refusal",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 400,
+     "body": {
+      "code": "BOQ_LINE_REQUIRED",
+      "missing": [
+       "boqLineId"
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "VERIDIAN API request failed (400)",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: upstream 409 with message",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 409,
+     "body": {
+      "error": "Changed by someone else"
+     }
+    }
+   },
+   "expect": {
+    "status": 409,
+    "body": {
+     "error": "Changed by someone else",
+     "code": null
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: upstream 500",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "boom"
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "boom",
+     "code": "UPSTREAM_500"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: upstream storage unconfigured",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "json",
+     "status": 500,
+     "body": {
+      "error": "supabaseKey is required."
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "The construction data service's file storage is not configured. Nothing was lost — this needs an administrator.",
+     "code": "STORAGE_UNAVAILABLE"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: upstream 502 not JSON",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 502,
+     "status_text": "Bad Gateway",
+     "text": "<html>bad gateway</html>"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Bad Gateway",
+     "code": "UPSTREAM_500"
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: upstream 200 not JSON",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "text",
+     "status": 200,
+     "status_text": "OK",
+     "text": "not json"
+    }
+   },
+   "expect": {
+    "status": 502,
+    "body": {
+     "error": "Failed to update permit",
+     "code": "NETWORK"
+    },
+    "retry_after": "5",
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "PATCH /api/permits/:id: connection refused",
+    "method": "PATCH",
+    "path": "/api/permits/pm-1",
+    "body": {
+     "status": "approved"
+    },
+    "who": "owner",
+    "upstream": {
+     "kind": "refused"
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Couldn't reach the construction data service. Please retry.",
+     "code": "NETWORK"
+    },
+    "retry_after": "5",
+    "upstream_calls": [
+     {
+      "method": "PATCH",
+      "path": "/permits/pm-1",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000001",
+      "acting_email": "owner@a.test",
+      "content_type": "application/json",
+      "body": {
+       "status": "approved",
+       "actorEmail": "owner@a.test"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/exceptions without projectId",
+    "method": "GET",
+    "path": "/api/exceptions",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "projectId query param is required"
+    },
+    "retry_after": null,
+    "upstream_calls": []
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/reports/boq-analysis without query",
+    "method": "GET",
+    "path": "/api/reports/boq-analysis",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/reports/boq-analysis?",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  }
+ ]
+}
