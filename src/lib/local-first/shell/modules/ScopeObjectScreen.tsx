@@ -13,6 +13,7 @@ import { revisionLabel } from "@/lib/boq-lineage";
 import { formatDateTime } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
 import type { ScopeObjectData } from "./scope-adapter";
+import { useRowWindow } from "./use-row-window";
 
 function Message({ state, children }: { state: string; children: string }) {
   return (
@@ -33,13 +34,13 @@ type RowLine = {
 
 // AUDIT-100 B15: one memoised row. A keystroke in one Category box used to re-render EVERY row (5,000 lines: a 0.5-0.9 s freeze per key,
 // measured in real Chromium, e2e/lf-lifecycle-large-project.spec.ts). Now only the row whose draft, saving or waiting state changed renders.
-const LineRow = memo(function LineRow({ line, draft, waiting, saving, onDraft, onSave }: {
-  line: RowLine; draft: string | undefined; waiting: boolean; saving: boolean;
+const LineRow = memo(function LineRow({ line, index, draft, waiting, saving, onDraft, onSave }: {
+  line: RowLine; index: number; draft: string | undefined; waiting: boolean; saving: boolean;
   onDraft: (lineId: string, value: string) => void; onSave: (lineId: string, raw: string) => void;
 }) {
   const changed = draft !== undefined && draft.trim() !== (line.category ?? "");
   return (
-    <TableRow data-testid="boq-local-line" data-line-id={line.id}>
+    <TableRow data-testid="boq-local-line" data-line-id={line.id} data-row-index={index} aria-rowindex={index + 2}>
       <TableCell>{line.itemCode ?? ""}</TableCell>
       <TableCell className={line.parentLineItemId ? "pl-6" : undefined}>{line.description}</TableCell>
       <TableCell>{line.unit}</TableCell>
@@ -114,6 +115,10 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     }
   }, []);
 
+  // AUDIT-100 B15: a long BOQ draws only the lines on screen (plus a margin), not all of them: drawing 5,000 real rows took 5-9 s
+  // (e2e/lf-lifecycle-large-project.spec.ts). See use-row-window.ts for what keeps working (focus, printing, the row count for a screen reader).
+  const { plan: rows, windowed, gapHeight, attachBody, onFocus: onBodyFocus, onBlur: onBodyBlur } = useRowWindow(data.state === "local" ? data.lines.length : 0);
+
   if (data.state === "no_project") return <Message state="no_project">There is no project on this laptop yet. Open PROJEXA once while you are online.</Message>;
   if (data.state === "not_synced") return <Message state="not_synced">This BOQ&apos;s project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online.</Message>;
   if (data.state === "not_found") return <Message state="not_found">This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</Message>;
@@ -134,9 +139,9 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
         <p role="status" aria-live="polite" className="mt-3 text-sm text-px-ink" data-testid="boq-local-note">{note}</p>
       ) : null}
       <div className="mt-4 overflow-x-auto rounded-lg border border-black/10 bg-white">
-        <Table>
+        <Table aria-rowcount={lines.length + 1} data-testid="boq-local-table" data-windowed={windowed ? "true" : "false"}>
           <TableHeader>
-            <TableRow>
+            <TableRow aria-rowindex={1}>
               <TableHead>Item</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Unit</TableHead>
@@ -146,10 +151,21 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
               <TableHead>Category</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {lines.map((line) => (
-              <LineRow key={line.id} line={line} draft={drafts[line.id]} waiting={waiting.has(line.id)} saving={saving === line.id} onDraft={setDraft} onSave={onSave} />
-            ))}
+          <TableBody ref={attachBody} onFocus={onBodyFocus} onBlur={onBodyBlur}>
+            {rows.map((item) => {
+              if (item.kind === "gap") {
+                // lines not drawn: one empty row as tall as they are, so the page's length and scrollbar stay true
+                return (
+                  <tr key={`gap-${item.from}`} aria-hidden="true" data-testid="boq-row-spacer" style={{ height: gapHeight(item.from, item.to) }}>
+                    <td colSpan={7} style={{ padding: 0, border: 0 }} />
+                  </tr>
+                );
+              }
+              const line = lines[item.index];
+              return (
+                <LineRow key={line.id} line={line} index={item.index} draft={drafts[line.id]} waiting={waiting.has(line.id)} saving={saving === line.id} onDraft={setDraft} onSave={onSave} />
+              );
+            })}
           </TableBody>
         </Table>
       </div>

@@ -19,12 +19,12 @@ const { default: ScopeObjectScreen } = await import("./ScopeObjectScreen");
 
 const N = 60;
 
-function makeData(): Extract<ScopeObjectData, { state: "local" }> {
-  const lines = Array.from({ length: N }, (_, i) => ({
+function makeData(n = N): Extract<ScopeObjectData, { state: "local" }> {
+  const lines = Array.from({ length: n }, (_, i) => ({
     id: `l${i}`, itemCode: `C-${i}`, description: `Item ${i}`, unit: "m2", quantity: "2", rate: "10.00", amount: "20.00", activityId: null, category: null, parentLineItemId: null,
   }));
   return {
-    state: "local", boq: { id: "b1", projectId: "p1", title: "Big BOQ", version: 1, status: "approved" } as never, lines, total: 20 * N, syncedAt: null, waitingLineIds: [],
+    state: "local", boq: { id: "b1", projectId: "p1", title: "Big BOQ", version: 1, status: "approved" } as never, lines, total: 20 * n, syncedAt: null, waitingLineIds: [],
   };
 }
 
@@ -43,8 +43,10 @@ beforeEach(() => {
     return realToLocale.apply(this, args);
   };
 });
+const realRect = HTMLElement.prototype.getBoundingClientRect;
 afterEach(() => {
   Number.prototype.toLocaleString = realToLocale;
+  HTMLElement.prototype.getBoundingClientRect = realRect;
   cleanup();
 });
 
@@ -88,5 +90,79 @@ describe("ScopeObjectScreen with a large BOQ", () => {
     fireEvent.input(other, { target: { value: "Steel" } });
     fireEvent.click(view.getByTestId("boq-line-save"));
     await waitFor(() => expect(enqueued.at(-1)).toMatchObject({ lineId: "l7", patch: { category: "Steel" } }));
+  });
+});
+
+// AUDIT-100 B15, the first draw: a long BOQ draws only the lines on screen plus a margin (windowing, use-row-window.ts). Drawing all 5,000
+// as real rows took 5-9 s in real Chromium (e2e/lf-lifecycle-large-project.spec.ts measures the real thing); here the count of rows and of
+// money cells drawn is the deterministic guard. This test environment has no layout, so the page's position is set by hand where needed.
+describe("ScopeObjectScreen windowing a 5,000-line BOQ", () => {
+  const BIG = 5000;
+
+  test("the first draw is tens of rows, not 5,000, and the table still says it has 5,001 rows; the total is of every line", () => {
+    const data = makeData(BIG);
+    const view = render(<ScopeObjectScreen shell={newShell()} params={{}} query={new URLSearchParams()} data={data} />);
+    const drawn = view.getAllByTestId("boq-local-line");
+    expect(drawn.length).toBeGreaterThan(10);
+    expect(drawn.length, "every line was drawn: the table is not windowed").toBeLessThanOrEqual(60);
+    // was 2 money cells x 5,000 rows = 10,000 format calls before windowing
+    expect(formatCalls, "money cells formatted on the first draw").toBeLessThanOrEqual(60 * 2 + 1);
+    const table = view.getByTestId("boq-local-table");
+    expect(table.getAttribute("aria-rowcount")).toBe(String(BIG + 1));
+    expect(table.getAttribute("data-windowed")).toBe("true");
+    expect(drawn[0].getAttribute("aria-rowindex")).toBe("2");
+    // the lines not drawn are one spacer row, as tall as they are (no layout here: the estimate, 49 px a line)
+    const spacers = view.getAllByTestId("boq-row-spacer");
+    expect(spacers).toHaveLength(1);
+    expect(spacers[0].getAttribute("aria-hidden")).toBe("true");
+    expect(Number.parseFloat(spacers[0].style.height)).toBe((BIG - drawn.length) * 49);
+    expect(view.getByTestId("boq-local-total").textContent).toContain("100,000.00");
+  });
+
+  test("scrolling far down draws the lines there, and the line being typed in stays drawn with its draft and its focus", async () => {
+    const data = makeData(BIG);
+    const view = render(<ScopeObjectScreen shell={newShell()} params={{}} query={new URLSearchParams()} data={data} />);
+    const box = view.getAllByTestId("boq-line-category-input")[3] as HTMLInputElement;
+    box.focus();
+    fireEvent.focusIn(box);
+    fireEvent.input(box, { target: { value: "Ste" } });
+
+    // the table body is now 200,000 px above the screen's top: lines 4081.. are on screen
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      const top = this.tagName === "TBODY" ? -200_000 : 0;
+      return { top, bottom: top + 245_000, left: 0, right: 1000, width: 1000, height: this.tagName === "TBODY" ? 245_000 : 0, x: 0, y: top, toJSON() {} } as DOMRect;
+    };
+    fireEvent.scroll(document);
+    await waitFor(() => expect(view.container.querySelector('[data-line-id="l4090"]')).not.toBeNull());
+    const ids = view.getAllByTestId("boq-local-line").map((r) => r.getAttribute("data-line-id"));
+    expect(ids.length).toBeLessThanOrEqual(60);
+    expect(ids, "the focused line was dropped by the scroll").toContain("l3");
+    expect(ids).not.toContain("l40");
+    const still = view.container.querySelector('[data-line-id="l3"] [data-testid="boq-line-category-input"]') as HTMLInputElement;
+    expect(still).toBe(box); // the same element: React did not unmount it, so the browser's focus and caret stay in it
+    expect(still.value).toBe("Ste");
+    expect(document.activeElement).toBe(box);
+    // the far line's row index is its real position, for a screen reader
+    expect(view.container.querySelector('[data-line-id="l4090"]')?.getAttribute("aria-rowindex")).toBe("4092");
+    // two spacers above (before and after the pinned line) and one below
+    expect(view.getAllByTestId("boq-row-spacer")).toHaveLength(3);
+  });
+
+  test("printing draws every line, and drawing goes back to the window afterwards", async () => {
+    const PRINTED = 400; // over the threshold, so it is windowed; (5,000 real rows take this test environment ~15 s to build)
+    const view = render(<ScopeObjectScreen shell={newShell()} params={{}} query={new URLSearchParams()} data={makeData(PRINTED)} />);
+    expect(view.getAllByTestId("boq-local-line").length).toBeLessThanOrEqual(60);
+    window.dispatchEvent(new Event("beforeprint"));
+    // synchronously, before the print layout is taken
+    expect(view.getAllByTestId("boq-local-line")).toHaveLength(PRINTED);
+    expect(view.queryAllByTestId("boq-row-spacer")).toHaveLength(0);
+    window.dispatchEvent(new Event("afterprint"));
+    await waitFor(() => expect(view.getAllByTestId("boq-local-line").length).toBeLessThanOrEqual(60));
+  });
+
+  test("a short BOQ (under the windowing threshold) is drawn in full, as before", () => {
+    const view = render(<ScopeObjectScreen shell={newShell()} params={{}} query={new URLSearchParams()} data={makeData(150)} />);
+    expect(view.getAllByTestId("boq-local-line")).toHaveLength(150);
+    expect(view.getByTestId("boq-local-table").getAttribute("data-windowed")).toBe("false");
   });
 });
