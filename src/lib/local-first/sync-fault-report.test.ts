@@ -4,6 +4,9 @@ import { createFakeSyncServer } from "./__fixtures__/fake-sync-server";
 import { createOutbox } from "./outbox";
 import { createReplica } from "./replica";
 import { SyncError, type SyncClient } from "./sync-client";
+import { createSyncScheduler, type StepResult } from "./peer/scheduler";
+import { webMcpTools } from "./ai/webmcp";
+import type { ProjexaAi } from "./ai/api";
 import { configureFaultReportForTests, isExpectedFault, reportFault } from "./sync-fault-report";
 
 // AUDIT-100 B57: the background engines (outbox, replica, peer sync, AI tools) report a REAL fault to us and stay quiet about normal states.
@@ -83,5 +86,41 @@ describe("the engines call it from the catch blocks that used to swallow the err
     const result = await createReplica({ userId: "u1", client: failing, idb: new IDBFactory(), yieldFn: async () => {} }).sync();
     expect(result.status).toBe("error");
     expect(seen.map((s) => s.where)).toContain("replica:sync");
+  });
+  // AUDIT-100 B57 (strengthened in the break-test pass): these three call sites had no test, so deleting the reportFault() line in any of
+  // them left the suite green. Each test below goes through the real engine code and fails if its catch block stops reporting.
+  test("outbox: a failure inside the pass itself (not the server's answer) reaches the reporter", async () => {
+    collect();
+    const idb = new IDBFactory();
+    const server = createFakeSyncServer();
+    let n = 0;
+    let broken = false;
+    const outbox = createOutbox({ userId: "u1", client: server.client, deviceId: "d", idb, now: () => { if (broken) throw new Error("clock broke inside the pass"); return 1_800_000_000_000; }, sleep: async () => {}, autoFlush: false, newOpId: () => `op-${++n}`, locks: null });
+    await outbox.enqueue({ functionId: "update_task", projectId: "p1", params: { issueId: "t1", title: "x" }, label: "Task change" });
+    broken = true;
+    await outbox.flush();
+    const hit = seen.find((s) => s.where === "outbox:pass");
+    expect(hit?.message).toContain("clock broke inside the pass");
+  });
+  test("peer sync: a failure in the scheduler's run reaches the reporter and never escapes", async () => {
+    collect();
+    const step = async (): Promise<StepResult> => ({ changed: false });
+    const s = createSyncScheduler({
+      locks: null, isVisible: () => true, isOnline: () => true, peersConnected: () => 0, serverStep: step, peerStep: step,
+      onRun: () => { throw new Error("run bookkeeping broke"); },
+    });
+    s.start();
+    await s.trigger("manual");
+    s.stop();
+    const hit = seen.find((s2) => s2.where === "peer:sync");
+    expect(hit?.message).toContain("run bookkeeping broke");
+  });
+  test("AI tools: a tool call that fails for the person's own AI reaches the reporter, and the AI still gets a plain error answer", async () => {
+    collect();
+    const api = { manifest: async () => { throw new Error("manifest exploded"); } } as unknown as ProjexaAi;
+    const tool = webMcpTools(api).find((t) => t.name === "projexa_manifest")!;
+    const out = (await tool.execute({})) as { isError?: boolean };
+    expect(out.isError).toBe(true);
+    expect(seen.find((s) => s.where === "ai:tool")?.message).toContain("manifest exploded");
   });
 });
