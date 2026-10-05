@@ -8,7 +8,7 @@ import { openLaptop, localRows, projectId, serverCall, serverRows } from "./supp
 //     real service (the same push a laptop's outbox sends); the SERVER marks the row deleted and a laptop that already held it DROPS it from its own
 //     copy without being refreshed.
 test.describe.configure({ mode: "serial" });
-test.setTimeout(1_500_000);
+test.setTimeout(2_400_000);
 
 /** The project kinds the service syncs today (manifest `kinds`). Documented in ai-os/audit37 B + docs/local-first. */
 const DOCUMENTED_PROJECT_KINDS = [
@@ -52,12 +52,11 @@ test("B8: the kinds the real service syncs are exactly the documented list, and 
   for (const k of DOCUMENTED_NOT_SYNCED) expect(all.map((x) => x.kind), `${k} is documented as not synced`).not.toContain(k);
 });
 
-// KNOWN BACKEND GAP, measured 2026-10-05 against the real service (AUDIT-100 B8): delete_meeting pushed through /push answers "applied" and the sync head is marked
-// deleted=true (version 2), but the SOURCE row in compliance.pms_meetings is NOT removed, so /pull keeps serving it and a laptop never drops it. (The head tombstone is only
-// visible through /changes; the keyset /pull reads the source table.) That is a compliance-tracker projexa-sync / delete-function defect, not a laptop one. `test.fail` keeps
-// this spec green while it exists and turns RED the moment the backend deletes the row, so the annotation is then removed.
-test("B8: a record deleted through the service is marked deleted on the server and DROPPED from a laptop that held it", async () => {
-  test.fail(true, "B8: delete_meeting is applied and tombstoned in the sync head, but the source row stays and /pull still serves it");
+// BACKEND FIXED 2026-10-05 (compliance-tracker PR #2081, migration 0727 applied live): delete_meeting is a soft delete (pms_meetings.deleted_at) and the sync
+// head was already tombstoned, but the READ side (projexa_sync__src / ai_work_link__records_core) kept serving the meeting, so /pull returned it, /ids listed it
+// and a laptop never dropped it. The SERVER leg below was a `test.fail` until that fix; it is now an ordinary test and passes against the real backend.
+let meetingId = "";
+test("B8: a record deleted through the service is marked deleted on the SERVER: gone from /pull and /ids, a D in /changes", async () => {
   // laptop B (the owner) holds the meeting before it is deleted
   B = await openLaptop(A.context.browser()!, "ceo");
   const push = async (opId: string, functionId: string, params: Record<string, unknown>, record?: { kind: string; id: string; base_version: number }) => {
@@ -72,9 +71,12 @@ test("B8: a record deleted through the service is marked deleted on the server a
 
   let rows: Awaited<ReturnType<typeof serverRows>> = [];
   await expect.poll(async () => (rows = await serverRows(A.context, P, "meetings", TITLE)).length, { timeout: 60_000, message: "the meeting is not in the server's data" }).toBe(1);
-  const meetingId = rows[0].id;
+  meetingId = rows[0].id;
   // B's own copy gets it with no click
   await expect.poll(async () => (await localRows(B.page, "meetings", TITLE)).length, { timeout: 600_000, message: "laptop B never received the meeting" }).toBe(1);
+
+  // the change-feed position BEFORE the delete (after_seq null answers only the head), so the delete is looked for in what comes after it
+  const headBefore = (await serverCall<{ head_seq: number }>(A.context, "POST", "/changes", { project_id: P, after_seq: null, limit: 1 })).head_seq;
 
   // BREAK-TEST SWITCH (R74-RULING-03 (c)): AUDIT100_BREAK=b8 never sends the delete; the assertions below must then FAIL.
   const deleted = process.env.AUDIT100_BREAK === "b8" ? { status: "applied" } : await push(`b8-delete-${STAMP}`, "delete_meeting", { projectId: P, meetingId }, { kind: "meetings", id: meetingId, base_version: rows[0].version ?? 1 });
@@ -82,9 +84,21 @@ test("B8: a record deleted through the service is marked deleted on the server a
 
   // the SERVER no longer lists it as a live row (a tombstone in the change feed, nothing in the keyset pull)
   await expect.poll(async () => (await serverRows(A.context, P, "meetings", TITLE)).filter((r) => !r.deleted).length, { timeout: 60_000, message: "the server still serves the deleted meeting" }).toBe(0);
-  const feed = await serverCall<{ changes: { kind: string; id: string; op: string }[] }>(A.context, "POST", "/changes", { project_id: P, after_seq: null, limit: 1000 });
+  // nor in the id list a laptop reconciles against (it drops what is no longer listed)
+  const listed = await serverCall<{ ids: string[] }>(A.context, "POST", "/ids", { project_id: P, kind: "meetings", after_id: null, limit: 5000 });
+  expect(listed.ids, "the server still lists the deleted meeting's id").not.toContain(meetingId);
+  const feed = await serverCall<{ changes: { kind: string; id: string; op: string }[] }>(A.context, "POST", "/changes", { project_id: P, after_seq: headBefore, limit: 1000 });
   expect(feed.changes.some((c) => c.kind === "meetings" && c.id === meetingId && c.op === "D"), "no delete (D) entry for the meeting in the change feed").toBe(true);
+});
 
-  // and laptop B drops it from ITS copy, without a refresh
-  await expect.poll(async () => (await localRows(B.page, "meetings", TITLE)).length, { timeout: 600_000, message: "laptop B still holds the deleted meeting: the delete did not reach it" }).toBe(0);
+// KNOWN LAPTOP GAP, measured 2026-10-05 against the real service (two runs, 10 and 20 minutes): laptop B still holds the deleted meeting although the server no
+// longer serves it and /changes carries its D. Cause found by reading the code (not yet proven live): a server delete removes the local row with NO tombstone
+// (local-db.ts deleteRecords), and the peer protocol only refuses an older version when a local row EXISTS (peer/protocol.ts `not_newer`), so laptop A, still
+// holding version 1, hands the deleted meeting straight back to B over the peer link; B's change cursor is already past the D and nothing calls /ids, so B keeps it.
+// `test.fail` keeps this visible; it turns RED the moment laptops keep server tombstones (or reconcile against /ids), and the annotation is then removed.
+test("B8: a laptop that held the deleted record DROPS it, and a peer cannot hand it back", async () => {
+  test.fail(true, "B8 laptop leg: no local tombstone after a server delete, so a peer that still holds the old version re-delivers the row");
+  expect(meetingId, "the server leg did not run").not.toBe("");
+  // B (the owner) holds ~18 projects; its FIRST full copy (100 requests/min) is usually still running when the delete lands: allow it to finish plus a cycle
+  await expect.poll(async () => (await localRows(B.page, "meetings", TITLE)).length, { timeout: 1_200_000, message: "laptop B still holds the deleted meeting: the delete did not reach it" }).toBe(0);
 });
