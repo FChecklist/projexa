@@ -30,8 +30,8 @@ import { AwlError, getAwlClient, type AwlClient } from "@/lib/ai-work-link-clien
  *  entries": the AI may add, edit and delete as the person's own role allows, everything except writing code) for 7 days. canMakeAiWorkLink()
  *  already hides the button from roles below member, the only roles the service refuses level 1 to; if the service still refuses the level
  *  (LEVEL_NOT_ALLOWED) the link is made at level 0 instead, so a role that may only read gets read. The alternative, behind "Change access
- *  or expiry", is "Read and draft only (safer)" = level 0. A USER-WIDE link is level 0 for ever on the service (POST /user-link takes only days
- *  and label), so scope="user" cannot yet be direct -- see the report on this change. */
+ *  or expiry", is "Read and draft only (safer)" = level 0. A USER-WIDE link is now minted at the highest level the role allows by the service (POST /user-link takes only days
+ *  and label), so a user-wide link is direct (level 1) for member and above. */
 export const AWL_ONE_CLICK_LEVEL = 1 as const;
 export const AWL_SAFE_LEVEL = 0 as const;
 export const AWL_ONE_CLICK_DAYS = 7 as const;
@@ -191,7 +191,7 @@ export function AiWorkLinkCompact({
   const showChange = !isUser && !compact && !!project;
   const tail = "Click again to copy it again.";
   const hint = isUser
-    ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. It lists all your projects, can report on all of them or start a new one, and works on your behalf. ${tail} Read-and-draft access (a user-wide link cannot make direct changes yet), expires in 7 days.`
+    ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. It lists all your projects, can report on all of them or start a new one, and works on your behalf. ${tail} It can add, edit and delete exactly what your role allows, in the projects you can access, at once. Expires in 7 days.`
     : safeCopied
     ? `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use. Read and draft only: changes wait for you to confirm. Expires in 7 days.`
     : `Paste it into ${AI_ASSISTANT_NAMES}, or any AI you use, and it works on your behalf. ${tail} ${AWL_ACCESS_NOTE}`;

@@ -280,12 +280,12 @@ describe("access: direct by default, read-and-draft behind \"Change access or ex
     expect(client.minted).toHaveLength(0);
   });
 
-  test("a user-wide link stays read-and-draft (the service takes only days and label) and says so", async () => {
+  test("a user-wide link is minted by days only (the service picks the highest level the role allows) and says it can change things", async () => {
     const client = fakeClient();
     render(<AiWorkLinkCompact role="owner" project={null} client={client} scope="user" />);
     await act(async () => void fireEvent.click(screen.getByTestId("awl-compact-trigger")));
     expect(client.userMinted).toEqual([{ days: AWL_ONE_CLICK_DAYS }]);
-    expect((await screen.findByTestId("awl-compact-confirm")).textContent).toContain("Read-and-draft");
+    expect((await screen.findByTestId("awl-compact-confirm")).textContent).toContain("add, edit and delete");
     expect(screen.queryByTestId("awl-compact-change")).toBeNull();
   });
 });
