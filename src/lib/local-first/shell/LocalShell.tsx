@@ -16,7 +16,7 @@ import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker"
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
-import { LocalShellAiLink } from "./LocalShellAiLink";
+import { LocalShellAiBar, AI_BAR_CONNECT_CAPTION, AI_BAR_PROMPT_CAPTION } from "./LocalShellAiBar";
 import { LocalShellAccount } from "./LocalShellAccount";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
@@ -300,6 +300,8 @@ export default function LocalShell() {
 
 // ─── the chrome ─────────────────────────────────────────────────────────────────────────────────
 
+const NEW_PROJECT = "__new_project__";
+
 function Chrome({ children, navigate, data, shell, locationPath }: { children: React.ReactNode; navigate: (href: string) => void; data?: ShellData; shell?: ShellApi; locationPath?: string }) {
   const nav = navRoutes();
   return (
@@ -323,13 +325,19 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
                 data-testid="local-shell-project"
                 className="max-w-[16rem] rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-px-ink"
                 value={shell.projectId ?? ""}
-                disabled={data.projects.length === 0}
-                onChange={(e) => shell.setProjectId(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === NEW_PROJECT) {
+                    navigate("/projects/new");
+                    return;
+                  }
+                  shell.setProjectId(e.target.value);
+                }}
               >
                 {data.projects.length === 0 ? <option value="">No project on this laptop yet</option> : null}
                 {data.projects.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
+                <option value={NEW_PROJECT}>+ New project</option>
               </select>
               {data.projects.length === 0 ? (
                 <span data-testid="local-shell-no-projects" className="max-w-[22rem] text-px-muted">
@@ -339,10 +347,19 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
             </label>
           ) : null}
           <div className="ml-auto flex items-center gap-3 text-xs text-px-muted">
-            {data && shell ? <LocalShellAiLink role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
+            {data && shell ? <LocalShellAiBar role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
             <ConnectivityMarker />
-            {data ? <LocalShellAccount data={data} /> : null}
           </div>
+        </div>
+        {/* Row 2: who is signed in, and what the two AI buttons above are for. */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          {data ? <LocalShellAccount data={data} /> : null}
+          {data && shell ? (
+            <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 text-sm font-medium text-px-ink">
+              <span data-testid="local-shell-ai-caption">{AI_BAR_PROMPT_CAPTION}</span>
+              <span data-testid="local-shell-connect-caption">{AI_BAR_CONNECT_CAPTION}</span>
+            </div>
+          ) : null}
         </div>
         {/* Row 2: the modules; scrolls sideways on a narrow screen instead of pushing the account control down. */}
         <nav aria-label="Modules" className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 text-sm">
