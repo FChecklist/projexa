@@ -1,0 +1,293 @@
+{
+ "kind": "AUDIT-100 B13 release registry live evidence",
+ "started": "2026-10-05T17:50:53.527Z",
+ "origin": "https://projexa-ai.com",
+ "project_ref": "pcrjmlpuqsbocqfwoxod",
+ "checks": {
+  "history": {
+   "since": null,
+   "releases": 26,
+   "deployments": 14,
+   "ok": false,
+   "defects": [
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.03-921",
+     "earlier_built_at": "2026-10-03T08:13:52.384Z",
+     "later": "2026.10.03-019",
+     "later_built_at": "2026-10-03T08:25:09.117Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.03-724",
+     "earlier_built_at": "2026-10-03T10:38:25.539Z",
+     "later": "2026.10.03-443",
+     "later_built_at": "2026-10-03T19:25:11.901Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.04-130",
+     "earlier_built_at": "2026-10-04T07:49:53.697Z",
+     "later": "2026.10.04-027",
+     "later_built_at": "2026-10-04T08:14:56.403Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.04-436",
+     "earlier_built_at": "2026-10-04T12:52:04.646Z",
+     "later": "2026.10.04-403",
+     "later_built_at": "2026-10-04T13:05:32.951Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.05-566",
+     "earlier_built_at": "2026-10-05T04:00:22.569Z",
+     "later": "2026.10.05-547",
+     "later_built_at": "2026-10-05T04:49:35.213Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.05-547",
+     "earlier_built_at": "2026-10-05T04:49:35.213Z",
+     "later": "2026.10.05-293",
+     "later_built_at": "2026-10-05T05:05:02.491Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.05-833",
+     "earlier_built_at": "2026-10-05T06:06:01.200Z",
+     "later": "2026.10.05-551",
+     "later_built_at": "2026-10-05T07:15:23.321Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.05-551",
+     "earlier_built_at": "2026-10-05T07:15:23.321Z",
+     "later": "2026.10.05-004",
+     "later_built_at": "2026-10-05T10:54:05.662Z"
+    },
+    {
+     "code": "VERSION_NOT_MONOTONIC",
+     "earlier": "2026.10.05-990",
+     "earlier_built_at": "2026-10-05T15:57:25.935Z",
+     "later": "2026.10.05-305",
+     "later_built_at": "2026-10-05T16:52:47.937Z"
+    }
+   ],
+   "notes": [
+    {
+     "code": "SUPERSEDED_BEFORE_REGISTRATION",
+     "deploy_sha": "26254f406a742095ac8e28e24b139a7da7b15da4",
+     "deploy_created_at": "2026-10-05T08:19:35Z",
+     "next_registered": "bb83ec499c474bad7c17f875ee55f00fbb8819ac"
+    },
+    {
+     "code": "SUPERSEDED_BEFORE_REGISTRATION",
+     "deploy_sha": "ea4afcf2752633d5dcea3ff16432e5ce27865a41",
+     "deploy_created_at": "2026-10-05T09:26:10Z",
+     "next_registered": "bb83ec499c474bad7c17f875ee55f00fbb8819ac"
+    },
+    {
+     "code": "SUPERSEDED_BEFORE_REGISTRATION",
+     "deploy_sha": "5d12ebe46390c580e2040c527443e4882de78c08",
+     "deploy_created_at": "2026-10-05T09:44:57Z",
+     "next_registered": "bb83ec499c474bad7c17f875ee55f00fbb8819ac"
+    },
+    {
+     "code": "SUPERSEDED_BEFORE_REGISTRATION",
+     "deploy_sha": "fe066574daf73934b006df1163cf6c34bd711a45",
+     "deploy_created_at": "2026-10-05T10:34:47Z",
+     "next_registered": "bb83ec499c474bad7c17f875ee55f00fbb8819ac"
+    }
+   ],
+   "mapped": [
+    {
+     "deploy_sha": "4089ab04b6694c2826f0d5c4f66f23467c314f12",
+     "deploy_created_at": "2026-10-05T04:49:51Z",
+     "release_version": "2026.10.05-547",
+     "built_at": "2026-10-05T04:49:35.213Z",
+     "registered_at": "2026-10-05T04:50:20.270Z"
+    },
+    {
+     "deploy_sha": "6e8ded7b154d1d934c9a7d91ec2bc3f410b61993",
+     "deploy_created_at": "2026-10-05T05:05:16Z",
+     "release_version": "2026.10.05-293",
+     "built_at": "2026-10-05T05:05:02.491Z",
+     "registered_at": "2026-10-05T05:23:05.675Z"
+    },
+    {
+     "deploy_sha": "3fb009c5724325277597430fb12fe13fd0565a6d",
+     "deploy_created_at": "2026-10-05T06:06:14Z",
+     "release_version": "2026.10.05-833",
+     "built_at": "2026-10-05T06:06:01.200Z",
+     "registered_at": "2026-10-05T06:06:28.630Z"
+    },
+    {
+     "deploy_sha": "d72c2fa5bcef180c12ad39bd75f841dc0328d890",
+     "deploy_created_at": "2026-10-05T07:15:38Z",
+     "release_version": "2026.10.05-551",
+     "built_at": "2026-10-05T07:15:23.321Z",
+     "registered_at": "2026-10-05T07:16:06.886Z"
+    },
+    {
+     "deploy_sha": "26254f406a742095ac8e28e24b139a7da7b15da4",
+     "deploy_created_at": "2026-10-05T08:19:35Z",
+     "release_version": null
+    },
+    {
+     "deploy_sha": "ea4afcf2752633d5dcea3ff16432e5ce27865a41",
+     "deploy_created_at": "2026-10-05T09:26:10Z",
+     "release_version": null
+    },
+    {
+     "deploy_sha": "5d12ebe46390c580e2040c527443e4882de78c08",
+     "deploy_created_at": "2026-10-05T09:44:57Z",
+     "release_version": null
+    },
+    {
+     "deploy_sha": "fe066574daf73934b006df1163cf6c34bd711a45",
+     "deploy_created_at": "2026-10-05T10:34:47Z",
+     "release_version": null
+    },
+    {
+     "deploy_sha": "bb83ec499c474bad7c17f875ee55f00fbb8819ac",
+     "deploy_created_at": "2026-10-05T10:54:21Z",
+     "release_version": "2026.10.05-004",
+     "built_at": "2026-10-05T10:54:05.662Z",
+     "registered_at": "2026-10-05T11:24:02.425Z"
+    },
+    {
+     "deploy_sha": "0a78ee37e2f306e7e2d4c943573d6f6928c0213f",
+     "deploy_created_at": "2026-10-05T13:19:57Z",
+     "release_version": "2026.10.05-318",
+     "built_at": "2026-10-05T13:19:44.004Z",
+     "registered_at": "2026-10-05T13:21:22.109Z"
+    },
+    {
+     "deploy_sha": "22bc7e5fdbbfe222d5a1707b7112b0e079a950a1",
+     "deploy_created_at": "2026-10-05T13:55:16Z",
+     "release_version": "2026.10.05-478",
+     "built_at": "2026-10-05T13:55:01.352Z",
+     "registered_at": "2026-10-05T13:59:07.369Z"
+    },
+    {
+     "deploy_sha": "f2a0db1d5cfe310ef9d82133064ab2bd099acace",
+     "deploy_created_at": "2026-10-05T14:11:48Z",
+     "release_version": "2026.10.05-891",
+     "built_at": "2026-10-05T14:11:36.226Z",
+     "registered_at": "2026-10-05T14:23:02.110Z"
+    },
+    {
+     "deploy_sha": "9ae0660d32d2c7d354fb2ddb5e02df30cd500705",
+     "deploy_created_at": "2026-10-05T15:57:39Z",
+     "release_version": "2026.10.05-990",
+     "built_at": "2026-10-05T15:57:25.935Z",
+     "registered_at": "2026-10-05T16:08:37.928Z"
+    },
+    {
+     "deploy_sha": "b4d241b52e08f22800de34a856ce226137e2aef7",
+     "deploy_created_at": "2026-10-05T16:52:59Z",
+     "release_version": "2026.10.05-305",
+     "built_at": "2026-10-05T16:52:47.937Z",
+     "registered_at": "2026-10-05T16:53:27.717Z"
+    }
+   ]
+  },
+  "integrity": {
+   "registry_current": "2026.10.05-305",
+   "live_release": "2026.10.05-305",
+   "live_digest_self_consistent": true,
+   "live_is_registry_current": true,
+   "registry_files_equal_manifest": true,
+   "files_checked": 385,
+   "files_bad": [
+    {
+     "path": "_next/static/immutable/chunks/3qp13y3a2zq8a.js.map",
+     "status": 403,
+     "size": 1,
+     "expected_size": 53,
+     "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    }
+   ],
+   "bundle_ok": true,
+   "bundle_files_bad": [],
+   "bundle_extra_files": []
+  },
+  "previous_release": {
+   "release_version": "2026.10.05-990",
+   "rebuilt_digest_equals_registered": true
+  },
+  "switch": {
+   "ok": true,
+   "from": "2026.10.05-990",
+   "to": "2026.10.05-305",
+   "steps": [
+    {
+     "name": "real installer reports an update to the live release",
+     "ok": true,
+     "detail": {
+      "status": "updated",
+      "version": "2026.10.05-305",
+      "mode": "partial",
+      "downloadedFiles": 18,
+      "bytes": 597778
+     }
+    },
+    {
+     "name": "only the files that changed between N and N+1 were downloaded (partial)",
+     "ok": true,
+     "detail": {
+      "downloaded": 18,
+      "of": 385,
+      "unchanged_reused_from_N": 367
+     }
+    },
+    {
+     "name": "at the moment of the switch N's cache was still there and N+1's held every file",
+     "ok": true,
+     "detail": {
+      "version": "2026.10.05-305",
+      "n_cache_still_there": true,
+      "n1_cache_files": 385
+     }
+    },
+    {
+     "name": "after the switch only N+1's cache is left",
+     "ok": true
+    },
+    {
+     "name": "the laptop's meta names N+1",
+     "ok": true
+    },
+    {
+     "name": "the person's records and queued edit are byte-for-byte the same",
+     "ok": true
+    },
+    {
+     "name": "a live file altered on the way is refused",
+     "ok": true,
+     "detail": {
+      "status": "failed",
+      "version": "2026.10.05-305",
+      "reason": "file_hash",
+      "error": "A release file does not match the manifest (size or sha256): _next/static/fbG7wBrL7HX-43-pkmmoI/_buildManifest.js"
+     }
+    },
+    {
+     "name": "refused: nothing switched, N's cache and meta stay",
+     "ok": true
+    },
+    {
+     "name": "refused: the person's records and queued edit are untouched",
+     "ok": true
+    }
+   ]
+  }
+ },
+ "finished": "2026-10-05T17:51:59.670Z",
+ "ok": false,
+ "failed": [
+  "history",
+  "integrity"
+ ]
+}
