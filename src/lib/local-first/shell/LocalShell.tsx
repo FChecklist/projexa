@@ -22,7 +22,8 @@ import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectiv
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
 import { BOQ_LINES_KIND } from "../boq-local";
-import { chooseProject, readShellData, selectedProjectKey, type ShellData } from "./context";
+import { chooseProject, noteShownProject, readShellData, selectedProjectKey, type ShellData } from "./context";
+import { LOCAL_DATA_CHANGED_EVENT } from "../peer/status";
 import { serverPageUrl, type ShellLocation } from "./paths";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
 import { findShellRoute, navRoutes } from "./route-table";
@@ -237,6 +238,21 @@ export default function LocalShell() {
   useEffect(() => {
     if (location && typeof document !== "undefined") document.title = `${matched?.route.title ?? "PROJEXA"} · PROJEXA`;
   }, [location, matched]);
+
+  // AUDIT-100 B7/B28: the auto-sync reads the OPEN project's feed as soon as it moves (others hourly), so it must know the project this
+  // shell SHOWS -- not only one picked in the switcher (context.ts noteShownProject says why) ...
+  const shownProjectId = boot.status === "ready" && location
+    ? chooseProject(boot.data.projects, new URLSearchParams(location.search).get("projectId"), remembered)
+    : null;
+  useEffect(() => {
+    if (!userId) return;
+    noteShownProject(userId, shownProjectId);
+  }, [userId, shownProjectId]);
+  // ... and a run that brought rows redraws the open screen from the laptop's database, without a reload.
+  useEffect(() => {
+    window.addEventListener(LOCAL_DATA_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(LOCAL_DATA_CHANGED_EVENT, refresh);
+  }, [refresh]);
 
   if (!location || boot.status === "loading") return <Skeleton />;
 

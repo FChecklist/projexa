@@ -27,6 +27,12 @@ export function subscribePeerStatus(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/**
+ * AUDIT-100 B7/B28: dispatched on `window` after an auto-sync run (peer/peer-shared.ts) stored or removed rows on this laptop; the shell
+ * (LocalShell) redraws the open screen from the laptop's database, so a colleague's change shows without a reload.
+ */
+export const LOCAL_DATA_CHANGED_EVENT = "px-local-data-changed";
+
 /** AUDIT-100 B22: the one sentence shown when another laptop was found but could not be reached (no error, no dialog). */
 export const PEER_UNREACHABLE_TEXT = "Another laptop was found but could not be reached directly; your work is safe on this laptop.";
 

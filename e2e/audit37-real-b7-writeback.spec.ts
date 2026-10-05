@@ -1,5 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
-import { openLaptop, openLocal, outboxOps, localRows, projectId, serverRows } from "./support/real-backend";
+import { countMeta, openLaptop, openLocal, outboxOps, localRows, projectId, serverRows } from "./support/real-backend";
 
 // AUDIT-100 rows B7 (an edit made online lands in Supabase AND on a second laptop), B18 (edits made offline queue and flush when the network is back,
 // re-read from the server), B28 (back online, sync resumes WITHOUT a refresh) -- against the REAL backend (playwright.audit37-real.config.ts):
@@ -22,6 +22,11 @@ test.beforeAll(async ({ browser }) => {
   A = await openLaptop(browser, "finance");
   B = await openLaptop(browser, "ceo");
   P = await projectId(A.context);
+  // laptop B has the project open (as its person would) from before any change below is made, and is left alone from here on
+  await openLocal(B.page, `/local/rfis?projectId=${P}`, "rfis-list");
+  // ... and has FINISHED its first whole copy (sync:last), so what A does below is really a LATER change. Measured 2026-10-05: the real
+  // org's first copy is ~600 requests per laptop and can outlast the whole file; a change made during it is not what B7/B28 are about.
+  await expect.poll(() => countMeta(B.page, "sync:last"), { timeout: 900_000, message: "laptop B never finished its first copy" }).toBeGreaterThan(0);
   // BREAK-TEST SWITCH (R74-RULING-03 (c)): AUDIT100_BREAK=push refuses every push of laptop A to the real service; the specs must then FAIL.
   if (process.env.AUDIT100_BREAK === "push") await A.context.route(/projexa-sync\/push/, (r) => r.abort("connectionrefused"));
 });
@@ -83,19 +88,6 @@ test("B7: an edit (an answer) made on laptop A lands in Supabase with a higher v
   expect(after.version ?? 0).toBeGreaterThan(before);
 });
 
-// MEASURED, NOT YET PROVEN (AUDIT-100 B7/B28, 2026-10-05): everything on the WRITING laptop and on the SERVER is proven above (create, edit, offline queue, flush, exactly once, all
-// re-read from the service; the change feed carries the `I`/`U` entries). What is NOT proven is that a COLLEAGUE'S already-open laptop picks the change up by itself:
-// across five real runs laptop B received a new RFI only while it was still doing its first copy, and did NOT receive a later new RFI or an UPDATE of a row it already held
-// (not by itself within 4-10 minutes, nor within 2 more after an `online` trigger) in 4 of 5 runs. The server's feed is right, so the miss is on the laptop's
-// scheduling/apply side (idle scheduler back-off 5 -> 30 min, or the head check); root cause not found inside the time-box. `test.fixme` keeps it visible: remove it when
-// this passes repeatedly. Until then B7's "lands on a second laptop" is PARTIAL (server write-back proven, second-laptop live propagation not).
-test("B7/B28: laptop B's own copy gets the new RFI, the answer and the RFI sent after the reconnect, without a refresh", async () => {
-  test.fixme(true, "a colleague's open laptop did not pick up later changes in 4 of 5 real runs (see comment above)");
-  await arrivesOnB("the new RFI", async () => (await localRows(B.page, "rfis", SUBJECT_1)).filter((r) => !r.dirty).length, 1);
-  await arrivesOnB("the answer", async () => (await localRows(B.page, "rfis", SUBJECT_1))[0]?.data?.answer, ANSWER);
-  await arrivesOnB("the RFI sent after the reconnect", async () => (await localRows(B.page, "rfis", SUBJECT_2)).filter((r) => !r.dirty).length, 1);
-});
-
 test("B18 + B28: made offline it waits and the server has nothing; back online it is sent with NO refresh, once, and read back from the server", async () => {
   await openLocal(A.page, `/local/rfis?projectId=${P}`, "rfis-list");
   await A.context.setOffline(true);
@@ -121,4 +113,18 @@ test("B18 + B28: made offline it waits and the server has nothing; back online i
   });
   await A.page.waitForTimeout(5_000);
   expect(await serverRows(A.context, P, "rfis", SUBJECT_2)).toHaveLength(1);
+});
+
+// B7/B28 on the COLLEAGUE'S laptop. Laptop B (the owner) has had the project open on its RFI list since before any of the changes above, and
+// is never reloaded or touched. Measured before the fix (2026-10-05, 4 of 5 real runs): B got a new RFI only during its first copy and missed
+// every later change for 4-10+ minutes, even after an `online` trigger. Root cause (src/lib/local-first/shell/context.ts noteShownProject):
+// the auto-sync read a moved project's feed at once only for the project picked in the switcher; one shown by the URL or as the first
+// project counted as "not open" and was read at most hourly. The same behaviour is pinned without the real backend by
+// src/lib/local-first/peer/live-sync.test.ts and, in Chromium, by e2e/lf-lifecycle-live-sync.spec.ts.
+test("B7/B28: laptop B's own copy gets the new RFI, the answer and the RFI sent after the reconnect, without a refresh", async () => {
+  const urlBefore = B.page.url();
+  await arrivesOnB("the new RFI", async () => (await localRows(B.page, "rfis", SUBJECT_1)).filter((r) => !r.dirty).length, 1);
+  await arrivesOnB("the answer", async () => (await localRows(B.page, "rfis", SUBJECT_1))[0]?.data?.answer, ANSWER);
+  await arrivesOnB("the RFI sent after the reconnect", async () => (await localRows(B.page, "rfis", SUBJECT_2)).filter((r) => !r.dirty).length, 1);
+  expect(B.page.url(), "laptop B navigated").toBe(urlBefore);
 });

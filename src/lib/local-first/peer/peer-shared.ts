@@ -11,7 +11,8 @@ import { LOCAL_DB_VERSION, localDbNameFor, openLocalDb } from "../local-db";
 import { getDeviceId } from "../outbox-shared";
 import { foreignOrg } from "../replica";
 import { getSharedReplica } from "../replica-shared";
-import { selectedProjectKey } from "../shell/context";
+import { activeProjectFor } from "../shell/context";
+import { LOCAL_DATA_CHANGED_EVENT } from "./status";
 import { accessToken, createSharedSyncClient, getReleaseVersion, sharedPacer } from "../shared-client";
 import { resetLocalCopy } from "./reset-copy";
 import { SYNC_BASE_URL, SYNC_PROTOCOL } from "../sync-client";
@@ -84,14 +85,11 @@ export function startPeerSync(userId: string): void {
         heads: async () => { await sharedPacer().take(); return client.heads!(); },
         resetCopy: async () => { await resetLocalCopy(db); },
         feedCurrent: (projectId) => replica.noteFeedCurrent?.(projectId),
-        activeProject: () => {
-          try {
-            return localStorage.getItem(selectedProjectKey(userId));
-          } catch {
-            return null;
-          }
-        },
+        // the project the shell SHOWS (not only the one picked in the switcher): AUDIT-100 B7/B28, shell/context.ts says why
+        activeProject: () => activeProjectFor(userId),
       }),
+      // a run that brought rows (server or peer) redraws the open screen, with no reload (AUDIT-100 B7/B28)
+      onChanged: () => { window.dispatchEvent(new Event(LOCAL_DATA_CHANGED_EVENT)); },
       isVisible: () => document.visibilityState === "visible",
       isOnline: () => navigator.onLine !== false,
       foreignOrg,
