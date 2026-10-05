@@ -122,7 +122,8 @@ test("wiring: the (app) layout mounts the hand-over once; the prepare screen and
   const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
   expect(read("src/app/(app)/layout.tsx").match(/<LocalShellHandoff\s*\/>/g)?.length).toBe(1);
   const prepare = read("src/components/WorkspacePrepare.tsx");
-  expect(prepare).toContain("if (installed) announceShellReady();");
+  expect(prepare).toContain("if (result.ready) announceShellReady();");
+  expect(prepare).toContain("if (report.status === \"done\") announceShellReady();");
   expect(prepare).toContain("if (!localFirstOn()) for (const href of WARM_ROUTES) prefetch(href);");
   expect(read("src/lib/local-first/boot.ts")).toContain("if (shellNowReady) announceShellReady();");
 });

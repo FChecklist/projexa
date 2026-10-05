@@ -344,9 +344,9 @@ export function WorkspacePrepare() {
       // Only the projects copy missing is NOT a reason to hold the person: it carries on quietly.
       const installed = !(result.failed ?? []).some((id) => id !== "projects") && !result.timedOut;
       // AUDIT-100 A3 (VERCEL_ROUTE_PLAN.md step 1): the shell is on the laptop now; LocalShellHandoff moves this person off the server-rendered page
-      // (one replace, answered by the service worker) instead of leaving the rest of the first session on Vercel. After the projects step, never
-      // during it: the copy runs in this page.
-      if (installed) announceShellReady();
+      // (one replace, answered by the service worker) instead of leaving the rest of the first session on Vercel. Only once the projects are copied:
+      // when the copy did not finish, its quiet retry (quietCopy, with its growing wait) runs in THIS page and announces the shell when it succeeds.
+      if (result.ready) announceShellReady();
       if (!result.ready && installed) {
         try { localStorage.setItem(readyKey(userId), String(Date.now())); } catch { /* ignore */ }
         quietCopy(userId);
