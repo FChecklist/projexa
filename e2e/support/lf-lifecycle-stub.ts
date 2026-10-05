@@ -18,20 +18,8 @@ import { expect, type BrowserContext, type Page, type Route } from "@playwright/
 import { signInLocally, stubAppApis, type AppStub, type LocalSession } from "./boq-local";
 import type { FixtureLine, ProjectFixture } from "./boq-fixture";
 
-/**
- * page.evaluate that survives the ONE navigation the app makes by itself after the install (AUDIT-100 A3 step 1: the server-rendered page hands
- * over to the shell on the laptop). A read that lands in the middle of it is simply read again from the new document.
- */
-export async function evalSettled<R, A>(page: Page, fn: (arg: A) => R | Promise<R>, arg?: A): Promise<R> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return (await page.evaluate(fn as never, arg as never)) as R;
-    } catch (err) {
-      if (attempt >= 5 || !/Execution context was destroyed|because of a navigation|Cannot find context with specified id/i.test(String(err))) throw err;
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
-    }
-  }
-}
+import { evalSettled } from "./eval-settled";
+export { evalSettled };
 
 
 // Written out in full on purpose: the specs must fail if src/lib/local-first/sync-client.ts names a different address.

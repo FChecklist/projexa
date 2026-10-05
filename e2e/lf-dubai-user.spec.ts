@@ -1,3 +1,4 @@
+import { evalSettled } from "./support/eval-settled";
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { APP_ORIGIN, signInLocally, stubAppApis } from "./support/boq-local";
 import { releaseCaches, swPointer, deviceMeta } from "./support/lf-lifecycle-stub";
@@ -69,7 +70,7 @@ async function assertInstalledNow(page: Page, userId: string) {
   const rel = (await deviceMeta(page, "app:release")) as { version: string } | undefined;
   expect(rel?.version, "IndexedDB meta app:release is not set when the screen closed").toMatch(/^\d{4}\.\d{2}\.\d{2}-\d{3}$/);
   expect(await releaseCaches(page), "Cache Storage must hold exactly px-release-<version>").toEqual([`px-release-${rel!.version}`]);
-  expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true);
+  expect(await evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true);
   expect((await swPointer(page))?.version, "the worker does not point at the installed release").toBe(rel!.version);
   expect(await deviceMeta(page, "persist:state"), "persistent storage was never requested").toMatchObject({ requestedAt: expect.any(Number) });
   for (const kind of DELIVERY_KIND_NAMES) {
@@ -128,7 +129,7 @@ for (const locale of ["en-AE", "ar-AE"]) {
       if (!process.env.DUBAI_NO_THROTTLE) await throttle(context, page);
 
       // the browser really is a Dubai one
-      const env = await page.evaluate(() => ({ tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lang: navigator.language, offset: new Date(2026, 9, 3).getTimezoneOffset() }));
+      const env = await evalSettled(page, () => ({ tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lang: navigator.language, offset: new Date(2026, 9, 3).getTimezoneOffset() }));
       expect(env).toEqual({ tz: "Asia/Dubai", lang: locale, offset: -240 });
 
       await test.step("case 1: the prepare screen closes only after the verified install", async () => {
@@ -141,7 +142,7 @@ for (const locale of ["en-AE", "ar-AE"]) {
         await assertInstalledNow(page, session.userId);
       });
       await page.reload();
-      await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+      await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller))).toBe(true);
 
       await test.step("case 3: network fully OFF, every module with a shell route opens from the laptop", async () => {
         net.mode = "offline";
@@ -175,7 +176,9 @@ for (const locale of ["en-AE", "ar-AE"]) {
         // The overview screens show figures the SERVER computes (money, approvals, the 28 exception checks): by design (src/lib/local-first/shell/
         // snapshot-cache.ts) they ASK our server for the same endpoint the online page uses and fall back to the kept snapshot when they
         // cannot. Those three attempts (which fail offline) are the only /api traffic allowed; anything else means a screen needs the server.
-        const SNAPSHOT_BY_DESIGN = [/\/api\/dashboard\/project\//, /\/api\/exceptions$/, /\/api\/reports\/boq-analysis$/];
+        // plus the data-free usage / error beacon (POST /api/local-first/client-error, on the daily list of ai-os/audit37/vercel-route-inventory.json): it is
+        // sent once per page load when the load lives long enough to send it, so whether a fast offline walk catches one is timing, not a fault.
+        const SNAPSHOT_BY_DESIGN = [/\/api\/dashboard\/project\//, /\/api\/exceptions$/, /\/api\/reports\/boq-analysis$/, /POST \/api\/local-first\/client-error$/];
         console.log(`[${locale}] offline /api attempts (snapshot-by-design): ${calls.join(" | ") || "none"}`);
         const other = calls.filter((c) => !SNAPSHOT_BY_DESIGN.some((re) => re.test(c)));
         expect(other, "the offline shell asked OUR server (/api) for something that is not a server-computed snapshot").toEqual([]);
@@ -271,7 +274,7 @@ async function prepareOn(page: Page, context: BrowserContext, net: Net, email: s
     await expect.poll(() => readMeta(page, `projexa-local:${session.userId}`, `sync:done:${PROJECT_ID}:${kind}`), { timeout: 120_000, message: `${kind} never copied` }).toBeTruthy();
   }
   await page.reload();
-  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller))).toBe(true);
   return { session, sync, app };
 }
 

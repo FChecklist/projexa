@@ -1,5 +1,6 @@
 // LOCAL-FIRST browser AI e2e (package lf-e11): getting a laptop ready the way a person does, and talking to window.projexa.ai the way an
 // OUTSIDE AI does -- only through page.evaluate against window.projexa.ai, never a private import. Used by e2e/lf-ai-*.spec.ts.
+import { evalSettled } from "./eval-settled";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { APP_ORIGIN, type LocalSession } from "./boq-local";
 import { PEOPLE, signIn, stubAppApis, stubSync, type Net, type Person, type PersonKey, type SyncStub } from "./lf-ai-stub";
@@ -11,7 +12,7 @@ export type Laptop = { page: Page; context: BrowserContext; net: Net; sync: Sync
 export type AiOutcome<T = unknown> = { ok: true; value: T } | { ok: false; code: string | null; message: string; name: string };
 
 function readMeta(page: Page, dbName: string, key: string): Promise<unknown> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(dbName);
@@ -32,12 +33,12 @@ export const personMeta = (page: Page, userId: string, key: string) => readMeta(
 
 /** Waits until window.projexa.ai is published (AiAttach on every signed-in page). */
 export async function waitForAi(page: Page, message = "window.projexa.ai never appeared") {
-  await expect.poll(() => page.evaluate(() => typeof (window as unknown as { projexa?: { ai?: unknown } }).projexa?.ai === "object"), { timeout: 60_000, message }).toBe(true);
+  await expect.poll(() => evalSettled(page, () => typeof (window as unknown as { projexa?: { ai?: unknown } }).projexa?.ai === "object"), { timeout: 60_000, message }).toBe(true);
 }
 
 /** Calls window.projexa.ai.<method>(...args) exactly as an outside AI would, and returns the value or the refusal. */
 export function ai<T = unknown>(page: Page, method: string, ...args: unknown[]): Promise<AiOutcome<T>> {
-  return page.evaluate(
+  return evalSettled(page, 
     async ({ method, args }) => {
       const api = (window as unknown as { projexa?: { ai?: Record<string, (...a: unknown[]) => Promise<unknown>> } }).projexa?.ai;
       if (!api) return { ok: false as const, code: "NO_SURFACE", message: "window.projexa.ai is absent", name: "Missing" };
@@ -79,7 +80,18 @@ export async function prepareLaptop(page: Page, context: BrowserContext, key: Pe
       .poll(() => personMeta(page, session.userId, `sync:done:${person.projects[0].id}:tasks`), { timeout: 120_000, message: "the tasks were never copied to the laptop" })
       .toBeTruthy();
   });
+  await stayOnServerPage(page, `/schedule?projectId=${person.projects[0].id}`);
   return { page, context, net, sync, people, session, person, apiRequests, current };
+}
+
+/**
+ * AUDIT-100 A3 step 1: once the install and the first copy are done, a server-rendered page hands the person over to the shell on the laptop by itself.
+ * These specs test the AI surface on the SERVER-rendered pages (AiAttach is on both), so after the hand-over they open the page again with the
+ * address that asks for the server's page on purpose (px-server), which never hands over.
+ */
+export async function stayOnServerPage(page: Page, path: string) {
+  await expect(page.getByTestId("local-shell"), "the page did not hand over to the shell after the install").toBeVisible({ timeout: 120_000 });
+  await page.goto(`${path}${path.includes("?") ? "&" : "?"}px-server=1`);
 }
 
 /** The person's identity the AI surface keeps on the laptop (ai:identity), so a test can wait for the /manifest refresh to land. */
