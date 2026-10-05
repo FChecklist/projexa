@@ -164,6 +164,10 @@ export type World = {
   api: string[]
   /** The BOQ line PATCHes the page sent (the shell writer's edits). */
   patches: { path: string; body: unknown }[]
+  /** AUDIT-100 B10: the bodies of POST /api/projects (the new-project page's create), in order. */
+  created: Record<string, unknown>[]
+  /** Makes a new (empty) project readable by the person, as the server does for its creator: the manifest lists it, /heads' etag moves. */
+  addProject(project: { id: string; name: string }): void
   /** Adds (or changes) a row on the server and names it in the project's feed, as a colleague's edit would. */
   serverWrite(projectId: string, kind: OverviewKind, row: Row): void
   /** The rows of a readable project and kind as the server holds them now (what the laptop should end up with). */
@@ -183,6 +187,12 @@ export function createWorld(options: { role: Role; extraRows?: Partial<Record<Ov
     served: [],
     api: [],
     patches: [],
+    created: [],
+    addProject(project) {
+      world.projects.push(project)
+      world.rows[project.id] = Object.fromEntries(OVERVIEW_KINDS.map((k) => [k, []])) as unknown as Record<OverviewKind, Stored[]>
+      world.feed[project.id] = []
+    },
     serverWrite(projectId, kind, row) {
       const list = world.rows[projectId]![kind]
       const existing = list.find((s) => s.row.id === row.id)
@@ -256,7 +266,8 @@ export async function stubSyncService(page: Page, world: World, who: { userId: s
     // Audit 37: the shell now starts background + peer sync, which asks /attest; answer it quietly (an invalid body is ignored, a 404 would be a console error)
     if (request.method() === "POST" && path === "/attest") return json(route, origin, {})
     if (request.method() === "GET" && path === "/heads") {
-      return json(route, origin, { heads: heads(), projects_etag: "ov-projects-1", role: world.role, view_class: viewClass, org_view_class: null, epoch: EPOCH, server_time: now })
+      // the real handler's etag changes when the person's project list does (a project given, taken away or made)
+      return json(route, origin, { heads: heads(), projects_etag: `ov-projects-${world.projects.map((p) => p.id).join(",")}`, role: world.role, view_class: viewClass, org_view_class: null, epoch: EPOCH, server_time: now })
     }
     if (request.method() === "POST" && path === "/pull") {
       if (!readable(body.project_id) || !(OVERVIEW_KINDS as readonly unknown[]).includes(body.kind)) return json(route, origin, NOT_FOUND, 404)
@@ -345,6 +356,14 @@ export async function stubAppApis(page: Page, world: World, who: { userId: strin
       const patch = request.postDataJSON() as { category?: string }
       world.patches.push({ path: url.pathname, body: patch })
       return json(route, { id: url.pathname.split("/").pop(), category: patch.category ?? null })
+    }
+    // AUDIT-100 B10: the new-project page's create (PROJEXA's /api/projects proxies VERIDIAN's POST /projects, which answers 201 with the row)
+    if (request.method() === "POST" && url.pathname === "/api/projects") {
+      const body = request.postDataJSON() as { name?: string; productId?: string; description?: string; startDate?: string; targetDate?: string }
+      world.created.push(body as Record<string, unknown>)
+      const id = `ov-new-${world.created.length}`
+      world.addProject({ id, name: String(body.name ?? "") })
+      return json(route, { id, name: body.name, productId: body.productId, description: body.description ?? null, status: "active" }, 201)
     }
     if (request.method() !== "GET") return json(route, {})
     const dash = /^\/api\/dashboard\/project\/([^/]+)$/.exec(url.pathname)
