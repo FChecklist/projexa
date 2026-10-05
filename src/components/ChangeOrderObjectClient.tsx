@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type ChangeOrder = {
   id: string; projectId: string; number: number; title: string; reason: string | null;
@@ -80,7 +81,7 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
     if (!co) return;
     setCreatingRevision(true);
     try {
-      const boqRes = await fetch(`/api/reports/boq-analysis?projectId=${encodeURIComponent(co.projectId)}`);
+      const boqRes = await viaPxApi(`/api/reports/boq-analysis?projectId=${encodeURIComponent(co.projectId)}`);
       const boqData = await boqRes.json().catch(() => ({}));
       if (!boqRes.ok || !boqData.row?.boqId) {
         toast.error("This project has no approved BOQ to revise yet");

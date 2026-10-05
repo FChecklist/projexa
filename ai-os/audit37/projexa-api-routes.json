@@ -1,0 +1,55 @@
+{
+  "_about": "AUDIT-100 A2. The /api routes the Supabase Edge Function `projexa-api` (compliance-tracker supabase/functions/projexa-api) answers instead of Vercel. DENY BY DEFAULT: the function answers 404 for every path not listed here. Each entry must be a `veridian-proxy` route of ai-os/audit37/vercel-route-inventory.json and must describe EXACTLY what its Next handler sends upstream (src/app/api/<route>/route.ts); the parity contract (src/lib/projexa-api-parity.test.ts) proves it per route, method and role. Regenerate the function's table with `bun scripts/projexa-api-edge.mjs --write [--ct <compliance-tracker checkout>]`.",
+  "routes": [
+    {
+      "route": "/api/dashboard/project/:projectId",
+      "methods": {
+        "GET": { "upstream": "/dashboard/{projectId}", "acting_user": "explicit", "fallback": "Failed to load project dashboard" }
+      }
+    },
+    {
+      "route": "/api/exceptions",
+      "methods": {
+        "GET": {
+          "upstream": "/exceptions?projectId={query:projectId}",
+          "required_query": { "projectId": "projectId query param is required" },
+          "timeout_ms": 60000,
+          "fallback": "Failed to load the exceptions report"
+        }
+      }
+    },
+    {
+      "route": "/api/reports/boq-analysis",
+      "methods": {
+        "GET": { "upstream": "/reports/boq-analysis", "search_params": ["projectId", "sortBy", "direction"], "fallback": "Failed to load the profit & loss analysis" }
+      }
+    },
+    {
+      "route": "/api/scope/line-items/:id",
+      "methods": {
+        "PATCH": { "upstream": "/scope/line-items/{id}", "acting_user": "explicit", "body": "json", "fallback": "Failed to update line item budget" }
+      }
+    },
+    {
+      "route": "/api/documents/:id",
+      "methods": {
+        "GET": { "upstream": "/documents/{id}", "fallback": "Failed to load document" },
+        "PATCH": { "upstream": "/documents/{id}", "body": "json", "fallback": "Failed to update document" }
+      }
+    },
+    {
+      "route": "/api/drawings/:id/document-url",
+      "methods": {
+        "GET": { "upstream": "/drawings/{id}/document-url", "error_style": "plain", "fallback": "Couldn't open this drawing's file" }
+      }
+    },
+    {
+      "route": "/api/permits/:id",
+      "methods": {
+        "GET": { "upstream": "/permits/{id}", "fallback": "Failed to load permit" },
+        "PATCH": { "upstream": "/permits/{id}", "body": "json", "body_actor_email": "always", "fallback": "Failed to update permit" },
+        "DELETE": { "upstream": "/permits/{id}", "fallback": "Failed to delete permit" }
+      }
+    }
+  ]
+}

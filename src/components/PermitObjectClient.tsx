@@ -15,6 +15,7 @@ import { PERMIT_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
 import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
+import { viaPxApi } from "@/lib/px-api";
 
 type Permit = {
   id: string;
@@ -157,7 +158,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       setMessages(missing.map((c) => ({ field: c.field, level: "error" as const, text: `${c.label} is required` })));
       return;
     }
-    const res = await fetch(`/api/permits/${permitId}`, {
+    const res = await viaPxApi(`/api/permits/${permitId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...values, draftId }),
@@ -184,7 +185,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
     if (!permit || deleting) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/permits/${permitId}`, { method: "DELETE" });
+      const res = await viaPxApi(`/api/permits/${permitId}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setMessages([{ level: "error", text: body.error ?? "Failed to delete permit" }]);
