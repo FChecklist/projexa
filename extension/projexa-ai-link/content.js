@@ -8,18 +8,31 @@
   var L = window.PROJEXA_AI_LINK_LIB; // lib.js is loaded first by the manifest
   if (!L) return;
 
+  // One selector per site. `site` names whose message box the selector was written for and `hosts` where that site lives: on a site's own
+  // host its own selector is tried FIRST, then every other one in list order as a fallback (z.ai and DeepSeek both call their box
+  // textarea#chat-input, live 2026-10-05). The button records which selector found the box (data-box), so a test can tell "found by its own
+  // selector" from "found by another site's selector by luck", and scripts/verify/chat-site-selectors.mjs reads this list to check every
+  // selector against the live sites.
   var BOX_SELECTORS = [
-    "#prompt-textarea",                      // ChatGPT
-    'div.ProseMirror[contenteditable="true"]', // Claude
-    "rich-textarea div[contenteditable=true]", // Gemini
-    "textarea#chat-input",                   // DeepSeek
-    'textarea[placeholder], div[contenteditable="true"][role="textbox"]' // generic fallback
+    { site: "chatgpt", hosts: ["chatgpt.com", "chat.openai.com"], css: "#prompt-textarea" },
+    { site: "claude", hosts: ["claude.ai"], css: 'div.ProseMirror[contenteditable="true"]' },
+    { site: "gemini", hosts: ["gemini.google.com"], css: "rich-textarea div[contenteditable=true]" },
+    { site: "deepseek", hosts: ["chat.deepseek.com"], css: "textarea#chat-input" },
+    { site: "zai", hosts: ["chat.z.ai"], css: "form textarea#chat-input" },
+    { site: "generic", hosts: [], css: 'textarea[placeholder], div[contenteditable="true"][role="textbox"]' }
   ];
 
+  function orderFor(host) {
+    var own = [], rest = [];
+    for (var i = 0; i < BOX_SELECTORS.length; i++) (BOX_SELECTORS[i].hosts.indexOf(host) >= 0 ? own : rest).push(BOX_SELECTORS[i]);
+    return own.concat(rest);
+  }
+
   function findBox() {
-    for (var i = 0; i < BOX_SELECTORS.length; i++) {
-      var el = document.querySelector(BOX_SELECTORS[i]);
-      if (el) return el;
+    var list = orderFor(location.hostname);
+    for (var i = 0; i < list.length; i++) {
+      var el = document.querySelector(list[i].css);
+      if (el) return { el: el, site: list[i].site };
     }
     return null;
   }
@@ -57,8 +70,10 @@
         // `prompt` is what version 0.1 saved (a whole pasted prompt); the link is taken out of it.
         var link = (r && r.link) || L.extractLink(r && r.prompt);
         if (!link) { toast(b, "Open the PROJEXA extension and paste your link once"); return; }
-        var box = findBox();
-        if (!box) { toast(b, "No chat box found on this page"); return; }
+        var found = findBox();
+        if (!found) { toast(b, "No chat box found on this page"); return; }
+        var box = found.el;
+        b.dataset.box = found.site;
         b.dataset.busy = "1";
         b.textContent = "Fetching guide...";
         // The ONE network request this extension makes: a plain GET of the person's own link. The link is never logged.
