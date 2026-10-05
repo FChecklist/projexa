@@ -49,12 +49,27 @@ describe("release script: the manifest", () => {
     expect(releaseVersion({ date: NOW, buildNumber: "1234", sha: "" })).toBe("2026.10.02-234"); // wraps at 1000, never more than 3 digits
   });
 
-  test("without BUILD_NUMBER the number is derived from the commit sha, deterministically", () => {
-    const sha = "00ff12abcdef";
-    const expected = String(parseInt("00ff12", 16) % 1000).padStart(3, "0");
-    expect(releaseVersion({ date: NOW, buildNumber: undefined, sha })).toBe(`2026.10.02-${expected}`);
-    expect(releaseVersion({ date: NOW, buildNumber: undefined, sha })).toBe(releaseVersion({ date: NOW, buildNumber: undefined, sha }));
-    expect(releaseVersion({ date: NOW, buildNumber: undefined, sha: "" })).toBe("2026.10.02-000");
+  test("without BUILD_NUMBER (Vercel) the number is the build's time of day, so a later build always has the larger version (AUDIT-100 B13)", () => {
+    // 09:30:00 UTC = 34,200 s = step 395 of 86.4 s; the sha no longer matters
+    expect(releaseVersion({ date: NOW, buildNumber: undefined, sha: "00ff12abcdef" })).toBe("2026.10.02-395");
+    expect(releaseVersion({ date: NOW, buildNumber: undefined, sha: "ffffffabcdef" })).toBe("2026.10.02-395");
+    expect(releaseVersion({ date: new Date("2026-10-02T00:00:00.000Z"), buildNumber: undefined, sha: "" })).toBe("2026.10.02-000");
+    expect(releaseVersion({ date: new Date("2026-10-02T23:59:59.999Z"), buildNumber: undefined, sha: "" })).toBe("2026.10.02-999");
+    // every pair of builds more than 86.4 s apart, across a whole day, is in order
+    let previous = "";
+    for (let s = 0; s < 86_400; s += 87) {
+      const v = releaseVersion({ date: new Date(Date.UTC(2026, 9, 2) + s * 1000), buildNumber: undefined, sha: "abcdef" });
+      expect(v > previous).toBe(true);
+      previous = v;
+    }
+  });
+
+  test("source maps under .next/static are not in the release (production answers 403 for them, AUDIT-100 B13)", () => {
+    fixture();
+    put(".next/static/chunks/app.js.map", "{\"version\":3}");
+    const { manifest } = buildRelease({ root, env: { BUILD_NUMBER: "1" }, now: NOW });
+    expect(manifest.files.map((f: { path: string }) => f.path)).toContain("_next/static/chunks/app.js");
+    expect(manifest.files.some((f: { path: string }) => f.path.endsWith(".map"))).toBe(false);
   });
 
   test("git sha, built_at, protocol 2 and the schema read from LOCAL_DB_VERSION", () => {
