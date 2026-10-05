@@ -193,6 +193,12 @@ export type StoredManifest = {
   orgKinds?: string[];
   orgFeedKinds?: string[];
   orgNoPeerKinds?: string[];
+  /**
+   * AUDIT-100 B10: the project NAMES of the manifest this record was written from (id -> name). The shell's own name cache
+   * (shell/manifest-cache.ts) is refreshed once a day, so a project made or given today arrived in `projectIds` but showed in the
+   * dropdown as "Project <id>" until tomorrow. Absent in a record written by an older build.
+   */
+  projectNames?: Record<string, string>;
 };
 export type DoneMarker = { at: number; redacted: boolean; hiddenFields: string[] };
 /**
@@ -670,11 +676,13 @@ export function createReplica(options: ReplicaOptions): Replica {
       // Written before any pull, so a reader always knows the organisation of whatever a half-finished run stored. A run that
       // reused the stored manifest learned nothing new about it, so it leaves it (and its age) as it is.
       if (!stored) {
+        const freshNames = Object.fromEntries((freshManifest?.projects ?? []).filter((p) => typeof p.name === "string" && p.name.trim()).map((p) => [p.id, p.name as string]));
         await db.setMeta(MANIFEST_KEY, {
           userId: options.userId, orgId,
           projectIds: wholeRun ? projectIds : [...new Set([...(previous?.projectIds ?? []), ...targetProjects])],
           kinds, at: now(), feedKinds: [...feedKinds], ...(internalAi ? { internalAi: true } : {}),
           orgKinds: org.kinds, orgFeedKinds: org.feedKinds, orgNoPeerKinds: org.noPeerKinds,
+          projectNames: wholeRun ? freshNames : { ...(previous?.userId === options.userId ? previous?.projectNames ?? {} : {}), ...freshNames },
         } satisfies StoredManifest);
       }
 

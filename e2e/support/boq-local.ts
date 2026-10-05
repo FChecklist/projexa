@@ -91,14 +91,14 @@ export type AppStub = {
  * Answers every /api call of the page. The BOQ proxy read carries one line ("REST proxy line") that must never appear on a screen that
  * reads through the gateway. Anything not listed gets an empty JSON object, which the shell reads as "nothing to show".
  */
-export async function stubAppApis(page: Page, fixture: ProjectFixture, who: { userId: string; email: string }): Promise<AppStub> {
+export async function stubAppApis(page: Page, fixture: ProjectFixture, who: { userId: string; email: string }, appOrigin: string = APP_ORIGIN): Promise<AppStub> {
   const state = { offline: false }
   const app: AppStub = { requests: [], setOffline: (offline) => { state.offline = offline } }
   const json = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
 
   await page.route("**/api/**", async (route, request) => {
     const url = new URL(request.url())
-    if (url.origin !== APP_ORIGIN) return route.fallback()
+    if (url.origin !== appOrigin) return route.fallback()
     app.requests.push(`${request.method()} ${url.pathname}${url.search}`)
     if (state.offline) return route.abort("internetdisconnected")
     if (request.method() !== "GET") return json(route, {})

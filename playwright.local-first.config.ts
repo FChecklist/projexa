@@ -20,6 +20,8 @@ import { defineConfig, devices } from "@playwright/test";
 // (Turbopack refuses a node_modules folder that is a link to a folder outside the checkout, as in the development laptop's worktrees).
 const APP_PORT = Number(process.env.BOQ_LOCAL_PORT ?? 3117);
 const STUB_PORT = Number(process.env.BOQ_LOCAL_SUPABASE_PORT ?? 54399);
+// AUDIT-100 B10: the new-project page reads its product list on the SERVER; e2e/support/fake-veridian-server.mjs answers that one read.
+const VERIDIAN_PORT = Number(process.env.LF_VERIDIAN_PORT ?? 54398);
 const bundlerFlag = process.env.LF_LOCAL_BUNDLER === "webpack" ? " --webpack" : "";
 const nextBin = "node node_modules/next/dist/bin/next";
 
@@ -29,6 +31,9 @@ const appEnv = {
   DATABASE_URL: "postgresql://postgres:placeholder@localhost:5432/postgres",
   BUILD_NUMBER: "1",
   NEXT_TELEMETRY_DISABLED: "1",
+  // read at request time by the server (not inlined), so the same build can be pointed at the stand-in when it is started
+  VERIDIAN_API_BASE_URL: `http://localhost:${VERIDIAN_PORT}`,
+  VERIDIAN_API_KEY: "local-stub-veridian-key",
 };
 
 export default defineConfig({
@@ -58,6 +63,13 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30_000,
       env: { FAKE_SUPABASE_PORT: String(STUB_PORT) },
+    },
+    {
+      command: "node e2e/support/fake-veridian-server.mjs",
+      url: `http://localhost:${VERIDIAN_PORT}/health`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { FAKE_VERIDIAN_PORT: String(VERIDIAN_PORT), FAKE_VERIDIAN_KEY: "local-stub-veridian-key" },
     },
     {
       command: `${nextBin} build${bundlerFlag} && node scripts/make-release.mjs && ${nextBin} start -p ${APP_PORT}`,
