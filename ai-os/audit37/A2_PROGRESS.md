@@ -55,3 +55,9 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   wiki page. No new spec key. Parity 1422 cases (the 1126 unchanged); 15 more direct fetch() sites -> viaPxApi. Inventory: 113 routes
   `edge:projexa-api`; Vercel-served 231 -> 198 (budget 198). SEEN TO FAIL: `/scope/[id]/approve` PM_OR_ABOVE -> ANY_ROLE on the Next side
   (recorder fails) and in the edge copy (parity "POST /api/scope/:id/approve as site_engineer / member / client_viewer" + hash); reverted.
+- BATCH 2 LIVE (2026-10-06): compliance-tracker #2086 merged (3bb2d06d); `projexa-api` deployed from a clean checkout of that commit with
+  the CLI recipe: version 2, ACTIVE; `/_policy` SOURCE_SHA256 194c7e96... = this repo's generated file, 47 routes. LIVE SMOKE (test org,
+  sessions by admin magic link, nothing written): 104 of 104 probes identical edge vs Vercel (79 x 200 incl. every batch-2 GET as owner and
+  as client_viewer, 16 x 404 unknown ids, 5 x 403 role refusals incl. client_viewer creating a vendor and pm starting a payroll run, 400,
+  401, deny-by-default 404, policy hash check): `evidence/a2-batch2-live-smoke-2026-10-06.txt`. Only then did projexa #398 (the client list)
+  merge. ROLLBACK if needed: redeploy compliance-tracker e5f3471a (v1 table) AND revert #398 first (client before function, reverse order).
