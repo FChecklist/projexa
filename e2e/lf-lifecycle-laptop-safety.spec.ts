@@ -78,13 +78,18 @@ test("B12: A signs out, B signs in on the same browser profile: B never sees A's
   const aDb = personDb(a.session.userId);
   await openLocalBoq(page, A);
   for (const l of A.lines) await expect(page.getByText(l.description)).toBeVisible();
-  const aBefore = await storeDump(page, aDb);
-  expect(aBefore.records ?? "", "A's rows are not in A's local database").toContain(A.lines[0].description);
+  const aRows = (await storeDump(page, aDb)).records ?? "";
+  expect(aRows, "A's rows are not in A's local database").toContain(A.lines[0].description);
 
-  await test.step("A signs out from the account menu (the default: A's copy is kept on the laptop)", async () => {
+  const aBefore = await test.step("A signs out from the account menu (the default: A's copy is kept on the laptop)", async () => {
     await page.getByTestId("local-shell-account").locator("summary").click();
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
+    // A's session is over: from here on, nothing may change A's copy. (Taken here, not before the sign-out: A's own background sync can
+    // still write its last bookkeeping key a few milliseconds after the rows arrive -- seen in a run -- and that is not B's doing.)
+    const snapshot = await storeDump(page, aDb);
+    expect(snapshot.records, "the sign-out changed A's rows").toBe(aRows);
+    return snapshot;
   });
 
   const b = await test.step("B signs in on the same browser profile; B's own workspace is prepared", async () => {
