@@ -28,7 +28,7 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
 
   if (!online) {
     return (
-      <div className="flex items-start gap-4" data-testid="local-shell-ai-bar" data-online="0">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2" data-testid="local-shell-ai-bar" data-online="0">
         <div className="flex flex-col items-center gap-1">
           <button type="button" disabled title={LOCAL_SHELL_AI_LINK_OFFLINE_NOTE} className={BTN} data-testid="local-shell-ai-link-offline-button">Copy AI prompt</button>
           <span className={CAP}>{AI_BAR_PROMPT_CAPTION}</span>
@@ -65,7 +65,7 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
   }
 
   return (
-    <div className="relative flex items-start gap-4" data-testid="local-shell-ai-bar" data-online="1">
+    <div className="relative flex flex-wrap items-start gap-x-4 gap-y-2" data-testid="local-shell-ai-bar" data-online="1">
       <div className={`flex flex-col items-center gap-1 ${PROMPT_BTN}`}>
         <AiWorkLinkCompact role={role} project={null} client={client} scope="user" compact variant="default" triggerLabel="Copy AI prompt" />
         <span className={CAP} data-testid="local-shell-ai-caption">{AI_BAR_PROMPT_CAPTION}</span>
@@ -76,7 +76,7 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
         <span className={CAP} data-testid="local-shell-connect-caption">{AI_BAR_CONNECT_CAPTION}</span>
       </div>
       {open ? (
-        <div className="absolute right-0 top-full z-20 mt-2 w-[26rem] max-w-[90vw] rounded-xl border-2 border-[#2DD4BF] bg-[#F0FFFC] p-3 text-sm text-px-ink shadow-lg" data-testid="local-shell-connectors-panel">
+        <div className="fixed inset-x-2 z-20 mt-2 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:w-[26rem] sm:max-w-[90vw] rounded-xl border-2 border-[#2DD4BF] bg-[#F0FFFC] p-3 text-sm text-px-ink shadow-lg" data-testid="local-shell-connectors-panel">
           <p className="font-medium">Connect PROJEXA to your AI</p>
           {busy ? <p className="mt-2 text-xs text-px-muted">Making your link…</p> : null}
           {error ? <p className="mt-2 text-xs text-red-700" role="alert">{error}</p> : null}
