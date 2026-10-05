@@ -29,6 +29,16 @@
 // SCHEMA 4 adds the `drafts` store: what a person typed for an edit the server turned down (or that they stopped
 // sending), kept until they re-send it or discard it, so a refusal never destroys the only copy of their work
 // (review finding data:F4). See outbox.ts.
+//
+// SCHEMA 5 (AUDIT-100 B8) adds the `tombstones` store: a LOCAL DELETION MARKER for every record the server said is deleted (a pull item
+// `deleted: true`, a change-feed `D`, an id-list reconcile, a peer hint the server then confirmed) and for the person's own delete once the
+// server applied it. Before it, a server delete removed the row and kept no trace, so a second laptop still holding the OLD signed version
+// handed the row straight back over the peer link and this laptop stored it again (its change cursor was already past the delete).
+// The rule, enforced here so no caller can forget it: putRecords (every pull / feed / peer write; `{ local: true }` is the one opt-out)
+// never stores a row whose id has a tombstone at the same or a higher version. A NEWER server version (the row was really restored)
+// replaces the tombstone. Tombstones are bounded: each lives TOMBSTONE_TTL_MS (30 days: well past the 7-day id-list repair that catches
+// anything older, replica.ts FEED_RECONCILE_EVERY_MS) and at most TOMBSTONE_MAX are kept (oldest dropped first); deleteByProject (lost access,
+// a reset, a new epoch whose versions restart) clears that project's tombstones with its rows. An upgrade only ADDS the store.
 
 /** The freshest row the server is known to hold for a record that has a pending local edit. */
 export type ServerCopy = {
@@ -67,6 +77,29 @@ export type LocalRecord = {
 };
 
 export type MetaEntry = { key: string; value: unknown };
+
+/** Schema 5: the laptop's memory that the server deleted a record (see the SCHEMA 5 note above). */
+export type LocalTombstone = {
+  /** `${type}:${id}`, the same key the record had. */
+  id: string;
+  type: string;
+  orgId: string;
+  projectId: string | null;
+  /** The server version the delete was at (the feed's D version, else the last version this laptop held). null = unknown: blocks every version. */
+  version: number | null;
+  /** ms since epoch, when this laptop learned of the delete (expiry). */
+  deletedAt: number;
+  /** server: a pull / feed / id-list / server-confirmed peer hint; own: the person's own delete, applied by the server. */
+  source: "server" | "own";
+};
+
+/** What a write of server deletes records about them (WriteOptions.tombstone). */
+export type TombstoneInput = { orgId: string; projectId: string | null; versions?: Record<string, number | null | undefined>; source?: LocalTombstone["source"] };
+
+/** How long a tombstone is kept (AUDIT-100 B8). Longer than the weekly id-list repair, which catches a resurrection after it expires. */
+export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** At most this many tombstones are kept (the oldest go first), so a laptop's storage cannot grow without limit. */
+export const TOMBSTONE_MAX = 5000;
 
 /** A server row as the push endpoint returns it (conflict, applied). Kept here as plain data so this file imports nothing. */
 export type StoredServerRow = {
@@ -153,7 +186,8 @@ export const LOCAL_DB_NAME = "projexa-local";
 // v2 adds the byOrgTypeProject index (slice 2: reading one project's rows of one kind without scanning the organisation).
 // v3 adds record versions, the byDirty index and the outbox store (CONTRACT.md: the "schema" number of X-Px-Client).
 // v4 adds the drafts store (an upgrade only ADDS it: every record, meta value and op of v3 is kept as it was).
-export const LOCAL_DB_VERSION = 4;
+// v5 adds the tombstones store (AUDIT-100 B8; an upgrade only ADDS it: every record, meta value, op and draft of v4 is kept as it was).
+export const LOCAL_DB_VERSION = 5;
 
 /**
  * Database name for one signed-in person. Two people on one laptop get two separate databases, so
@@ -169,6 +203,21 @@ export function localDbNameFor(userId: string): string {
 export const changeCursorKey = (projectId: string) => `sync:changes:${projectId}`;
 /** When a (project, kind) last had its deletes reconciled against the server's id list: `{ at: number }`. */
 export const reconcileKey = (projectId: string, kind: string) => `sync:reconcile:${projectId}:${kind}`;
+/**
+ * AUDIT-100 B8: a (project, kind) that took rows from a PEER since its last id-list reconcile: `{ at: number }`. A peer row is
+ * server-signed but may be a version the server has since deleted (a delete this laptop's tombstone no longer remembers), so the
+ * replica reconciles such a pair against the server's id list at its next run (replica.ts PEER_RECONCILE_EVERY_MS).
+ */
+export const peerTouchedKey = (projectId: string, kind: string) => `sync:peer-touched:${projectId}:${kind}`;
+/**
+ * AUDIT-100 B8: rows a PEER said the server deleted (its `gone` message: an UNSIGNED hint, never applied as a delete). Each is kept
+ * out of what this laptop shares and checked with the server (replica.ts verifySuspects) at the next run. Bounded: SUSPECT_MAX entries.
+ */
+export const PEER_SUSPECT_KEY = "peer:suspect";
+export type PeerSuspect = { project: string; kind: string; id: string; at: number };
+export const SUSPECT_MAX = 500;
+/** A hint the server could not be asked about for this long is forgotten (the weekly id-list repair still covers the row). */
+export const SUSPECT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** The last outbox sequence number handed out. */
 export const OUTBOX_SEQ_KEY = "outbox:seq";
 /** Plain-words messages about edits that were turned down, until the person dismisses them. */
@@ -178,6 +227,38 @@ const STORE_META = "meta";
 const STORE_RECORDS = "records";
 const STORE_OUTBOX = "outbox";
 const STORE_DRAFTS = "drafts";
+const STORE_TOMBSTONES = "tombstones";
+
+/** True when a tombstone forbids storing a row at `version` (unknown on either side: forbidden; the tombstone's version or older: forbidden). */
+export function tombstoneBlocks(tomb: Pick<LocalTombstone, "version"> | undefined | null, version: number | undefined | null): boolean {
+  if (!tomb) return false;
+  if (tomb.version === null || version === undefined || version === null) return true;
+  return version <= tomb.version;
+}
+
+/**
+ * Drops expired tombstones, then the oldest beyond TOMBSTONE_MAX, inside an open transaction over the tombstones store. Walks the
+ * byDeletedAt index from the oldest and stops at the first one that is neither expired nor over the cap, so it is cheap when nothing is due.
+ */
+async function pruneTombstonesIn(store: IDBObjectStore, nowMs: number): Promise<number> {
+  let excess = ((await req(store.count())) as number) - TOMBSTONE_MAX;
+  const cutoff = nowMs - TOMBSTONE_TTL_MS;
+  let dropped = 0;
+  await new Promise<void>((resolve, reject) => {
+    const walk = store.index("byDeletedAt").openCursor();
+    walk.onsuccess = () => {
+      const cursor = walk.result;
+      if (!cursor) return resolve();
+      if ((cursor.value as LocalTombstone).deletedAt >= cutoff && excess <= 0) return resolve();
+      cursor.delete();
+      dropped += 1;
+      excess -= 1;
+      cursor.continue();
+    };
+    walk.onerror = () => reject(walk.error ?? new Error("IndexedDB cursor failed"));
+  });
+  return dropped;
+}
 
 /** A row that has a valid server signature and no pending local edit may be handed to another laptop. Nothing else may. */
 export function isShareable(record: Pick<LocalRecord, "sig" | "kid" | "dirty">): boolean {
@@ -217,6 +298,12 @@ export type WriteOptions = {
    * transact()); it exists so a repair tool has to say so explicitly.
    */
   local?: boolean;
+  /**
+   * schema 5: these ids are SERVER deletes -- a tombstone is written for every one of them (whether or not a row was held here), in the same
+   * transaction, at `versions[id]` (else the version of the row held here, else null). Only a real server delete passes this: a lost
+   * project, a dropped kind or a repair is not a delete and leaves no tombstone.
+   */
+  tombstone?: TombstoneInput;
 };
 
 /** The same operations, inside ONE open transaction. Used by transact(); every call must be awaited before the callback ends. */
@@ -240,6 +327,8 @@ export type LocalTx = {
   putDraft(draft: OutboxDraft): Promise<void>;
   deleteDraft(opId: string): Promise<boolean>;
   listDrafts(): Promise<OutboxDraft[]>;
+  /** Schema 5: records that the server deleted this record (the person's own delete, once applied). */
+  putTombstone(tomb: LocalTombstone): Promise<void>;
 };
 
 export type LocalDb = {
@@ -275,6 +364,14 @@ export type LocalDb = {
   listDrafts(): Promise<OutboxDraft[]>;
   getDraft(opId: string): Promise<OutboxDraft | undefined>;
   deleteDraft(opId: string): Promise<boolean>;
+  // ── tombstones (schema 5, AUDIT-100 B8) ──
+  /** The tombstones of these full ids (`${type}:${id}`) that exist. */
+  getTombstones(ids: string[]): Promise<Map<string, LocalTombstone>>;
+  /** Every tombstone of one project's kind (the peer exchange tells a peer which of its rows are deleted). */
+  listTombstones(orgId: string, type: string, projectId: string): Promise<LocalTombstone[]>;
+  /** Drops expired tombstones and the oldest beyond TOMBSTONE_MAX. Returns how many were dropped. */
+  pruneTombstones(nowMs?: number): Promise<number>;
+  countTombstones(): Promise<number>;
   /**
    * Runs `fn` inside ONE read-write transaction over records, meta, the outbox and the drafts: everything it writes is stored
    * or none of it (a throw aborts). The callback may only await calls on the `tx` it is given (and plain
@@ -334,6 +431,7 @@ function txApi(tx: IDBTransaction): LocalTx {
   const meta = () => tx.objectStore(STORE_META);
   const outbox = () => tx.objectStore(STORE_OUTBOX);
   const drafts = () => tx.objectStore(STORE_DRAFTS);
+  const tombstones = () => tx.objectStore(STORE_TOMBSTONES);
 
   const api: LocalTx = {
     async getRecord(type, id) {
@@ -428,6 +526,10 @@ function txApi(tx: IDBTransaction): LocalTx {
     async listDrafts() {
       return ((await req(drafts().getAll())) as OutboxDraft[]).sort((a, b) => a.at - b.at);
     },
+    async putTombstone(tomb) {
+      tombstones().put(tomb);
+      await pruneTombstonesIn(tombstones(), tomb.deletedAt);
+    },
   };
   return api;
 }
@@ -460,6 +562,13 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
       if (!ops.indexNames.contains("bySeq")) ops.createIndex("bySeq", "seq", { unique: true });
       // v4: what a person typed for an edit that did not reach the server, until they re-send or discard it.
       if (!upgrade.objectStoreNames.contains(STORE_DRAFTS)) upgrade.createObjectStore(STORE_DRAFTS, { keyPath: "opId" });
+      // v5: what the server deleted, so an older copy of it (a stale peer) is never stored again (AUDIT-100 B8).
+      const tombs = upgrade.objectStoreNames.contains(STORE_TOMBSTONES)
+        ? open.transaction!.objectStore(STORE_TOMBSTONES)
+        : upgrade.createObjectStore(STORE_TOMBSTONES, { keyPath: "id" });
+      if (!tombs.indexNames.contains("byDeletedAt")) tombs.createIndex("byDeletedAt", "deletedAt");
+      if (!tombs.indexNames.contains("byOrgTypeProject")) tombs.createIndex("byOrgTypeProject", ["orgId", "type", "projectId"]);
+      if (!tombs.indexNames.contains("byOrgProject")) tombs.createIndex("byOrgProject", ["orgId", "projectId"]);
     };
     open.onsuccess = () => resolve(open.result);
     open.onerror = () => reject(open.error ?? new Error("Could not open the local database"));
@@ -468,7 +577,7 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
   db.onversionchange = () => db.close();
 
   const transact = async <T,>(fn: (tx: LocalTx) => Promise<T>): Promise<T> => {
-    const tx = db.transaction([STORE_RECORDS, STORE_META, STORE_OUTBOX, STORE_DRAFTS], "readwrite");
+    const tx = db.transaction([STORE_RECORDS, STORE_META, STORE_OUTBOX, STORE_DRAFTS, STORE_TOMBSTONES], "readwrite");
     const finished = done(tx);
     finished.catch(() => {}); // an abort is reported through the thrown error, not twice
     let result: T;
@@ -519,8 +628,9 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
       if (inputs.length === 0) return 0;
       const fromServer = options?.fromServer === true;
       const local = options?.local === true;
-      const tx = db.transaction(STORE_RECORDS, "readwrite");
+      const tx = db.transaction([STORE_RECORDS, STORE_TOMBSTONES], "readwrite");
       const store = tx.objectStore(STORE_RECORDS);
+      const tombs = tx.objectStore(STORE_TOMBSTONES);
       const finished = done(tx);
       finished.catch(() => {}); // the abort below is reported through the thrown error, not twice
       let written = 0;
@@ -528,6 +638,14 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
         for (const input of inputs) {
           const existing = (await req(store.get(input.id))) as LocalRecord | undefined;
           if (existing && existing.orgId !== input.orgId) throw new Error(REFUSE_FOREIGN);
+          if (!local) {
+            // schema 5 (AUDIT-100 B8): the server deleted this record; a copy at that version or older (a stale peer, a late page) is not stored
+            const tomb = (await req(tombs.get(input.id))) as LocalTombstone | undefined;
+            if (tomb && tomb.orgId === input.orgId) {
+              if (tombstoneBlocks(tomb, input.serverVersion)) continue;
+              tombs.delete(input.id); // a NEWER server version: the row really came back
+            }
+          }
           if (existing?.dirty && !local) {
             const parked = parkServerRow(existing, input);
             if (parked !== existing) store.put(parked);
@@ -548,11 +666,26 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
       if (ids.length === 0) return 0;
       const fromServer = options?.fromServer === true;
       const local = options?.local === true;
-      const tx = db.transaction(STORE_RECORDS, "readwrite");
+      const tombstone = options?.tombstone;
+      const tx = db.transaction(tombstone ? [STORE_RECORDS, STORE_TOMBSTONES] : [STORE_RECORDS], "readwrite");
       const store = tx.objectStore(STORE_RECORDS);
       let removed = 0;
+      const at = Date.now();
       for (const id of ids) {
         const existing = (await req(store.get(id))) as LocalRecord | undefined;
+        if (tombstone && (!existing || existing.orgId === tombstone.orgId)) {
+          // schema 5: remember the server's delete (also of a row this laptop never held: a peer may still offer it later)
+          const given = tombstone.versions?.[id];
+          const version = typeof given === "number" ? given : existing?.serverVersion ?? null;
+          const tombs = tx.objectStore(STORE_TOMBSTONES);
+          const prev = (await req(tombs.get(id))) as LocalTombstone | undefined;
+          // never LOWER a tombstone an earlier delete already raised; null (no version known at all) blocks every version
+          const known = [version, prev?.version].filter((v): v is number => typeof v === "number");
+          tombs.put({
+            id, type: existing?.type ?? id.slice(0, id.indexOf(":")), orgId: tombstone.orgId, projectId: existing?.projectId ?? tombstone.projectId,
+            version: known.length ? Math.max(...known) : null, deletedAt: at, source: tombstone.source ?? "server",
+          } satisfies LocalTombstone);
+        }
         if (!existing) continue;
         if (existing.dirty && !local) {
           // The person's edit survives; a server tombstone is remembered for revert / keep-theirs / the "deleted" card.
@@ -562,11 +695,12 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
         store.delete(id);
         removed += 1;
       }
+      if (tombstone) await pruneTombstonesIn(tx.objectStore(STORE_TOMBSTONES), at);
       await done(tx);
       return removed;
     },
     async deleteByProject(orgId, projectId) {
-      const tx = db.transaction(STORE_RECORDS, "readwrite");
+      const tx = db.transaction([STORE_RECORDS, STORE_TOMBSTONES], "readwrite");
       const store = tx.objectStore(STORE_RECORDS);
       const rows = (await req(store.index("byOrgProject").getAll([orgId, projectId]))) as LocalRecord[];
       let removed = 0;
@@ -575,6 +709,9 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
         store.delete(row.id);
         removed += 1;
       }
+      // schema 5: the project's tombstones go with its rows (lost access; a reset or a new epoch restarts its versions)
+      const tombs = tx.objectStore(STORE_TOMBSTONES);
+      for (const key of (await req(tombs.index("byOrgProject").getAllKeys([orgId, projectId]))) as IDBValidKey[]) tombs.delete(key);
       await done(tx);
       return removed;
     },
@@ -640,6 +777,36 @@ export async function openLocalDb(idb: IDBFactory = globalThis.indexedDB, name =
     },
     async deleteDraft(opId) {
       return transact((tx) => tx.deleteDraft(opId));
+    },
+    async getTombstones(ids) {
+      const out = new Map<string, LocalTombstone>();
+      if (ids.length === 0) return out;
+      const tx = db.transaction(STORE_TOMBSTONES);
+      const finished = done(tx);
+      const store = tx.objectStore(STORE_TOMBSTONES);
+      for (const id of ids) {
+        const t = (await req(store.get(id))) as LocalTombstone | undefined;
+        if (t) out.set(id, t);
+      }
+      await finished;
+      return out;
+    },
+    async listTombstones(orgId, type, projectId) {
+      const tx = db.transaction(STORE_TOMBSTONES);
+      const finished = done(tx);
+      const rows = (await req(tx.objectStore(STORE_TOMBSTONES).index("byOrgTypeProject").getAll([orgId, type, projectId]))) as LocalTombstone[];
+      await finished;
+      return rows;
+    },
+    async pruneTombstones(nowMs = Date.now()) {
+      const tx = db.transaction(STORE_TOMBSTONES, "readwrite");
+      const finished = done(tx);
+      const dropped = await pruneTombstonesIn(tx.objectStore(STORE_TOMBSTONES), nowMs);
+      await finished;
+      return dropped;
+    },
+    async countTombstones() {
+      return req(db.transaction(STORE_TOMBSTONES).objectStore(STORE_TOMBSTONES).count());
     },
     transact,
     close() {
