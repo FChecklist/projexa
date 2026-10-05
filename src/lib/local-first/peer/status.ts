@@ -22,6 +22,12 @@ export function subscribePeerStatus(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/**
+ * AUDIT-100 B7/B28: dispatched on `window` after an auto-sync run (peer/peer-shared.ts) stored or removed rows on this laptop; the shell
+ * (LocalShell) redraws the open screen from the laptop's database, so a colleague's change shows without a reload.
+ */
+export const LOCAL_DATA_CHANGED_EVENT = "px-local-data-changed";
+
 /** The marker's words: calm, no numbers when there is nothing to say. */
 export function peerSyncText(peers: number): string | null {
   if (peers <= 0) return null;

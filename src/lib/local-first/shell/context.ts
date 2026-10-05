@@ -92,3 +92,33 @@ export function chooseProject(projects: readonly ShellProject[], requested: stri
   const has = (id: string | null) => (id && projects.some((p) => p.id === id) ? id : null);
   return has(requested) ?? has(remembered) ?? projects[0]?.id ?? null;
 }
+
+// ─── the project the shell SHOWS right now (AUDIT-100 B7/B28) ───────────────────────────────────
+//
+// WHY: the auto-sync server step (peer/server-step.ts, heads mode) reads a moved project's feed at once only when it is the project the
+// person has OPEN; any other moved project is read at most once an hour (a cost rule). It used to learn "open" from the REMEMBERED choice
+// alone (localStorage, written only when the person picks a project in the switcher). A person who never picked one -- a single-project
+// laptop, the dashboard opened at /local/, a link with ?projectId= -- had NO open project in the step's eyes, so after the first catch-up
+// every later change of the project on their screen waited up to an hour, and an `online` trigger could not shorten that. Measured against
+// the real backend (e2e/audit37-real-b7-writeback.spec.ts): a colleague's laptop missed a later RFI and an answer for 4-10+ minutes.
+// The shell now notes the project it actually shows (chooseProject's answer: URL, else remembered, else the first) here, in this tab's
+// memory, and the step asks `activeProjectFor`.
+
+const shownProjects = new Map<string, string>();
+
+/** The shell shows `projectId` for this person now (LocalShell, on every change of the shown project). Null: none shown. */
+export function noteShownProject(userId: string, projectId: string | null): void {
+  if (projectId) shownProjects.set(userId, projectId);
+  else shownProjects.delete(userId);
+}
+
+/** The project this person has open in this tab: the one the shell shows, else the one they last chose, else null. */
+export function activeProjectFor(userId: string, storage: Pick<Storage, "getItem"> | null = typeof localStorage === "undefined" ? null : localStorage): string | null {
+  const shown = shownProjects.get(userId);
+  if (shown) return shown;
+  try {
+    return storage?.getItem(selectedProjectKey(userId)) ?? null;
+  } catch {
+    return null;
+  }
+}

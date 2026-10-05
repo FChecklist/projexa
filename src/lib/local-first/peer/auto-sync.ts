@@ -35,6 +35,8 @@ export type AutoSyncDeps = {
   /** Default true: a row without the px3 view-class signature is refused (protocol.ts). Only a unit test with px2-only fixtures turns it off. */
   requirePx3?: boolean;
   allowedKinds?: readonly string[];
+  /** After a run that stored or removed rows (server or peer step): the open screen should redraw from the laptop's database. */
+  onChanged?: () => void;
 };
 
 export type AutoSync = {
@@ -95,7 +97,12 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
     },
     // after every run: (re)join -- an attestation fetched later starts the network, a dropped signalling provider is re-raced,
     // and the announce lets a laptop that came up meanwhile find us (one tiny signalling message per run)
-    onRun: () => { void join(); },
+    onRun: ({ changed }) => {
+      if (changed && !stopped) {
+        try { d.onChanged?.(); } catch { /* a redraw never breaks sync */ }
+      }
+      void join();
+    },
   });
 
   // The network is joined on start (from the cached attestation, so it works with our server down) and re-announced after
