@@ -1,10 +1,19 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 import { publicPageHeaderRules } from "./src/lib/public-page-cache";
+import { normalizeStaticBase } from "./src/lib/local-first/release/release-constants";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
+// AUDIT-100 B60: ONE switch moves the static files off the app origin. When NEXT_PUBLIC_PX_STATIC_BASE is an absolute http(s) URL
+// (a free Cloudflare Pages project serving this build's /_next/static/**, /_release/** and public files, staged by
+// scripts/stage-static-pages.mjs), every page asks THAT host for /_next/static/**. Unset (the default) = no assetPrefix, today's
+// behaviour. The installer and the service worker read the same value (src/lib/local-first/release/release-constants.ts).
+// ai-os/audit37/STATIC_ON_CLOUDFLARE_PAGES.md has the owner's switch and why the production default is still unset.
+const STATIC_BASE = normalizeStaticBase(process.env.NEXT_PUBLIC_PX_STATIC_BASE);
+
 const nextConfig: NextConfig = {
+  ...(STATIC_BASE ? { assetPrefix: STATIC_BASE } : {}),
   /* config options here */
   // R66 code-quality fix: no recorded reason found for this. Set to false at
   // the very first scaffold commit (318a036) with no comment, and never

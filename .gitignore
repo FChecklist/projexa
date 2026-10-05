@@ -37,3 +37,6 @@ tsconfig.tsbuildinfo
 
 # LOCAL-FIRST: the release bundle and manifest are build output (scripts/make-release.mjs), never committed
 /public/_release/
+
+# AUDIT-100 B60: the Cloudflare Pages upload folder staged by scripts/stage-static-pages.mjs
+/.static-pages/

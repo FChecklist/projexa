@@ -19,6 +19,10 @@
 //                 - a release is installed AND local-first mode is on (the shell is served FIRST, no request leaves the laptop).
 //               otherwise network-first, so an online person without local-first mode sees exactly what they saw before.
 //               With no release installed there is no shell: offline gets a small, calm page instead of a browser error.
+//   static host (AUDIT-100 B60) when config.staticOrigin is set, a GET to THAT origin is treated exactly like a same-origin static
+//               file: its path (minus staticPathPrefix) is looked up in the active release cache under the APP origin's path (the
+//               installer stores every file under that key), else it goes to the network. The installer's own requests to the static
+//               host (?<installParam>=1) and its release.json are never answered from the cache. Any other cross-origin request is untouched.
 //   message     SKIP_WAITING, CLAIM, USE_RELEASE, SET_MODE, SET_PERSON, CLEAR_PERSON, STATUS (replied on the message port).
 //
 // PER-PERSON SAFETY. The worker remembers ONE record (cache `px-sw-meta`): which release is active, WHOSE it is (the signed-in
@@ -47,6 +51,15 @@ export type SwCoreConfig = {
   serverPageParam: string;
   /** Cache name prefixes of earlier worker generations, deleted on activate. */
   legacyCachePrefixes: string[];
+  /**
+   * AUDIT-100 B60: the separate static host (NEXT_PUBLIC_PX_STATIC_BASE, release-constants.ts) that serves /_next/static/**,
+   * /_release/** and the public files instead of the app origin. Its origin ("https://projexa-static.pages.dev") and path prefix
+   * ("" or "/px"). Empty / absent = no static host (every static file is same-origin, the behaviour before B60).
+   */
+  staticOrigin?: string;
+  staticPathPrefix?: string;
+  /** The installer's marker query parameter for its own static-host requests (release-constants.ts INSTALL_PARAM). */
+  installParam?: string;
 };
 
 type SwEventLike = {
@@ -152,12 +165,12 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
     return new Response(html, { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
 
-  async function staticAsset(request: Request): Promise<Response> {
+  async function staticAsset(request: Request, cacheKey?: string): Promise<Response> {
     // a kept (signed-out) release's files are public build output: served from the laptop too
     const pointer = await readPointer();
     const cache = await activeCache(pointer);
     if (cache) {
-      const hit = await cache.match(request, { ignoreSearch: true });
+      const hit = await cache.match(cacheKey ?? request, { ignoreSearch: true });
       if (hit) return hit;
     }
     return scope.fetch(request);
@@ -326,8 +339,22 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
       } catch {
         return;
       }
-      if (url.origin !== scope.location.origin) return; // Supabase Auth, the sync Edge Function, anything not ours: straight out
+      if (url.origin !== scope.location.origin) {
+        // AUDIT-100 B60: the static host serves this app's static files; an installed laptop answers them from its release.
+        const prefix = config.staticPathPrefix || "";
+        if (!config.staticOrigin || url.origin !== config.staticOrigin) return; // Supabase Auth, the sync Edge Function, anything not ours
+        if (prefix && url.pathname !== prefix && !url.pathname.startsWith(`${prefix}/`)) return;
+        const staticPath = url.pathname.slice(prefix.length) || "/";
+        if (config.installParam && url.searchParams.has(config.installParam)) return; // the installer's own fetch: fresh bytes
+        if (request.headers && request.headers.get("x-px-install")) return;
+        if (staticPath === "/_release/release.json") return;
+        if (!isStaticAsset(staticPath)) return;
+        const key = `${scope.location.origin}${staticPath}`;
+        event.respondWith(staticAsset(request, key).catch(() => scope.fetch(request)));
+        return;
+      }
       const path = url.pathname;
+      if (config.installParam && url.searchParams.has(config.installParam)) return; // the installer's own requests reach the network
       if (path === "/api" || path.startsWith("/api/")) return; // never cached, never served from here
       if (request.headers && request.headers.get("x-px-install")) return; // the installer's own fetches reach the network
       if (path === "/sw.js" || path === "/_release/release.json") return;

@@ -36,7 +36,7 @@
 // The old `projexa-shell-*` caches are deleted by `activate`.
 import { NextResponse } from "next/server"
 import { PUBLIC_PAGE_PATHS_FOR_TEST, PUBLIC_PAGE_PREFIXES_FOR_TEST } from "@/lib/authz/page-access"
-import { RELEASE_CACHE_PREFIX, SHELL_URL, SW_META_CACHE, SW_POINTER_URL } from "@/lib/local-first/release/release-constants"
+import { INSTALL_PARAM, RELEASE_CACHE_PREFIX, SHELL_URL, STATIC_BASE, SW_META_CACHE, SW_POINTER_URL, staticHostParts } from "@/lib/local-first/release/release-constants"
 import { buildSwScript, type SwCoreConfig } from "@/lib/local-first/release/sw-core"
 import { SERVER_PAGE_PARAM } from "@/lib/local-first/shell/paths"
 
@@ -54,6 +54,9 @@ const CONFIG: SwCoreConfig = {
   publicPrefixes: [...PUBLIC_PAGE_PREFIXES_FOR_TEST],
   serverPageParam: SERVER_PAGE_PARAM,
   legacyCachePrefixes: ["projexa-shell-"],
+  // AUDIT-100 B60: the static host (NEXT_PUBLIC_PX_STATIC_BASE), if this build has one; "" = none, the behaviour before B60.
+  ...staticHostParts(STATIC_BASE),
+  installParam: INSTALL_PARAM,
 }
 
 const SW_SCRIPT = buildSwScript(CONFIG, CACHE_VERSION)
