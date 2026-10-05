@@ -91,13 +91,14 @@ test("B8: a record deleted through the service is marked deleted on the SERVER: 
   expect(feed.changes.some((c) => c.kind === "meetings" && c.id === meetingId && c.op === "D"), "no delete (D) entry for the meeting in the change feed").toBe(true);
 });
 
-// KNOWN LAPTOP GAP, measured 2026-10-05 against the real service (two runs, 10 and 20 minutes): laptop B still holds the deleted meeting although the server no
-// longer serves it and /changes carries its D. Cause found by reading the code (not yet proven live): a server delete removes the local row with NO tombstone
-// (local-db.ts deleteRecords), and the peer protocol only refuses an older version when a local row EXISTS (peer/protocol.ts `not_newer`), so laptop A, still
-// holding version 1, hands the deleted meeting straight back to B over the peer link; B's change cursor is already past the D and nothing calls /ids, so B keeps it.
-// `test.fail` keeps this visible; it turns RED the moment laptops keep server tombstones (or reconcile against /ids), and the annotation is then removed.
+// LAPTOP LEG. Measured 2026-10-05 against the real service (two runs, 10 and 20 minutes): laptop B still held the deleted meeting although the server no longer
+// served it and /changes carried its D -- a server delete removed the local row with NO tombstone, the peer protocol refused an older version only when a local row
+// EXISTED, so laptop A (still at version 1) handed the meeting back over the peer link, and B's change cursor was past the D with nothing calling /ids.
+// FIXED (AUDIT-100 B8, laptop tombstones): local-db.ts schema 5 keeps a tombstone of every server delete and never stores that record again at that version or
+// older; the peer protocol refuses it (`deleted`) and tells the stale laptop (an unsigned hint it checks with the server); a pair that took peer rows is reconciled
+// against /ids at its next run. Proven in CI by src/lib/local-first/peer/tombstones.test.ts and e2e/lf-peer-deletes.spec.ts (real Chromium, two laptops, the peer
+// link); this leg is an ordinary test again and is kept for a BY-HAND real-backend run (playwright.audit37-real.config.ts, E2E test org only, one run).
 test("B8: a laptop that held the deleted record DROPS it, and a peer cannot hand it back", async () => {
-  test.fail(true, "B8 laptop leg: no local tombstone after a server delete, so a peer that still holds the old version re-delivers the row");
   expect(meetingId, "the server leg did not run").not.toBe("");
   // B (the owner) holds ~18 projects; its FIRST full copy (100 requests/min) is usually still running when the delete lands: allow it to finish plus a cycle
   await expect.poll(async () => (await localRows(B.page, "meetings", TITLE)).length, { timeout: 1_200_000, message: "laptop B still holds the deleted meeting: the delete did not reach it" }).toBe(0);

@@ -6,6 +6,9 @@
 //   receiver    -> want  {project, kind, known:[[id, version]...], done}
 //                                                    sent only for a (project, kind) whose digest differs; `known` may span messages
 //   sender      -> items {rows: SignedRow[]}         rows newer than `known`, in batches of at most maxBatchBytes
+//   receiver    -> gone  {project, kind, ids:[[id, version]...]}
+//                                                    AUDIT-100 B8: sent with a want: the receiver's tombstones of that (project, kind) (the
+//                                                    server deleted them at that version). A HINT for the peer, never a delete: see below
 //   sender      -> end   {project, kind}
 //   either      -> bye   {reason}                    then the link is closed
 //
@@ -16,8 +19,14 @@
 //     tombstone, its version is strictly higher than the local serverVersion, and the local record is not dirty;
 //   * lf-e9: a row that carries the px3 signature (`sig3`, it commits to the view class the row was cut for) must verify for OUR
 //     view class, or it is refused as `wrong_view` (px3.test.ts); a row with only px2 is still accepted until every server sends px3;
+//   * AUDIT-100 B8: a row is also refused (`deleted`) when the receiver holds a TOMBSTONE for it at that version or newer (the server
+//     deleted it; local-db.ts schema 5), and a receiver lists its tombstones in `known` so a sender does not even offer such a row;
 //   * the sender hands over only rows with a valid server signature and no pending local edit (local-db.ts isShareable),
 //     and never a version or a deletion of its own (a signed row cannot be altered: its version is inside the signature);
+//   * AUDIT-100 B8: deletions are not signed by the server, so a `gone` message NEVER deletes anything: the receiver only stops sharing
+//     the named rows and asks the SERVER about them at its next sync (replica.ts verifySuspects), which removes them (with a tombstone)
+//     only when the server confirms. A lying peer can at most make a laptop ask the server about a few rows (bounded, SUSPECT_MAX);
+//     an older peer ignores the message (unknown types are ignored after hello);
 //   * every message is size-capped; an oversized or unparseable message ends the session;
 //   * lf-e7: ORGANISATION rows (project "__org__") are shared only when BOTH tokens carry the server-attested organisation view class
 //     (claim `org_view`) and it is equal -- today's /attest does not send it, so they do not move yet; a token project named "__org__"
@@ -51,9 +60,15 @@ export type PeerStore = {
   local(kind: string, id: string): Promise<{ dirty: boolean; serverVersion: number | null } | null>;
   /** Stores verified rows (as server rows: a row turned dirty meanwhile is parked, never overwritten). Returns how many were written. */
   apply(rows: SignedRow[]): Promise<number>;
+  /** AUDIT-100 B8: the tombstone this laptop holds for a record (the server deleted it at `version`; null = any version), or null. */
+  deleted?(kind: string, id: string): Promise<{ version: number | null } | null>;
+  /** AUDIT-100 B8: every tombstone of (project, kind), as [id, version]. */
+  tombstones?(project: string, kind: string): Promise<Array<[string, number | null]>>;
+  /** AUDIT-100 B8: a peer said these rows were deleted (UNSIGNED): keep them out of sharing and have the server checked. Deletes nothing. */
+  suspect?(project: string, kind: string, ids: Array<[string, number | null]>): Promise<void>;
 };
 
-export type RejectReason = "bad_signature" | "wrong_view" | "not_shared" | "tombstone" | "not_newer" | "dirty" | "foreign_org" | "malformed";
+export type RejectReason = "bad_signature" | "wrong_view" | "not_shared" | "tombstone" | "not_newer" | "dirty" | "foreign_org" | "malformed" | "deleted";
 
 export type SessionState = "connecting" | "verified" | "closed";
 
@@ -104,6 +119,7 @@ type Msg =
   | { t: "have"; projects: Record<string, ProjectSummary>; reply?: boolean }
   | { t: "want"; project: string; kind: string; known: Array<[string, number]>; done: boolean }
   | { t: "items"; rows: SignedRow[] }
+  | { t: "gone"; project: string; kind: string; ids: Array<[string, number | null]> }
   | { t: "end"; project: string; kind: string }
   | { t: "bye"; reason: string };
 
@@ -231,6 +247,10 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
         for (let i = 0; i < known.length; i += KNOWN_PER_MESSAGE) {
           send({ t: "want", project, kind, known: known.slice(i, i + KNOWN_PER_MESSAGE), done: i + KNOWN_PER_MESSAGE >= known.length });
         }
+        // AUDIT-100 B8: the peer's copy of this kind differs from ours; if it still holds a row the server deleted, it should know (a HINT
+        // it checks with the server). Its own store keeps only the ids it really holds at a version the tombstone covers.
+        const tombs = store.tombstones ? await store.tombstones(project, kind) : [];
+        for (let i = 0; i < tombs.length; i += KNOWN_PER_MESSAGE) send({ t: "gone", project, kind, ids: tombs.slice(i, i + KNOWN_PER_MESSAGE) });
       }
     }
     if (m.reply) await sendHave(false);
@@ -287,6 +307,9 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       const v3View = row.project === ORG_PROJECT ? self.claims.orgView : self.claims.view;
       if ((row.sig3 || options.requirePx3) && !(v3View && row.sig3 && (await verifyRowV3(row, self.claims.org, v3View, keys)))) { reject("wrong_view"); continue; }
       if (options.foreignOrg?.(row.data, self.claims.org)) { reject("foreign_org"); continue; }
+      // AUDIT-100 B8: the server deleted this record at this version or later (this laptop's tombstone): never stored again
+      const gone = store.deleted ? await store.deleted(row.kind, row.id) : null;
+      if (gone && (gone.version === null || row.version <= gone.version)) { reject("deleted"); continue; }
       const local = await store.local(row.kind, row.id);
       if (local?.dirty) { reject("dirty"); continue; }
       if (local && local.serverVersion !== null && row.version <= local.serverVersion) { reject("not_newer"); continue; }
@@ -297,6 +320,15 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
       stats.accepted += written;
       options.onRows?.(written);
     }
+  }
+
+  async function onGone(m: Extract<Msg, { t: "gone" }>) {
+    if (typeof m.project !== "string" || typeof m.kind !== "string" || !Array.isArray(m.ids)) return refuse("protocol");
+    if (!shared.has(m.project) || !kindOk(m.kind) || !store.suspect) return;
+    const ids = m.ids
+      .filter((e): e is [string, number | null] => Array.isArray(e) && typeof e[0] === "string" && (e[1] === null || (typeof e[1] === "number" && Number.isFinite(e[1]))))
+      .slice(0, KNOWN_PER_MESSAGE);
+    await store.suspect(m.project, m.kind, ids);
   }
 
   async function handle(text: string) {
@@ -321,6 +353,7 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     if (m.t === "have") return onHave(m);
     if (m.t === "want") return onWant(m);
     if (m.t === "items") return onItems(m);
+    if (m.t === "gone") return onGone(m);
     if (m.t === "end") {
       pending.delete(`${m.project}|${m.kind}`);
       settle();
