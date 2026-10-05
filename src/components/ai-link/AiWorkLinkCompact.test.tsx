@@ -138,9 +138,8 @@ describe("one button: mint once with the safe defaults, copy a ready prompt, cop
     expect(AWL_ONE_CLICK_DAYS).toBe(7);
     expect(clipboard).toHaveLength(1);
     expect(clipboard[0]).toContain(LINK);
-    expect(clipboard[0]).toContain("Scope");
-    expect(clipboard[0]).toContain("GET");
-    expect(clipboard[0]).toContain("everything except writing code");
+    expect(clipboard[0]).toContain("plain GET");
+    expect(clipboard[0]).toContain("my AI assistant");
 
     const confirm = await screen.findByTestId("awl-compact-confirm");
     expect(confirm.textContent).toContain(AI_ASSISTANT_NAMES);
@@ -200,9 +199,8 @@ describe("scope=\"user\" -- ONE link for the whole person, no project needed", (
     expect(client.minted).toHaveLength(0); // never the per-project mint
     expect(clipboard).toHaveLength(1);
     expect(clipboard[0]).toContain("pxa_user_token");
-    expect(clipboard[0]).toContain("numbered list of ALL my projects");
-    expect(clipboard[0]).toContain("Report on all above");
-    expect(clipboard[0]).toContain("Create New Project");
+    expect(clipboard[0]).toContain("plain GET");
+    expect(clipboard[0]).not.toContain("Create New Project");
     expect(screen.getByTestId("awl-compact-trigger").textContent).toContain("Prompt copied");
   });
 
@@ -269,7 +267,7 @@ describe("access: direct by default, read-and-draft behind \"Change access or ex
     expect(client.minted).toEqual([{ projectId: "p1", level: AWL_SAFE_LEVEL, days: AWL_ONE_CLICK_DAYS }]);
     expect(AWL_SAFE_LEVEL).toBe(0);
     expect(clipboard[0]).toContain(LINK);
-    expect(clipboard[0]).toContain("everything except writing code");
+    expect(clipboard[0]).toContain("my AI assistant");
   });
 
   test("a lower (read-only) role gets no button at all, so nothing can be minted", () => {
