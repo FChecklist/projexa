@@ -78,6 +78,7 @@ test("B20: sign out, cut the network: /login opens from the laptop, a wrong pass
   })
 
   await test.step("the right passcode signs in on the laptop and opens the person's own copy (the same database as before)", async () => {
+    await page.locator("#email").fill(a.person.email)
     await page.locator("#password").fill(PASSCODE)
     await page.locator('button[type="submit"]').click()
     // polled, not waitForURL: the sign-in's own navigation can be superseded by the shell's (both land off /login), which waitForURL reports as aborted

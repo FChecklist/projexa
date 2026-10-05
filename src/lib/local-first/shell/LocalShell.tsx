@@ -138,6 +138,9 @@ export default function LocalShell() {
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
   useEffect(() => {
     if (boot.status !== "signed_out" || !location || connectivity !== "online") return;
+    // AUDIT-100 B20: the shell is drawn at /login only when the server's sign-in page could not be had (no network): its offline passcode form is
+    // the sign-in there, and a redirect to /login would only reload it and wipe what the person typed. Same when the browser itself says offline.
+    if (location.path === "/login" || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
     if (!mayRedirectToLogin(Date.now())) return;
     window.location.replace(`/login?redirectTo=${encodeURIComponent(location.path)}`);
   }, [boot.status, location, connectivity]);
@@ -258,17 +261,18 @@ export default function LocalShell() {
   if (!location || boot.status === "loading") return <Skeleton />;
 
   if (boot.status === "signed_out") {
+    const offlineSignIn = connectivity !== "online" || location.path === "/login" || (typeof navigator !== "undefined" && navigator.onLine === false);
     return (
       <Chrome navigate={navigate}>
         <section data-testid="local-shell-signed-out" className="mx-auto max-w-md pt-16 text-center">
           <h1 className="font-heading text-2xl text-px-ink">Sign in to PROJEXA</h1>
           <p className="mt-3 text-sm text-px-muted">
-            {connectivity === "online"
+            {!offlineSignIn
               ? "Taking you to sign in…"
               : "You are offline. Sign in with the email and passcode you used on this laptop. (The first sign-in on a laptop needs a connection.)"}
           </p>
           {/* AUDIT-100 B20: offline, the sign-in is done on the laptop with the passcode kept from the last online sign-in */}
-          {connectivity === "online" ? (
+          {!offlineSignIn ? (
             <p className="mt-4 text-sm"><a className="text-px-ink underline underline-offset-2" href={`/login?redirectTo=${encodeURIComponent(location.path)}`}>Sign in</a></p>
           ) : (
             <OfflinePasscodeSignIn next={location.path === "/login" || location.path === "/" ? "/dashboard" : `${location.path}${location.search}`} />
