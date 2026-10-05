@@ -20,6 +20,7 @@ import { Currency, currencyLabel, useCurrencies } from "@/lib/currency";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Line = {
   id: string; accountId: string; debit: string; credit: string;
   remark: string | null; costCenter: string | null;
@@ -62,7 +63,7 @@ export default function JournalEntryObjectClient({ entryId }: { entryId: string 
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/journal-entries/${entryId}/submit`, { method: "POST" });
+      const res = await viaPxApi(`/api/journal-entries/${entryId}/submit`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit journal entry");
       toast.success("Journal entry submitted");

@@ -128,17 +128,17 @@ await probe("permit edit refused by role", "client_viewer", sessions.client_view
 await probe("missing projectId", "pm", sessions.pm, "GET", `/api/exceptions`);
 await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exceptions?projectId=${projectId}`);
 
-// AUDIT-100 A2 batch 2: every GET of the batch (read-only), as the owner and as client_viewer; an :id route with an unknown id
+// AUDIT-100 A2 batches 2+: every GET of the batches (read-only), as the owner and as client_viewer; an :id route with an unknown id
 {
   const { readFileSync } = await import("node:fs");
-  const batch2 = JSON.parse(readFileSync(new URL("../../ai-os/audit37/projexa-api-routes.json", import.meta.url), "utf8")).routes.filter((r) => r.batch === 2);
+  const batch2 = JSON.parse(readFileSync(new URL("../../ai-os/audit37/projexa-api-routes.json", import.meta.url), "utf8")).routes.filter((r) => r.batch >= 2);
   for (const r of batch2) {
     const get = r.methods.GET;
     if (!get) continue;
     let path = r.route.replace(/:\w+/g, UNKNOWN);
     if (get.required_query) path += `?projectId=${projectId}`;
     else if (get.forward_search) path += "?limit=5";
-    for (const who of ["owner", "client_viewer"]) await probe(`batch 2 read ${r.route}`, who, sessions[who], "GET", path);
+    for (const who of ["owner", "client_viewer"]) await probe(`batch ${r.batch} read ${r.route}`, who, sessions[who], "GET", path);
   }
   // writes the role gate refuses before any handler runs (nothing is written): client_viewer creating a vendor, pm starting a payroll run
   await probe("batch 2: create vendor refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/vendors", { vendorName: "a2 smoke (never written)" });

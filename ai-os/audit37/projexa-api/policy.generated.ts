@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "194c7e961795a1f574374aff2e6f5e2b95fec17e0ea1143e67338d5ec01b822e"
+export const SOURCE_SHA256 = "fdf5e8c4e814e4ad08aef4f1b483438662b1bf0a2e2a1499f51c9a7a27a6bc27"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -285,6 +285,39 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/policies","methods":{"GET":{"upstream":"/policies","fallback":"Failed to load policies"},"POST":{"upstream":"/policies","body":"json","success_status":201,"fallback":"Failed to create policy"}}},
   {"route":"/api/policies/:id","methods":{"GET":{"upstream":"/policies/{id}","fallback":"Failed to load policy"},"PATCH":{"upstream":"/policies/{id}","body":"json","fallback":"Failed to update policy"}}},
   {"route":"/api/procurement/goods-receipts","methods":{"GET":{"upstream":"/procurement/goods-receipts","fallback":"Failed to load goods receipts"},"POST":{"upstream":"/procurement/goods-receipts","body":"json","success_status":201,"fallback":"Failed to create goods receipt"}}},
+  {"route":"/api/procurement/purchase-orders","methods":{"GET":{"upstream":"/procurement/purchase-orders","fallback":"Failed to load purchase orders"},"POST":{"upstream":"/procurement/purchase-orders","body":"json","success_status":201,"fallback":"Failed to create purchase order"}}},
+  {"route":"/api/procurement/quotations","methods":{"GET":{"upstream":"/procurement/quotations","forward_search":true,"fallback":"Failed to load supplier quotations"},"POST":{"upstream":"/procurement/quotations","body":"json","success_status":201,"fallback":"Failed to create supplier quotation"}}},
+  {"route":"/api/quotations","methods":{"GET":{"upstream":"/quotations","forward_search":true,"fallback":"Failed to load quotations"},"POST":{"upstream":"/quotations","body":"json","success_status":201,"fallback":"Failed to create quotation"}}},
+  {"route":"/api/recruitment/applications","methods":{"GET":{"upstream":"/recruitment/applications","fallback":"Failed to load applications"},"POST":{"upstream":"/recruitment/applications","body":"json","success_status":201,"fallback":"Failed to create application"}}},
+  {"route":"/api/risks","methods":{"GET":{"upstream":"/risks","fallback":"Failed to load risk register"},"POST":{"upstream":"/risks","body":"json","success_status":201,"fallback":"Failed to create risk"}}},
+  {"route":"/api/risks/:id","methods":{"GET":{"upstream":"/risks/{id}","fallback":"Failed to load risk"},"PATCH":{"upstream":"/risks/{id}","body":"json","fallback":"Failed to update risk"}}},
+  {"route":"/api/sales-orders","methods":{"GET":{"upstream":"/sales-orders","forward_search":true,"fallback":"Failed to load sales orders"},"POST":{"upstream":"/sales-orders","body":"json","success_status":201,"fallback":"Failed to create sales order"}}},
+  {"route":"/api/schedule/tasks/:id","methods":{"GET":{"upstream":"/schedule/{id}","fallback":"Failed to load task"},"PATCH":{"upstream":"/schedule/{id}","body":"json","fallback":"Failed to update task"}}},
+  {"route":"/api/submittals","methods":{"GET":{"upstream":"/submittals?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load submittals"},"POST":{"upstream":"/submittals","body":"json","success_status":201,"fallback":"Failed to create submittal"}}},
+  {"route":"/api/vendor-risk","methods":{"GET":{"upstream":"/vendor-risk","fallback":"Failed to load vendor risk profiles"},"POST":{"upstream":"/vendor-risk","body":"json","success_status":201,"fallback":"Failed to create vendor risk profile"}}},
+  {"route":"/api/access-review/certifications/:id","methods":{"PATCH":{"upstream":"/access-review/certifications/{id}","body":"json","fallback":"Failed to record certification decision"}}},
+  {"route":"/api/ar-aging","methods":{"GET":{"upstream":"/ar-aging","forward_search":true,"fallback":"Failed to generate AR aging report"}}},
+  {"route":"/api/attendance/bulk","methods":{"POST":{"upstream":"/attendance/bulk","body":"json","error_style":"plain","fallback":"Failed to save the attendance sheet"}}},
+  {"route":"/api/audit-findings","methods":{"POST":{"upstream":"/audit-findings","body":"json","success_status":201,"fallback":"Failed to create audit finding"}}},
+  {"route":"/api/audit-findings/:id","methods":{"PATCH":{"upstream":"/audit-findings/{id}","fallback":"Failed to update audit finding"}}},
+  {"route":"/api/balance-sheet","methods":{"GET":{"upstream":"/balance-sheet","forward_search":true,"fallback":"Failed to generate balance sheet"}}},
+  {"route":"/api/bank-reconciliation","methods":{"GET":{"upstream":"/bank-reconciliation","forward_search":true,"fallback":"Failed to load bank reconciliation data"}}},
+  {"route":"/api/compliance-register","methods":{"GET":{"upstream":"/compliance-register","forward_search":true,"fallback":"Failed to load compliance register"},"POST":{"upstream":"/compliance-register","body":"json","success_status":201,"fallback":"Failed to create compliance register item"}}},
+  {"route":"/api/credit-notes/:id/submit","methods":{"POST":{"upstream":"/credit-notes/{id}/submit","fallback":"Failed to submit credit note"}}},
+  {"route":"/api/customers/:id/overview","methods":{"GET":{"upstream":"/customers/{id}/overview","fallback":"Failed to load customer overview"}}},
+  {"route":"/api/ffe/margin-summary","methods":{"GET":{"upstream":"/ffe/margin-summary?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load margin summary"}}},
+  {"route":"/api/finance-dashboard","methods":{"GET":{"upstream":"/finance-dashboard","fallback":"Failed to load finance dashboard"}}},
+  {"route":"/api/floor-plans","methods":{"GET":{"upstream":"/floor-plans?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load floor plans"},"POST":{"upstream":"/floor-plans","body":"json","success_status":201,"fallback":"Failed to create floor plan"}}},
+  {"route":"/api/floor-plans/:id/placements","methods":{"POST":{"upstream":"/floor-plans/{id}/placements","body":"json","success_status":201,"fallback":"Failed to place furniture"}}},
+  {"route":"/api/floor-plans/:id/placements/:placementId","methods":{"PATCH":{"upstream":"/floor-plans/{id}/placements/{placementId}","body":"json","fallback":"Failed to update placement"},"DELETE":{"upstream":"/floor-plans/{id}/placements/{placementId}","fallback":"Failed to remove placement"}}},
+  {"route":"/api/floor-plans/:id/rooms","methods":{"POST":{"upstream":"/floor-plans/{id}/rooms","body":"json","success_status":201,"fallback":"Failed to add room"}}},
+  {"route":"/api/floor-plans/:id/scene","methods":{"GET":{"upstream":"/floor-plans/{id}/scene","fallback":"Failed to load scene"}}},
+  {"route":"/api/hr/org-chart","methods":{"GET":{"upstream":"/hr/org-chart","fallback":"Failed to load org chart"}}},
+  {"route":"/api/inventory/items/:id","methods":{"GET":{"upstream":"/inventory/items/{id}","fallback":"Failed to load item"}}},
+  {"route":"/api/inventory/stock-balance","methods":{"GET":{"upstream":"/inventory/stock-balance","forward_search":true,"fallback":"Failed to load stock balances"}}},
+  {"route":"/api/inventory/stock-entries","methods":{"GET":{"upstream":"/inventory/stock-entries","forward_search":true,"fallback":"Failed to load stock entries"},"POST":{"upstream":"/inventory/stock-entries","body":"json","success_status":201,"fallback":"Failed to record stock entry"}}},
+  {"route":"/api/journal-entries/:id","methods":{"GET":{"upstream":"/journal-entries/{id}","fallback":"Failed to load journal entry"}}},
+  {"route":"/api/journal-entries/:id/submit","methods":{"POST":{"upstream":"/journal-entries/{id}/submit","fallback":"Failed to submit journal entry"}}},
 ]
 
 /** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */

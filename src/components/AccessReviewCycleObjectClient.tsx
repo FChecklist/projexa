@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Certification = { id: string; userId: string; userName: string; userEmail: string | null; reviewedRole: string; decision: string };
 type Cycle = { id: string; name: string; status: string; dueDate: string | null; completedAt: string | null; certifications: Certification[] };
 
@@ -44,7 +45,7 @@ export default function AccessReviewCycleObjectClient({ cycleId }: { cycleId: st
   async function decide(certificationId: string, decision: "confirmed" | "revoked") {
     setDecidingId(certificationId);
     try {
-      const res = await fetch(`/api/access-review/certifications/${certificationId}`, {
+      const res = await viaPxApi(`/api/access-review/certifications/${certificationId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision }),
       });
       const data = await res.json();

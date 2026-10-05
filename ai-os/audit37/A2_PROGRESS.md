@@ -40,3 +40,10 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   SEEN TO FAIL: Next side `/payroll/runs` ORG_ADMIN -> PM_OR_ABOVE in api-write-policy.ts (the recorder failed: pm 201 vs recorded 403);
   edge side the same loosening in the edge copy (compliance-tracker parity "POST /api/payroll/runs as pm" failed + hash check); both reverted.
   ORDER: compliance-tracker PR merged + `projexa-api` deployed + live smoke BEFORE this repo's PR (the client list) merges.
+- BATCH 3 (2026-10-06, branch `audit100/a2-batch-3`, stacked on batch 2): the next 33 plain proxies by browser callers (procurement POs /
+  quotations, sales quotations / orders, recruitment applications, risks, vendor risk, submittals, schedule task, GRC findings and register,
+  AR aging, balance sheet, bank reconciliation, credit-note and journal submit, customer overview, FF&E margin, finance dashboard, floor plans,
+  org chart, inventory item / stock balance / stock entries, journal entry). No new spec key. Parity contract 1126 cases (the 750 unchanged);
+  16 more direct fetch() sites in 11 components -> viaPxApi. Inventory: 80 routes `edge:projexa-api`; Vercel-served 264 -> 231 (budget 231).
+  SEEN TO FAIL: `/journal-entries/[id]/submit` ORG_ADMIN -> FIELD, Next side (recorder: pm 200 vs 403) and edge copy (parity "POST
+  /api/journal-entries/:id/submit as pm / as site_engineer" + hash); both reverted.

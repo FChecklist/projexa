@@ -13,6 +13,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import DataLoadError from "@/components/DataLoadError";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Requisition = {
   id: string; requisitionNumber: number; purpose: string | null; status: string; postingDate: string;
   items: { id: string; description: string; quantity: string; estimatedRate: string | null }[];
@@ -148,7 +149,7 @@ export default function ProcurementClient({ initialTab }: { initialTab?: string 
   // quotation line itemless rather than sending a null-ish placeholder.
   async function convertToPo(q: Quotation) {
     try {
-      const res = await fetch("/api/procurement/purchase-orders", {
+      const res = await viaPxApi("/api/procurement/purchase-orders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           supplierId: q.supplierId, orderDate: new Date().toISOString().slice(0, 10),
