@@ -10,7 +10,14 @@
 // our server is down and the server still helps when there is no peer. While a peer IS connected the server step runs at most
 // every `serverWithPeersMs` (30 minutes; always on open / online / manual): peers first, the server for what only it knows.
 // Never a storm: one run at a time across tabs (Web Locks, `ifAvailable`: a second tab simply skips), at most one run per
-// `minGapMs` from triggers, and every trigger that arrives during a run is folded into it.
+// `minGapMs` from triggers, and every trigger that arrives during a run is folded into it -- except `online` / `manual`, which are
+// OWED and run once when the gap ends (B28: a network that comes back right after a run is never ignored).
+//
+// THE DOCUMENTED INTERVAL (AUDIT-100 B7/B28; what e2e/lf-lifecycle-live-sync.spec.ts and peer/live-sync.test.ts hold it to): a colleague's
+// change to the project this laptop has OPEN (the one the shell shows, shell/context.ts activeProjectFor) is on this laptop -- and on its
+// open screen, without a reload -- by the next timer run: within `baseMs` (5 minutes) while things change, within the backed-off period
+// (at most `idleMaxMs`, 30 minutes) on an idle laptop; at once (within `minGapMs`) when the network comes back. A change to a project
+// that is NOT open waits at most server-step.ts's `othersEveryMs` (an hour) after that project's previous read, or until it is opened.
 //
 // Everything is injected (clock, visibility, online state, the two steps, the lock manager), so the tests drive it with a fake clock.
 
@@ -98,18 +105,28 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
     return Math.min(baseMs * 2 ** Math.max(0, idleStreak - 1), idleMaxMs); // the first quiet run still waits only baseMs
   }
 
+  /**
+   * AUDIT-100 B28: an `online` (or `manual`) trigger that arrived during a run or within `minGapMs` of the last one is OWED, not dropped:
+   * it runs once, as soon as the gap ends. Before, a laptop whose network came back less than `minGapMs` after its last run (a short
+   * blip; Wi-Fi switching) ignored "the network is back" and waited for the long timer (5 -> 30 minutes) to catch up. Still never a
+   * storm: at most one owed run per gap, whatever the number of triggers.
+   */
+  let owed: TriggerReason | null = null;
+
   function schedule() {
     if (timer !== null) clock.clearTimeout(timer);
     timer = null;
     due = null;
     if (stopped) return;
-    const d = delay();
+    const d = owed !== null ? Math.max(0, lastRunAt + minGapMs - clock.now()) : delay();
     if (d === null) return;
     due = clock.now() + d;
     timer = clock.setTimeout(() => {
       timer = null;
       due = null;
-      void trigger("timer");
+      const reason = owed ?? "timer";
+      owed = null;
+      void trigger(reason);
     }, d);
   }
 
@@ -138,8 +155,16 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
 
   async function trigger(reason: TriggerReason): Promise<void> {
     if (stopped) return;
-    if (running) return running; // folded into the run in flight
-    if (reason !== "timer" && clock.now() - lastRunAt < minGapMs) return; // a burst of triggers is one run
+    const mustRun = reason === "online" || reason === "manual";
+    if (running) {
+      if (mustRun) owed = reason; // the run in flight may have started offline: one more once it ends (B28)
+      return running; // folded into the run in flight
+    }
+    if (reason !== "timer" && clock.now() - lastRunAt < minGapMs) { // a burst of triggers is one run
+      if (mustRun) { owed = reason; schedule(); } // ... but "the network is back" is honoured when the gap ends (B28)
+      return;
+    }
+    if (reason !== "timer") owed = null; // this run serves what was owed
     if (reason === "timer" && suspended()) { schedule(); return; }
     if (reason === "peer" || reason === "online" || reason === "visible" || reason === "manual") idleStreak = 0;
     running = (async () => {
