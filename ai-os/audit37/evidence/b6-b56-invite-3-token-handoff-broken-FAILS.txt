@@ -1,0 +1,58 @@
+free MB at start: 1692 20:34:48
+
+Running 4 tests using 1 worker
+
+  ok 1 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:154:5 › an org administrator creates an invitation in Settings (OrgInvitesCard), role pm (B56) (7.0s)
+[b6-b56 cleanup] run muvdsfmv46eu:
+  - organization e5076e03-5425-404f-bf83-3577d35af13f (+ its memberships and org_invites, ON DELETE CASCADE)
+  - security_audit_log rows of the throwaway accounts
+  - auth user admin cc642361-1dbb-43ed-9320-9de8e5202c3e (+ profile, ON DELETE CASCADE)
+  - auth user invitee af91ebfb-2307-4fb7-a88c-9d56c6d7e139 (+ profile, ON DELETE CASCADE)
+  - auth user stranger b2babc24-77db-48c8-bd18-b161876a29ef (+ profile, ON DELETE CASCADE)
+  left behind: organizations=0 profiles=0 memberships=0
+  x  2 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) (1.1m)
+  -  3 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:208:5 › the used link is refused with the plain message and attaches nothing again (B56)
+  -  4 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:219:5 › a wrong link and an expired link are refused with the plain message; nothing is attached (B6, B56)
+
+
+  1) [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) 
+
+    TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
+    =========================== logs ===========================
+    waiting for navigation until "load"
+    ============================================================
+
+      187 |
+      188 |   await page.getByRole("button", { name: `Join ${ORG_NAME}` }).click();
+    > 189 |   await page.waitForURL(/\/dashboard/, { timeout: 60_000 });
+          |              ^
+      190 |
+      191 |   // persisted: the membership exists, in this organisation, with the invited role -- and the invitation is marked used by this person
+      192 |   await expect.poll(() => membershipsOf(accounts.invitee.id), { timeout: 30_000 }).toEqual([{ organization_id: orgId, role: "pm" }]);
+        at C:\ct\px-b6b\e2e\audit37-real-b6-b56-invite.spec.ts:189:14
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\error-context.md
+
+    Error Context: test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\error-context.md
+
+    attachment #5: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) 
+  2 did not run
+  1 passed (1.7m)
+RUN EXIT 1 20:36:32

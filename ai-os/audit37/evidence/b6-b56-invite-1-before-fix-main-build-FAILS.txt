@@ -1,0 +1,67 @@
+free MB at start: 2012 20:22:50
+
+Running 4 tests using 1 worker
+
+  ok 1 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:154:5 › an org administrator creates an invitation in Settings (OrgInvitesCard), role pm (B56) (12.5s)
+[b6-b56 cleanup] run muvdd3ejhjpg:
+  - organization 3a550a2b-ba91-4679-8719-11d084c7b516 (+ its memberships and org_invites, ON DELETE CASCADE)
+  - security_audit_log rows of the throwaway accounts
+  - auth user admin 6813afcc-f0a0-40e9-9de4-aff54f61bff0 (+ profile, ON DELETE CASCADE)
+  - auth user invitee f1a3f94c-9ee9-45d8-9957-d7db16092186 (+ profile, ON DELETE CASCADE)
+  - auth user stranger cac58f19-8b4e-4b27-a480-0f1fb3fbf1ee (+ profile, ON DELETE CASCADE)
+  left behind: organizations=0 profiles=0 memberships=0
+  x  2 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) (33.0s)
+  -  3 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:208:5 › the used link is refused with the plain message and attaches nothing again (B56)
+  -  4 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:219:5 › a wrong link and an expired link are refused with the plain message; nothing is attached (B6, B56)
+
+
+  1) [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) 
+
+    Error: signing in did not bring the invitee back to the invitation
+
+    expect(page).toHaveURL(expected) failed
+
+    Expected pattern: /\/invite\/161ce0ac657b4fbb8b21cb108f7aa856fc43560af3e94fd1a60dd4c172ffa54e$/
+    Received string:  "http://localhost:3100/dashboard"
+    Timeout: 30000ms
+
+    Call log:
+      - signing in did not bring the invitee back to the invitation with timeout 30000ms
+        54 × locator resolved to <html lang="en" class="light">…</html>
+           - unexpected value "http://localhost:3100/dashboard"
+
+
+      183 |   // back on the invitation after signing in -- not on /dashboard (where this account has no organisation at all)
+      184 |   await submitLogin(page, accounts.invitee, (u) => !u.pathname.startsWith("/login"));
+    > 185 |   await expect(page, "signing in did not bring the invitee back to the invitation").toHaveURL(new RegExp(`/invite/${inviteToken}$`), { timeout: 30_000 });
+          |                                                                                     ^
+      186 |   expect(await membershipsOf(accounts.invitee.id), "attached before accepting").toEqual([]);
+      187 |
+      188 |   await page.getByRole("button", { name: `Join ${ORG_NAME}` }).click();
+        at C:\ct\px-b6b\e2e\audit37-real-b6-b56-invite.spec.ts:185:85
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\error-context.md
+
+    Error Context: test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\error-context.md
+
+    attachment #5: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\audit37-real-b6-b56-invite-a9439--the-install-starts-B6-B56--audit37-real\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) 
+  2 did not run
+  1 passed (2.3m)
+RUN EXIT 1 20:25:15
