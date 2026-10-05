@@ -20,6 +20,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Button } from "@/components/ui/button";
 import { Suspense, useEffect, useState } from "react";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
+import { publicFileUrl } from "@/lib/local-first/release/release-constants";
 
 // `labelKey`/`titleKey` are keys into the "Nav" namespace of messages/*.json
 // (see messages/en.json's Nav.items / Nav.sections) -- PLATFORM-01 Wave 2
@@ -307,7 +308,7 @@ function buildSharedSections(t: ReturnType<typeof useTranslations>, projectId: s
 function SidebarInner({ pathname, projectId, middleColumnToggle }: { pathname: string; projectId: string | null; middleColumnToggle?: MiddleColumnToggle }) {
   const t = useTranslations("Nav");
   const sections = buildSharedSections(t, projectId);
-  const logo = <Image src="/logo-mark.svg" alt="PROJEXA" width={28} height={28} className="rounded-sm" />;
+  const logo = <Image src={publicFileUrl("/logo-mark.svg")} unoptimized alt="PROJEXA" width={28} height={28} className="rounded-sm" />;
 
   return (
     <div className="flex h-full min-h-0 flex-col">

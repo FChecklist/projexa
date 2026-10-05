@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import type { MarketingLocaleProps } from "./marketing-locale";
+import { publicFileUrl } from "@/lib/local-first/release/release-constants";
 
 // OT6 (docs/OWNER_RUNBOOKS_2026-09-09.md): the owner-supplied reply email,
 // read from env with an empty-string fallback -- same idiom as
@@ -28,7 +29,7 @@ export async function MarketingFooter({ locale }: MarketingLocaleProps) {
     <footer className="bg-px-ink py-10">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6 lg:px-8">
         <div className="flex items-center gap-2">
-          <Image src="/logo-mark.svg" alt="PROJEXA" width={22} height={22} />
+          <Image src={publicFileUrl("/logo-mark.svg")} unoptimized alt="PROJEXA" width={22} height={22} />
           <span className="font-heading text-sm font-semibold text-white">PROJEXA</span>
           <span className="text-sm text-px-cloud2/60">{t("tagline")}</span>
         </div>

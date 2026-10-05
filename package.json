@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "next build",
-    "postbuild": "node scripts/make-release.mjs --postbuild",
+    "postbuild": "node scripts/make-release.mjs --postbuild && node scripts/publish-static-pages.mjs",
     "release:build": "node scripts/make-release.mjs",
     "start": "next start -p 3100",
     "lint": "eslint .",
