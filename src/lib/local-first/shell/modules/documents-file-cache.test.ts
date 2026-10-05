@@ -60,8 +60,12 @@ describe("the file cache: kept per person, size-capped, never another organisati
   test("a file over the per-file limit, an empty file, or past the pinned cap is refused with a plain message", async () => {
     const idb = new IDBFactory();
     const cache = await openFileCache("u1", { idb, caps });
-    expect((await cache.put(file("big", 61))).ok).toBe(false);
-    expect((await cache.put(file("empty", 0))).ok).toBe(false);
+    const big = await cache.put(file("big", 61));
+    expect(big.ok).toBe(false);
+    if (!big.ok) expect(big.message, "plain words, and what to do instead").toMatch(/too large to keep on this laptop.*Open it online\./);
+    const empty = await cache.put(file("empty", 0));
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.message).toBe("The file is empty.");
     for (let i = 0; i < 9; i += 1) expect((await cache.put(file(`p${i}`, 55, true))).ok).toBe(true); // 495 pinned
     const refused = await cache.put(file("p9", 10, true));
     expect(refused.ok).toBe(false);
