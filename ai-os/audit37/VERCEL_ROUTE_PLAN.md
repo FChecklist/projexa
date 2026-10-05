@@ -80,11 +80,30 @@ After steps 1-4 a daily session is edge-only (Supabase); Vercel carries the logi
 ## 5. Status of the rows
 
 A1 VERIFIED (plan tier today; owner reads the monthly meters). A2, A3 PARTIAL: measured, guarded, every remaining route named with a reason and a plan;
-steps 1 and 1b DONE (2026-10-05, section 6); step 3 BLOCKED on a server-side op (finding 3); steps 2, 4 open; 5 and 6 are owner steps. B20 VERIFIED on the fast rig. A6 VERIFIED against the stated policy (files only if pinned or recent, caps held in real Chromium); the literal "whole app incl. all files" is
+steps 1 and 1b DONE (2026-10-05, section 7); step 3 via /push BLOCKED on a server-side op (finding 3), but the online BOQ line PATCH no longer reaches Vercel on production since A2 moved it to the projexa-api Edge Function (section 6); steps 2, 4 open; 5 and 6 are owner steps. B20 VERIFIED on the fast rig. A6 VERIFIED against the stated policy (files only if pinned or recent, caps held in real Chromium); the literal "whole app incl. all files" is
 a policy choice the owner already made. A19, A23 VERIFIED on the rig (journey, 0 set-up actions, 7 actions, timings committed); real-network timing belongs to the
 live install lane. A21 VERIFIED (measured and budgeted). A22 VERIFIED (zero mail requests over three sign-ins).
 
-## 6. Steps 1 and 1b, done 2026-10-05 (AUDIT-100 A3; B20 closed with them)
+## 6. A2 edge proxy (2026-10-05, ai-os/audit37/A2_PROGRESS.md)
+
+The Supabase Edge Function `projexa-api` (compliance-tracker `supabase/functions/projexa-api`) answers the 7 proxy routes the shell reaches
+(dashboard / exceptions / BOQ-analysis snapshots, BOQ line PATCH, the three file-signing reads) with the Next handlers' exact contract
+(`src/lib/projexa-api-parity.test.ts`, 122 cases; live smoke 24/24 identical). On https://projexa-ai.com the browser calls it through
+`src/lib/px-api.ts`; the Next handlers stay as the same-origin fallback. Shell-reachable routes answered by Vercel: 8 -> 1 (the beacon).
+
+Remaining, in order (measured 2026-10-05 on this tree; 311 route files: 282 VERIDIAN proxies of which 7 moved, 17 own logic, 12 Supabase):
+1. Proxies read through `fetchJson` / `use-submit` (already switched): add each to `projexa-api-routes.json` + the parity `REQUESTS`, record,
+   regenerate, deploy. No caller change needed. Rank by real use first (step 6 above).
+2. The generator needs three more spec keys before the rest can move: `root` (20 routes call `/api/v1/*` outside `/projexa`), an
+   `error_extra` field list (3 routes forward a named upstream field, e.g. `conflicts[]`), and per-method role sets for the 21 routes with their
+   own `requireRole()` beyond the write table.
+3. Multi-call / cached proxies (9 with `Promise.all` fan-out, 14 with a cross-request cache): need their composition ported, one by one.
+4. Binary / multipart (11: uploads, PDF/xlsx downloads, BOQ import): stream passthrough in the function; the 30 s upload budget.
+5. The 17 own-logic and 12 Supabase routes (beacon, shell bootstrap, email/webhooks with server secrets, Google Sheets, AI chat, provisioning):
+   stay on Vercel until each has its own reason to move; the beacon could fold into projexa-sync /prepare.
+6. Delete a Next handler only when no caller needs the same-origin fallback (kill switch) any more.
+
+## 7. Steps 1 and 1b, done 2026-10-05 (AUDIT-100 A3; B20 closed with them)
 
 - **Step 1, hand-over.** `src/lib/local-first/release/shell-handoff.ts` + `src/components/local-first/LocalShellHandoff.tsx` (mounted once in the (app) layout):
   when the prepare screen has installed the release AND finished the projects copy (or the boot set the worker's pointer again after a sign-in), the

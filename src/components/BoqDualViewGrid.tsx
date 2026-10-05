@@ -63,6 +63,7 @@ import { formatNumber } from "@/lib/format-number";
 // PROJEXA-BUILD-001 U-33: the grid's two reads live in boq-read-source.ts, so this file names no /api/scope read (BR-419). They stay on
 // the proxy on purpose: the project-side cost columns are what the Edge gateway never returns.
 import { readBoqDualView } from "@/lib/boq-read-source";
+import { viaPxApi } from "@/lib/px-api";
 
 // ─── A4's mathematics, mirrored client-side for live preview (see header). ─
 
@@ -317,7 +318,7 @@ export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
     const value = raw.trim() === "" ? null : Number(raw);
     setSavingCell(cellKey);
     try {
-      const res = await fetch(`/api/scope/line-items/${line.id}`, {
+      const res = await viaPxApi(`/api/scope/line-items/${line.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: value }),
