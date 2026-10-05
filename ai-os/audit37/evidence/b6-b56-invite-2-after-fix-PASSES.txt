@@ -1,0 +1,18 @@
+free MB at start: 1635 20:36:57
+
+Running 4 tests using 1 worker
+
+  ok 1 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:154:5 › an org administrator creates an invitation in Settings (OrgInvitesCard), role pm (B56) (6.2s)
+  ok 2 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:175:5 › a signed-out invitee is sent to sign in, comes back, accepts, gets the org with the invited role and the install starts (B6, B56) (2.6s)
+  ok 3 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:208:5 › the used link is refused with the plain message and attaches nothing again (B56) (634ms)
+[b6-b56 cleanup] run muvdv4rgjo4k:
+  - organization 97dfbf4a-d81d-48ee-a472-1d6eee04340c (+ its memberships and org_invites, ON DELETE CASCADE)
+  - security_audit_log rows of the throwaway accounts
+  - auth user admin 29b99278-0636-4b8a-a6e3-b113ef97a47e (+ profile, ON DELETE CASCADE)
+  - auth user invitee 283d8c2d-a2d9-4fc4-81d6-739bc35a19bd (+ profile, ON DELETE CASCADE)
+  - auth user stranger 4e7f7308-5475-430a-8ba2-52e72a094a5a (+ profile, ON DELETE CASCADE)
+  left behind: organizations=0 profiles=0 memberships=0
+  ok 4 [audit37-real] › e2e\audit37-real-b6-b56-invite.spec.ts:219:5 › a wrong link and an expired link are refused with the plain message; nothing is attached (B6, B56) (3.2s)
+
+  4 passed (17.0s)
+RUN EXIT 0 20:37:15
