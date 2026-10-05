@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { viaPxApi } from "@/lib/px-api";
 const CATEGORIES = ["regulatory", "operational", "financial", "strategic", "reputational", "cyber"];
 
 export default function RiskCreateClient() {
@@ -27,7 +28,7 @@ export default function RiskCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/risks", {
+      const res = await viaPxApi("/api/risks", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, category, likelihood: Number(likelihood), impact: Number(impact) }),
       });

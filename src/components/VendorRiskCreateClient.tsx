@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { viaPxApi } from "@/lib/px-api";
 export default function VendorRiskCreateClient() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -28,7 +29,7 @@ export default function VendorRiskCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/vendor-risk", {
+      const res = await viaPxApi("/api/vendor-risk", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, riskTier }),
       });
       const data = await res.json().catch(() => ({}));
