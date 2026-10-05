@@ -61,3 +61,9 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   as client_viewer, 16 x 404 unknown ids, 5 x 403 role refusals incl. client_viewer creating a vendor and pm starting a payroll run, 400,
   401, deny-by-default 404, policy hash check): `evidence/a2-batch2-live-smoke-2026-10-06.txt`. Only then did projexa #398 (the client list)
   merge. ROLLBACK if needed: redeploy compliance-tracker e5f3471a (v1 table) AND revert #398 first (client before function, reverse order).
+- BATCHES 3+4 LIVE (2026-10-06): compliance-tracker #2087 merged (86b7feb8); `projexa-api` deployed from a clean checkout of it: version 3,
+  ACTIVE; `/_policy` SOURCE_SHA256 89a278e8... = this repo's generated file, 113 routes. LIVE SMOKE: 188 of 188 probes identical edge vs
+  Vercel (137 x 200: every GET of batches 2-4 as owner and as client_viewer plus the batch-1 reads; 42 x 404 unknown ids; 5 x 403 role
+  refusals; 400; 401; deny by default; policy hash): `evidence/a2-batches2-4-live-smoke-2026-10-06.txt`. Only then does this PR (the
+  client list for batches 3+4) merge. ROLLBACK: revert the client PR(s) first, then redeploy the previous good function commit
+  (3bb2d06d = v2 table, e5f3471a = v1 table); the Next handlers stay as the same-origin fallback throughout.
