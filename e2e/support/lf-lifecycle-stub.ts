@@ -18,6 +18,22 @@ import { expect, type BrowserContext, type Page, type Route } from "@playwright/
 import { signInLocally, stubAppApis, type AppStub, type LocalSession } from "./boq-local";
 import type { FixtureLine, ProjectFixture } from "./boq-fixture";
 
+/**
+ * page.evaluate that survives the ONE navigation the app makes by itself after the install (AUDIT-100 A3 step 1: the server-rendered page hands
+ * over to the shell on the laptop). A read that lands in the middle of it is simply read again from the new document.
+ */
+export async function evalSettled<R, A>(page: Page, fn: (arg: A) => R | Promise<R>, arg?: A): Promise<R> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return (await page.evaluate(fn as never, arg as never)) as R;
+    } catch (err) {
+      if (attempt >= 5 || !/Execution context was destroyed|because of a navigation|Cannot find context with specified id/i.test(String(err))) throw err;
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+    }
+  }
+}
+
+
 // Written out in full on purpose: the specs must fail if src/lib/local-first/sync-client.ts names a different address.
 export const SYNC_BASE = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-sync";
 const SYNC_PATH = "/functions/v1/projexa-sync";
@@ -222,7 +238,7 @@ export function answerSync(world: SyncWorld, request: SyncRequest): SyncAnswer {
 // ─── reading what is really stored on the laptop ───────────────────────────────────────────────
 
 export function readMeta(page: Page, dbName: string, key: string): Promise<unknown> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(dbName);
@@ -240,7 +256,7 @@ export function readMeta(page: Page, dbName: string, key: string): Promise<unkno
 }
 
 export function writeMeta(page: Page, dbName: string, key: string, value: unknown): Promise<void> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key, value }) =>
       new Promise<void>((resolve, reject) => {
         const open = indexedDB.open(dbName);
@@ -262,11 +278,11 @@ export const personDb = (userId: string) => `projexa-local:${userId}`;
 export const personMeta = (page: Page, userId: string, key: string) => readMeta(page, personDb(userId), key);
 
 /** Every database of this origin (names only). */
-export const databases = (page: Page) => page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name ?? "").sort());
+export const databases = (page: Page) => evalSettled(page, async () => (await indexedDB.databases()).map((d) => d.name ?? "").sort());
 
 /** Everything a person's local database holds, as one string (rows, outbox, drafts, meta), to look for another person's words in it. */
 export function dumpDb(page: Page, dbName: string): Promise<string> {
-  return page.evaluate(
+  return evalSettled(page, 
     (dbName) =>
       new Promise<string>((resolve) => {
         const open = indexedDB.open(dbName);
@@ -289,11 +305,11 @@ export function dumpDb(page: Page, dbName: string): Promise<string> {
   );
 }
 
-export const releaseCaches = (page: Page) => page.evaluate(async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).sort());
+export const releaseCaches = (page: Page) => evalSettled(page, async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).sort());
 
 /** The service worker's own pointer (px-sw-meta /__px/active-release): which release is active, for whom, in which mode. */
 export const swPointer = (page: Page) =>
-  page.evaluate(async () => {
+  evalSettled(page, async () => {
     const cache = await caches.open("px-sw-meta");
     const res = await cache.match("/__px/active-release");
     return res ? ((await res.json()) as { version: string | null; personId: string | null; localFirst: boolean }) : null;
@@ -325,7 +341,7 @@ export async function prepareLaptop(page: Page, context: BrowserContext, world: 
     .poll(() => personMeta(page, prepared.session.userId, `sync:done:${person.projectId}:boq_lines`), { timeout: 120_000, message: "the BOQ lines were never copied to the laptop" })
     .toBeTruthy();
   await page.reload();
-  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" }).toBe(true);
+  await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" }).toBe(true);
   return prepared;
 }
 

@@ -6,11 +6,12 @@
 import { expect, test, type BrowserContext, type ConsoleMessage, type Page } from "@playwright/test"
 import { signInLocally, type LocalSession } from "./boq-local"
 import { OVERVIEW_KINDS, P1, P2, stubAppApis, stubSyncService, type AppStub, type Net, type World } from "./lf-overview-stub"
+import { evalSettled } from "./lf-lifecycle-stub"
 
 export type Prepared = { session: LocalSession; app: AppStub; net: Net }
 
 function readMeta(page: Page, dbName: string, key: string): Promise<unknown> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(dbName)
@@ -56,7 +57,7 @@ export async function prepareLaptop(page: Page, context: BrowserContext, world: 
 
   await test.step("the page is controlled by the service worker (reload once, online)", async () => {
     await page.reload()
-    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" }).toBe(true)
+    await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" }).toBe(true)
   })
   return { session, app, net }
 }

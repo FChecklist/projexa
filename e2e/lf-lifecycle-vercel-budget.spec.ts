@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { prepareLaptop, noCrashText } from "./support/lf-overview-harness"
-import { P1, createWorld } from "./support/lf-overview-stub"
+import { P1, createWorld, stubAppApis, stubSyncService } from "./support/lf-overview-stub"
+import { signInLocally } from "./support/boq-local"
 import { apiRoutes, countByDest, leftTheLaptop, routeKey, trackTraffic, type Seen } from "./support/lf-vercel-budget"
 
 // AUDIT-100 A2 + A3 (server functions moved off Vercel; Vercel used as little as possible), MEASURED in a real Chromium on a production build.
@@ -17,6 +18,9 @@ import { apiRoutes, countByDest, leftTheLaptop, routeKey, trackTraffic, type See
 // MEASURED 2026-10-05 (rig, manager role, 2 projects, 25 module entries): first install = 5 /api calls (the legacy page's top bar x3, usage beacon x2);
 // a daily walk of every shell module (click + deep link) = 0 app pages, 0 static files and 0 /api calls except one dashboard snapshot per Dashboard
 // open and the data-free usage beacon; the rest goes to the Supabase Edge Function (about 3 requests per page load).
+// A3 step 1 (2026-10-05, VERCEL_ROUTE_PLAN.md section 6): the FIRST session after the install is handed over to the shell by itself: hand-over + 12 module
+// clicks = 0 app pages, 0 static files, 2 /api (Dashboard snapshot, beacon); before: no hand-over, 5 app pages with the person idle, 20 + 4 /api clicking.
+// A3 step 1b: a sign-out keeps the release; three sign-ins of one person = 1 bundle download (was 3), asserted in lf-lifecycle-signin-no-email.spec.ts.
 
 type Inventory = {
   routes: { route: string }[]
@@ -107,6 +111,53 @@ test("A2/A3: after the one-time install, a daily walk of every shell module (onl
     for (const key of Object.keys(apiRoutes(left))) expect(inInventory(key), `${key} is not a route of the inventory`).toBe(true)
   })
 
+  traffic.stop()
+})
+
+// AUDIT-100 A3, VERCEL_ROUTE_PLAN.md step 1. Before it the person stayed on the legacy server-rendered page after the install, and every click there was a
+// Next.js client navigation (RSC) the service worker never answers: MEASURED 2026-10-05, 20 app pages + 4 /api calls in that first session, and the
+// spec below failed at "handed over" (no shell within 120 s, the person still on the server page). Now the install hands the person over to the shell
+// by itself (one replace of the address, answered by the worker from the laptop), after the projects copy, and the first session stays off Vercel.
+test("A3 step 1: the FIRST session after the one-time install is handed over to the shell by itself; its module clicks leave the laptop 0 times for app pages", async ({ page, context }) => {
+  test.setTimeout(420_000)
+  const world = createWorld({ role: "manager" })
+  const traffic = trackTraffic(context)
+  const session = await signInLocally(context, "first-session-spec@example.invalid")
+  await stubSyncService(page, world, session, { mode: "up" })
+  await stubAppApis(page, world, session)
+
+  await page.goto("/scope") // the server-rendered page a person lands on after signing in
+  await expect(page.getByTestId("workspace-prepare"), "the prepare screen never appeared").toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId("workspace-prepare"), "the prepare screen never closed").toHaveCount(0, { timeout: 240_000 })
+  const firstSession = traffic.mark()
+
+  await test.step("handed over: the shell opens on the same address with NO reload or navigation by the person, served by the worker", async () => {
+    const handed = await page.getByTestId("local-shell").waitFor({ state: "visible", timeout: 120_000 }).then(() => true, () => false)
+    const seen = leftTheLaptop(firstSession())
+    console.log(`A3 first session until hand-over (handed=${handed}): ${JSON.stringify(countByDest(seen))} api=${JSON.stringify(apiRoutes(seen))} pages=${JSON.stringify(seen.filter((x) => x.dest === "vercel-page").map((x) => x.path))}`)
+    expect(handed, "the person was left on the server-rendered page after the install (no hand-over to the shell)").toBe(true)
+    await expect(page).toHaveURL(/\/scope(\?|$)/)
+    expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "no service worker controls the shell page").toBe(true)
+  })
+
+  await test.step("the first session's module clicks: no app page, no static file, /api only from the documented daily list", async () => {
+    const nav = page.getByRole("navigation", { name: "Modules" })
+    const entries = await nav.getByRole("link").evaluateAll((links) => links.map((a) => (a.textContent ?? "").trim()))
+    expect(entries.length, "the module list is empty").toBeGreaterThan(20)
+    for (const label of entries.slice(0, 12)) {
+      await nav.getByRole("link", { name: label, exact: true }).click()
+      await page.waitForTimeout(500)
+      await noCrashText(page)
+    }
+    const seen = firstSession()
+    const left = leftTheLaptop(seen)
+    const c = countByDest(left)
+    console.log(`A3 first session (hand-over + 12 module clicks): ${JSON.stringify(c)} api=${JSON.stringify(apiRoutes(left))}`)
+    expect(c["vercel-page"], "the first session loaded an app page from the server").toBe(0)
+    expect(c["vercel-static"], "the first session downloaded a static file the laptop holds").toBe(0)
+    expect(apiViolations(seen, [...inventory.daily_use_api_allowlist, ...inventory.install_phase_api_allowlist]), "an /api call outside the documented lists").toEqual([])
+    expect(c["vercel-api"], "the first session made more /api calls than the budget (3)").toBeLessThanOrEqual(3)
+  })
   traffic.stop()
 })
 

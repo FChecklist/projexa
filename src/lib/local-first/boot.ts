@@ -12,6 +12,7 @@
 // Nothing here shows anything. The only visible results are the calm connectivity marker and the one optional "Install" action.
 // Everything with a side effect is injected (BootWiring), so the order of events is tested with fakes.
 
+import { announceShellReady } from "./release/shell-handoff";
 import { browserIsOffline } from "@/lib/supabase/durable-auth";
 import { sharedConnectivity, withConnectivityReporting, type ConnectivityController } from "./connectivity";
 import { deviceMetaStore, openDeviceMeta } from "./device-meta";
@@ -87,7 +88,7 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
   // The release and the worker (offline repairs happen too: they need no network).
   const installed = (await wiring.deviceMeta.getMeta<InstalledRelease>(META_KEYS.release).catch(() => undefined)) ?? null;
   const releaseClient = wiring.releaseClient(installed?.version ?? null);
-  await runLocalFirstBoot({
+  const releaseReport = await runLocalFirstBoot({
     isDevelopment: wiring.isDevelopment,
     isOnline: wiring.isOnline,
     meta: wiring.deviceMeta,
@@ -101,12 +102,18 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
     gunzip: wiring.gunzip,
     now: wiring.now,
   }).catch(() => null);
+  // AUDIT-100 A3: the worker now serves the shell for this person (a release was installed, or its pointer was set again after a sign-in): a
+  // server-rendered page that is open hands the person over to it (LocalShellHandoff) -- at the END of the pass, never before the data step below.
+  const shellNowReady = Boolean(releaseReport && (releaseReport.pointerFixed || releaseReport.release?.status === "installed" || releaseReport.release?.status === "updated"));
   // lf-e12: every later sync call names the release that is installed NOW (the one just installed, or the one that was), so the
   // service's release floor (426) can apply to this laptop.
   const installedNow = (await wiring.deviceMeta.getMeta<InstalledRelease>(META_KEYS.release).catch(() => undefined)) ?? null;
   if (installedNow) wiring.rememberRelease?.(installedNow.version);
 
-  if (!online) return { personId };
+  if (!online) {
+    if (shellNowReady) announceShellReady();
+    return { personId };
+  }
 
   // The cached project names and the person's role/organisation, once a day.
   const refreshed = await refreshShellManifest({ client: wiring.syncClient(), meta: wiring.deviceMeta, userId: personId, now: wiring.now }).catch(() => null);
@@ -117,6 +124,7 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
   // R10: the person's data is back if IndexedDB lost it. COST (package FC, review cost:COST-02): that is a WHOLE replica sync, the most
   // expensive thing the client does, so it runs only for a person who has local-first mode on: with it off nothing reads the copy.
   if (wiring.localFirstOn()) await ensureWorkspaceData(wiring.workspace(personId)).catch(() => null);
+  if (shellNowReady) announceShellReady();
   return { personId };
 }
 
