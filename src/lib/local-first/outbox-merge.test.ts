@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { beforeOf, decide, effectFromParams, effectOf, fieldValue, isProtectedField, overlay, same, withoutFields } from "./outbox-merge";
+import { beforeOf, decide, effectFromParams, effectOf, fieldValue, isProtectedField, overlay, protectedParams, same, withoutFields } from "./outbox-merge";
 
 // R12: the field-level three-way merge, as pure functions (outbox.test / outbox-safety.test drive it through the engine).
 
@@ -66,5 +66,24 @@ describe("decide: the three-way rule", () => {
   test("a money or approval field is never merged on the laptop, even when only the person changed it", () => {
     expect(decide({ effect: { amount: 500, title: "Mine" }, before: { amount: 100, title: "Old" }, theirs: { amount: 100, title: "Old", x: 2 } }))
       .toEqual({ kind: "card", fields: ["amount", "title"] });
+  });
+
+  // AUDIT-100 B19, seen in a real browser (e2e/lf-documents-conflict.spec.ts case 3): the AI's update changed only `reason` on the row
+  // (`costImpact` never lands on `cost_impact`), so the effect had no money field and the conflict was "merged" and re-sent, money and all.
+  test("a money PARAMETER the effect does not show still keeps the conflict on the card (never merged and re-sent)", () => {
+    const params = { projectId: "p1", changeOrderId: "co-3", reason: "Mine", costImpact: 21000 };
+    const theirs = { reason: "Old", cost_impact: "20000.00" };
+    expect(decide({ effect: { reason: "Mine" }, before: { reason: "Old" }, theirs })).toEqual({ kind: "merged", data: { reason: "Mine", cost_impact: "20000.00" } }); // what it did before
+    expect(decide({ effect: { reason: "Mine" }, before: { reason: "Old" }, theirs, params, targetId: "co-3" })).toEqual({ kind: "card", fields: ["reason", "costImpact"] });
+    // the same figure on the server ("21000.00" for 21000) is not a disagreement
+    expect(decide({ effect: { reason: "Mine" }, before: { reason: "Old" }, theirs: { reason: "Mine", cost_impact: "21000.00" }, params, targetId: "co-3" })).toEqual({ kind: "already_in" });
+    // an edit with no money parameter merges exactly as before
+    expect(decide({ effect: { reason: "Mine" }, before: { reason: "Old" }, theirs, params: { projectId: "p1", changeOrderId: "co-3", reason: "Mine" }, targetId: "co-3" }))
+      .toEqual({ kind: "merged", data: { reason: "Mine", cost_impact: "20000.00" } });
+  });
+
+  test("protectedParams: money/approval parameters only, never ids, the project, the target, or a field the effect already shows", () => {
+    expect(protectedParams({ projectId: "p1", changeOrderId: "co-3", invoiceItemId: "i-1", costImpact: 5, title: "T", amount: 7 }, { amount: 7 }, "co-3")).toEqual({ costImpact: 5 });
+    expect(protectedParams(undefined, {}, null)).toEqual({});
   });
 });
