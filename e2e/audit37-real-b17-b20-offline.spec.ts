@@ -13,14 +13,12 @@ test.setTimeout(1_200_000);
 
 const noop = () => undefined;
 
-// KNOWN PRODUCT GAP, measured 2026-10-05 in real Chromium (AUDIT-100 B20): the offline passcode sign-in exists (login/page.tsx + offline-pin.ts, unit-tested, and the
-// salted hash IS kept after the online sign-in, asserted below) but it cannot be REACHED offline. A deliberate sign-out deletes the release caches (sign-out-keeps-app.test.ts:
-// "so the next person on the laptop starts from nothing"), so offline /login answers the service worker's "PROJEXA is not saved on this laptop yet" page, with no form.
-// (And while a release IS installed, offline /login is answered with the /local shell, whose signed-out screen only says "sign in once while online".)
-// Making it reachable needs an owner/product decision: keep the (public) release caches across a sign-out, or render the passcode form from the shell's signed-out screen.
-// `test.fail` keeps this spec green while the gap exists and turns RED the moment someone fixes it, so the annotation is then removed.
+// AUDIT-100 B20, FIXED 2026-10-05 (PROJEXA A3 step 1b): this was a test.fail -- a deliberate sign-out deleted the release caches, so offline /login answered
+// the worker's "PROJEXA is not saved on this laptop yet" page, with no form. Now the default sign-out KEEPS the (public) release, marked signed out:
+// online nothing changes (the server's login page), and with no network the worker opens the shell from it, whose signed-out screen is the offline
+// passcode form (OfflinePasscodeSignIn.tsx, the same offline-pin.ts check as login/page.tsx). The same journey runs on the fast rig on every change:
+// e2e/lf-lifecycle-offline-passcode.spec.ts. This real-backend copy runs by hand (playwright.audit37-real.config.ts).
 test("B20: sign out, cut the network, the wrong passcode is refused and the right one opens this laptop's own copy (offline passcode sign-in)", async ({ browser }) => {
-  test.fail(true, "B20: offline passcode sign-in page is unreachable after a sign-out (release caches are deleted) -- see the comment above this test");
   const who = USERS.hr;
   const context = await browser.newContext({ serviceWorkers: "allow", baseURL });
   const page = await context.newPage();

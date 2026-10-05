@@ -13,6 +13,7 @@
 // "Offline" means both the browser's own switch (context.setOffline) and this stub refusing every request, because a route that
 // fulfils a request answers even while the browser believes it is offline. "Down" refuses the sync service and /api with the
 // browser online (our server down). Every name, id and figure below is made up.
+import { evalSettled } from "./eval-settled";
 import type { Page, Route } from "@playwright/test"
 import { APP_ORIGIN, type LocalSession } from "./boq-local"
 
@@ -322,7 +323,7 @@ export async function stubAppApis(page: Page, who: LocalSession, net: Net, role:
 
 /** The outbox ops stored in the person's own database (store "outbox"), straight from IndexedDB. */
 export function readOutbox(page: Page, userId: string): Promise<Array<{ opId: string; functionId: string; params: Record<string, unknown>; status: string }>> {
-  return page.evaluate(
+  return evalSettled(page, 
     (userId) =>
       new Promise<Array<{ opId: string; functionId: string; params: Record<string, unknown>; status: string }>>((resolve) => {
         const open = indexedDB.open(`projexa-local:${userId}`)
@@ -341,7 +342,7 @@ export function readOutbox(page: Page, userId: string): Promise<Array<{ opId: st
 }
 
 export function readPersonMeta(page: Page, userId: string, key: string): Promise<unknown> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ userId, key }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(`projexa-local:${userId}`)

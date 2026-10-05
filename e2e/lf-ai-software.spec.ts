@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { isDeniedName } from "../src/lib/local-first/ai/immutability";
 import { STUB_PORT, type LocalSession } from "./support/boq-local";
-import { ai, aiValue, deviceMeta, personMeta, prepareLaptop, waitForAi, waitForAiIdentity } from "./support/lf-ai-laptop";
+import { ai, aiValue, deviceMeta, personMeta, prepareLaptop, stayOnServerPage, waitForAi, waitForAiIdentity } from "./support/lf-ai-laptop";
 import { ORG_B, P1, PEOPLE, Q1, stubSync, type Person } from "./support/lf-ai-stub";
 
 // LOCAL-FIRST browser AI (package lf-e11): R5 -- an AI can NEVER change the software -- tried the way an attacking script in the page
@@ -128,7 +128,11 @@ test("R5 integrity: an altered or missing installed file switches the AI OFF and
       const cache = await caches.open(`px-release-${release.version}`);
       const original = await (await cache.match(url))!.arrayBuffer();
       await cache.put(url, new Response("/* changed by somebody */ window.evil = 1;", { headers: { "content-type": "application/javascript" } }));
-      return { url, cacheName: `px-release-${release.version}`, original: btoa(String.fromCharCode(...new Uint8Array(original))) };
+      // in chunks: a spread of a large file's bytes overflows the call stack
+      const bytes = new Uint8Array(original);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return { url, cacheName: `px-release-${release.version}`, original: btoa(bin) };
     });
   });
 
@@ -210,6 +214,7 @@ test("isolation on one laptop: after a sign-out and ANOTHER person's sign-in, th
     // the second person's own workspace is prepared (lf-e11 fix: the "skipped in this tab" marker is per person)
     await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
     await expect.poll(() => personMeta(page, made.userId, `sync:done:${Q1.id}:tasks`), { timeout: 120_000, message: "the second person's tasks never reached the laptop" }).toBeTruthy();
+    await stayOnServerPage(page, "/dashboard");
     return made;
   });
 

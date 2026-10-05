@@ -22,13 +22,12 @@ import { countByDest, leftTheLaptop, trackTraffic } from "./support/lf-vercel-bu
 //   passcode, press Sign in, open PROJEXA again, click Scope, open the BOQ). First session on the legacy pages before that reload: 4 /api calls and
 //   20 app pages from Vercel.
 //
-// FINDING recorded by this spec (not a failure): until the person reloads or opens PROJEXA again, the first session stays on the legacy server-rendered
-// pages (/dashboard), whose links fetch pages and /api from the server (measured below as "first-session Vercel requests"). The shell is served from
-// the laptop from the next full page load on. See ai-os/audit37/VERCEL_ROUTE_PLAN.md step 1.
+// FIXED (AUDIT-100 A3, VERCEL_ROUTE_PLAN.md step 1): the first session used to stay on the legacy server-rendered pages (/dashboard) until the person
+// reloaded; now the page hands over to the shell on the laptop by itself once the install and the first copy are done (no action of the person).
 
 const PASSCODE = "493817" // six digits, a made-up value for the stand-in; the stand-in accepts any
 const SIGN_IN_TO_READY_BUDGET_MS = 90_000
-const ACTIONS_TO_FIRST_USEFUL_SCREEN_BUDGET = 8
+const ACTIONS_TO_FIRST_USEFUL_SCREEN_BUDGET = 6 // measured 6 since A3 step 1 (was 7: the person had to open PROJEXA again)
 const SETUP_ACTIONS_AFTER_SIGN_IN_BUDGET = 2 // target of the audit: under 2 clicks of set-up; measured 0
 
 type Step = { name: string; user: boolean; startedMs: number; ms: number }
@@ -94,11 +93,12 @@ test("A19/A23: a new person signs in with the 6-digit passcode, PROJEXA installs
   console.log(`A23 first-session Vercel requests (sign-in page to ready): ${JSON.stringify(countByDest(firstSession))}`)
 
   const afterReady = traffic.mark()
-  await act("open PROJEXA again (a full page load): it comes from the laptop", async () => {
-    await page.reload()
-    await expect(page.getByTestId("local-shell")).toBeVisible({ timeout: 60_000 })
+  // AUDIT-100 A3 (step 1): the person no longer has to open PROJEXA again -- right after the install the page hands over to the shell on the laptop
+  // by itself (it used to be a user action, "open PROJEXA again (a full page load)": 7 actions to the BOQ, now 6).
+  await act("wait: the page hands over to PROJEXA on the laptop by itself", async () => {
+    await expect(page.getByTestId("local-shell")).toBeVisible({ timeout: 120_000 })
     expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true)
-  })
+  }, false)
   const nav = page.getByRole("navigation", { name: "Modules" })
   await act("click Scope (BOQ)", () => nav.getByRole("link", { name: "Scope (BOQ)", exact: true }).click())
   await expect(page.getByTestId("scope-list")).toHaveAttribute("data-state", "local", { timeout: 30_000 })

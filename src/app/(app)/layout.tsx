@@ -7,6 +7,7 @@ import { WorkspacePrepare } from "@/components/WorkspacePrepare";
 import { OutboxAttention } from "@/components/OutboxAttention";
 import { AiAttach } from "@/lib/local-first/ai/AiAttach";
 import { LocalFirstDefault } from "@/components/local-first/LocalFirstDefault";
+import { LocalShellHandoff } from "@/components/local-first/LocalShellHandoff";
 
 // R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
 // cc_spec point 187). It is the ONE place that governs all 53 app routes, so
@@ -58,6 +59,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <ShellScreenProvider>
         <M24Shell>{children}</M24Shell>
         <WorkspacePrepare />
+        {/* LOCAL-FIRST (AUDIT-100 A3): once the shell is on this laptop, this server-rendered page hands the person over to it (renders nothing). */}
+        <LocalShellHandoff />
         {/* LOCAL-FIRST: renders nothing unless the flag is on and a change made on this laptop needs the person (a conflict, a refusal, ...). */}
         <OutboxAttention />
         {/* LOCAL-FIRST browser AI (R11): window.projexa.ai, WebMCP tools, the in-page manual and the

@@ -12,6 +12,7 @@ import { accessToken, getReleaseVersion } from "@/lib/local-first/shared-client"
 import { createReleaseClient } from "@/lib/local-first/release/release-client";
 import { createPrepareReporter, type PrepareReport } from "@/lib/local-first/prepare-report";
 import { MANIFEST_KEY, type Replica } from "@/lib/local-first/replica";
+import { announceShellReady, markCopying } from "@/lib/local-first/release/shell-handoff";
 import { SYNC_BUSY_MESSAGE } from "@/lib/local-first/sync-busy";
 import {
   PREPARE_BUDGET_MS,
@@ -139,7 +140,9 @@ export function buildSteps(
         await installApp(userId, onDetail, localFirstOn);
         if (signal.aborted) return;
         // The HTTP-cache warm-up is kept as a cheap extra for the first visit of a screen that has no /local shell (it fetches nothing the install did not verify).
-        for (const href of WARM_ROUTES) prefetch(href);
+        // AUDIT-100 A3: in local-first mode the installed shell answers these screens from the laptop, so warming them on the server would only be ten
+        // Vercel page renders (RSC prefetches) nobody uses; it is kept for the flag-off path only.
+        if (!localFirstOn()) for (const href of WARM_ROUTES) prefetch(href);
       },
     },
     {
@@ -274,7 +277,14 @@ export function WorkspacePrepare() {
         let has = false;
         try { has = (await db.getMeta(MANIFEST_KEY)) !== undefined; } finally { db.close(); }
         if (has || quietStopped.current) return;
-        const report = await getSharedReplica(uid).sync(new AbortController().signal, () => {});
+        const copied = markCopying();
+        let report: Awaited<ReturnType<Replica["sync"]>>;
+        try {
+          report = await getSharedReplica(uid).sync(new AbortController().signal, () => {});
+        } finally {
+          copied();
+        }
+        if (report.status === "done") announceShellReady();
         if (report.status === "done" || quietStopped.current) return;
       } catch { /* never bother the person */ }
       if (quietStopped.current) return;
@@ -316,6 +326,7 @@ export function WorkspacePrepare() {
     } else {
       reporter.current.retry();
     }
+    const copying = markCopying();
     prepareWorkspace({
       steps: buildSteps(userId, (href) => router.prefetch(href)),
       budgetMs: PREPARE_BUDGET_MS,
@@ -324,6 +335,7 @@ export function WorkspacePrepare() {
         try { reporter.current?.progress(p); } catch { /* ignore */ }
       },
     }).then((result) => {
+      copying();
       setLastSyncedAt(getSharedReplica(userId).getStatus().report?.syncedAt ?? null);
       try {
         if (result.ready) localStorage.setItem(readyKey(userId), String(Date.now()));
@@ -331,6 +343,10 @@ export function WorkspacePrepare() {
       // The install itself did not finish (no worker, screens not downloaded): try again by itself, the screen stays.
       // Only the projects copy missing is NOT a reason to hold the person: it carries on quietly.
       const installed = !(result.failed ?? []).some((id) => id !== "projects") && !result.timedOut;
+      // AUDIT-100 A3 (VERCEL_ROUTE_PLAN.md step 1): the shell is on the laptop now; LocalShellHandoff moves this person off the server-rendered page
+      // (one replace, answered by the service worker) instead of leaving the rest of the first session on Vercel. Only once the projects are copied:
+      // when the copy did not finish, its quiet retry (quietCopy, with its growing wait) runs in THIS page and announces the shell when it succeeds.
+      if (result.ready) announceShellReady();
       if (!result.ready && installed) {
         try { localStorage.setItem(readyKey(userId), String(Date.now())); } catch { /* ignore */ }
         quietCopy(userId);

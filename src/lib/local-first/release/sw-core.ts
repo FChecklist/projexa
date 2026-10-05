@@ -26,9 +26,15 @@
 //   message     SKIP_WAITING, CLAIM, USE_RELEASE, SET_MODE, SET_PERSON, CLEAR_PERSON, STATUS (replied on the message port).
 //
 // PER-PERSON SAFETY. The worker remembers ONE record (cache `px-sw-meta`): which release is active, WHOSE it is (the signed-in
-// person's id) and whether local-first mode is on. Sign-out sends CLEAR_PERSON: the release caches and the record are deleted, so
-// the next person on the laptop starts from nothing. The release files themselves are public build output; no person's data is
-// ever put in any cache by this worker (/api/** is never cached).
+// person's id) and whether local-first mode is on. Sign-out sends CLEAR_PERSON. By default (AUDIT-100 A3, VERCEL_ROUTE_PLAN.md step 1b)
+// it carries keepRelease: the release cache is KEPT but the record is marked signed out. Online, a signed-out laptop then behaves as before
+// (no navigation is answered with the shell first: the server's pages, the login page, are what the person gets); its public static files
+// are still served from the laptop. OFFLINE (AUDIT-100 B20) the kept release opens the shell, whose signed-out screen is the offline
+// passcode sign-in (the salted hash kept at the last online sign-in, offline-pin.ts). When the SAME person signs in again,
+// USE_RELEASE / SET_PERSON make it active again and the 8.9 MB bundle is not downloaded again. ANOTHER person never gets it: their
+// SET_PERSON or USE_RELEASE deletes it and they install their own (and the explicit "Sign out and delete this laptop's copy" sends no
+// keepRelease: everything is deleted, as before). The release files themselves are public build output; no person's data is ever put
+// in any cache by this worker (/api/** is never cached).
 //
 // ROBUSTNESS. Anything unexpected inside the worker falls back to the plain network request: a bug here must never make PROJEXA
 // unusable for someone who is online.
@@ -90,7 +96,8 @@ export type SwCore = {
 };
 
 export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
-  type Pointer = { version: string; personId: string | null; localFirst: boolean; at: number };
+  // signedOut: the person signed out and kept the release (CLEAR_PERSON keepRelease); nothing is served from it until they are back.
+  type Pointer = { version: string; personId: string | null; localFirst: boolean; at: number; signedOut?: boolean };
   let pointerMemo: Pointer | null | undefined; // undefined = not read yet
 
   const releaseName = (version: string) => `${config.releaseCachePrefix}${version}`;
@@ -105,7 +112,7 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
       const cache = await scope.caches.open(config.metaCache);
       const hit = await cache.match(config.pointerUrl);
       const value = hit ? await hit.json() : null;
-      pointerMemo = value && typeof value.version === "string" ? { version: value.version, personId: typeof value.personId === "string" ? value.personId : null, localFirst: value.localFirst === true, at: Number(value.at) || 0 } : null;
+      pointerMemo = value && typeof value.version === "string" ? { version: value.version, personId: typeof value.personId === "string" ? value.personId : null, localFirst: value.localFirst === true, at: Number(value.at) || 0, signedOut: value.signedOut === true } : null;
     } catch {
       pointerMemo = null;
     }
@@ -159,6 +166,7 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
   }
 
   async function staticAsset(request: Request, cacheKey?: string): Promise<Response> {
+    // a kept (signed-out) release's files are public build output: served from the laptop too
     const pointer = await readPointer();
     const cache = await activeCache(pointer);
     if (cache) {
@@ -171,10 +179,12 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
   async function navigation(request: Request, path: string, wantsServerPage: boolean): Promise<Response> {
     const pointer = await readPointer();
     const app = isLocalPath(path) || !isPublicPage(path);
+    // a kept (signed-out) release still has its shell: used when there is no network (its signed-out screen is the offline passcode sign-in)
     const shell = await shellFor(pointer);
 
-    // Served first, so no request leaves the laptop -- unless the shell itself sent the person here for a screen it does not have.
-    if (app && shell && pointer && pointer.localFirst && !wantsServerPage) return shell;
+    // Served first, so no request leaves the laptop -- unless the shell itself sent the person here for a screen it does not have. Never for a
+    // signed-out laptop: online it gets the server's pages (the login page) exactly as before.
+    if (app && shell && pointer && !pointer.signedOut && pointer.localFirst && !wantsServerPage) return shell;
     if (isOffline()) return shell ?? offlinePage();
 
     let response: Response;
@@ -194,7 +204,7 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
   }
 
   async function handleMessage(event: SwEventLike): Promise<void> {
-    const data = (event.data ?? {}) as { type?: string; version?: unknown; personId?: unknown; localFirst?: unknown };
+    const data = (event.data ?? {}) as { type?: string; version?: unknown; personId?: unknown; localFirst?: unknown; keepRelease?: unknown };
     switch (data.type) {
       case "SKIP_WAITING": {
         if (scope.skipWaiting) await scope.skipWaiting();
@@ -218,11 +228,21 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
           return;
         }
         const before = await readPointer();
+        const person = typeof data.personId === "string" && data.personId ? data.personId : null;
+        // A release kept by a signed-out person is never handed to someone else: it is deleted, the new person installs their own.
+        if (before && before.signedOut && before.personId && person && person !== before.personId) {
+          await deleteReleaseCaches(null);
+          await writePointer(null);
+          await reply(event, { ok: false, type: data.type, error: "other_person" });
+          return;
+        }
         await writePointer({
           version: data.version,
-          personId: typeof data.personId === "string" ? data.personId : before ? before.personId : null,
+          personId: person ?? (before ? before.personId : null),
           localFirst: typeof data.localFirst === "boolean" ? data.localFirst : before ? before.localFirst : false,
           at: Date.now(),
+          // the person is named: they are signed in. Not named (a pass with nobody known): a kept, signed-out release stays signed out.
+          signedOut: person ? false : before ? before.signedOut === true : false,
         });
         await deleteReleaseCaches(releaseName(data.version));
         await reply(event, { ok: true, type: data.type, version: data.version });
@@ -251,12 +271,19 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
           await reply(event, { ok: true, type: data.type, cleared: true });
           return;
         }
-        await writePointer({ ...before, personId: data.personId, at: Date.now() });
+        await writePointer({ ...before, personId: data.personId, at: Date.now(), signedOut: false });
         await reply(event, { ok: true, type: data.type, cleared: false });
         return;
       }
       case "CLEAR_PERSON": {
         const before = await readPointer();
+        // keepRelease (the default sign-out): the SAME person's release stays on the laptop, no shell online until they sign in again; offline the shell's passcode sign-in (B20).
+        if (data.keepRelease === true && before && before.personId && typeof data.personId === "string" && before.personId === data.personId && (await scope.caches.has(releaseName(before.version)))) {
+          await deleteReleaseCaches(releaseName(before.version));
+          await writePointer({ ...before, signedOut: true, at: Date.now() });
+          await reply(event, { ok: true, type: data.type, cleared: true, keptRelease: before.version });
+          return;
+        }
         // With no pointer there may still be release caches (a pointer lost to eviction): sign-out clears them too.
         if (!before || !before.personId || typeof data.personId !== "string" || before.personId === data.personId) {
           await deleteReleaseCaches(null);
@@ -270,7 +297,13 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
       case "STATUS": {
         const pointer = await readPointer();
         const names = (await scope.caches.keys()).filter((n) => n.startsWith(config.releaseCachePrefix));
-        await reply(event, { ok: true, type: data.type, version: pointer ? pointer.version : null, personId: pointer ? pointer.personId : null, localFirst: pointer ? pointer.localFirst : false, caches: names });
+        // A kept, signed-out release is NOT active: version null (so every caller points the worker at it again for the person who is back),
+        // and keptVersion / signedOut say what is there.
+        const active = pointer && !pointer.signedOut ? pointer : null;
+        await reply(event, {
+          ok: true, type: data.type, version: active ? active.version : null, personId: pointer ? pointer.personId : null, localFirst: active ? active.localFirst : false,
+          signedOut: Boolean(pointer && pointer.signedOut), keptVersion: pointer && pointer.signedOut ? pointer.version : null, caches: names,
+        });
         return;
       }
       default:

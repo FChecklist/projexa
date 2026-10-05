@@ -3381,7 +3381,7 @@
       "backend": "veridian-proxy",
       "shell_reachable": true,
       "served_by": "edge:projexa-api",
-      "why": "pending-edits.ts sends a BOQ line edit here only while online and the server is reachable; offline it waits in the outbox and is pushed through projexa-sync /push.",
+      "why": "pending-edits.ts (the shell's interim BOQ writer) sends a BOQ line category edit here, online at once and, when it was made offline, later through the SAME request (it waits in device meta `shell:edits`, not in the outbox). The sync service /push has no op for it at the same rights (update_boq_line takes only description/unit; update_line_item_budget is manager-only and money-sensitive), so it is not moved to /push.",
       "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {

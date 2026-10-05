@@ -2,7 +2,7 @@ import { test, expect, chromium, type BrowserContext, type Page } from "@playwri
 import { APP_ORIGIN, stubAppApis as stubLifecycleApis } from "./support/boq-local"
 import { P1, P2, createWorld } from "./support/lf-overview-stub"
 import { deviceMeta, personMeta, prepareLaptop as prepareOverviewLaptop, switcherNames } from "./support/lf-overview-harness"
-import { fixtureOf, makePerson, newWorld, signIn, stubSyncService as stubLifecycleSync } from "./support/lf-lifecycle-stub"
+import { evalSettled, fixtureOf, makePerson, newWorld, signIn, stubSyncService as stubLifecycleSync } from "./support/lf-lifecycle-stub"
 
 // AUDIT-100 B2, B3, B9, B10, B11: the laptop shell's project dropdown (and a project made from it), its account menu, and the one-time
 // install screen, in real Chromium.
@@ -39,7 +39,7 @@ const COUNT_PREPARE_SCREEN = (key: string) => {
   new MutationObserver(look).observe(document, { childList: true, subtree: true })
 }
 
-const timesDrawn = (page: Page) => page.evaluate((k) => Number(localStorage.getItem(k) ?? 0), PREPARE_COUNTER)
+const timesDrawn = (page: Page) => evalSettled(page, (k: string) => Number(localStorage.getItem(k) ?? 0), PREPARE_COUNTER)
 
 async function openShell(page: Page, path = `/local?projectId=${P1.id}`) {
   await page.goto(path)
@@ -247,8 +247,8 @@ test("B2 + B3: the install screen shows once, on the first install; three refres
     await expect(page.getByTestId("workspace-prepare")).toBeVisible({ timeout: 60_000 })
     await expect(page.getByTestId("workspace-prepare")).toHaveCount(0, { timeout: 240_000 })
     expect(await timesDrawn(page)).toBe(1)
-    await expect.poll(() => page.evaluate((id) => localStorage.getItem(`px-workspace-ready-v1:${id}`), session.userId)).not.toBeNull()
-    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { timeout: 60_000 }).toBe(true)
+    await expect.poll(() => evalSettled(page, (id: string) => localStorage.getItem(`px-workspace-ready-v1:${id}`), session.userId)).not.toBeNull()
+    await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { timeout: 60_000 }).toBe(true)
   })
 
   await test.step("three refreshes: never again", async () => {

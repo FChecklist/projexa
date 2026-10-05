@@ -1,5 +1,6 @@
 // lf-e10b. Getting a laptop into the "prepared" state the way a person does (one online visit; the first-run screen copies the
 // workspace), then switching the network, for the documents and design/change specs. Same steps as e2e/offline-local-first.spec.ts.
+import { evalSettled } from "./eval-settled";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test"
 import { signInLocally, type LocalSession } from "./boq-local"
 import { KIND_ROWS, PROJECT_ID, PROJECT_NAME, readPersonMeta, stubAppApis, stubSyncService, type AppApiStub, type Net, type SyncStub } from "./lf-documents-stub"
@@ -60,7 +61,7 @@ export async function prepareLaptop(page: Page, context: BrowserContext, role: s
         .toBeTruthy()
     }
     await expect
-      .poll(() => page.evaluate((k) => new Promise((resolve) => {
+      .poll(() => evalSettled(page, (k) => new Promise((resolve) => {
         const open = indexedDB.open("projexa-local")
         open.onerror = () => resolve(undefined)
         open.onsuccess = () => {
@@ -76,7 +77,7 @@ export async function prepareLaptop(page: Page, context: BrowserContext, role: s
 
   await test.step("the page is controlled by the service worker (reload once, online)", async () => {
     await page.reload()
-    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" }).toBe(true)
+    await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" }).toBe(true)
   })
 
   return { session, sync, app, net, console: consoleLog }

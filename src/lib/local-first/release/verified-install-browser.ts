@@ -11,7 +11,7 @@ import { flushPendingInstalls, getDeviceId, installRelease, type CacheStorageLik
 import { withInstallLock } from "./install-lock";
 import { createReleaseClient } from "./release-client";
 import { rememberRunningRelease } from "./running-release";
-import { createSwClient, ensureServiceWorker } from "./sw-client";
+import { createSwClient, dropReleaseKeptForAnother, ensureServiceWorker } from "./sw-client";
 import { verifiedInstall, type VerifiedInstallDeps, type VerifiedInstallReport } from "./verified-install";
 
 /**
@@ -64,6 +64,8 @@ export function browserVerifiedInstallDeps(personId: string | null, localFirstOn
     install: () =>
       withInstallLock(async () => {
         const client = registry();
+        // A release another person kept on this laptop at their sign-out is not this person's: it is dropped and this person installs their own.
+        await dropReleaseKeptForAnother(sw, personId).catch(() => false);
         const result = await installRelease({
           caches: caches!,
           meta,

@@ -5,6 +5,7 @@
 //   * the Edge gateway and every /api call of the page answered by this file through page.route, from synthetic fixture data;
 //   * "offline" meaning both the browser's own switch (context.setOffline) and this file refusing every stubbed request.
 // Nothing here reaches Vercel or any real network.
+import { evalSettled } from "./eval-settled";
 import type { BrowserContext, Page, Request as PwRequest, Route } from "@playwright/test"
 import type { ProjectFixture } from "./boq-fixture"
 
@@ -129,7 +130,7 @@ export async function stubAppApis(page: Page, fixture: ProjectFixture, who: { us
 
 /** Reads what the device copy holds, straight from IndexedDB, so the spec checks what was stored and not what the screen says. */
 export async function readDeviceCopyMeta(page: Page, userId: string, projectId: string): Promise<{ total: number; chunks: number } | null> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ userId, projectId }) =>
       new Promise<{ total: number; chunks: number } | null>((resolve, reject) => {
         const open = indexedDB.open(`projexa-boq-cache::${userId}`)

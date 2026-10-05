@@ -15,6 +15,7 @@
 //     has_more, head_seq, reset_required, epoch}) and moves GET /heads, so the OTHER laptop learns of it the way a real one does.
 // The rows are lf-documents-stub.ts's fixtures (the documents, minutes and change-order screens' own records), deep-copied per server.
 // Every name, id and figure is made up. Nothing here reaches Vercel, Supabase or any real network.
+import { evalSettled } from "./eval-settled";
 import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test"
 import { APP_ORIGIN, STUB_PORT, type LocalSession } from "./boq-local"
 import {
@@ -219,7 +220,7 @@ export async function prepareLaptop(name: string, context: BrowserContext, who: 
         .toBeTruthy()
     }
     await page.reload()
-    await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: `${name}: the service worker does not control the page` }).toBe(true)
+    await expect.poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: `${name}: the service worker does not control the page` }).toBe(true)
   })
   return { name, page, context, net, app, problems }
 }
@@ -249,7 +250,7 @@ export async function retype(page: Page, testId: string, text: string) {
 /** The laptop's own stored copy of one record (IndexedDB projexa-local:<user>, store `records`), straight from the database. */
 export type StoredRow = { data: Record<string, unknown>; serverVersion?: number; dirty?: string | null; serverCopy?: { data: Record<string, unknown>; version: number | null } }
 export function readLocalRow(page: Page, userId: string, kind: string, id: string): Promise<StoredRow | null> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key }) =>
       new Promise<StoredRow | null>((resolve) => {
         const open = indexedDB.open(dbName)
