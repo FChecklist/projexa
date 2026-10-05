@@ -13,8 +13,9 @@ import { AI_WORK_LINK_ROLE_NOTE, canMakeAiWorkLink } from "@/lib/ai-work-link-ac
 import { AwlError, getAwlClient, type AwlClient } from "@/lib/ai-work-link-client";
 import { LOCAL_SHELL_AI_LINK_OFFLINE_NOTE } from "./LocalShellAiLink";
 
-export const AI_BAR_PROMPT_CAPTION = "Your AI Assistant - Copy & Paste in any AI";
-export const AI_BAR_CONNECT_CAPTION = "AI Connectors - Connect with AI";
+export const AI_BAR_PROMPT_CAPTION = "Paste it into any AI to work for you";
+export const AI_BAR_CONNECT_CAPTION = "Connect PROJEXA to your AI app";
+const CAP = "max-w-[11rem] text-center text-xs leading-snug text-px-muted";
 
 const BTN = "inline-flex items-center rounded-md border border-black/10 bg-white px-3 py-1 text-sm text-px-ink hover:bg-black/5 disabled:opacity-60";
 
@@ -26,9 +27,15 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
 
   if (!online) {
     return (
-      <div className="flex items-center gap-2" data-testid="local-shell-ai-bar" data-online="0">
-        <button type="button" disabled title={LOCAL_SHELL_AI_LINK_OFFLINE_NOTE} className={BTN} data-testid="local-shell-ai-link-offline-button">Copy AI prompt</button>
-        <button type="button" disabled title={LOCAL_SHELL_AI_LINK_OFFLINE_NOTE} className={BTN} data-testid="local-shell-connectors-offline">Connectors</button>
+      <div className="flex items-start gap-4" data-testid="local-shell-ai-bar" data-online="0">
+        <div className="flex flex-col items-center gap-1">
+          <button type="button" disabled title={LOCAL_SHELL_AI_LINK_OFFLINE_NOTE} className={BTN} data-testid="local-shell-ai-link-offline-button">Copy AI prompt</button>
+          <span className={CAP}>{AI_BAR_PROMPT_CAPTION}</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <button type="button" disabled title={LOCAL_SHELL_AI_LINK_OFFLINE_NOTE} className={BTN} data-testid="local-shell-connectors-offline">Connectors</button>
+          <span className={CAP}>{AI_BAR_CONNECT_CAPTION}</span>
+        </div>
         <span className="sr-only" data-testid="local-shell-ai-link-offline-note">{LOCAL_SHELL_AI_LINK_OFFLINE_NOTE}</span>
       </div>
     );
@@ -57,10 +64,16 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
   }
 
   return (
-    <div className="relative flex items-center gap-2" data-testid="local-shell-ai-bar" data-online="1">
-      <AiWorkLinkCompact role={role} project={null} client={client} scope="user" compact variant="default" triggerLabel="Copy AI prompt" />
-      {project ? <AiWorkLinkCardButton role={role} project={project} client={client} fetchText={fetchText} compact /> : null}
-      <button type="button" className={BTN} aria-expanded={open} onClick={() => void toggle()} data-testid="local-shell-connectors">Connectors</button>
+    <div className="relative flex items-start gap-4" data-testid="local-shell-ai-bar" data-online="1">
+      <div className="flex flex-col items-center gap-1">
+        <AiWorkLinkCompact role={role} project={null} client={client} scope="user" compact variant="default" triggerLabel="Copy AI prompt" />
+        <span className={CAP} data-testid="local-shell-ai-caption">{AI_BAR_PROMPT_CAPTION}</span>
+        {project ? <AiWorkLinkCardButton role={role} project={project} client={client} fetchText={fetchText} compact /> : null}
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <button type="button" className={BTN} aria-expanded={open} onClick={() => void toggle()} data-testid="local-shell-connectors">Connectors</button>
+        <span className={CAP} data-testid="local-shell-connect-caption">{AI_BAR_CONNECT_CAPTION}</span>
+      </div>
       {open ? (
         <div className="absolute right-0 top-full z-20 mt-2 w-[26rem] max-w-[90vw] rounded-md border border-black/10 bg-white p-3 text-sm text-px-ink shadow-lg" data-testid="local-shell-connectors-panel">
           <p className="font-medium">Connect PROJEXA to your AI</p>

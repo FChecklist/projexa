@@ -16,7 +16,7 @@ import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker"
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
-import { LocalShellAiBar, AI_BAR_CONNECT_CAPTION, AI_BAR_PROMPT_CAPTION } from "./LocalShellAiBar";
+import { LocalShellAiBar } from "./LocalShellAiBar";
 import { LocalShellAccount } from "./LocalShellAccount";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
@@ -346,20 +346,11 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
               ) : null}
             </label>
           ) : null}
-          <div className="ml-auto flex items-center gap-3 text-xs text-px-muted">
+          <div className="ml-auto flex items-start gap-4 text-xs text-px-muted">
             {data && shell ? <LocalShellAiBar role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
             <ConnectivityMarker />
+            {data ? <LocalShellAccount data={data} /> : null}
           </div>
-        </div>
-        {/* Row 2: who is signed in, and what the two AI buttons above are for. */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          {data ? <LocalShellAccount data={data} /> : null}
-          {data && shell ? (
-            <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 text-sm font-medium text-px-ink">
-              <span data-testid="local-shell-ai-caption">{AI_BAR_PROMPT_CAPTION}</span>
-              <span data-testid="local-shell-connect-caption">{AI_BAR_CONNECT_CAPTION}</span>
-            </div>
-          ) : null}
         </div>
         {/* Row 2: the modules; scrolls sideways on a narrow screen instead of pushing the account control down. */}
         <nav aria-label="Modules" className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 text-sm">
