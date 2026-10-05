@@ -22,6 +22,8 @@
 import { formatDateTime } from "@/lib/format-date";
 import type { MetaStore } from "../release/installer";
 import { personMetaStore } from "../device-meta";
+// AUDIT-100 A2: the one switch between the Vercel /api routes and the projexa-api Edge Function (same contract).
+import { viaPxApi } from "@/lib/px-api";
 
 export const SNAPSHOT_PREFIX = "snapshot:";
 export const SNAPSHOT_INDEX_KEY = "snapshot:index";
@@ -226,7 +228,7 @@ export async function refreshSnapshot<T>(
   validate: (body: unknown) => body is T,
   options: { fetchImpl?: typeof fetch; signal?: AbortSignal } = {}
 ): Promise<RefreshOutcome<T>> {
-  const doFetch = options.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+  const doFetch = options.fetchImpl ?? viaPxApi;
   let res: Response;
   try {
     res = await doFetch(url, { credentials: "same-origin", signal: options.signal, headers: { Accept: "application/json" } });

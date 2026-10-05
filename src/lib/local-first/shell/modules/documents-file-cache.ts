@@ -18,6 +18,9 @@
 // organisation or project never matches (organisation and project are stored with the file and checked on read). External links (a 3D
 // walkthrough URL) are never downloaded: they are somewhere else by definition. The bytes are stored as an ArrayBuffer plus its type.
 
+// AUDIT-100 A2: the one switch between the Vercel /api routes and the projexa-api Edge Function (same contract).
+import { viaPxApi } from "@/lib/px-api";
+
 export const FILES_STORE = "files";
 export const FILE_DB_VERSION = 1;
 /** Pinned files: the most one person may keep on purpose. */
@@ -227,7 +230,7 @@ export type FetchedFile = { kind: "file"; bytes: ArrayBuffer; type: string } | {
  * the bytes. Never called offline; never throws: a failure is a plain message.
  */
 export async function fetchDocumentFile(source: FileSource, deps: { fetchImpl?: typeof fetch } = {}): Promise<FetchedFile> {
-  const doFetch = deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+  const doFetch = deps.fetchImpl ?? viaPxApi;
   try {
     const res = await doFetch(signingRoute(source), { headers: { accept: "application/json" } });
     if (res.status === 401 || res.status === 403 || res.status === 404) return { kind: "none", message: "The server did not give this file to you. It may have been removed, or your access changed." };

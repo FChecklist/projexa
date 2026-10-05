@@ -1,0 +1,135 @@
+import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { checkApiWriteAccess, API_WRITE_POLICY, resolveWriteTier } from "./authz/api-write-policy";
+import { ALL_ORG_ROLES } from "./authz/roles";
+import { GENERATED_PATH, INVENTORY_PATH, lf, render, ROUTES_PATH, validateRoutes } from "../../scripts/projexa-api-edge.mjs";
+import * as generated from "../../ai-os/audit37/projexa-api/policy.generated";
+import { REQUESTS } from "./projexa-api-parity-cases";
+import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ROUTES } from "./px-api";
+
+// AUDIT-100 A2: the Supabase Edge Function `projexa-api` (compliance-tracker supabase/functions/projexa-api) enforces THIS repo's role policy
+// and answers only THIS repo's listed routes. Its table is generated here (scripts/projexa-api-edge.mjs) and copied byte for byte; these tests
+// keep the generated file, the port of the decision functions, the route list, the parity contract's coverage and the browser switch equal.
+
+type RoutesFile = { routes: { route: string; methods: Record<string, unknown> }[] };
+const routesFile = (): RoutesFile => JSON.parse(readFileSync(ROUTES_PATH as string, "utf8"));
+const inventory = () => JSON.parse(readFileSync(INVENTORY_PATH as string, "utf8"));
+
+describe("the generated edge policy (AUDIT-100 A2)", () => {
+  test("ai-os/audit37/projexa-api/policy.generated.ts is exactly what the sources give (regenerate: bun scripts/projexa-api-edge.mjs --write --ct <ct>)", () => {
+    expect(lf(readFileSync(GENERATED_PATH as string, "utf8"))).toBe(render());
+  });
+
+  test("its SOURCE_SHA256 is the hash of its data (the same check compliance-tracker runs on its copy)", () => {
+    expect(createHash("sha256").update(JSON.stringify(generated.sourceData())).digest("hex")).toBe(generated.SOURCE_SHA256);
+  });
+
+  test("the ported gate decides EXACTLY as src/lib/authz/api-write-policy.ts for every pattern, every method and every role", () => {
+    const concrete = Object.keys(API_WRITE_POLICY).map((pattern) => "/api" + pattern.replace(/\[[^\]]+\]/g, "x1"));
+    // the tier of every pattern, of a path under each (the nearest-ancestor fallback) and of unknown paths
+    const all = ["/api", "/api/unknown", "/api/unknown/deeper/still", ...concrete, ...concrete.map((p) => p + "/extra"), ...concrete.map((p) => p + "/extra/more")];
+    for (const path of all) expect(generated.resolveWriteTier(path), path).toBe(resolveWriteTier(path));
+    // and the whole decision, every method x every role (+ none, + an unknown role), on every pattern
+    let compared = 0;
+    for (const path of concrete) {
+      for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "patch"]) {
+        for (const role of [...ALL_ORG_ROLES, null, "nonsense"]) {
+          const want = checkApiWriteAccess(method, path, role).allowed;
+          const got = generated.checkApiWriteAccess(method, path, role).allowed;
+          if (want !== got) throw new Error(`${method} ${path} as ${role}: original ${want}, edge ${got}`);
+          compared++;
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(5_000);
+  }, 120_000);
+
+  test("CAN FAIL: a policy that lets client_viewer write a BOQ line is told apart from the real one", () => {
+    const loose = generated.API_WRITE_POLICY.map(([p, t]) => [p, p === "/scope/line-items/[id]" ? "ANY_ROLE" : t] as const);
+    const real = generated.API_WRITE_POLICY.find(([p]) => p === "/scope/line-items/[id]")![1];
+    expect(real).toBe("PM_OR_ABOVE");
+    expect(loose.find(([p]) => p === "/scope/line-items/[id]")![1]).not.toBe(real);
+    expect(generated.checkApiWriteAccess("PATCH", "/api/scope/line-items/abc", "client_viewer").allowed).toBe(false);
+  });
+});
+
+describe("the route list (deny by default: only these are answered by the edge)", () => {
+  test("every listed route is a real veridian-proxy route of the inventory, with its real methods and a full upstream description", () => {
+    expect(validateRoutes(routesFile(), inventory())).toEqual([]);
+  });
+
+  test("CAN FAIL: an own-logic route, a method the handler lacks, an unknown route and an unknown key are each refused", () => {
+    const inv = inventory();
+    const bad = {
+      routes: [
+        { route: "/api/local-first/client-error", methods: { POST: { upstream: "/x", fallback: "Failed x" } } },
+        { route: "/api/exceptions", methods: { DELETE: { upstream: "/x", fallback: "Failed x" } } },
+        { route: "/api/zz-nope", methods: { GET: { upstream: "/x", fallback: "Failed x" } } },
+        { route: "/api/permits/:id", methods: { GET: { upstream: "/permits/{id}", fallback: "Failed x", forward_everything: true } } },
+      ],
+    };
+    const problems = validateRoutes(bad, inv) as string[];
+    expect(problems.some((p) => p.includes("client-error") && p.includes("own-logic"))).toBe(true);
+    expect(problems.some((p) => p.includes("DELETE is not a method"))).toBe(true);
+    expect(problems.some((p) => p.includes("/api/zz-nope: not a route"))).toBe(true);
+    expect(problems.some((p) => p.includes("unknown key forward_everything"))).toBe(true);
+  });
+
+  test("the parity contract covers every route and method the edge answers (an uncovered route cannot be added)", () => {
+    for (const r of routesFile().routes) for (const m of Object.keys(r.methods)) expect(REQUESTS.some((q) => q.route === r.route && q.method === m), `${m} ${r.route}`).toBe(true);
+  });
+
+  test("the browser switch's route list is the edge's route list", () => {
+    const fromFile = Object.fromEntries(routesFile().routes.map((r) => [r.route, Object.keys(r.methods).sort()]));
+    const fromSwitch = Object.fromEntries(Object.entries(PX_EDGE_ROUTES).map(([k, v]) => [k, [...v].sort()]));
+    expect(fromSwitch).toEqual(fromFile);
+    expect(generated.EDGE_ROUTES.map((r) => r.route).sort()).toEqual(Object.keys(fromFile).sort());
+  });
+});
+
+describe("the browser switch (src/lib/px-api.ts)", () => {
+  const seen: { url: string; init: RequestInit }[] = [];
+  const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => (seen.push({ url: String(url), init: init ?? {} }), new Response("{}"))) as typeof fetch;
+  const getAccessToken = async () => "tok-123";
+
+  test("empty base (the default today, and the kill switch): every call stays same-origin with the cookie, untouched", async () => {
+    seen.length = 0;
+    await pxApiFetch("/api/exceptions?projectId=p", { credentials: "same-origin" }, { fetchImpl, getAccessToken, base: "" });
+    expect(seen[0]!.url).toBe("/api/exceptions?projectId=p");
+    expect(seen[0]!.init.credentials).toBe("same-origin");
+    expect(new Headers(seen[0]!.init.headers).get("authorization")).toBeNull();
+    expect(pxApiBase("")).toBe("");
+    expect(pxApiBase(undefined)).toBe(PX_API_DEFAULT_BASE);
+  });
+
+  test("base set: a listed route goes to the function with the bearer token and NO cookie; an unlisted route or method stays same-origin", async () => {
+    seen.length = 0;
+    await pxApiFetch("/api/scope/line-items/li%201", { method: "PATCH", body: "{}", headers: { "Content-Type": "application/json" }, credentials: "same-origin" }, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
+    expect(seen[0]!.url).toBe(`${PX_API_EDGE_URL}/api/scope/line-items/li%201`);
+    expect(seen[0]!.init.credentials).toBe("omit");
+    const h = new Headers(seen[0]!.init.headers);
+    expect(h.get("authorization")).toBe("Bearer tok-123");
+    expect(h.get("content-type")).toBe("application/json");
+    await pxApiFetch("/api/payroll/runs", { method: "POST" }, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
+    await pxApiFetch("/api/dashboard/project/p1", { method: "DELETE" }, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
+    await pxApiFetch("https://storage.example/signed?x=1", {}, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
+    expect(seen.slice(1).map((s) => s.url)).toEqual(["/api/payroll/runs", "/api/dashboard/project/p1", "https://storage.example/signed?x=1"]);
+  });
+
+  test("base set but no access token: same-origin (the cookie still works), never a call without credentials", async () => {
+    seen.length = 0;
+    await pxApiFetch("/api/exceptions?projectId=p", {}, { fetchImpl, getAccessToken: async () => null, base: PX_API_EDGE_URL });
+    expect(seen[0]!.url).toBe("/api/exceptions?projectId=p");
+  });
+
+  test("isEdgeRoute matches the shell's real URLs", () => {
+    expect(isEdgeRoute("GET", "/api/dashboard/project/abc")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/exceptions?projectId=x")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/reports/boq-analysis?projectId=x")).toBe(true);
+    expect(isEdgeRoute("get", "/api/drawings/d1/document-url")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/dashboard/project")).toBe(false);
+    expect(isEdgeRoute("POST", "/api/local-first/client-error")).toBe(false);
+  });
+});
