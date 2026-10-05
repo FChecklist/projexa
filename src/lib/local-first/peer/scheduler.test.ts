@@ -84,6 +84,51 @@ describe("auto-sync scheduler", () => {
     s.stop();
   });
 
+  // AUDIT-100 B28: "back online, sync resumes without a refresh". The network came back 10 s after the last run (a short blip): the
+  // `online` trigger used to fall inside the minimum gap and was DROPPED, so the laptop waited for the 5 -> 30 minute timer.
+  test("B28: the network coming back inside the minimum gap is owed, not dropped: one run as soon as the gap ends", async () => {
+    const { fc, env, calls, s } = setup({ changed: false });
+    s.start();
+    await flush();
+    expect(calls.at).toEqual([0]);
+    env.online = false;
+    await fc.advance(5_000);
+    env.online = true;
+    await fc.advance(5_000);
+    await Promise.all([s.trigger("online"), s.trigger("online"), s.trigger("online")]); // a few events, one owed run
+    await fc.advance(25_000);
+    expect(calls.at).toEqual([0, 30_000]);
+    // still never a storm: after the owed run, the long timer again (idle: 10 minutes after two quiet runs)
+    await fc.advance(60_000);
+    expect(calls.at).toEqual([0, 30_000]);
+    expect(fc.pending()).toBe(1);
+    s.stop();
+  });
+
+  test("B28: the network coming back WHILE a run is going (that run may have skipped the server) earns one more run after it", async () => {
+    const fc = fakeClock();
+    const at: number[] = [];
+    let online = false;
+    let release!: () => void;
+    const s = createSyncScheduler({
+      clock: fc.clock, locks: null, isVisible: () => true, isOnline: () => online, peersConnected: () => 1,
+      serverStep: async () => { at.push(fc.clock.now()); return { changed: false }; },
+      peerStep: async () => { await new Promise<void>((r) => (release = r)); return { changed: false }; },
+    });
+    s.start(); // offline: the server is skipped, the peer step is slow
+    await flush();
+    expect(at).toEqual([]);
+    online = true;
+    const folded = s.trigger("online"); // folded into the run in flight ...
+    release();
+    await folded;
+    await flush();
+    expect(at).toEqual([]); // ... which had already skipped the server
+    await fc.advance(30_000);
+    expect(at).toEqual([30_000]);
+    s.stop();
+  });
+
   test("a hidden tab syncs every 30 minutes, and once hidden for long with no peer it stops entirely", async () => {
     const { fc, env, calls, s } = setup({ changed: true });
     s.start();
