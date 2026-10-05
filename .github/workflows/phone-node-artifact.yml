@@ -1,0 +1,55 @@
+# Builds the PROJEXA standalone bundle for the phone nodes (docs/phone-node/).
+# No Vercel step of any kind. Runs on a `phone-v*` tag or manual dispatch.
+# The bundle contains NO secrets: NEXT_PUBLIC_* values are public by design and
+# are baked in at build time; server secrets live in ~/.projexa.env on each phone.
+name: Phone node artifact
+on:
+  push:
+    tags: ["phone-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. phone-v0.1.0)"
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: phone-node-artifact
+  cancel-in-progress: false
+jobs:
+  build:
+    name: Build standalone bundle
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      PHONE_NODE_BUILD: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+      # public values, set as repository *variables* (not secrets) by the owner
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      # pinned by commit SHA (comment = the tag it was resolved from)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - name: Tests
+        run: bun test --isolate
+      - name: Build
+        run: bunx next build
+      - name: Assemble bundle
+        run: |
+          set -eu
+          test -f .next/standalone/server.js
+          cp -r .next/static .next/standalone/.next/static
+          [ -d public ] && cp -r public .next/standalone/public
+          tar -czf "projexa-${TAG}.tar.gz" -C .next/standalone .
+          sha256sum "projexa-${TAG}.tar.gz" > "projexa-${TAG}.tar.gz.sha256"
+          ls -la projexa-*
+      - name: Publish GitHub Release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" "projexa-${TAG}.tar.gz" "projexa-${TAG}.tar.gz.sha256" \
+            --title "Phone node bundle $TAG" \
+            --notes "Standalone bundle for the phone nodes. Deploy with ops/phone-node/deploy.sh $TAG" \
+            --target "$GITHUB_SHA"
