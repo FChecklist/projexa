@@ -1,0 +1,393 @@
+{
+ "captured_at": "2026-10-05T17:44:36.523Z",
+ "releases": [
+  {
+   "release_version": "2026.10.02-865",
+   "manifest_sha256": "6c457bf5ffd98349a6b5b8b440d4d7c00b4a8a30a7fa2a8bc65c5be4051787e0",
+   "git_sha": "a6037913d1cce1927af13ccef1abf157d0bb19a9",
+   "built_at": "2026-10-02T15:52:21.559Z",
+   "registered_at": "2026-10-02T19:22:02.097Z",
+   "files_count": 357
+  },
+  {
+   "release_version": "2026.10.02-951",
+   "manifest_sha256": "c2a66ca5b01b7d51b631a44650a8d770076874347c53ff75eebdb7d9b6278b6e",
+   "git_sha": "691df73ba64793783c6ef9696e0aa8420995590b",
+   "built_at": "2026-10-02T20:41:47.946Z",
+   "registered_at": "2026-10-03T04:36:22.374Z",
+   "files_count": 354
+  },
+  {
+   "release_version": "2026.10.03-765",
+   "manifest_sha256": "4b9a7ffe4211160927158ec3f09c79b16757994a67e19d27a8dd3224a934c89f",
+   "git_sha": "03086d5228d23eb4699dd5858b7291f979bfa3f7",
+   "built_at": "2026-10-03T08:01:42.937Z",
+   "registered_at": "2026-10-03T08:02:01.088Z",
+   "files_count": 354
+  },
+  {
+   "release_version": "2026.10.03-921",
+   "manifest_sha256": "5f84c47af03a1f7bb515bb4ef75ca0cd72762c780d75b46b2a9b8165c5b02001",
+   "git_sha": "8909b92a8a2feb8294d9832e270594d5f6d160bd",
+   "built_at": "2026-10-03T08:13:52.384Z",
+   "registered_at": "2026-10-03T08:18:17.749Z",
+   "files_count": 357
+  },
+  {
+   "release_version": "2026.10.03-019",
+   "manifest_sha256": "917ef912eb965785ef825412ec993d3b4ea15dbd5462395e76f66553769ea286",
+   "git_sha": "f360c3f6e27b966ff881aa4099cb3be83a13e642",
+   "built_at": "2026-10-03T08:25:09.117Z",
+   "registered_at": "2026-10-03T08:25:56.273Z",
+   "files_count": 364
+  },
+  {
+   "release_version": "2026.10.03-446",
+   "manifest_sha256": "3cbf7e3f1e6c5c461a0a277c4f727ff7f6c20bc9ae45eba9127fee8b563b21a2",
+   "git_sha": "5ce316c3c4fb9cf14ac4595aa11900b6992e95e9",
+   "built_at": "2026-10-03T08:46:00.297Z",
+   "registered_at": "2026-10-03T08:46:41.223Z",
+   "files_count": 372
+  },
+  {
+   "release_version": "2026.10.03-724",
+   "manifest_sha256": "cafbe12c1a5aaa85e66c75fa3e3752caa1f1ba47ffc6174752d6adfb214ad38a",
+   "git_sha": "c5c7bc51e9bc926bb45760adda7c23bc4e9174ba",
+   "built_at": "2026-10-03T10:38:25.539Z",
+   "registered_at": "2026-10-03T14:11:07.251Z",
+   "files_count": 378
+  },
+  {
+   "release_version": "2026.10.03-443",
+   "manifest_sha256": "35d10399461d93fac6a3847f9d46857cff3e1efc5cca2e9e009786695daeb4d3",
+   "git_sha": "1b8c8388cf71910f5298dccd19ed2e1640d016ee",
+   "built_at": "2026-10-03T19:25:11.901Z",
+   "registered_at": "2026-10-04T05:36:34.050Z",
+   "files_count": 378
+  },
+  {
+   "release_version": "2026.10.04-130",
+   "manifest_sha256": "b48b176012e7cef864c17e2aa35339d993f43f82c93af8d00feac7f4ea992346",
+   "git_sha": "e5150a5d4bf0c8f7c771adcb1951a0415262cbd1",
+   "built_at": "2026-10-04T07:49:53.697Z",
+   "registered_at": "2026-10-04T07:51:18.390Z",
+   "files_count": 380
+  },
+  {
+   "release_version": "2026.10.04-027",
+   "manifest_sha256": "fd0333555d946d2d2f7e6100b204ce7f223124f81b083924a8787b2199777266",
+   "git_sha": "37199373e1fe86191ea2bf80e75b4d7bd2aecfa5",
+   "built_at": "2026-10-04T08:14:56.403Z",
+   "registered_at": "2026-10-04T08:15:40.820Z",
+   "files_count": 380
+  },
+  {
+   "release_version": "2026.10.04-053",
+   "manifest_sha256": "99fc2c04f06af9fe19237a91e67757783537f27d13ceb5daf8ddca3edc3564c1",
+   "git_sha": "97b80de77da43add17be529be435ec6e07e3c25f",
+   "built_at": "2026-10-04T09:25:46.697Z",
+   "registered_at": "2026-10-04T09:26:03.323Z",
+   "files_count": 381
+  },
+  {
+   "release_version": "2026.10.04-436",
+   "manifest_sha256": "c8eea59a5505c155e8ef6bbb29c861271194287994ed6cc5a8f7249f52a8aa15",
+   "git_sha": "071a1c7f76955e5c5cb51ebdb991a07d438001d4",
+   "built_at": "2026-10-04T12:52:04.646Z",
+   "registered_at": "2026-10-04T12:52:29.907Z",
+   "files_count": 383
+  },
+  {
+   "release_version": "2026.10.04-403",
+   "manifest_sha256": "ad9f5d048a8f09d893b4b5b250a88d193df3d531c4eefb9a138b10a62852f3a0",
+   "git_sha": "0190034e32f22a9e67dd0f39638f0f7371a4e0ac",
+   "built_at": "2026-10-04T13:05:32.951Z",
+   "registered_at": "2026-10-04T13:06:17.637Z",
+   "files_count": 383
+  },
+  {
+   "release_version": "2026.10.04-719",
+   "manifest_sha256": "2d49f957b0e5cb78e41130720abf82235f71d0715d70ebc68c1830e608db17c0",
+   "git_sha": "11b60f7060090ff5f14f9ac7df0d452496f26616",
+   "built_at": "2026-10-04T17:48:10.467Z",
+   "registered_at": "2026-10-04T18:00:06.664Z",
+   "files_count": 383
+  },
+  {
+   "release_version": "2026.10.05-179",
+   "manifest_sha256": "b1aaa5949df188dd8ee0addced56626fa6757f290994b006b0e855a8fa6658d4",
+   "git_sha": "f67a5b07ebd17a888253272390308416a9cf5ac6",
+   "built_at": "2026-10-05T03:30:20.007Z",
+   "registered_at": "2026-10-05T03:31:51.044Z",
+   "files_count": 383
+  },
+  {
+   "release_version": "2026.10.05-566",
+   "manifest_sha256": "a3f921219d817a2b5a1e4aa0e2a8eba8de1f68a5a4376e65be959db39b430cf9",
+   "git_sha": "e62ffeba3dfa742127793a2244a9c45f9c30838f",
+   "built_at": "2026-10-05T04:00:22.569Z",
+   "registered_at": "2026-10-05T04:00:57.709Z",
+   "files_count": 383
+  },
+  {
+   "release_version": "2026.10.05-547",
+   "manifest_sha256": "a982006aee2f06096d3f7a386650b33dcefe8f3b8dad75a240c637f961de603e",
+   "git_sha": "4089ab04b6694c2826f0d5c4f66f23467c314f12",
+   "built_at": "2026-10-05T04:49:35.213Z",
+   "registered_at": "2026-10-05T04:50:20.270Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-293",
+   "manifest_sha256": "b84748596cc6aab36d0739332a6f33f6cf969c1ebd7a70bb699a04947d854738",
+   "git_sha": "6e8ded7b154d1d934c9a7d91ec2bc3f410b61993",
+   "built_at": "2026-10-05T05:05:02.491Z",
+   "registered_at": "2026-10-05T05:23:05.675Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-833",
+   "manifest_sha256": "f7fd32140b46c7dc5e5eb85b84d477337fc0d82ef26d996a50c7ae26af8ac0aa",
+   "git_sha": "3fb009c5724325277597430fb12fe13fd0565a6d",
+   "built_at": "2026-10-05T06:06:01.200Z",
+   "registered_at": "2026-10-05T06:06:28.630Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-551",
+   "manifest_sha256": "9a6b07661345979ccecb8ea02c85ddd3f31abfd60634ad4661ea760b8262473a",
+   "git_sha": "d72c2fa5bcef180c12ad39bd75f841dc0328d890",
+   "built_at": "2026-10-05T07:15:23.321Z",
+   "registered_at": "2026-10-05T07:16:06.886Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-004",
+   "manifest_sha256": "0820b2a3bebb3438ba5b23e439e6861007b75574507bf2f76fa2f5133b01bbe1",
+   "git_sha": "bb83ec499c474bad7c17f875ee55f00fbb8819ac",
+   "built_at": "2026-10-05T10:54:05.662Z",
+   "registered_at": "2026-10-05T11:24:02.425Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-318",
+   "manifest_sha256": "c41a6ca5d74a3160a28b72180b2aa0a0bd18705c2496b88555067753c1ecd267",
+   "git_sha": "0a78ee37e2f306e7e2d4c943573d6f6928c0213f",
+   "built_at": "2026-10-05T13:19:44.004Z",
+   "registered_at": "2026-10-05T13:21:22.109Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-478",
+   "manifest_sha256": "26939f7774f7877dcd013605536f431017886a2e581ef1b2cbb0a9304bc12cc6",
+   "git_sha": "22bc7e5fdbbfe222d5a1707b7112b0e079a950a1",
+   "built_at": "2026-10-05T13:55:01.352Z",
+   "registered_at": "2026-10-05T13:59:07.369Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-891",
+   "manifest_sha256": "9a8119992a89fce9a7f1e50cba28843f3186736cbbadfc6e7d4477d1b118a12b",
+   "git_sha": "f2a0db1d5cfe310ef9d82133064ab2bd099acace",
+   "built_at": "2026-10-05T14:11:36.226Z",
+   "registered_at": "2026-10-05T14:23:02.110Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-990",
+   "manifest_sha256": "c3fc388e5094432962efc7798872f104054978f3466d75813167388207f687a3",
+   "git_sha": "9ae0660d32d2c7d354fb2ddb5e02df30cd500705",
+   "built_at": "2026-10-05T15:57:25.935Z",
+   "registered_at": "2026-10-05T16:08:37.928Z",
+   "files_count": 385
+  },
+  {
+   "release_version": "2026.10.05-305",
+   "manifest_sha256": "4088ae6bd1a376fc5204e5e1c8e69ec660f6f056192fddb1b3082e909797153e",
+   "git_sha": "b4d241b52e08f22800de34a856ce226137e2aef7",
+   "built_at": "2026-10-05T16:52:47.937Z",
+   "registered_at": "2026-10-05T16:53:27.717Z",
+   "files_count": 385
+  }
+ ],
+ "deployments": [
+  {
+   "sha": "b4d241b52e08f22800de34a856ce226137e2aef7",
+   "created_at": "2026-10-05T16:52:59Z"
+  },
+  {
+   "sha": "9ae0660d32d2c7d354fb2ddb5e02df30cd500705",
+   "created_at": "2026-10-05T15:57:39Z"
+  },
+  {
+   "sha": "f2a0db1d5cfe310ef9d82133064ab2bd099acace",
+   "created_at": "2026-10-05T14:11:48Z"
+  },
+  {
+   "sha": "22bc7e5fdbbfe222d5a1707b7112b0e079a950a1",
+   "created_at": "2026-10-05T13:55:16Z"
+  },
+  {
+   "sha": "0a78ee37e2f306e7e2d4c943573d6f6928c0213f",
+   "created_at": "2026-10-05T13:19:57Z"
+  },
+  {
+   "sha": "bb83ec499c474bad7c17f875ee55f00fbb8819ac",
+   "created_at": "2026-10-05T10:54:21Z"
+  },
+  {
+   "sha": "fe066574daf73934b006df1163cf6c34bd711a45",
+   "created_at": "2026-10-05T10:34:47Z"
+  },
+  {
+   "sha": "5d12ebe46390c580e2040c527443e4882de78c08",
+   "created_at": "2026-10-05T09:44:57Z"
+  },
+  {
+   "sha": "ea4afcf2752633d5dcea3ff16432e5ce27865a41",
+   "created_at": "2026-10-05T09:26:10Z"
+  },
+  {
+   "sha": "26254f406a742095ac8e28e24b139a7da7b15da4",
+   "created_at": "2026-10-05T08:19:35Z"
+  },
+  {
+   "sha": "d72c2fa5bcef180c12ad39bd75f841dc0328d890",
+   "created_at": "2026-10-05T07:15:38Z"
+  },
+  {
+   "sha": "3fb009c5724325277597430fb12fe13fd0565a6d",
+   "created_at": "2026-10-05T06:06:14Z"
+  },
+  {
+   "sha": "6e8ded7b154d1d934c9a7d91ec2bc3f410b61993",
+   "created_at": "2026-10-05T05:05:16Z"
+  },
+  {
+   "sha": "4089ab04b6694c2826f0d5c4f66f23467c314f12",
+   "created_at": "2026-10-05T04:49:51Z"
+  }
+ ],
+ "commits": [
+  {
+   "sha": "ce695500adb5965858cfcb46433394e0e93cc544",
+   "date": "2026-10-05T17:16:42Z"
+  },
+  {
+   "sha": "b4d241b52e08f22800de34a856ce226137e2aef7",
+   "date": "2026-10-05T16:51:56Z"
+  },
+  {
+   "sha": "6aace2f890ac5730fbf375d5eb8c52f2b1fec0de",
+   "date": "2026-10-05T16:17:33Z"
+  },
+  {
+   "sha": "9ae0660d32d2c7d354fb2ddb5e02df30cd500705",
+   "date": "2026-10-05T15:56:31Z"
+  },
+  {
+   "sha": "592d961e0097853deeb35ec49dedf85de8ff25c0",
+   "date": "2026-10-05T15:31:04Z"
+  },
+  {
+   "sha": "509ae8d4d318f9c727b1b1f6702236d92bb0b4c3",
+   "date": "2026-10-05T14:46:33Z"
+  },
+  {
+   "sha": "f2a0db1d5cfe310ef9d82133064ab2bd099acace",
+   "date": "2026-10-05T14:10:33Z"
+  },
+  {
+   "sha": "22bc7e5fdbbfe222d5a1707b7112b0e079a950a1",
+   "date": "2026-10-05T13:53:56Z"
+  },
+  {
+   "sha": "0a78ee37e2f306e7e2d4c943573d6f6928c0213f",
+   "date": "2026-10-05T13:18:00Z"
+  },
+  {
+   "sha": "5fb2c294d314c9f9b620202e3370baa871c58f55",
+   "date": "2026-10-05T11:26:19Z"
+  },
+  {
+   "sha": "bb83ec499c474bad7c17f875ee55f00fbb8819ac",
+   "date": "2026-10-05T10:53:12Z"
+  },
+  {
+   "sha": "fe066574daf73934b006df1163cf6c34bd711a45",
+   "date": "2026-10-05T10:33:12Z"
+  },
+  {
+   "sha": "63bf13c069dd4ff7a602d347955fb900bbf46031",
+   "date": "2026-10-05T10:01:33Z"
+  },
+  {
+   "sha": "5d12ebe46390c580e2040c527443e4882de78c08",
+   "date": "2026-10-05T09:43:46Z"
+  },
+  {
+   "sha": "ea4afcf2752633d5dcea3ff16432e5ce27865a41",
+   "date": "2026-10-05T09:24:52Z"
+  },
+  {
+   "sha": "26254f406a742095ac8e28e24b139a7da7b15da4",
+   "date": "2026-10-05T08:18:07Z"
+  },
+  {
+   "sha": "d72c2fa5bcef180c12ad39bd75f841dc0328d890",
+   "date": "2026-10-05T07:14:18Z"
+  },
+  {
+   "sha": "3fb009c5724325277597430fb12fe13fd0565a6d",
+   "date": "2026-10-05T06:04:33Z"
+  },
+  {
+   "sha": "6e8ded7b154d1d934c9a7d91ec2bc3f410b61993",
+   "date": "2026-10-05T05:04:10Z"
+  },
+  {
+   "sha": "4089ab04b6694c2826f0d5c4f66f23467c314f12",
+   "date": "2026-10-05T04:48:34Z"
+  },
+  {
+   "sha": "e62ffeba3dfa742127793a2244a9c45f9c30838f",
+   "date": "2026-10-05T03:59:21Z"
+  },
+  {
+   "sha": "f67a5b07ebd17a888253272390308416a9cf5ac6",
+   "date": "2026-10-05T03:29:29Z"
+  },
+  {
+   "sha": "11b60f7060090ff5f14f9ac7df0d452496f26616",
+   "date": "2026-10-04T17:47:13Z"
+  },
+  {
+   "sha": "af2104b9dce71261e7033b633a0d524b6f281718",
+   "date": "2026-10-04T17:22:53Z"
+  },
+  {
+   "sha": "0190034e32f22a9e67dd0f39638f0f7371a4e0ac",
+   "date": "2026-10-04T13:04:27Z"
+  },
+  {
+   "sha": "071a1c7f76955e5c5cb51ebdb991a07d438001d4",
+   "date": "2026-10-04T12:50:55Z"
+  },
+  {
+   "sha": "97b80de77da43add17be529be435ec6e07e3c25f",
+   "date": "2026-10-04T09:24:50Z"
+  },
+  {
+   "sha": "e8a1d073440d46f346f59af57b27274040b34d46",
+   "date": "2026-10-04T09:12:11Z"
+  },
+  {
+   "sha": "37199373e1fe86191ea2bf80e75b4d7bd2aecfa5",
+   "date": "2026-10-04T08:13:59Z"
+  },
+  {
+   "sha": "e5150a5d4bf0c8f7c771adcb1951a0415262cbd1",
+   "date": "2026-10-04T07:48:00Z"
+  }
+ ]
+}

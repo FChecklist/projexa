@@ -1,0 +1,43 @@
+Running 5 tests using 1 worker
+[a17] /auth/v1/recover -> 200 
+  ok 1 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:165:5 › laptop 1 asks for the reset ONCE; the re...
+[a17] waiting up to 10 min for the e-mail to raajat.agarwal+pxa173d5112@gmail.com: write its plain-text body to C:/Us...
+[a17] e-mail parsed: link to /auth/callback (type=recovery, token_hash present) and one 6-digit code (values not prin...
+  ok 2 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:184:5 › the real e-mail arrives with the link an...
+  ok 3 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:201:5 › on a NEW laptop the link signs nobody in...
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3919593079'
+[WebServer] }
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3919593079'
+[WebServer] }
+[a17 cleanup]
+  - security_audit_log rows of the throwaway account
+  - auth user 3bcb7e3f-acd3-425a-8677-1171ba9597d9 (+ profile, ON DELETE CASCADE)
+  left behind: auth.users=0 profiles=0 memberships=0
+  x  4 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:228:5 › the RIGHT code on the new laptop -> a ne...
+  -  5 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:252:5 › the USED link is refused plainly on anot...
+  1) [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:228:5 › the RIGHT code on the new laptop -> a new ...
+    Error: expect(received).toMatch(expected)
+    Expected pattern: /invalid/i
+    Received string:  ""
+      246 |   expect(old.status, "the OLD passcode must be refused by Supabase").toBe(400);
+      247 |   expect(old.leftLogin).toBe(false);
+    > 248 |   expect(old.alert).toMatch(/invalid/i);
+          |                     ^
+      249 |   await laptop2.context.close();
+      250 | });
+      251 |
+        at C:\ct\px-a17\e2e\audit37-real-a17-forgot-passcode.spec.ts:248:21
+    test-results\audit37-real-a17-forgot-pa-07a07-old-one-is-refused-A17-A18--audit37-real\test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+    test-results\audit37-real-a17-forgot-pa-07a07-old-one-is-refused-A17-A18--audit37-real\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+    test-results\audit37-real-a17-forgot-pa-07a07-old-one-is-refused-A17-A18--audit37-real\test-failed-3.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+    test-results\audit37-real-a17-forgot-pa-07a07-old-one-is-refused-A17-A18--audit37-real\test-failed-4.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+    test-results\audit37-real-a17-forgot-pa-07a07-old-one-is-refused-A17-A18--audit37-real\trace.zip
+... more matches
