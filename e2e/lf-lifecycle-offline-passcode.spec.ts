@@ -80,7 +80,9 @@ test("B20: sign out, cut the network: /login opens from the laptop, a wrong pass
   await test.step("the right passcode signs in on the laptop and opens the person's own copy (the same database as before)", async () => {
     await page.locator("#password").fill(PASSCODE)
     await page.locator('button[type="submit"]').click()
-    await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 })
+    // polled, not waitForURL: the sign-in's own navigation can be superseded by the shell's (both land off /login), which waitForURL reports as aborted
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 60_000 })
+    await page.waitForLoadState("load")
     await page.goto("/local")
     await expect(page.getByTestId("local-shell-person")).toHaveText(a.person.email, { timeout: 60_000 })
     await page.goto(`/local/scope/${a.person.boqId}?projectId=${a.person.projectId}`)
