@@ -54,7 +54,7 @@ import {
 import { MANIFEST_KEY, foreignOrg, type StoredManifest } from "./replica";
 import { SyncError, type PushOp, type PushResult, type SyncClient, type SyncServerRow, type UpdateRequiredDetails } from "./sync-client";
 import { asTaskErrorCode, resolveTaskError, sanitiseBackendMessage } from "@/lib/task-errors";
-import { asData, beforeOf, decide, effectFromParams, effectOf, fieldValue, overlay, withoutFields, type Data } from "./outbox-merge";
+import { asData, beforeOf, decide, effectFromParams, effectOf, fieldValue, overlay, protectedParams, withoutFields, type Data } from "./outbox-merge";
 import { opTooLarge, syncCodeSentence, textLimitProblem, textTooLongMessage } from "./outbox-words";
 import { reportFault } from "./sync-fault-report";
 
@@ -406,7 +406,9 @@ export function createOutbox(options: OutboxOptions): Outbox {
         if (!deleted && !op.conflictServer) continue;
         conflicts.push({
           opId: op.opId, functionId: op.functionId, projectId: op.projectId, label: op.label, record: { kind: op.record.kind, id: op.record.id },
-          kind: deleted ? "deleted" : "changed", local: row?.data, server: deleted ? null : newestServerRow(op, row),
+          // AUDIT-100 B19: a money/approval parameter the laptop row never showed (outbox-merge.ts protectedParams) is still what the
+          // person wrote: the card shows it as theirs-vs-mine, not the row's old figure
+          kind: deleted ? "deleted" : "changed", local: deleted ? row?.data : overlay(row?.data, protectedParams(op.params, effectOfOp(op), op.record.id)), server: deleted ? null : newestServerRow(op, row),
           fields: op.conflictFields ?? [], canRecreate: deleted && !!recreateFor(op, row?.data),
         });
       } else if (op.status === "blocked") {
@@ -618,7 +620,7 @@ export function createOutbox(options: OutboxOptions): Outbox {
 
     const effect = effectOfOp(op);
     const merges = mergesThisPass.get(op.opId) ?? 0;
-    const decision = decide({ effect, before: op.before, theirs: server.data });
+    const decision = decide({ effect, before: op.before, theirs: server.data, params: op.params, targetId: op.record.id });
 
     if (decision.kind === "already_in") {
       // Everything this edit set is already what the server holds (it went in through a lost answer, or someone made the

@@ -12,7 +12,8 @@
 // Fields only the server changed are never in the edit, so re-sending the edit (against the new version) keeps them.
 //
 // Never merged on the laptop: a money or an approval field (owner rule: money and approvals are decided by the server). If
-// the edit touches one, any conflict goes to the card, whatever the fields say.
+// the edit touches one, any conflict goes to the card, whatever the fields say. "Touches" includes a money/approval PARAMETER the op
+// sends that its recorded effect does not show (protectedParams, AUDIT-100 B19): it would be re-sent by a merge all the same.
 //
 // KEY SHAPES. The optimistic overlay uses the registry's camelCase parameter names (statusId, dueDate) while the server's
 // row may carry snake_case (status_id, due_date); a field is read under either name, so `statusId` and `status_id` are the
@@ -78,12 +79,45 @@ export type MergeDecision =
   /** The person decides. `fields`: the ones that disagree (all the edit's fields when a protected one is involved). */
   | { kind: "card"; fields: string[] };
 
-/** The three-way decision for one edit against the server's current row. */
-export function decide(input: { effect: Data; before?: Data; theirs: unknown }): MergeDecision {
+const sameField = (a: string, b: string) => snake(a) === snake(b);
+const ID_PARAM = /(^id$|Id$|_id$|Ids$|_ids$)/;
+const asFigure = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+
+/**
+ * AUDIT-100 B19. The money / approval PARAMETERS an edit sends that its recorded effect does not show. The browser AI's update
+ * (ai/api.ts) changes on the laptop only the fields the row already names EXACTLY, so a registry parameter like `costImpact` never lands
+ * on the row's `cost_impact`: the effect misses it, yet the op still sends it. Re-sending such an op after a "merge" overwrites the
+ * server's figure without the person deciding (seen in a real browser, e2e/lf-documents-conflict.spec.ts case 3). So these count as part
+ * of the edit in the decision. Ids (and the project) are never counted.
+ */
+export function protectedParams(params: Data | undefined, effect: Data, targetId: string | null): Data {
+  const out: Data = {};
+  if (!params) return out;
+  for (const [key, value] of Object.entries(effectFromParams(params, targetId))) {
+    if (!isProtectedField(key) || ID_PARAM.test(key)) continue;
+    if (Object.keys(effect).some((k) => sameField(k, key))) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+/** The three-way decision for one edit against the server's current row. `params`: the op's parameters (see protectedParams). */
+export function decide(input: { effect: Data; before?: Data; theirs: unknown; params?: Data; targetId?: string | null }): MergeDecision {
   const theirs = asData(input.theirs);
-  const keys = Object.keys(input.effect);
+  const hidden = protectedParams(input.params, input.effect, input.targetId ?? null);
+  const keys = [...Object.keys(input.effect), ...Object.keys(hidden)];
   if (keys.length === 0) return { kind: "card", fields: [] };
-  const differing = keys.filter((k) => !same(fieldValue(theirs, k), input.effect[k]));
+  const differs = (k: string) => {
+    if (k in hidden) {
+      // a figure the server stores as numeric(…, 2) ("21000.00") is the same figure as the laptop's 21000
+      const a = asFigure(fieldValue(theirs, k));
+      const b = asFigure(hidden[k]);
+      if (Number.isFinite(a) && Number.isFinite(b)) return a !== b;
+      return !same(fieldValue(theirs, k), hidden[k]);
+    }
+    return !same(fieldValue(theirs, k), input.effect[k]);
+  };
+  const differing = keys.filter(differs);
   if (differing.length === 0) return { kind: "already_in" };
   if (keys.some(isProtectedField)) return { kind: "card", fields: differing };
   const disagree = differing.filter((k) => !(input.before && k in input.before && same(fieldValue(theirs, k), input.before[k])));
