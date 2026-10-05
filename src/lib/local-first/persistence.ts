@@ -28,7 +28,7 @@ import {
 import { META_KEYS, releaseCacheName } from "./release/release-constants";
 import { withInstallLock } from "./release/install-lock";
 import type { ReleaseClient } from "./release/release-client";
-import type { SwClient } from "./release/sw-client";
+import { dropReleaseKeptForAnother, type SwClient } from "./release/sw-client";
 
 // ─── 1. persistent storage ──────────────────────────────────────────────────────────────────────
 
@@ -260,6 +260,8 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
   const swReady = await deps.ensureServiceWorker();
   if (!swReady) return { ...report, skipped: "no_service_worker" };
 
+  // A release another person kept on this laptop at their sign-out is dropped first (sw-client.ts dropReleaseKeptForAnother).
+  await dropReleaseKeptForAnother(deps.sw, deps.personId).catch(() => false);
   const online = deps.isOnline();
   if (online) {
     const missing = await installedCacheMissing({ caches, meta: deps.meta });
@@ -300,7 +302,9 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
       const pointerPerson = (status.personId as string | null | undefined) ?? null;
       const wrongRelease = pointerVersion !== installedNow.version;
       const wrongPerson = deps.personId !== null && pointerPerson !== null && pointerPerson !== deps.personId;
-      if (wrongRelease || wrongPerson) {
+      if (status.signedOut === true && deps.personId === null) {
+        // a release kept by a signed-out person stays signed out until a person is known (nothing to point it at)
+      } else if (wrongRelease || wrongPerson) {
         // The worker has no pointer (it was cleared or evicted), or it names another release or person: point it at ours.
         report.pointerFixed = Boolean((await deps.sw.useRelease(installedNow.version, deps.personId, deps.localFirstOn()))?.ok);
       } else if (deps.personId !== null && pointerPerson === null) {

@@ -18,6 +18,7 @@ import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
 import { LocalShellAiBar } from "./LocalShellAiBar";
 import { LocalShellAccount } from "./LocalShellAccount";
+import { OfflinePasscodeSignIn } from "./OfflinePasscodeSignIn";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -248,9 +249,14 @@ export default function LocalShell() {
           <p className="mt-3 text-sm text-px-muted">
             {connectivity === "online"
               ? "Taking you to sign in…"
-              : "PROJEXA needs you to sign in once on this laptop, while it is online. After that it keeps you signed in and works without a connection."}
+              : "You are offline. Sign in with the email and passcode you used on this laptop. (The first sign-in on a laptop needs a connection.)"}
           </p>
-          <p className="mt-4 text-sm"><a className="text-px-ink underline underline-offset-2" href={`/login?redirectTo=${encodeURIComponent(location.path)}`}>Sign in</a></p>
+          {/* AUDIT-100 B20: offline, the sign-in is done on the laptop with the passcode kept from the last online sign-in */}
+          {connectivity === "online" ? (
+            <p className="mt-4 text-sm"><a className="text-px-ink underline underline-offset-2" href={`/login?redirectTo=${encodeURIComponent(location.path)}`}>Sign in</a></p>
+          ) : (
+            <OfflinePasscodeSignIn next={location.path === "/login" || location.path === "/" ? "/dashboard" : `${location.path}${location.search}`} />
+          )}
         </section>
       </Chrome>
     );

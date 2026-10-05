@@ -59,6 +59,19 @@ async function signOut(page: Page) {
   await page.getByTestId("local-shell-account").locator("summary").click()
   await page.getByRole("button", { name: "Sign out", exact: true }).click()
   await expect(page).toHaveURL(/\/login/, { timeout: 30_000 })
+  // AUDIT-100 A3 (step 1b): the release stays on the laptop, marked signed out: online the worker serves no shell from it while nobody is signed in
+  const sw = await page.evaluate(
+    () =>
+      new Promise<Record<string, unknown> | null>((resolve) => {
+        const c = navigator.serviceWorker.controller
+        if (!c) return resolve(null)
+        const ch = new MessageChannel()
+        ch.port1.onmessage = (e) => resolve(e.data as Record<string, unknown>)
+        c.postMessage({ type: "STATUS" }, [ch.port2])
+        setTimeout(() => resolve(null), 5_000)
+      })
+  )
+  expect(sw, "the worker's record after the sign-out").toMatchObject({ version: null, signedOut: true })
 }
 
 test("A22: first sign-in, sign-out, and two more sign-ins with the 6-digit passcode: not one request that sends an email", async ({ page, context }) => {
@@ -72,23 +85,27 @@ test("A22: first sign-in, sign-out, and two more sign-ins with the 6-digit passc
     expect(JSON.parse(a.grants[0]!.slice(a.grants[0]!.indexOf("{")))).toMatchObject({ email: a.person.email, password: PASSCODE })
     await expect.poll(() => releaseCaches(page), { timeout: 240_000 }).toHaveLength(1)
     await expect.poll(() => personMeta(page, a.made.userId, `sync:done:${a.person.projectId}:boq_lines`), { timeout: 240_000 }).toBeTruthy()
+    await expect.poll(() => a.bundleDownloads(), { message: "the first sign-in did not download the release bundle" }).toBe(1)
   })
+  const installedCaches = await releaseCaches(page)
 
   for (const n of [2, 3]) {
     await test.step(`sign out and sign in again (#${n}): back in with the passcode alone, the same local copy`, async () => {
       await signOut(page)
       await signIn(page, a.person.email)
       await expect(page).toHaveURL(/\/(dashboard|local)/)
-      // the person is signed in again. By design (sign-out-keeps-app.test.ts) a sign-out removes the release caches and the next sign-in installs the
-      // app silently again; the person's DATA is kept. Both are read from the laptop.
-      await expect.poll(() => releaseCaches(page), { timeout: 120_000, message: "the app was not installed again after the sign-in" }).toHaveLength(1)
+      // the person is signed in again. AUDIT-100 A3 (step 1b): the sign-out KEPT the public release cache (no shell served online while signed out), so this
+      // sign-in uses it again instead of downloading the 8.9 MB bundle; the person's DATA is kept too. Both are read from the laptop.
+      await expect.poll(() => releaseCaches(page), { timeout: 120_000, message: "the app is not on the laptop after the sign-in" }).toEqual(installedCaches)
+      expect(a.bundleDownloads(), "the sign-in downloaded the release bundle again (A3 step 1b: the same person's release is kept)").toBe(1)
       expect(await personMeta(page, a.made.userId, `sync:done:${a.person.projectId}:boq_lines`), "the person's data was not kept").toBeTruthy()
     })
   }
 
   expect(a.grants.length, "every sign-in used a password grant").toBeGreaterThanOrEqual(3)
   for (const g of a.grants) expect(g, "a sign-in used something other than the password").toContain("grant_type=password")
-  console.log(`A22 release bundle downloads over three sign-ins: ${a.bundleDownloads()}`)
+  console.log(`A22/A3 release bundle downloads over three sign-ins: ${a.bundleDownloads()} (A3 step 1b: was 3 before the release was kept)`)
+  expect(a.bundleDownloads(), "three sign-ins of the same person downloaded the release bundle more than once").toBe(1)
   console.log(`A22 requests seen: ${a.total()}; mail-sending requests: ${a.mail.length}`)
   expect(a.total(), "the detector saw nothing: it is not reading the browser").toBeGreaterThan(100)
   expect(a.mail, "an email was sent during a daily sign-in").toEqual([])

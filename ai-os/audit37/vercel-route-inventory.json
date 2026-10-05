@@ -3108,8 +3108,8 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": true,
-      "why": "pending-edits.ts sends a BOQ line edit here only while online and the server is reachable; offline it waits in the outbox and is pushed through projexa-sync /push.",
-      "plan": "edge-candidate: send the online edit through the same /push op the outbox already uses, then delete this call (step 3 of VERCEL_ROUTE_PLAN.md)"
+      "why": "pending-edits.ts (the shell's interim BOQ writer) sends a BOQ line category edit here, online at once and, when it was made offline, later through the SAME PATCH (it waits in device meta `shell:edits`, not in the outbox). The sync service has no op for it yet: update_boq_line takes only description/unit, and update_line_item_budget (which does take category) is manager-only (rank 3, link level 2, money-sensitive) while this route lets a member (rank 2) change a category, so moving it would refuse edits members make today.",
+      "plan": "BLOCKED on a server-side addition (VERCEL_ROUTE_PLAN.md step 3): compliance-tracker adds a category-only BOQ line write at member rank (category on update_boq_line, or a new update_boq_line_category -> updateLineItemBudget({category})) to the pipeline registry, the generated edge registry and the live function table, and deploys ai-work-link-exec/projexa-sync; then pending-edits.ts is replaced by an outbox enqueue (record kind boq_lines) and this call is deleted."
     },
     {
       "route": "/api/scope/lines",

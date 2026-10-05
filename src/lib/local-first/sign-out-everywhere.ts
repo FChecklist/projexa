@@ -12,12 +12,14 @@
 //
 // ORDER (each step must survive the failure of the next):
 //   1. the workspace step FIRST: it needs the live session to send pending edits; afterwards there is no session to send them with;
-//   2. then signOutDeliberately: mirror cleared, release caches cleared, session ended.
+//   2. then signOutDeliberately: mirror cleared, no shell served online from the release (kept for the same person's next sign-in unless the copy is
+//      deleted), session ended.
 // Never throws. The pending-edits notice from step 1 is returned so the caller can show it after the session has gone.
 //
 // What it deliberately does NOT do (R10, "the app is not deleted until the person chooses"): it never unregisters the service
-// worker, never deletes caches itself and never touches the installed app. The worker's CLEAR_PERSON removes only release caches
-// (`px-release-*`) and its pointer; the next sign-in re-installs the release silently (boot.ts -> runLocalFirstBoot).
+// worker, never deletes caches itself and never touches the installed app. The worker's CLEAR_PERSON touches only release caches
+// (`px-release-*`) and its pointer: by default it keeps the release, marked signed out (online no shell is served from it; offline it opens the passcode sign-in, B20), and the same person's next
+// sign-in points the worker at it again without a download (boot.ts -> runLocalFirstBoot); with deleteLocalCopy it deletes them.
 //
 // The M24 shell's SIGNED_OUT listener uses classifySignedOut() below to tell a deliberate sign-out (this tab's click, or the mirror
 // already emptied by another tab's click / a revoked token) from an UNEXPECTED one (a lost cookie, a failed refresh): the latter is
@@ -94,7 +96,9 @@ export async function signOutEverywhere(deps: SignOutEverywhereDeps): Promise<Si
     } catch {
       store = createIdentityStore({});
     }
-    ({ serverTold } = await signOutDeliberately({ auth: deps.auth, store, sw: deps.sw, clearBrowserSession: deps.clearBrowserSession }));
+    // AUDIT-100 A3 (step 1b): the default sign-out keeps the public release cache for this person's next sign-in (no 8.9 MB download again);
+    // the explicit "delete this laptop's copy" deletes it too.
+    ({ serverTold } = await signOutDeliberately({ auth: deps.auth, store, sw: deps.sw, clearBrowserSession: deps.clearBrowserSession, keepRelease: !deps.deleteLocalCopy }));
   } catch {
     serverTold = false;
   }
