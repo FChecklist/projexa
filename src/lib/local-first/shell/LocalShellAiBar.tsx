@@ -15,9 +15,10 @@ import { LOCAL_SHELL_AI_LINK_OFFLINE_NOTE } from "./LocalShellAiLink";
 
 export const AI_BAR_PROMPT_CAPTION = "Paste it into any AI to work for you";
 export const AI_BAR_CONNECT_CAPTION = "Connect PROJEXA to your AI app";
-const CAP = "max-w-[11rem] text-center text-xs leading-snug text-px-muted";
+const CAP = "max-w-[11rem] text-center text-xs font-medium leading-snug text-[#7C3AED]";
 
-const BTN = "inline-flex items-center rounded-md border border-black/10 bg-white px-3 py-1 text-sm text-px-ink hover:bg-black/5 disabled:opacity-60";
+const BTN = "inline-flex items-center rounded-md border-2 border-[#2DD4BF] bg-[#14C8B4] px-3 py-1 text-sm font-semibold text-white hover:bg-[#2DD4BF] disabled:opacity-60";
+const PROMPT_BTN = "[&_button]:border-2 [&_button]:border-[#FDBA74] [&_button]:bg-[#FF8A1F] [&_button]:font-semibold [&_button]:text-white [&_button:hover]:bg-[#FF9F40]";
 
 export function LocalShellAiBar({ role, project, online, client, fetchText }: { role: string | null | undefined; project: AiLinkProject | null; online: boolean; client?: AwlClient; fetchText?: (link: string, path: string) => Promise<string> }) {
   const [open, setOpen] = useState(false);
@@ -65,7 +66,7 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
 
   return (
     <div className="relative flex items-start gap-4" data-testid="local-shell-ai-bar" data-online="1">
-      <div className="flex flex-col items-center gap-1">
+      <div className={`flex flex-col items-center gap-1 ${PROMPT_BTN}`}>
         <AiWorkLinkCompact role={role} project={null} client={client} scope="user" compact variant="default" triggerLabel="Copy AI prompt" />
         <span className={CAP} data-testid="local-shell-ai-caption">{AI_BAR_PROMPT_CAPTION}</span>
         {project ? <AiWorkLinkCardButton role={role} project={project} client={client} fetchText={fetchText} compact /> : null}
@@ -75,7 +76,7 @@ export function LocalShellAiBar({ role, project, online, client, fetchText }: { 
         <span className={CAP} data-testid="local-shell-connect-caption">{AI_BAR_CONNECT_CAPTION}</span>
       </div>
       {open ? (
-        <div className="absolute right-0 top-full z-20 mt-2 w-[26rem] max-w-[90vw] rounded-md border border-black/10 bg-white p-3 text-sm text-px-ink shadow-lg" data-testid="local-shell-connectors-panel">
+        <div className="absolute right-0 top-full z-20 mt-2 w-[26rem] max-w-[90vw] rounded-xl border-2 border-[#2DD4BF] bg-[#F0FFFC] p-3 text-sm text-px-ink shadow-lg" data-testid="local-shell-connectors-panel">
           <p className="font-medium">Connect PROJEXA to your AI</p>
           {busy ? <p className="mt-2 text-xs text-px-muted">Making your link…</p> : null}
           {error ? <p className="mt-2 text-xs text-red-700" role="alert">{error}</p> : null}

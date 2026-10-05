@@ -313,17 +313,17 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         interceptLinkClick(event, (href) => navigate(href), window.location.origin);
       }}
     >
-      <header className="border-b border-black/10 bg-white px-4 py-2">
+      <header className="border-b-2 border-[#7DD3FC] bg-gradient-to-r from-[#E0F4FF] via-[#F3EBFF] to-[#FFEFD9] px-4 py-2">
         {/* Row 1: brand, project, and (always at the top right) the AI link, connection state and who is signed in. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <a href="/" className="font-heading text-lg text-px-ink">PROJEXA</a>
+          <a href="/" className="font-heading text-xl font-semibold text-[#0284C7]">PROJEXA</a>
           {data && shell ? (
             <label className="flex items-center gap-2 text-xs text-px-muted">
               <span>Project</span>
               <select
                 aria-label="Project"
                 data-testid="local-shell-project"
-                className="max-w-[16rem] rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-px-ink"
+                className="max-w-[16rem] rounded-md border-2 border-[#38BDF8] bg-white px-2 py-1 text-sm font-medium text-[#0369A1]"
                 value={shell.projectId ?? ""}
                 onChange={(e) => {
                   if (e.target.value === NEW_PROJECT) {
@@ -358,7 +358,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
             <a
               key={item.href}
               href={item.href}
-              className={`underline-offset-4 hover:underline ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "font-semibold text-px-ink" : "text-px-muted"}`}
+              className={`rounded-full px-3 py-1 transition-colors hover:bg-[#BAE6FD] ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "bg-[#38BDF8] font-semibold text-white" : "text-[#0369A1]"}`}
             >
               {item.label}
             </a>
