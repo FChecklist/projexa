@@ -108,3 +108,23 @@ describe("the 'Copy your projects to this laptop' step", () => {
     expect(syncFailureMessage({ status: "partial", issues: [{ reason: "store", message: "Disk full", projectId: "p1" }] })).toBe("Disk full");
   });
 });
+
+// ONE-TIME install (owner, 2026-10-05): a refresh must never bring the full screen back because the PROJECTS copy did not finish.
+import { isInstalled, quietRetryDelay } from "./WorkspacePrepare";
+describe("one-time install", () => {
+  const progress = (states: Record<string, string>) => ({
+    percent: 70, elapsedMs: 0, remainingMs: 0, finished: false, timedOut: false,
+    steps: Object.entries(states).map(([id, state]) => ({ id, label: id, state })),
+  }) as never;
+  test("installed once worker, screens and database are done, even if the projects copy failed", () => {
+    expect(isInstalled(progress({ worker: "done", app: "done", database: "done", projects: "failed" }))).toBe(true);
+  });
+  test("not installed while the screens are still downloading", () => {
+    expect(isInstalled(progress({ worker: "done", app: "running", database: "waiting", projects: "waiting" }))).toBe(false);
+  });
+  test("quiet retries back off to ten minutes", () => {
+    expect(quietRetryDelay(0)).toBe(15_000);
+    expect(quietRetryDelay(1)).toBe(30_000);
+    expect(quietRetryDelay(20)).toBe(600_000);
+  });
+});

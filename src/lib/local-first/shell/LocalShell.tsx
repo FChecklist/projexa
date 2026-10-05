@@ -16,7 +16,8 @@ import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker"
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
-import { LocalShellAiLink } from "./LocalShellAiLink";
+import { LocalShellAiBar } from "./LocalShellAiBar";
+import { LocalShellAccount } from "./LocalShellAccount";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -299,6 +300,8 @@ export default function LocalShell() {
 
 // ─── the chrome ─────────────────────────────────────────────────────────────────────────────────
 
+const NEW_PROJECT = "__new_project__";
+
 function Chrome({ children, navigate, data, shell, locationPath }: { children: React.ReactNode; navigate: (href: string) => void; data?: ShellData; shell?: ShellApi; locationPath?: string }) {
   const nav = navRoutes();
   return (
@@ -310,42 +313,57 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         interceptLinkClick(event, (href) => navigate(href), window.location.origin);
       }}
     >
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-black/10 bg-white px-4 py-2">
-        <a href="/" className="font-heading text-lg text-px-ink">PROJEXA</a>
-        {data && shell ? (
-          <label className="flex items-center gap-2 text-xs text-px-muted">
-            <span>Project</span>
-            <select
-              aria-label="Project"
-              data-testid="local-shell-project"
-              className="max-w-[16rem] rounded-md border border-black/10 bg-white px-2 py-1 text-sm text-px-ink"
-              value={shell.projectId ?? ""}
-              disabled={data.projects.length === 0}
-              onChange={(e) => shell.setProjectId(e.target.value)}
-            >
-              {data.projects.length === 0 ? <option value="">No project on this laptop yet</option> : null}
-              {data.projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        <nav aria-label="Modules" className="flex items-center gap-3 text-sm">
+      <header className="border-b-2 border-[#7DD3FC] bg-gradient-to-r from-[#E0F4FF] via-[#F3EBFF] to-[#FFEFD9] px-4 py-2">
+        {/* Row 1: brand, project, and (always at the top right) the AI link, connection state and who is signed in. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <a href="/" className="font-heading text-xl font-semibold text-[#0284C7]">PROJEXA</a>
+          {data && shell ? (
+            <label className="flex items-center gap-2 text-xs text-px-muted">
+              <span>Project</span>
+              <select
+                aria-label="Project"
+                data-testid="local-shell-project"
+                className="max-w-[16rem] rounded-md border-2 border-[#38BDF8] bg-white px-2 py-1 text-sm font-medium text-[#0369A1]"
+                value={shell.projectId ?? ""}
+                onChange={(e) => {
+                  if (e.target.value === NEW_PROJECT) {
+                    navigate("/projects/new");
+                    return;
+                  }
+                  shell.setProjectId(e.target.value);
+                }}
+              >
+                {data.projects.length === 0 ? <option value="">No project on this laptop yet</option> : null}
+                {data.projects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+                <option value={NEW_PROJECT}>+ New project</option>
+              </select>
+              {data.projects.length === 0 ? (
+                <span data-testid="local-shell-no-projects" className="max-w-[22rem] text-px-muted">
+                  This account has no project copied to this laptop, so there is nothing to choose yet.
+                </span>
+              ) : null}
+            </label>
+          ) : null}
+          <div className="ml-auto flex items-start gap-4 text-xs text-px-muted">
+            {data && shell ? <LocalShellAiBar role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
+            <ConnectivityMarker />
+            {data ? <LocalShellAccount data={data} /> : null}
+          </div>
+        </div>
+        {/* Row 2: the modules; scrolls sideways on a narrow screen instead of pushing the account control down. */}
+        <nav aria-label="Modules" className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 text-sm">
           {nav.map((item) => (
             <a
               key={item.href}
               href={item.href}
-              className={`underline-offset-4 hover:underline ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "font-semibold text-px-ink" : "text-px-muted"}`}
+              className={`rounded-full px-3 py-1 transition-colors hover:bg-[#BAE6FD] ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "bg-[#38BDF8] font-semibold text-white" : "text-[#0369A1]"}`}
             >
               {item.label}
             </a>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-3 text-xs text-px-muted">
-          {data && shell ? <LocalShellAiLink role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
-          <ConnectivityMarker />
-          {data?.email ? <span data-testid="local-shell-person">{data.email}</span> : null}
-        </div>
       </header>
       <main className="mx-auto max-w-6xl p-4">{children}</main>
     </div>

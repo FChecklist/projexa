@@ -11,7 +11,7 @@ import { getDeviceId } from "@/lib/local-first/outbox-shared";
 import { accessToken, getReleaseVersion } from "@/lib/local-first/shared-client";
 import { createReleaseClient } from "@/lib/local-first/release/release-client";
 import { createPrepareReporter, type PrepareReport } from "@/lib/local-first/prepare-report";
-import type { Replica } from "@/lib/local-first/replica";
+import { MANIFEST_KEY, type Replica } from "@/lib/local-first/replica";
 import { SYNC_BUSY_MESSAGE } from "@/lib/local-first/sync-busy";
 import {
   PREPARE_BUDGET_MS,
@@ -19,6 +19,7 @@ import {
   readyKey,
   type PrepareProgress,
   type PrepareStep,
+  type StepId,
 } from "@/lib/local-first/prepare-workspace";
 
 // LOCAL-FIRST slice 1 (owner directive 2026-10-02). On a person's first login on a
@@ -210,27 +211,42 @@ export function WorkspacePrepareView({ progress }: { progress: PrepareProgress; 
       aria-modal="true"
       aria-label="Preparing your PROJEXA workspace"
       data-testid="workspace-prepare"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-px-concrete p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-[#E0F4FF] via-[#F3EBFF] to-[#FFEFD9] p-6"
     >
-      <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white p-8 shadow-lg">
+      <div className="w-full max-w-md rounded-2xl border-2 border-[#7DD3FC] bg-white p-8 shadow-lg">
         <h2 className="font-heading text-2xl text-px-ink">Preparing your PROJEXA workspace</h2>
         <p className="mt-2 text-sm text-px-muted">
           PROJEXA workspace is being set up on this laptop so your projects open fast. This takes up to 3 minutes the first time only.
         </p>
         <div className="mt-6">
-          <span data-testid="prepare-percent" className="text-3xl font-semibold text-px-ink">{progress.percent}%</span>
+          <span data-testid="prepare-percent" className="text-3xl font-semibold text-[#0284C7]">{progress.percent}%</span>
         </div>
-        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-px-concrete" role="progressbar" aria-valuenow={progress.percent} aria-valuemin={0} aria-valuemax={100}>
-          <div className="h-full rounded-full bg-px-orange transition-all" style={{ width: `${progress.percent}%` }} />
+        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-[#E0F2FE]" role="progressbar" aria-valuenow={progress.percent} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-full bg-gradient-to-r from-[#FF8A1F] via-[#FF4F9A] to-[#8B5CF6] transition-all" style={{ width: `${progress.percent}%` }} />
         </div>
       </div>
     </div>
   );
 }
 
-/** True only when every step finished within the budget: the one condition that opens PROJEXA. */
+/** True only when every step finished within the budget. */
 export function isPrepared(progress: PrepareProgress): boolean {
   return progress.finished && !progress.timedOut && progress.steps.every((s) => s.state === "done");
+}
+
+/**
+ * The ONE-TIME part is done: PROJEXA is installed on this laptop (worker, screens, local database). That is the condition that lets the
+ * person in and is remembered for good. Copying the projects is NOT part of it: it can take longer, can fail for a reason that is not the
+ * laptop's (the account has no project yet, the sync service is down) and carries on quietly in the background (see quietCopy).
+ */
+export function isInstalled(progress: PrepareProgress): boolean {
+  const need: StepId[] = ["worker", "app", "database"];
+  return need.every((id) => progress.steps.find((s) => s.id === id)?.state === "done");
+}
+
+/** Waits between quiet attempts to copy the projects: 15 s, 30 s, 60 s ... never more than 10 minutes. */
+export function quietRetryDelay(attempt: number): number {
+  return Math.min(RETRY_AFTER_MS * 2 ** Math.max(0, attempt), 10 * 60_000);
 }
 
 /**
@@ -246,6 +262,25 @@ export function WorkspacePrepare() {
   const started = useRef(false);
   const [attempt, setAttempt] = useState(0);
   const reporter = useRef<ReturnType<typeof createLiveReporter> | null>(null);
+  const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quietStopped = useRef(false);
+
+  /** Copies the projects with NOTHING on screen, retrying with a growing wait, until the laptop holds them (or the page closes). */
+  function quietCopy(uid: string, attemptNo = 0) {
+    if (quietStopped.current) return;
+    void (async () => {
+      try {
+        const db = await openLocalDb(undefined, localDbNameFor(uid));
+        let has = false;
+        try { has = (await db.getMeta(MANIFEST_KEY)) !== undefined; } finally { db.close(); }
+        if (has || quietStopped.current) return;
+        const report = await getSharedReplica(uid).sync(new AbortController().signal, () => {});
+        if (report.status === "done" || quietStopped.current) return;
+      } catch { /* never bother the person */ }
+      if (quietStopped.current) return;
+      quietTimer.current = setTimeout(() => quietCopy(uid, attemptNo + 1), quietRetryDelay(attemptNo));
+    })();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -256,7 +291,11 @@ export function WorkspacePrepare() {
       .then(({ data }) => {
         if (cancelled || !data.user) return;
         try {
-          if (localStorage.getItem(readyKey(data.user.id)) || sessionStorage.getItem(seenKey(data.user.id))) return;
+          if (localStorage.getItem(readyKey(data.user.id)) || sessionStorage.getItem(seenKey(data.user.id))) {
+            // Installed before: never the full screen again. If the projects were never copied, carry on quietly.
+            quietCopy(data.user.id);
+            return;
+          }
         } catch {
           return; // storage blocked: do not trap the person behind a screen we cannot remember
         }
@@ -289,8 +328,15 @@ export function WorkspacePrepare() {
       try {
         if (result.ready) localStorage.setItem(readyKey(userId), String(Date.now()));
       } catch { /* ignore */ }
-      // Not complete: try again by itself (after a short wait), never let the person in half-prepared.
-      if (!result.ready) timer = setTimeout(() => { started.current = false; setAttempt((n) => n + 1); }, RETRY_AFTER_MS);
+      // The install itself did not finish (no worker, screens not downloaded): try again by itself, the screen stays.
+      // Only the projects copy missing is NOT a reason to hold the person: it carries on quietly.
+      const installed = !(result.failed ?? []).some((id) => id !== "projects") && !result.timedOut;
+      if (!result.ready && installed) {
+        try { localStorage.setItem(readyKey(userId), String(Date.now())); } catch { /* ignore */ }
+        quietCopy(userId);
+      } else if (!result.ready) {
+        timer = setTimeout(() => { started.current = false; setAttempt((n) => n + 1); }, RETRY_AFTER_MS);
+      }
     });
     return () => { if (timer) clearTimeout(timer); };
   }, [open, userId, router, attempt]);
@@ -300,13 +346,24 @@ export function WorkspacePrepare() {
     setOpen(false);
   };
 
-  useEffect(() => () => { reporter.current?.stop(); reporter.current = null; }, []);
-
-  const prepared = progress ? isPrepared(progress) : false;
   useEffect(() => {
-    if (prepared) close();
+    quietStopped.current = false;
+    return () => {
+    reporter.current?.stop();
+    reporter.current = null;
+    quietStopped.current = true;
+    if (quietTimer.current) clearTimeout(quietTimer.current);
+    };
+  }, []);
+
+  // The person is let in the moment the install is done (not when the projects are copied), and it is remembered for good.
+  const installed = progress ? isInstalled(progress) : false;
+  useEffect(() => {
+    if (!installed) return;
+    try { if (userId) localStorage.setItem(readyKey(userId), String(Date.now())); } catch { /* ignore */ }
+    close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prepared]);
+  }, [installed]);
 
   if (!open || !progress) return null;
   return <WorkspacePrepareView progress={progress} lastSyncedAt={lastSyncedAt} />;
