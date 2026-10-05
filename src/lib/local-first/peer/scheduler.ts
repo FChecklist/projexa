@@ -14,6 +14,8 @@
 //
 // Everything is injected (clock, visibility, online state, the two steps, the lock manager), so the tests drive it with a fake clock.
 
+import { reportFault } from "../sync-fault-report";
+
 export type SchedulerClock = {
   now(): number;
   setTimeout(fn: () => void, ms: number): unknown;
@@ -150,8 +152,8 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
         } else {
           await runOnce(reason);
         }
-      } catch {
-        /* a failing step never escapes into the UI */
+      } catch (err) {
+        reportFault("peer:sync", err); // never escapes into the UI, but it does reach us (B57)
       } finally {
         running = null;
         schedule();
