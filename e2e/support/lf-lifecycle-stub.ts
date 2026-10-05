@@ -125,25 +125,42 @@ function subOf(authorization: string | undefined): string | null {
 
 const EPOCH = "lf-lifecycle-epoch-1";
 
+/** One request to the sync service, transport-free: what the stub sees (headers lower-cased) and what it answers. */
+export type SyncRequest = { method: string; url: string; headers: Record<string, string>; body: unknown };
+export type SyncAnswer = { abort: "internetdisconnected" | "connectionrefused" } | { status: number; headers: Record<string, string>; body: string };
+
 /** Answers the sync service for every page of the context (and its service worker), per person, counting every request. */
 export async function stubSyncService(context: BrowserContext, world: SyncWorld): Promise<void> {
   await context.route(`${SYNC_BASE}/**`, async (route: Route, request) => {
-    const origin = request.headers()["origin"];
-    if (request.method() === "OPTIONS") {
-      world.preflights += 1;
-      return route.fulfill({ status: 204, headers: CORS(origin) });
-    }
-    if (world.net !== "up") return route.abort(world.net === "offline" ? "internetdisconnected" : "connectionrefused");
-    const path = new URL(request.url()).pathname.slice(SYNC_PATH.length);
     let body: unknown = undefined;
     try { body = request.postDataJSON(); } catch { body = undefined; }
+    const answer = answerSync(world, { method: request.method(), url: request.url(), headers: request.headers(), body });
+    if ("abort" in answer) return route.abort(answer.abort);
+    return route.fulfill(answer);
+  });
+}
+
+/**
+ * The stub's answer to one request (stubSyncService's whole logic, without the transport): also used by a spec whose engine cannot route the
+ * request itself (Playwright's WebKit does not route a request once a service worker controls the page: lf-lifecycle-webkit-phone.spec.ts).
+ */
+export function answerSync(world: SyncWorld, request: SyncRequest): SyncAnswer {
+  {
+    const origin = request.headers["origin"];
+    if (request.method === "OPTIONS") {
+      world.preflights += 1;
+      return { status: 204, headers: CORS(origin), body: "" };
+    }
+    if (world.net !== "up") return { abort: world.net === "offline" ? "internetdisconnected" : "connectionrefused" };
+    const path = new URL(request.url).pathname.slice(SYNC_PATH.length);
+    const body = request.body;
     const name = routeName(path, body);
-    const sub = subOf(request.headers()["authorization"]);
+    const sub = subOf(request.headers["authorization"]);
     const person = sub ? world.persons.get(sub) ?? null : null;
-    world.clients.push(request.headers()["x-px-client"] ?? "");
-    const reply = (status: number, payload: unknown) => {
-      world.hits.push({ at: Date.now(), method: request.method(), route: name, person: person?.email ?? null, status });
-      return route.fulfill({ status, headers: { ...CORS(origin), "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(payload) });
+    world.clients.push(request.headers["x-px-client"] ?? "");
+    const reply = (status: number, payload: unknown): SyncAnswer => {
+      world.hits.push({ at: Date.now(), method: request.method, route: name, person: person?.email ?? null, status });
+      return { status, headers: { ...CORS(origin), "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(payload) };
     };
     const now = () => new Date().toISOString();
 
@@ -199,7 +216,7 @@ export async function stubSyncService(context: BrowserContext, world: SyncWorld)
       default:
         return reply(404, { error: "not part of the local stub" });
     }
-  });
+  }
 }
 
 // ─── reading what is really stored on the laptop ───────────────────────────────────────────────

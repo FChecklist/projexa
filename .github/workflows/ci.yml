@@ -281,6 +281,9 @@ jobs:
         run: bunx playwright test -c playwright.local-first.config.ts
       - name: Laptop to laptop, no server (WebRTC, two real browser contexts)
         run: bunx playwright test -c playwright.peer.config.ts
+      - run: bunx playwright install --with-deps webkit
+      - name: Install and offline in WebKit (Safari's engine) and on phone profiles (emulation, not real devices)
+        run: bunx playwright test -c playwright.webkit-phone.config.ts
       - name: Browser extension, loaded unpacked into a real Chromium (popup and content script)
         run: bunx playwright test -c playwright.extension.config.ts
       - name: Keep the trace of a failure
