@@ -82,6 +82,10 @@ afterEach(() => {
   setOnline(true);
 });
 
+// The save goes through the laptop database (fake IndexedDB) and the outbox: on a busy CI runner it has taken just over testing-library's
+// default 1 s (RFIs test failed at 1095 ms on PR #388 twice, passed on retry), so the wait is 5 s. The outcome asserted is unchanged.
+const SAVE_WAIT_MS = 5_000;
+
 describe("registration", () => {
   test("lists, objects, create paths; 'new' is never read as an id; nav orders 60-79; the unconverted modules are NOT registered", () => {
     expect(findShellRoute("/rfis/new")!.route.pattern).toBe("/rfis/new");
@@ -105,7 +109,7 @@ describe("with NO network, the site screens open from the laptop's own copy", ()
     const box = getByLabelText("Answer") as HTMLTextAreaElement;
     fireEvent.input(box, { target: { value: "Use 200mm." } });
     fireEvent.submit(getByTestId("rfi-answer-form"));
-    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"), { timeout: SAVE_WAIT_MS });
     await waitFor(() => expect(getByTestId("rfi-object").textContent).toContain("Waiting to sync"));
     expect(getByTestId("rfi-object").textContent).toContain("Use 200mm.");
     expect(document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"]')).toBeNull();
@@ -121,7 +125,7 @@ describe("with NO network, the site screens open from the laptop's own copy", ()
     fireEvent.input(getByLabelText("Work Done"), { target: { value: "Plastering L1" } });
     fireEvent.input(getByLabelText("Labour Count"), { target: { value: "9" } });
     fireEvent.submit(getByTestId("diary-form"));
-    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"), { timeout: SAVE_WAIT_MS });
     go("/local/site-diary?projectId=p1");
     fireEvent.click(getByTestId("diary-new").querySelector("a")!);
     await findByTestId("diary-list");

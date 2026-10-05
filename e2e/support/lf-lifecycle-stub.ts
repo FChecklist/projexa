@@ -81,6 +81,12 @@ export type SyncWorld = {
   prepares: Array<Record<string, unknown>>;
   /** Routes (by name, e.g. "manifest") that answer `status` instead, until the spec clears it. */
   failRoutes: { names: Set<string>; status: number };
+  /**
+   * Optional: the link between the laptop and the sync service (AUDIT-100 B14). Answers the stub fulfils inside the browser do not go through
+   * Chromium's own network throttling (CDP Network.emulateNetworkConditions only shapes real network requests), so a spec that measures time
+   * over a slow link sets the same profile here: each answer waits latencyMs plus its body size at bytesPerSec before it is delivered.
+   */
+  link?: { latencyMs: number; bytesPerSec: number };
 };
 
 export function newWorld(): SyncWorld {
@@ -136,6 +142,10 @@ export async function stubSyncService(context: BrowserContext, world: SyncWorld)
     try { body = request.postDataJSON(); } catch { body = undefined; }
     const answer = answerSync(world, { method: request.method(), url: request.url(), headers: request.headers(), body });
     if ("abort" in answer) return route.abort(answer.abort);
+    if (world.link && request.method() !== "OPTIONS") {
+      const ms = world.link.latencyMs + (Buffer.byteLength(answer.body) / world.link.bytesPerSec) * 1000;
+      await new Promise((r) => setTimeout(r, ms));
+    }
     return route.fulfill(answer);
   });
 }

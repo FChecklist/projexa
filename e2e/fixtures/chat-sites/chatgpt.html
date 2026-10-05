@@ -1,0 +1,5 @@
+<!-- AUDIT-100 B52 fixture: NOT CAPTURED from the live site. On 2026-10-05 one page load of https://chatgpt.com/ (fresh profile, no login,
+     no cookies, nothing typed or sent; scripts/verify/chat-site-selectors.mjs) showed a Cloudflare bot check ("Just a moment...") instead of the chat page:
+     the message box only appears after that check / a login, which this audit does not bypass or perform. The structure below therefore follows
+     the extension selector comment "#prompt-textarea  // ChatGPT": a ProseMirror contenteditable div with id prompt-textarea in the composer form. Re-run the script by hand (or from a signed-in owner browser) to replace it with a real capture. -->
+<!doctype html><html><head><meta charset="utf-8"><title>chatgpt fixture</title></head><body><form class="w-full"><div class="relative flex w-full flex-auto flex-col"><div contenteditable="true" translate="no" class="ProseMirror" id="prompt-textarea"><p data-placeholder="Ask anything" class="placeholder"><br class="ProseMirror-trailingBreak"></p></div></div></form></body></html>
