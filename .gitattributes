@@ -3,3 +3,5 @@
 # (every line then ends in a carriage return). These two rules keep exactly that folder on LF; nothing else is affected.
 scripts/verify/*.sh text eol=lf
 scripts/verify/*.txt text eol=lf
+ai-os/audit37/projexa-api/*.ts text eol=lf
+ai-os/audit37/projexa-api/*.json text eol=lf

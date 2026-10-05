@@ -33,6 +33,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 import { takeScreenMessage } from "@/lib/screen-message";
 import { DOCUMENT_ACCEPT, DOCUMENT_CATEGORIES, describeFileSize, documentSizeError, relatesToWord } from "@/lib/document-intake";
+import { viaPxApi } from "@/lib/px-api";
 
 type DocVersion = { id: string; name: string; versionNumber: number; createdAt: string; fileType: string | null };
 
@@ -177,7 +178,7 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
         return;
       }
 
-      const res = await fetch(`/api/documents/${documentId}`, {
+      const res = await viaPxApi(`/api/documents/${documentId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(documentPatchBody({ name, category, expiryDate })),
       });

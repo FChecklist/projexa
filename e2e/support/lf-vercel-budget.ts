@@ -19,6 +19,7 @@ export type Dest =
   | "vercel-page" // the app origin, a page / RSC / route that is not /api and not a static file: a Vercel function or ISR render
   | "vercel-static" // /_next/static, /_release, /sw.js, public files: a CDN file, no function
   | "edge-sync" // the projexa-sync Supabase Edge Function
+  | "edge-api" // the projexa-api Supabase Edge Function (AUDIT-100 A2: the proxy routes it answers instead of Vercel)
   | "edge-other" // any other Supabase Edge Function
   | "supabase-auth" // the Auth service (the local stand-in on the rig)
   | "other"
@@ -37,6 +38,7 @@ export function classify(url: string): { dest: Dest; path: string } {
     return { dest: "vercel-page", path }
   }
   if (u.host.endsWith(".supabase.co") && path.startsWith("/functions/v1/projexa-sync")) return { dest: "edge-sync", path }
+  if (u.host.endsWith(".supabase.co") && path.startsWith("/functions/v1/projexa-api/")) return { dest: "edge-api", path: path.slice("/functions/v1/projexa-api".length) }
   if (u.host.endsWith(".supabase.co") && path.startsWith("/functions/v1/")) return { dest: "edge-other", path }
   if (u.host === `localhost:${STUB_PORT}` || (u.host.endsWith(".supabase.co") && path.startsWith("/auth/v1/"))) return { dest: "supabase-auth", path }
   return { dest: "other", path }
@@ -89,7 +91,7 @@ export function trackTraffic(context: BrowserContext): Traffic {
 export const leftTheLaptop = (seen: Seen[]) => seen.filter((s) => s.fromSw || !s.answeredBySw)
 
 export function countByDest(seen: Seen[]): Record<Dest, number> {
-  const out: Record<Dest, number> = { "vercel-api": 0, "vercel-page": 0, "vercel-static": 0, "edge-sync": 0, "edge-other": 0, "supabase-auth": 0, other: 0 }
+  const out: Record<Dest, number> = { "vercel-api": 0, "vercel-page": 0, "vercel-static": 0, "edge-sync": 0, "edge-api": 0, "edge-other": 0, "supabase-auth": 0, other: 0 }
   for (const s of seen) out[s.dest] += 1
   return out
 }

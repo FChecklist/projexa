@@ -41,6 +41,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backendMessage } from "@/lib/fetch-json";
 import { isTaskErrorCode, messageFor } from "@/lib/task-errors";
+import { viaPxApi } from "@/lib/px-api";
 
 /** The ceiling on a write. Ten seconds, per R-277. */
 export const SUBMIT_TIMEOUT_MS = 10_000;
@@ -322,7 +323,7 @@ export function useSubmit<T = unknown>({
         guard.abort();
       }, ceilingMs);
       try {
-        const res = await fetch(request.input, { ...init, signal: guard.signal });
+        const res = await viaPxApi(request.input, { ...init, signal: guard.signal });
         const body: unknown = await res.json().catch(() => null);
         clearTimeout(ceiling);
 
