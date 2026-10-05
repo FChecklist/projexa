@@ -1,0 +1,30 @@
+AUDIT-100 B55 -- SEEN TO FAIL (unit level), 2026-10-06. Two bugs planted at once in the working tree, then reverted (git diff empty before commit):
+  1. src/lib/email/welcome-ai-prompt.ts: the 'Open PROJEXA' anchor's href set to the minted link (the link in an href)
+  2. src/app/api/org/invites/accept/route.ts: sendInviteWelcome called BEFORE the accept_org_invite error check (e-mail on a refused/used token)
+Command: bun test --isolate src/lib/email/welcome-ai-prompt.test.ts src/app/api/org/invites/accept
+
+Expected: false
+Received: true
+(fail) welcome e-mail with the personal AI prompt (B55) > no token and no link in any href; the only hyperlink is the...
+- Expected  - 1
++ Received  + 14
+(fail) POST /api/org/invites/accept > the database's own refusal (wrong e-mail, used, revoked, expired) reaches the p...
+- Expected  - 0
++ Received  + 6
+(fail) the welcome e-mail with the AI prompt (B55) > a successful accept sends it ONCE, to the session's own address,...
+Expected length: 1
+Received length: 3
+(fail) the welcome e-mail with the AI prompt (B55) > accepting the same invitation twice: the second accept is refuse...
+- Expected  - 1
++ Received  + 14
+(fail) the welcome e-mail with the AI prompt (B55) > an expired or revoked invitation sends nothing [1.96ms]
+Expected length: 3
+Received length: 6
+(fail) the welcome e-mail with the AI prompt (B55) > the e-mail never changes the answer: a skipped, failed or throwi...
+- Expected  - 0
++ Received  + 6
+(fail) the welcome e-mail with the AI prompt (B55) > an account with no e-mail on its session is still attached; the ...
+ 8 pass
+ 7 fail
+
+After restoring both files: 15 pass, 0 fail.
