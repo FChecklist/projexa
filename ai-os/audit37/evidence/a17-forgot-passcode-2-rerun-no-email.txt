@@ -1,0 +1,30 @@
+Running 5 tests using 1 worker
+[a17] A17_CREDENTIAL=admin: credential minted by the admin API, no e-mail sent (values not printed)
+  ok 1 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:169:5 › laptop 1 asks for the reset ONCE; the re...
+  -  2 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:200:5 › the real e-mail arrives with the link an...
+  ok 3 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:218:5 › on a NEW laptop the link signs nobody in...
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3919593079'
+[WebServer] }
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3919593079'
+[WebServer] }
+  ok 4 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:245:5 › the RIGHT code on the new laptop -> a ne...
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3919593079'
+[WebServer] }
+[WebServer] ⨯ Error: The destination stream closed early.
+[WebServer]     at ignore-listed frames {
+[WebServer]   digest: '3919593079'
+[WebServer] }
+[a17 cleanup]
+  - security_audit_log rows of the throwaway account
+  - auth user a6afa3a0-ff55-4157-8299-046dbd4a0435 (+ profile, ON DELETE CASCADE)
+  left behind: auth.users=0 profiles=0 memberships=0
+  ok 5 [audit37-real] › e2e\audit37-real-a17-forgot-passcode.spec.ts:269:5 › the USED link is refused plainly on anot...
+  1 skipped
+  4 passed (50.8s)
+EXIT 0
