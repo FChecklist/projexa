@@ -1,5 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
-import { openLaptop, openLocal, outboxOps, localRows, projectId, serverRows } from "./support/real-backend";
+import { countMeta, openLaptop, openLocal, outboxOps, localRows, projectId, serverRows } from "./support/real-backend";
 
 // AUDIT-100 rows B7 (an edit made online lands in Supabase AND on a second laptop), B18 (edits made offline queue and flush when the network is back,
 // re-read from the server), B28 (back online, sync resumes WITHOUT a refresh) -- against the REAL backend (playwright.audit37-real.config.ts):
@@ -24,6 +24,9 @@ test.beforeAll(async ({ browser }) => {
   P = await projectId(A.context);
   // laptop B has the project open (as its person would) from before any change below is made, and is left alone from here on
   await openLocal(B.page, `/local/rfis?projectId=${P}`, "rfis-list");
+  // ... and has FINISHED its first whole copy (sync:last), so what A does below is really a LATER change. Measured 2026-10-05: the real
+  // org's first copy is ~600 requests per laptop and can outlast the whole file; a change made during it is not what B7/B28 are about.
+  await expect.poll(() => countMeta(B.page, "sync:last"), { timeout: 900_000, message: "laptop B never finished its first copy" }).toBeGreaterThan(0);
   // BREAK-TEST SWITCH (R74-RULING-03 (c)): AUDIT100_BREAK=push refuses every push of laptop A to the real service; the specs must then FAIL.
   if (process.env.AUDIT100_BREAK === "push") await A.context.route(/projexa-sync\/push/, (r) => r.abort("connectionrefused"));
 });
