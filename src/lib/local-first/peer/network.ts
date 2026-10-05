@@ -48,6 +48,11 @@ export type PeerNetworkOptions = {
   onRows?: (n: number) => void;
   /** The number of verified peers changed. */
   onChange?: (verified: number) => void;
+  /**
+   * AUDIT-100 B22: a link to a laptop heard on signalling never opened (ICE failed or timed out: no direct path, no relay). Not called
+   * when the link was closed on purpose (leave, network closed).
+   */
+  onLinkFailed?: (peerId: string) => void;
   reannounceMs?: number;
   replyEveryMs?: number;
 };
@@ -125,7 +130,10 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
           onClose: () => drop(peerId, entry),
         });
       },
-      () => drop(peerId, entry),
+      () => {
+        if (!closed && entries.get(peerId) === entry && !entry.session) o.onLinkFailed?.(peerId);
+        drop(peerId, entry);
+      },
     );
     return entry;
   }

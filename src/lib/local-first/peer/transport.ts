@@ -1,8 +1,11 @@
 // LOCAL-FIRST PEERS: the pipe between two laptops. Data goes over a WebRTC data channel, straight from one browser to the other.
 //
-// COST FIRST: only free public STUN servers (they tell a browser its public address; no data passes through them) and NO TURN
-// relay (a TURN server carries the data and is billed). When two laptops cannot reach each other directly (a strict corporate
-// NAT), there is simply no peer link and they keep syncing through Supabase, as CONTRACT.md section 4 says.
+// COST FIRST: by default only free public STUN servers (they tell a browser its public address; no data passes through them) and NO
+// TURN relay (a TURN server carries the data and is billed). When two laptops cannot reach each other directly (a symmetric /
+// carrier-grade NAT), there is simply no peer link, the peer marker says so in one plain sentence, and they keep syncing through
+// Supabase, as CONTRACT.md section 4 says. AUDIT-100 B22: an owner-configured relay (ice.ts, NEXT_PUBLIC_PEER_ICE_URL, short-lived
+// credentials fetched per signed-in person, never a secret in the bundle) is added to `iceServers` when present; proven in a real
+// browser with relay-only candidates by e2e/lf-peer-relay.spec.ts.
 //
 // Signalling (who wants to talk, the SDP offer/answer and ICE candidates) is NOT done here: the caller passes `sendSignal` and
 // feeds the answers back through `handleSignal` (signalling.ts carries them over Supabase Realtime, BroadcastChannel or ntfy).
@@ -63,6 +66,8 @@ export type RtcOptions = {
   initiator: boolean;
   sendSignal: (signal: RtcSignal) => void;
   iceServers?: RTCIceServer[];
+  /** "relay": only TURN-relayed candidates (tests use it to prove the relay path; the app leaves it "all"). */
+  iceTransportPolicy?: RTCIceTransportPolicy;
   /** Injected for tests / non-browser runtimes. Defaults to the global RTCPeerConnection. */
   RTCPeerConnectionImpl?: typeof RTCPeerConnection;
   openTimeoutMs?: number;
@@ -74,7 +79,7 @@ export function createRtcLink(options: RtcOptions): RtcHandle {
   if (!Impl) {
     return { link: Promise.reject(new Error("This browser cannot make direct connections.")), handleSignal: async () => {}, close: () => {} };
   }
-  const pc = new Impl({ iceServers: options.iceServers ?? DEFAULT_ICE_SERVERS });
+  const pc = new Impl({ iceServers: options.iceServers ?? DEFAULT_ICE_SERVERS, ...(options.iceTransportPolicy ? { iceTransportPolicy: options.iceTransportPolicy } : {}) });
   let closed = false;
   const pendingIce: RTCIceCandidateInit[] = [];
   let remoteSet = false;

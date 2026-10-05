@@ -17,6 +17,10 @@ import { resetLocalCopy } from "./reset-copy";
 import { createClient } from "@supabase/supabase-js";
 import { parseEnvelope, remoteSignalProviders, type RealtimeClientLike, type SignalConnection, type SignalEnvelope, type SignalProvider } from "./signalling";
 import { createRtcLink } from "./transport";
+import { getPeerStatus } from "./status";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { PeerSyncMarker } from "@/components/PeerSyncMarker";
 import { createKeyRing, PEER_ATTEST_KEY, verifyToken, type KeyRing, type PublicKeyInfo, type SignedRow } from "./verify";
 
 declare global {
@@ -40,6 +44,20 @@ const refusals: Array<{ peer: string; reason: string }> = [];
 const counters = { serverStep: 0, attestFetch: 0, fetch: 0 };
 /** startAutoReal: which real signalling provider connected, and which failed (with why). */
 const providerLog: { connected: string[]; failed: Array<{ name: string; error: string }> } = { connected: [], failed: [] };
+
+/**
+ * AUDIT-100 B22: how startAuto's links are built. Default: loopback host candidates only (iceServers []). The relay spec passes TURN
+ * servers and iceTransportPolicy "relay" (host and server-reflexive candidates are never gathered, so only a relay path can connect).
+ */
+type RtcSetup = { iceServers: RTCIceServer[]; iceTransportPolicy?: RTCIceTransportPolicy; openTimeoutMs?: number };
+let rtcSetup: RtcSetup = { iceServers: [] };
+/** Every RTCPeerConnection the links made (to read which candidate pair carried the data). */
+const pcs: RTCPeerConnection[] = [];
+class RecordedPC extends RTCPeerConnection {
+  constructor(config?: RTCConfiguration) { super(config); pcs.push(this); }
+}
+const openRtc = ({ initiator, sendSignal }: { initiator: boolean; sendSignal: Parameters<typeof createRtcLink>[0]["sendSignal"] }) =>
+  createRtcLink({ initiator, sendSignal, iceServers: rtcSetup.iceServers, iceTransportPolicy: rtcSetup.iceTransportPolicy, openTimeoutMs: rtcSetup.openTimeoutMs, RTCPeerConnectionImpl: RecordedPC });
 
 // every network request this page makes is counted: the peer path must make none
 const realFetch = window.fetch.bind(window);
@@ -122,13 +140,14 @@ const harness = {
    * server unreachable: the attestation comes from the laptop's own cache (stored here as /attest would have left it), every server
    * step and attestation fetch is counted and fails.
    */
-  async startAuto(o: { attestation: { token: string; expiresAt: number; viewClass: string; projects: string[]; channel: string } }) {
+  async startAuto(o: { attestation: { token: string; expiresAt: number; viewClass: string; projects: string[]; channel: string }; rtc?: RtcSetup }) {
+    if (o.rtc) rtcSetup = o.rtc;
     await db!.setMeta(PEER_ATTEST_KEY, { ...o.attestation, orgId: me.org, userId: me.userId, fetchedAt: Date.now() });
     auto = createAutoSync({
       userId: me.userId, selfId: me.userId, db: db!,
       fetchAttest: async () => { counters.attestFetch += 1; throw new Error("our server is down"); },
       remoteProviders: [bridgeProvider(me.userId)],
-      openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal, iceServers: [] }),
+      openLink: openRtc,
       serverStep: async () => { counters.serverStep += 1; throw new Error("our server is down"); },
       isVisible: () => true, isOnline: () => true, locks: null, foreignOrg,
     });
@@ -159,6 +178,34 @@ const harness = {
     });
   },
   providers() { return { connected: providerLog.connected.slice(), failed: providerLog.failed.slice() }; },
+  /** B22: the real peer marker (components/PeerSyncMarker.tsx), mounted in this page as the shell mounts it. */
+  mountMarker() {
+    const el = document.createElement("div");
+    el.id = "marker";
+    document.body.appendChild(el);
+    createRoot(el).render(createElement(PeerSyncMarker));
+  },
+  peerStatus() { return { ...getPeerStatus() }; },
+  /** B22: for each link this page made, the candidate types of the pair that carried the data (from the browser's own getStats). */
+  async selectedPairs() {
+    const out: Array<{ state: string; local: string | null; remote: string | null; bytesSent: number }> = [];
+    for (const pc of pcs) {
+      const stats = await pc.getStats();
+      const byId = new Map<string, Record<string, unknown>>();
+      stats.forEach((s: Record<string, unknown>) => byId.set(s.id as string, s));
+      let pairId: string | null = null;
+      stats.forEach((s: Record<string, unknown>) => { if (s.type === "transport" && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId as string; });
+      const pair = pairId ? byId.get(pairId) : undefined;
+      const cand = (id: unknown) => (id ? (byId.get(id as string)?.candidateType as string | undefined) ?? null : null);
+      out.push({ state: pc.connectionState, local: cand(pair?.localCandidateId), remote: cand(pair?.remoteCandidateId), bytesSent: Number(pair?.bytesSent ?? 0) });
+    }
+    return out;
+  },
+  /** B22: the app keeps working: a local write and a re-read of this laptop's own database. */
+  async writeLocal(kind: string, id: string, data: Record<string, unknown>) {
+    await db!.putRecord({ id: `${kind}:${id}`, type: kind, orgId: me.org, projectId: "p1", data, dirty: crypto.randomUUID() });
+    return (await db!.getRecord(kind, id))?.data ?? null;
+  },
   /**
    * One heads-mode server step (server-step.ts) against a stubbed GET /heads answer: when the epoch or view class differs from the stored
    * one, the REAL resetLocalCopy runs (reset-copy.ts) and a whole sync follows (stubbed: counted, stores nothing).
