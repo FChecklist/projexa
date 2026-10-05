@@ -1,0 +1,20 @@
+
+Running 4 tests using 1 worker
+
+  ok 1 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:209:5 › an org owner invites a person as client_viewer through the real route (3.8s)
+  ok 2 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:223:5 › the invitee accepts in the browser: attached, ONE 24-hour read-only 'Welcome email' link minted for them (6.1s)
+  -  3 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:238:5 › Resend: exactly ONE e-mail, from the verified sender, delivered; its prompt box holds the person's link, never in an href
+[b55 cleanup] run muvpuu1sxep1:
+  - VERIDIAN: revoke every link of the throwaway user
+  - VERIDIAN: delete the throwaway user's links that were never used
+  - VERIDIAN compliance.users 41ee0b8e-8afa-40bd-8f9a-8055f604b55c
+  - VERIDIAN compliance.organisations aa8808d6-10f8-4e45-b577-a7ddfdcbfd3c
+  - PROJEXA organization af31c533-f30f-43f8-b050-6505abafd278 (+ memberships, org_invites: ON DELETE CASCADE)
+  - PROJEXA security_audit_log rows of the throwaway accounts
+  - PROJEXA auth user admin 21bfc4f0-4ab9-4058-bdf0-02d073e336d3 (+ profile)
+  - PROJEXA auth user invitee 4380b361-1dc3-4bfe-9a71-a05081ccd687 (+ profile)
+  left behind: {"organizations":0,"profiles":0,"memberships":0,"veridian":0,"retainedRevokedLinks":0}
+  ok 4 [audit37-real-edge] › e2e\audit37-real-b55-welcome-email.spec.ts:286:5 › accepting the same invitation again is refused and sends NOTHING: still one e-mail, still one link (910ms)
+
+  1 skipped
+  3 passed (29.4s)
