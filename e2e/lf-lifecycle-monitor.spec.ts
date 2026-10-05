@@ -4,9 +4,11 @@ import { makePerson, newWorld, signIn, stubSyncService } from "./support/lf-life
 // LOCAL-FIRST prepare monitor (owner directive 2026-10-03): "if the download is happening and, for any reason, it stops, we should know at our
 // end ... without the files PROJEXA does not work ... we cannot lose a customer". In a real Chromium (playwright.local-first.config.ts):
 //   * the screen shows ONLY the title, the sentence and the percentage: no step list, no error text, no Skip, no button;
-//   * while the sync service cannot be reached the laptop is NOT let in; it heartbeats the same stage and percentage (the server calls that STUCK),
-//     then tells us (POST /prepare) it FAILED, where, and why when its time budget ends, and tries again by itself;
-//   * once the service answers it reaches 100%, PROJEXA opens by itself, and the last thing we hear is `done` at 100.
+//   * the full screen is the ONE-TIME INSTALL (worker, screens, local database). Once that is done the person is let in and it is remembered
+//     for good (owner, 2026-10-05: "the projects copy happens in the background; the user must not wait on every login or refresh");
+//   * while the sync service cannot be reached the projects copy is reported to us (POST /prepare: stage, why) and retried quietly by
+//     itself, with NOTHING on the person's screen;
+//   * a refresh never brings the screen back.
 
 const A = makePerson("mona", "lf-org-1", "Monitor Point Tower", "Monitor Point - Structure");
 
@@ -28,35 +30,28 @@ test("a preparation that cannot finish is seen on our side with its reason, retr
     await expect(page.getByText(/Skip for now|Open PROJEXA|not reachable|still works/)).toHaveCount(0);
   });
 
-  await test.step("we are told where it stopped and WHY, again and again while it is stuck, and the person is not let in", async () => {
+  await test.step("the install is done, so the person is let in even though the projects could not be copied", async () => {
+    await expect(dialog, "the full screen must close once the install is done").toHaveCount(0, { timeout: 150_000 });
+  });
+
+  await test.step("we are still told where the projects copy stopped and WHY", async () => {
     await expect
-      .poll(() => world.prepares.filter((p) => p.stage === "projects").length, { timeout: 150_000, message: "the laptop never told us it was stuck in the projects stage" })
-      .toBeGreaterThanOrEqual(3);
-    await expect
-      .poll(() => world.prepares.some((p) => p.status === "failed" || p.status === "retrying"), { timeout: 150_000, message: "the laptop never told us its preparation failed" })
+      .poll(() => world.prepares.some((p) => p.stage === "projects" && (p.status === "failed" || p.status === "retrying")), { timeout: 150_000, message: "the laptop never told us the projects copy failed" })
       .toBe(true);
     const failure = world.prepares.find((p) => p.status === "failed" || p.status === "retrying")!;
-    expect(failure).toMatchObject({ stage: "projects", device_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) });
     expect(["service_unreachable", "timeout"], `failure report: ${JSON.stringify(failure)}`).toContain(failure.error_class);
-    const stuck = world.prepares.filter((p) => p.stage === "projects");
-    expect(new Set(stuck.map((p) => p.percent)).size, "no progress while the service is down").toBe(1);
-    expect(Number(stuck[0]!.percent)).toBeLessThan(100);
-    await expect(dialog, "a laptop without its copy is not let in").toBeVisible();
-    await expect(dialog.locator("button")).toHaveCount(0);
   });
 
-  await test.step("it tries again by itself", async () => {
+  await test.step("it tries again by itself, quietly", async () => {
     const manifestHits = world.hits.filter((h) => h.route === "manifest").length;
     await expect.poll(() => world.hits.filter((h) => h.route === "manifest").length, { timeout: 120_000, message: "it did not try again by itself" }).toBeGreaterThan(manifestHits);
+    await expect(dialog).toHaveCount(0);
   });
 
-  await test.step("the service comes back: it reaches 100%, PROJEXA opens by itself, and our last word from it is done at 100", async () => {
+  await test.step("a refresh does not bring the screen back", async () => {
     world.failRoutes.names.clear();
-    await expect(dialog, "the screen never finished and opened PROJEXA after the service came back").toHaveCount(0, { timeout: 180_000 });
-    await expect.poll(() => world.prepares.at(-1)?.status, { timeout: 60_000, message: "we were never told it finished" }).toBe("done");
-    expect(world.prepares.at(-1)).toMatchObject({ stage: "done", percent: 100, error_class: null });
-    // the percentage never claimed 100 before it was true
-    const early = world.prepares.slice(0, -1).filter((p) => p.status !== "done");
-    expect(early.every((p) => Number(p.percent) < 100)).toBe(true);
+    await page.reload();
+    await page.waitForLoadState("domcontentloaded");
+    await expect(dialog).toHaveCount(0, { timeout: 15_000 });
   });
 });
