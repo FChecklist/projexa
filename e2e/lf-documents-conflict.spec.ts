@@ -227,8 +227,13 @@ test("case 3: a MONEY field is never merged on the laptop: the conflict goes to 
 
     await test.step("laptop B: the conflict goes to the person's card; the money is NOT merged and re-sent", async () => {
       await online(b)
-      await openLocal(b, "/change-orders/lf-co-3")
       await expect.poll(() => pushesOf(server, b).length, { timeout: 90_000, message: "laptop B never sent its change" }).toBeGreaterThan(0)
+      // Let B's own page SETTLE the server's answer before it navigates. Navigating while the push is in flight cancels the fetch AFTER
+      // the server answered; the next page then re-sends the SAME op_id (the outbox's at-least-once delivery, safe because the server's
+      // ledger is per op_id and a conflict writes nothing) -- which is what one CI run saw here as ["conflict", "conflict"]. Pinned in
+      // src/lib/local-first/outbox-single-send.test.ts; this step is about the money not being merged, not about that window.
+      await expect.poll(async () => (await readOutbox(b.page, userId)).map((o) => o.status), { timeout: 90_000, message: "laptop B never settled the server's answer" }).toEqual(["conflict"])
+      await openLocal(b, "/change-orders/lf-co-3")
       await b.page.waitForTimeout(5_000)
       expect(pushesOf(server, b).map((r) => r.status), "laptop B merged a money change by itself and re-sent it").toEqual(["conflict"])
       expect(server.row("change_orders", "lf-co-3"), "the server's cost was overwritten without the person deciding").toMatchObject({ version: 3, data: { cost_impact: "20000.00" } })
