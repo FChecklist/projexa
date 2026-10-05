@@ -50,8 +50,13 @@ app has several origins: apex, www, previews), `public, max-age=31536000, immuta
   fail; with the installer ignoring the static base, 4 fail.
 * Real browser (`e2e/lf-static-host.spec.ts`, `bunx playwright test -c playwright.static-host.config.ts`; CI job "Offline e2e
   (local-first)"): a production build made WITH the switch pointing at `e2e/support/static-host-server.mjs` (a different origin
-  standing in for Pages, serving the folder the real stage script writes, with the same `_headers` rules). Results in the PR / the
-  evidence file `ai-os/audit37/evidence/static-pages-e2e-*.txt`.
+  standing in for Pages, serving the folder the real stage script writes, with the same `_headers` rules). Measured 2026-10-06
+  (`ai-os/audit37/evidence/static-pages-e2e-2026-10-06.txt`): over sign-in, install, daily use, reload and offline, **0 static files
+  from the app origin**; 58 requests to the static host, 159 static-host addresses answered from the laptop's verified copy; the BOQ
+  and the shell open with the network OFF; a static host that drops the bundle (`bundle_unreachable`) or serves one wrong byte
+  (`bundle_hash`) is refused with nothing installed, and the real bytes install on the next start. **Seen to fail**: with the worker's
+  static-host branch disabled in the built app, the offline step fails (0 of 3 BOQ lines); with the variable missing at `next start`
+  time, 6 static files came from the app origin and the measurement failed.
 * The REAL Pages host: `bun scripts/verify/static-pages-live.mjs` (read-only) -> `ai-os/audit37/evidence/static-pages-2026-10-05T19-36-12-226Z.json`:
   the live release `2026.10.05-796` (git `edfabc66`, the one https://projexa-ai.com serves) deployed to Pages from the verified live
   bundle; **383 of 383 files and the bundle byte-identical** (sha256 and size) to the manifest the app origin serves; CORS, immutable
@@ -63,7 +68,9 @@ app has several origins: apex, www, previews), `public, max-age=31536000, immuta
 
 ## The owner's switch (3 steps, Vercel project `projexa`, Production environment)
 
-1. Add `NEXT_PUBLIC_PX_STATIC_BASE` = `https://projexa-static.pages.dev`.
+1. Add `NEXT_PUBLIC_PX_STATIC_BASE` = `https://projexa-static.pages.dev` (a Vercel env var is present at build AND at run time, which
+   is required: Next.js applies `assetPrefix` partly at render time; measured on the rig, a server started without it served half
+   the page's assets from the app origin).
 2. Add `CLOUDFLARE_API_TOKEN` (a token limited to *Cloudflare Pages: Edit*) and `CLOUDFLARE_ACCOUNT_ID`, so the build can upload.
 3. Redeploy. The build uploads its static files to Pages before the deployment goes live (a failed upload fails the build).
 
