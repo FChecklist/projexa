@@ -17,6 +17,8 @@ export async function harnessBundle(): Promise<string> {
     entryPoints: [path.join(__dirname, "../../src/lib/local-first/peer/e2e-harness-lf.ts")],
     bundle: true, write: false, format: "iife", platform: "browser", target: "es2022",
     alias: { "@": path.join(__dirname, "../../src") },
+    // B22: the harness mounts the real peer marker (React), which reads process.env.NODE_ENV
+    define: { "process.env.NODE_ENV": '"production"' },
   });
   bundle = out.outputFiles[0].text;
   return bundle;

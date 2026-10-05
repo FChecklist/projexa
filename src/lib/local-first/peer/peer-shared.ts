@@ -21,6 +21,13 @@ import type { RealtimeClientLike } from "./signalling";
 import { broadcastChannelProvider, remoteSignalProviders } from "./signalling";
 import { createServerStep } from "./server-step";
 import { createRtcLink } from "./transport";
+import { createIceSource } from "./ice";
+
+/**
+ * AUDIT-100 B22: the owner's relay-credential endpoint (build time, NOT a secret: it hands short-lived TURN credentials only to a
+ * signed-in person). Unset: STUN only, no extra request. See ice.ts and ai-os/audit37/PEER_DIFFERENT_NETWORKS_OWNER_SCRIPT.md.
+ */
+const PEER_ICE_URL = process.env.NEXT_PUBLIC_PEER_ICE_URL ?? "";
 
 const running = new Map<string, { stop: () => void }>();
 
@@ -56,6 +63,9 @@ export function startPeerSync(userId: string): void {
     const db = await openLocalDb(globalThis.indexedDB, localDbNameFor(userId));
     const client = createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 1 });
     const replica = getSharedReplica(userId);
+    const ice = createIceSource({ url: PEER_ICE_URL, token: accessToken, isOnline: () => navigator.onLine !== false });
+    // the first links get the relay too when one is configured; never held up longer than 5 s by a slow endpoint
+    await Promise.race([ice.refresh(), new Promise((r) => setTimeout(r, 5000))]);
     auto = createAutoSync({
       userId,
       selfId: `${getDeviceId()}:${userId.slice(0, 8)}`.slice(0, 64),
@@ -63,7 +73,10 @@ export function startPeerSync(userId: string): void {
       fetchAttest,
       remoteProviders: remoteSignalProviders(() => createClient() as unknown as RealtimeClientLike),
       localProviders: [broadcastChannelProvider()],
-      openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal }),
+      openLink: ({ initiator, sendSignal }) => {
+        void ice.refresh(); // no-op while the held credentials are fresh
+        return createRtcLink({ initiator, sendSignal, iceServers: ice.peek() });
+      },
       // heads mode (FC cost:COST-03): ONE GET /heads per run, a project's feed only when its head moved, a reset when the view class
       // or epoch changed; an older service without /heads falls back to lf-e6's project mode (the open project every run, others hourly)
       serverStep: createServerStep({
