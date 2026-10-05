@@ -1,3 +1,4 @@
+import { evalSettled } from "./support/eval-settled";
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import http from "node:http";
 import type { Socket } from "node:net";
@@ -39,7 +40,7 @@ import {
 //       online flag stays true on WebKit (stated, not hidden). On Chromium (Pixel 5) the real network switch is used, as in the other specs.
 
 async function engineFacts(page: Page) {
-  return page.evaluate(async () => ({
+  return evalSettled(page, async () => ({
     userAgent: navigator.userAgent,
     width: window.innerWidth,
     touchPoints: navigator.maxTouchPoints,
@@ -113,7 +114,7 @@ async function assertInstalled(page: Page, userId: string, person: Person) {
   const rel = (await deviceMeta(page, "app:release")) as { version: string } | undefined;
   expect(rel?.version, "IndexedDB meta app:release is not set").toMatch(/^\d{4}\.\d{2}\.\d{2}-\d{3}$/);
   expect(await releaseCaches(page), "Cache Storage holds no px-release-<version>").toEqual([`px-release-${rel!.version}`]);
-  expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true);
+  expect(await evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true);
   expect((await swPointer(page))?.version, "the worker does not point at the installed release").toBe(rel!.version);
   expect(await deviceMeta(page, "persist:state"), "persistent storage was never requested").toMatchObject({ requestedAt: expect.any(Number) });
   expect(await personMeta(page, userId, `sync:done:${person.projectId}:boq_lines`), "the BOQ lines are not in IndexedDB").toBeTruthy();
@@ -150,6 +151,8 @@ test("install online, then the BOQ screen opens offline from the laptop's own co
     await test.step("install: the prepare screen closes only once the release, the worker and the data are in", async () => {
       await openOnlineAndInstall(page, base, world, A);
       await assertInstalled(page, session.userId, A);
+      // AUDIT-100 A3 step 1: the page hands over to the shell once the projects are copied; let that one navigation finish
+      await expect(page.getByTestId("local-shell"), "the page did not hand over to the shell after the install").toBeVisible({ timeout: 120_000 });
       await info.attach("engine-facts-online.json", { body: JSON.stringify(await engineFacts(page), null, 2), contentType: "application/json" });
     });
 
@@ -175,12 +178,12 @@ test("install online, then the BOQ screen opens offline from the laptop's own co
     if (info.project.use.isMobile) {
       await test.step("phone: touch device, and the offline BOQ screen does not scroll sideways", async () => {
         // Playwright's WebKit reports maxTouchPoints 0 even with hasTouch (measured on the iPhone 13 profile); touch events are what it emulates
-        const touch = await page.evaluate(() => ({ points: navigator.maxTouchPoints, events: "ontouchstart" in window }));
+        const touch = await evalSettled(page, () => ({ points: navigator.maxTouchPoints, events: "ontouchstart" in window }));
         expect(touch.points > 0 || touch.events, `the phone profile has no touch: ${JSON.stringify(touch)}`).toBe(true);
         // a real tap (Playwright refuses page.tap without touch): on a BOQ line, which must stay on screen afterwards
         await page.getByTestId("boq-local-line").first().tap();
         await expect(page.getByTestId("boq-local-line")).toHaveCount(A.lines.length);
-        const { scrollWidth, innerWidth } = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
+        const { scrollWidth, innerWidth } = await evalSettled(page, () => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
         expect(innerWidth).toBeLessThanOrEqual(400);
         expect(scrollWidth, "the offline BOQ screen is wider than the phone").toBeLessThanOrEqual(innerWidth);
       });
