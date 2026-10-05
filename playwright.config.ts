@@ -67,7 +67,7 @@ export default defineConfig({
       // synthetic signed-in browser, stubbed network). Here they would sit behind this project's real logins against production.
       // LOCAL-FIRST: offline-local-first.spec.ts runs only through playwright.local-first.config.ts (a production build, the local Auth
       // stand-in, the sync service answered in the browser) -- never against the real site with real logins.
-      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/, /landing\.spec\.ts/, /boq-offline\.spec\.ts/, /boq-worker-filter\.spec\.ts/, /ai-link-mint\.spec\.ts/, /upload-proposals\.spec\.ts/, /offline-local-first\.spec\.ts/, /lf-(ai|delivery|documents|overview|peer|lifecycle)-.*\.spec\.ts/, /peer-sync\.spec\.ts/],
+      testIgnore: [/auth\.setup\.ts/, /public-pages-perf\.spec\.ts/, /landing\.spec\.ts/, /boq-offline\.spec\.ts/, /boq-worker-filter\.spec\.ts/, /ai-link-mint\.spec\.ts/, /upload-proposals\.spec\.ts/, /offline-local-first\.spec\.ts/, /lf-(ai|delivery|documents|overview|peer|lifecycle)-.*\.spec\.ts/, /peer-sync\.spec\.ts/, /extension-ai-link\.spec\.ts/],
     },
     {
       // R67 J-01/J-02/J-03 (audit R-246/R-279/R-280). The public marketing
