@@ -24,6 +24,10 @@ import { test, expect, type Browser, type BrowserContext, type Page } from "@pla
 // ENV (never printed, never committed): SUPABASE_SERVICE_ROLE_KEY (PROJEXA, fixtures and re-reads), SUPABASE_ACCESS_TOKEN (management API:
 // SQL on the VERIDIAN project). NEXT_PUBLIC_SUPABASE_ANON_KEY (public) is read from the environment or this checkout's .env.local.
 //   AUDIT37_SKIP_BUILD=1 AUDIT37_PORT=3156 bunx playwright test -c playwright.audit37-real.config.ts audit37-real-invite-links-members
+// The two Edge Functions answer CORS only for http://localhost:3100 among local origins; on any other port the in-app button's browser call
+// is blocked by CORS ("Could not reach the AI work link service"). Serve on 3100, or (as the 2026-10-06 run did, 3100 being held by another
+// session) run Microsoft Edge with --disable-web-security: only the browser's CORS check is lifted, every request still reaches the real
+// services with the real session. See ai-os/audit37/evidence/link-members-README.md.
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://evpckeuxgvahguwsaeul.supabase.co";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -263,8 +267,8 @@ for (const a of [pm, se]) {
     expect(await clickCopyAiPrompt(page)).toBe("copied");
     const [vuser] = await vusersOf(a);
     const links = await activeLinksOf(vuser.id);
-    // one user link per person: the button's link replaced the welcome link
-    expect(links.map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", null, 1]]);
+    // one user link per person: the button's link (the service's default label) replaced the welcome link
+    expect(links.map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", "All my projects", 1]]);
   });
 }
 
@@ -300,7 +304,7 @@ test("a member who joined BEFORE the fix (no accept, no VERIDIAN user) is healed
   expect(await clickCopyAiPrompt(page)).toBe("copied");
   const vusers = await vusersOf(legacy);
   expect(vusers.map(({ id: _i, ...u }) => u)).toEqual([{ org_id: veridianOrgId, role: "member", is_active: true, email: legacy.email.toLowerCase() }]);
-  expect((await activeLinksOf(vusers[0].id)).map((l) => [l.scope, l.authority_level])).toEqual([["user", 1]]);
+  expect((await activeLinksOf(vusers[0].id)).map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", "All my projects", 1]]);
 });
 
 test("idempotent: /link-member again answers already_linked and writes nothing; a second accept is refused and adds nothing", async () => {
