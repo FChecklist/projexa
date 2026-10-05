@@ -85,7 +85,8 @@ export async function sendInviteWelcome(
   organizationId: string,
   deps: WelcomeDeps = {},
 ): Promise<WelcomeOutcome> {
-  const log = deps.log ?? ((line: string) => console.log(line));
+  // console.warn, not console.log: the production server drops console.log lines (seen in the B55 real-backend rehearsal)
+  const log = deps.log ?? ((line: string) => console.warn(line));
   const email = typeof person.email === "string" ? person.email.trim() : "";
   if (!email) {
     log("[invite-welcome] skipped: the account has no e-mail address");
