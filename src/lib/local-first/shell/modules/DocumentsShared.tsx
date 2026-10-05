@@ -8,7 +8,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import type { ShellApi } from "../types";
-import { fetchDocumentFile, openFileCache, type FileSource, type KeptFile } from "./documents-file-cache";
+import { FILE_NOT_KEPT_MESSAGE, STORAGE_FULL_MESSAGE, fetchDocumentFile, isQuotaError, openFileCache, type FileSource, type KeptFile } from "./documents-file-cache";
 
 export function StateMessage({ testId, state, title, back, children }: { testId: string; state: string; title: string; back?: { href: string; label: string }; children: ReactNode }) {
   return (
@@ -139,6 +139,9 @@ export function DocumentFile({ shell, source, projectId, name, external }: { she
       } finally {
         cache.close();
       }
+    } catch (err) {
+      // B27: the laptop's storage could not even be opened (full, or refused): say so instead of a button that silently does nothing.
+      setState({ s: "message", text: isQuotaError(err) ? STORAGE_FULL_MESSAGE : FILE_NOT_KEPT_MESSAGE });
     } finally {
       setBusy(false);
     }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { IDBFactory } from "fake-indexeddb";
-import { DEFAULT_FILE_CAPS, deleteFileCache, fetchDocumentFile, fileDbNameFor, openFileCache, signingRoute } from "./documents-file-cache";
+import { IDBFactory, IDBObjectStore as FDBObjectStore } from "fake-indexeddb";
+import {
+  DEFAULT_FILE_CAPS, FILE_NOT_KEPT_MESSAGE, STORAGE_FULL_MESSAGE, deleteFileCache, fetchDocumentFile, fileDbNameFor, isQuotaError, openFileCache, signingRoute,
+} from "./documents-file-cache";
 
 // Small caps keep the test light; the real ones are DEFAULT_FILE_CAPS (asserted at the end).
 const caps = { pinned: 500, recent: 150, maxFile: 60 };
@@ -55,6 +57,35 @@ describe("the file cache: kept per person, size-capped, never another organisati
     await cache.put(file("new", third + 10)); // pushes the recent total past the cap
     expect((await cache.list()).map((f) => f.docId).sort()).toEqual(["new", "old", "pin"]);
     cache.close();
+  });
+
+  test("B27: the browser's own storage cap (QuotaExceededError) is a plain message, not an unhandled failure, and nothing is half-stored", async () => {
+    const idb = new IDBFactory();
+    const cache = await openFileCache("u1", { idb });
+    expect(await cache.put(file("small", 10))).toEqual({ ok: true });
+    const proto = FDBObjectStore.prototype as unknown as { put: (...a: unknown[]) => unknown };
+    const realPut = proto.put;
+    proto.put = function () { throw new DOMException("The quota has been exceeded.", "QuotaExceededError"); };
+    let full: Awaited<ReturnType<typeof cache.put>>;
+    let other: Awaited<ReturnType<typeof cache.put>>;
+    try {
+      full = await cache.put(file("big", 40, true));
+      proto.put = function () { throw new DOMException("Something else went wrong.", "UnknownError"); };
+      other = await cache.put(file("big", 40, true));
+    } finally {
+      proto.put = realPut;
+    }
+    expect(full).toEqual({ ok: false, message: STORAGE_FULL_MESSAGE });
+    expect(other).toEqual({ ok: false, message: FILE_NOT_KEPT_MESSAGE });
+    expect(STORAGE_FULL_MESSAGE).toMatch(/no room left/);
+    expect(STORAGE_FULL_MESSAGE).not.toMatch(/quota|IndexedDB|Error|\d{3}/i);
+    // re-read: only the file that fit is kept
+    expect((await cache.list()).map((f) => f.docId)).toEqual(["small"]);
+    cache.close();
+    expect(isQuotaError(new DOMException("x", "QuotaExceededError"))).toBe(true);
+    expect(isQuotaError(new Error("QuotaExceededError: storage full"))).toBe(true);
+    expect(isQuotaError(new Error("aborted"))).toBe(false);
+    expect(isQuotaError(null)).toBe(false);
   });
 
   test("a file over the per-file limit, an empty file, or past the pinned cap is refused with a plain message", async () => {
