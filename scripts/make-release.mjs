@@ -58,16 +58,24 @@ export function sha256Hex(data) {
 
 // ─── the version ────────────────────────────────────────────────────────────────────────────────
 
-/** YYYY.MM.DD-NNN. NNN is BUILD_NUMBER when given, else a number derived from the commit sha, else 000. */
-export function releaseVersion({ date, buildNumber, sha }) {
+/**
+ * YYYY.MM.DD-NNN. NNN is BUILD_NUMBER when given, else the build's time of day in 86.4-second steps (000..999), so the version
+ * of a later build is always the larger string. It used to be the commit sha's first 6 hex digits mod 1000 (Vercel sets no
+ * BUILD_NUMBER), which the live registry showed out of order in 9 of 25 consecutive pairs (2026.10.05-990 built before -305), so a
+ * raised min_compatible floor would have held laptops on the NEWEST release below it, and two same-day builds of one commit
+ * (or two shas equal mod 1000) got the same version for different content, which the registry refuses (VERSION_TAKEN).
+ * `sha` is accepted for callers' sake and no longer used.
+ */
+export function releaseVersion({ date, buildNumber, sha: _sha }) {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   const d = String(date.getUTCDate()).padStart(2, "0");
-  let n = 0;
+  let n;
   if (buildNumber !== undefined && buildNumber !== "" && /^\d+$/.test(String(buildNumber))) {
     n = Number(buildNumber) % 1000;
-  } else if (sha && /^[0-9a-f]{6,}$/i.test(sha)) {
-    n = parseInt(sha.slice(0, 6), 16) % 1000;
+  } else {
+    const secondsOfDay = date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds() + date.getUTCMilliseconds() / 1000;
+    n = Math.min(999, Math.floor(secondsOfDay / 86.4));
   }
   return `${y}.${m}.${d}-${String(n).padStart(3, "0")}`;
 }
@@ -88,7 +96,13 @@ export function collectFiles(root) {
   const files = new Map();
   const staticDir = join(root, ".next", "static");
   if (existsSync(staticDir)) {
-    for (const f of walk(staticDir)) files.set(`_next/static/${f.path}`, f.full);
+    for (const f of walk(staticDir)) {
+      // Source maps are never needed to RUN the app, and production refuses them (Vercel answers 403 for /_next/static/**/*.map,
+      // seen live on 2026.10.05-305, AUDIT-100 B13). Listed in the release, a changed map would be fetched by a partial update,
+      // refused, and the whole update would fail: a laptop could never move past that release.
+      if (f.path.endsWith(".map")) continue;
+      files.set(`_next/static/${f.path}`, f.full);
+    }
   }
   const publicDir = join(root, "public");
   if (existsSync(publicDir)) {

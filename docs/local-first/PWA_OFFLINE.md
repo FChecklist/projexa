@@ -8,7 +8,7 @@ think (R12); cost first, ease second, security third (R13-15). Register: `ct-aib
 
 | Piece | Where | What it does |
 |---|---|---|
-| Release bundle | `scripts/make-release.mjs` (`postbuild`, `release:build`) | `public/_release/release.json` + one deterministic `px-<YYYY.MM.DD-NNN>.tar.gz` of `.next/static`, `public/` and the prerendered `/local`; `manifest_sha256` over canonical JSON (CONTRACT.md section 3). Harmless with no inputs; `--postbuild` never fails a deploy. |
+| Release bundle | `scripts/make-release.mjs` (`postbuild`, `release:build`) | `public/_release/release.json` + one deterministic `px-<YYYY.MM.DD-NNN>.tar.gz` of `.next/static` (without `*.map`: production refuses them), `public/` and the prerendered `/local`; `manifest_sha256` over canonical JSON (CONTRACT.md section 3). Harmless with no inputs; `--postbuild` never fails a deploy. |
 | Verified install | `src/lib/local-first/release/installer.ts` | Verifies the manifest digest, the bundle and every file; writes Cache Storage `px-release-<version>`, `app:release` + file table in the device meta, switches the worker, drops the old cache, records the install. Any verification failure switches nothing. Partial update when fewer than half the files changed. |
 | Service worker | `src/lib/local-first/release/sw-core.ts` (inlined by `src/app/sw.js/route.ts`) | Static files cache-first from the active release; app navigations get the `/local` shell offline / on network failure / on 5xx / first in local-first mode; never `/api/**`, never Supabase. |
 | Connectivity | `src/lib/local-first/connectivity.ts` | `online` / `offline` / `server_down`; at most one probe per 30 s while down, none while up. Only UI: a small status marker. |
