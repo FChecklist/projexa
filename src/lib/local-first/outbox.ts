@@ -562,7 +562,17 @@ export function createOutbox(options: OutboxOptions): Outbox {
       if (!op.record) return true;
       recordId = op.record.id;
       const row = await tx.getRecord(op.record.kind, op.record.id);
-      if (!row) return true;
+      if (!row) {
+        // AUDIT-100 B8: the person's own delete (its optimistic change removed the row), now applied by the server: remember it, so a peer
+        // still holding the old version cannot hand the record back before this laptop's change feed carries the delete (local-db.ts schema 5)
+        if (orgId && op.functionId.startsWith("delete_")) {
+          await tx.putTombstone({
+            id: `${op.record.kind}:${op.record.id}`, type: op.record.kind, orgId, projectId: op.projectId,
+            version: version ?? op.record.baseVersion, deletedAt: now(), source: "own",
+          });
+        }
+        return true;
+      }
       if (later.length === 0) {
         if (server) {
           await tx.putRecord(rowInputFrom(server, row.orgId, row.projectId, now())); // clean, at the server's version

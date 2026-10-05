@@ -13,7 +13,11 @@
 //      with a version higher than ours is fetched by id -- this is how a row of a table WITHOUT updated_at
 //      (which the keyset cursor cannot see change) is refreshed;
 //   6. after a pair was pulled to the end, at most once a day, reconcile deletes against the server's id list
-//      (the repair path for deletes made before change tracking existed).
+//      (the repair path for deletes made before change tracking existed) -- and (AUDIT-100 B8) at the next run, at most hourly, for a
+//      pair that took rows from a PEER since its last reconcile (a stale peer may hand back a row the server deleted long ago);
+//   7. (AUDIT-100 B8) check with the server, by id, the rows a peer said were deleted (an unsigned hint: never a delete by itself).
+//   Every server delete in 4-7 leaves a LOCAL TOMBSTONE (local-db.ts schema 5), so no pull, feed page or peer stores that record again
+//   at the deleted version or older.
 //
 // Guarantees (each one has a test in replica.test.ts or replica-versions.test.ts):
 //   * the cursors (page cursor AND change-feed position) move only after their page is stored (a failing page
@@ -33,7 +37,9 @@
 // the server (owner-approved safeguard). This file only reads; edits go through outbox.ts.
 
 import { SYNC_BUSY_MESSAGE } from "./sync-busy";
-import { changeCursorKey, localDbNameFor, openLocalDb, reconcileKey, type LocalDb } from "./local-db";
+import {
+  PEER_SUSPECT_KEY, SUSPECT_TTL_MS, changeCursorKey, localDbNameFor, openLocalDb, peerTouchedKey, reconcileKey, type LocalDb, type PeerSuspect,
+} from "./local-db";
 import { createRequestPacer, type RequestPacer } from "./rate-pacer";
 import {
   ORG_PROJECT, SYNC_CHANGES_LIMIT, SYNC_ID_LIST_LIMIT, SYNC_PAGE_LIMIT, SyncError, manifestSignInId,
@@ -110,6 +116,12 @@ export type ReplicaOptions = {
   feedReconcileEveryMs?: number;
   /** COST: at most this many (project, kind) id-list repairs per whole sync, so the repair is spread over several runs. Default 12. */
   reconcileBudgetPerRun?: number;
+  /**
+   * COST (AUDIT-100 B8): a (project, kind) that took rows from a PEER since its last id-list reconcile is reconciled at its next run -- a
+   * one-project run included -- but at most this often, and inside reconcileBudgetPerRun. Default one hour. Without it, a row a stale
+   * peer handed back after this laptop's tombstone expired stayed until the weekly repair (feed-covered pairs) or for good (no whole run).
+   */
+  peerReconcileEveryMs?: number;
   /** COST: a one-project run within this long of that project's last change-feed check, for kinds the feed covers, sends nothing. Default 2 minutes. */
   projectFreshMs?: number;
   /** COST: a one-project run reuses the manifest stored by an earlier run of at most this age instead of asking again. Default 6 hours. */
@@ -213,6 +225,9 @@ const defaultYield = () => new Promise<void>((resolve) => setTimeout(resolve, 0)
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 export const FEED_RECONCILE_EVERY_MS = 7 * ONE_DAY_MS;
 export const RECONCILE_BUDGET_PER_RUN = 12;
+export const PEER_RECONCILE_EVERY_MS = 60 * 60_000;
+/** COST (AUDIT-100 B8): at most this many peer `gone` hints are checked with the server per run (one /pull by ids per (project, kind)). */
+export const SUSPECTS_PER_RUN = 160;
 export const PROJECT_FRESH_MS = 2 * 60_000;
 export const MANIFEST_MAX_AGE_MS = 6 * 60 * 60_000;
 
@@ -287,6 +302,7 @@ export function createReplica(options: ReplicaOptions): Replica {
   const reconcileEveryMs = options.reconcileEveryMs ?? ONE_DAY_MS;
   const feedReconcileEveryMs = options.feedReconcileEveryMs ?? FEED_RECONCILE_EVERY_MS;
   const reconcileBudget = Math.max(0, options.reconcileBudgetPerRun ?? RECONCILE_BUDGET_PER_RUN);
+  const peerReconcileEveryMs = Math.max(0, options.peerReconcileEveryMs ?? PEER_RECONCILE_EVERY_MS);
   const projectFreshMs = Math.max(0, options.projectFreshMs ?? PROJECT_FRESH_MS);
   const manifestMaxAgeMs = Math.max(0, options.manifestMaxAgeMs ?? MANIFEST_MAX_AGE_MS);
   const orgCheckEveryMs = Math.max(0, options.orgCheckEveryMs ?? ORG_CHECK_EVERY_MS);
@@ -340,9 +356,10 @@ export function createReplica(options: ReplicaOptions): Replica {
       for (const item of chunk) last.set(item.id, item); // within one chunk the later change wins
       const puts: Parameters<LocalDb["putRecords"]>[0] = [];
       const dels: string[] = [];
+      const delVersions: Record<string, number> = {};
       for (const item of last.values()) {
         const id = `${kind}:${item.id}`;
-        if (item.deleted) dels.push(id);
+        if (item.deleted) { dels.push(id); if (item.version !== undefined) delVersions[id] = item.version; }
         else {
           puts.push({
             id, type: kind, orgId, projectId, data: item.data,
@@ -361,7 +378,8 @@ export function createReplica(options: ReplicaOptions): Replica {
       // fromServer: a dirty row (a pending local edit) is never overwritten or deleted by this; local-db.ts parks the news instead.
       const stored = await db.putRecords(puts, { fromServer: true }); // not `+= await`: that reads the old total before the await and loses a concurrent worker's update
       report.itemsStored += stored;
-      const removed = await db.deleteRecords(dels, { fromServer: true });
+      // AUDIT-100 B8: a server delete leaves a tombstone, so an older copy (a stale peer's) is never stored again
+      const removed = await db.deleteRecords(dels, { fromServer: true, tombstone: { orgId, projectId, versions: delVersions } });
       report.itemsRemoved += removed;
       await yieldFn();
     }
@@ -430,9 +448,10 @@ export function createReplica(options: ReplicaOptions): Replica {
     for (const change of changes) if (kinds.has(change.kind)) latest.set(`${change.kind}:${change.id}`, change);
 
     const dels: string[] = [];
+    const delVersions: Record<string, number> = {};
     const candidates: SyncChange[] = [];
     for (const [fullId, change] of latest) {
-      if (change.op === "D") dels.push(fullId);
+      if (change.op === "D") { dels.push(fullId); delVersions[fullId] = change.version; }
       else candidates.push(change);
     }
     const local = await db.getRecordsByIds(candidates.map((c) => `${c.kind}:${c.id}`));
@@ -448,7 +467,8 @@ export function createReplica(options: ReplicaOptions): Replica {
     }
 
     if (dels.length) {
-      const removed = await db.deleteRecords(dels, { fromServer: true });
+      // AUDIT-100 B8: the D's version is kept as a tombstone: a peer still holding that version (or an older one) cannot hand it back
+      const removed = await db.deleteRecords(dels, { fromServer: true, tombstone: { orgId, projectId, versions: delVersions } });
       report.itemsRemoved += removed;
       report.changesApplied += removed;
     }
@@ -522,6 +542,7 @@ export function createReplica(options: ReplicaOptions): Replica {
     const before = await db.listByProject(orgId, kind, projectId);
     if (before.length === 0) {
       await db.setMeta(reconcileKey(projectId, kind), { at: now() }); // nothing to drop, so no call is spent
+      await db.setMeta(peerTouchedKey(projectId, kind), null);
       return { removed: 0, skipped: true };
     }
     const onServer = new Set<string>();
@@ -541,9 +562,50 @@ export function createReplica(options: ReplicaOptions): Replica {
     const prefix = kind.length + 1;
     const gone = before.filter((r) => !r.dirty && !onServer.has(r.id.slice(prefix))).map((r) => r.id);
     // fromServer: a row that became dirty since the snapshot is still protected inside the database layer.
-    const removed = await db.deleteRecords(gone, { fromServer: true });
+    // AUDIT-100 B8: the server no longer lists them, so each leaves a tombstone at the version this laptop held (a peer cannot hand it back)
+    const removed = await db.deleteRecords(gone, { fromServer: true, tombstone: { orgId, projectId } });
     await db.setMeta(reconcileKey(projectId, kind), { at: now() });
+    await db.setMeta(peerTouchedKey(projectId, kind), null); // the peer rows of this pair are now checked against the server
     return { removed, skipped: false };
+  }
+
+  // ─── peer `gone` hints (AUDIT-100 B8) ───────────────────────────────────────────────────────────────────────
+  //
+  // A peer that holds a tombstone tells a laptop still holding the row (protocol.ts `gone`). That message is NOT signed (the server signs
+  // rows, never deletions), so it never deletes anything by itself: the row is only kept out of sharing (localdb-store.ts) and checked here
+  // with the server -- one /pull by ids per (project, kind), at most SUSPECTS_PER_RUN ids per run. Served live: stored (and the hint
+  // dropped). Served `deleted`, or not served at all: removed WITH a tombstone, exactly like a delete read from the change feed.
+  async function verifySuspects(db: LocalDb, orgId: string, projects: Set<string>, kinds: (projectId: string) => Set<string>, report: SyncReport, signal: AbortSignal): Promise<void> {
+    const all = ((await db.getMeta<PeerSuspect[] | null>(PEER_SUSPECT_KEY)) ?? []).filter((s) => now() - s.at < SUSPECT_TTL_MS);
+    const mine = all.filter((s) => projects.has(s.project) && kinds(s.project).has(s.kind)).slice(0, SUSPECTS_PER_RUN);
+    if (mine.length === 0) return;
+    const groups = new Map<string, PeerSuspect[]>();
+    for (const s of mine) {
+      const key = `${s.project}|${s.kind}`;
+      groups.set(key, [...(groups.get(key) ?? []), s]);
+    }
+    const settled = new Set<string>();
+    for (const list of groups.values()) {
+      if (signal.aborted) throw new SyncError("aborted", "The sync was cancelled.");
+      const { project, kind } = list[0]!;
+      const page = await client.pullIds({ projectId: project, kind, ids: list.map((s) => s.id) }, signal);
+      await assertPageClass(db, project, page);
+      const served = new Map(page.items.map((i) => [i.id, i]));
+      const live = page.items.filter((i) => !i.deleted);
+      if (live.length) await storePage(db, orgId, project, kind, live, report, page.kid);
+      const gone = list.filter((s) => !served.has(s.id) || served.get(s.id)!.deleted).map((s) => `${kind}:${s.id}`);
+      const versions: Record<string, number> = {};
+      for (const s of list) { const v = served.get(s.id)?.version; if (v !== undefined) versions[`${kind}:${s.id}`] = v; }
+      if (gone.length) {
+        const removed = await db.deleteRecords(gone, { fromServer: true, tombstone: { orgId, projectId: project, versions } });
+        report.itemsRemoved += removed;
+        report.changesApplied += removed;
+      }
+      for (const s of list) settled.add(`${s.project}|${s.kind}|${s.id}`);
+    }
+    // re-read: a peer may have added hints while the server was asked
+    const now_ = ((await db.getMeta<PeerSuspect[] | null>(PEER_SUSPECT_KEY)) ?? []).filter((s) => now() - s.at < SUSPECT_TTL_MS);
+    await db.setMeta(PEER_SUSPECT_KEY, now_.filter((s) => !settled.has(`${s.project}|${s.kind}|${s.id}`)));
   }
 
   // ─── one run ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -827,7 +889,13 @@ export function createReplica(options: ReplicaOptions): Replica {
           // AFTER its feed position was taken cannot hold such a delete, so it is stamped without a call.
           try {
             let result = { removed: 0 };
-            if (hasIds && wholeRun) {
+            // AUDIT-100 B8: rows came from a PEER since the last reconcile: check the pair against the id list now (any run, at most hourly)
+            const touched = hasIds ? await db!.getMeta<{ at: number } | null>(peerTouchedKey(pair.projectId, pair.kind)) : null;
+            if (touched && repairsLeft > 0) {
+              const r = await reconcilePair(db!, orgId, pair.projectId, pair.kind, internal.signal, false, peerReconcileEveryMs);
+              if (!r.skipped) repairsLeft -= 1;
+              result = r;
+            } else if (hasIds && wholeRun) {
               if (onFeed && fromScratch) await db!.setMeta(reconcileKey(pair.projectId, pair.kind), { at: now() });
               else if (repairsLeft > 0) {
                 const r = await reconcilePair(db!, orgId, pair.projectId, pair.kind, internal.signal, false, onFeed ? feedReconcileEveryMs : reconcileEveryMs);
@@ -898,6 +966,22 @@ export function createReplica(options: ReplicaOptions): Replica {
             issueFor(err, projectId);
           }
         });
+      }
+
+      // 5. AUDIT-100 B8: rows a peer said were deleted, checked with the server (never deleted on the peer's word alone).
+      if (hasFeed && !state.fatal && !state.tripped && !internal.signal.aborted) {
+        const kindSet = new Set(kinds);
+        const orgKindSet = new Set(org.kinds);
+        const inScope = new Set(targetProjects.filter((p) => !failedProjects.has(p)));
+        if (orgInRun && !failedProjects.has(ORG_PROJECT)) inScope.add(ORG_PROJECT);
+        try {
+          await verifySuspects(db, orgId, inScope, (p) => (p === ORG_PROJECT ? orgKindSet : kindSet), report, internal.signal);
+          noteTransport();
+        } catch (err) {
+          if (!noteFatal(err) && !noteSignal(err) && !noteTransport(err) && !(err instanceof SyncError && (err.kind === "aborted" || err.kind === "not_found"))) {
+            report.issues.push({ reason: err instanceof SyncError ? err.kind : "store", message: `Checking rows another laptop said were deleted failed: ${err instanceof Error ? err.message : String(err)}` });
+          }
+        }
       }
 
       // COST (cost:COST-04): the breaker stopped this run. The stop is stored, so nothing is asked until it ends.

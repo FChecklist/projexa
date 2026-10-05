@@ -12,6 +12,8 @@ import type { TestSigner } from "./test-signer";
 export type Laptop = {
   userId: string;
   org: string;
+  /** This laptop's own IndexedDB factory (AUDIT-100 B8: a replica on the same laptop opens the same database). */
+  idb: IDBFactory;
   db: LocalDb;
   keys: KeyRing;
   self: { token: string; claims: PeerClaims };
@@ -21,7 +23,8 @@ export type Laptop = {
 };
 
 export async function makeLaptop(signer: TestSigner, o: { userId: string; org: string; view: string; projects: string[]; nowMs: number; exp?: number }): Promise<Laptop> {
-  const db = await openLocalDb(new IDBFactory(), localDbNameFor(o.userId));
+  const idb = new IDBFactory();
+  const db = await openLocalDb(idb, localDbNameFor(o.userId));
   const keys = createKeyRing(db);
   await keys.replace([signer.publicKey]);
   const token = await signer.token({ sub: o.userId, org: o.org, view: o.view, projects: o.projects, exp: o.exp }, o.nowMs);
@@ -30,6 +33,7 @@ export async function makeLaptop(signer: TestSigner, o: { userId: string; org: s
   return {
     userId: o.userId,
     org: o.org,
+    idb,
     db,
     keys,
     self: { token, claims },
