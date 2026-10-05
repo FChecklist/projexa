@@ -36,7 +36,8 @@ export async function createOrgSigner(kid = "korg1"): Promise<OrgSigner> {
       return { ...r, sig: await sign(itemMessage({ org, project: r.project, kind: r.kind, id: r.id, version: r.version, updatedAt: r.updated_at, dataHash })), kid };
     },
     async makeLaptop(o) {
-      const db = await openLocalDb(new IDBFactory(), localDbNameFor(o.userId));
+      const idb = new IDBFactory();
+      const db = await openLocalDb(idb, localDbNameFor(o.userId));
       const keys = createKeyRing(db);
       await keys.replace([publicKey]);
       const token = await s.token({ sub: o.userId, org: o.org, view: o.view, projects: o.projects, orgView: o.orgView }, o.nowMs);
@@ -44,7 +45,7 @@ export async function createOrgSigner(kid = "korg1"): Promise<OrgSigner> {
       if (!v.ok) throw new Error(`test token did not verify: ${v.reason}`);
       const claims: PeerClaims = v.claims;
       return {
-        userId: o.userId, org: o.org, db, keys, self: { token, claims },
+        userId: o.userId, org: o.org, idb, db, keys, self: { token, claims },
         async seed(row, opts = {}) {
           const signed = await s.row(o.org, row);
           await db.putRecord({
