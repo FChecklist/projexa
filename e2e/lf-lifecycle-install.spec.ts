@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { APP_ORIGIN, stubAppApis } from "./support/boq-local";
 import {
-  deviceMeta, fixtureOf, makePerson, newWorld, releaseCaches, signIn, stubSyncService, swPointer,
+  deviceMeta, fixtureOf, makePerson, newWorld, personMeta, releaseCaches, signIn, stubSyncService, swPointer,
   type Person, type SyncWorld,
 } from "./support/lf-lifecycle-stub";
 
@@ -160,6 +160,75 @@ test("an install that cannot finish (release unreachable) keeps the screen up, r
     await assertInstalled(page, context, world, A, session.userId);
   });
 });
+
+// AUDIT 37 rows B2, B3, B4, B5: an account whose organisation is not set up (the sync service answers "not found" to the projects copy) is let in as
+// soon as PROJEXA is INSTALLED, never sees the full screen again (refresh x3, sign-in again), and its projects copy is retried quietly with a growing
+// wait until the service answers -- then the data lands without the screen ever coming back.
+test("an account with no organisation: closes once installed, never returns on refresh or sign-in, and the projects copy backs off quietly then succeeds", async ({ page, context }) => {
+  test.setTimeout(900_000);
+  const A = makePerson("noorg", "lf-org-1", "No Org Tower", "No Org - Structure");
+  const world = newWorld();
+  world.failRoutes = { names: new Set(["manifest", "heads"]), status: 404 };
+  await stubSyncService(context, world);
+  const sightings: number[] = [];
+  await context.exposeBinding("__pxSawPrepare", () => { sightings.push(Date.now()); });
+  await context.addInitScript(() => {
+    new MutationObserver(() => {
+      if (document.querySelector('[data-testid="workspace-prepare"]')) (window as unknown as { __pxSawPrepare?: () => void }).__pxSawPrepare?.();
+    }).observe(document, { childList: true, subtree: true });
+  });
+  const { session } = await signIn(page, context, world, A);
+  let currentUserId = session.userId;
+  await page.goto(`/scope/${A.boqId}`);
+  await openAndWaitForInstall(page, world);
+  // one ATTEMPT of the projects copy is a burst of manifest requests (the install, the AI layer and the shell each ask); a new attempt starts when
+  // no request was seen for 5 s. The wait between attempts is what the backoff controls.
+  const manifestHits = () => {
+    const all = world.hits.filter((h) => h.route === "manifest").map((h) => h.at).sort((a, b) => a - b);
+    const starts: number[] = [];
+    all.forEach((t, i) => { if (i === 0 || t - all[i - 1]! > 5_000) starts.push(t); });
+    return starts;
+  };
+
+  await test.step("installed: the release is on the laptop although the projects could not be copied", async () => {
+    expect(await releaseCaches(page)).toHaveLength(1);
+    expect(await page.evaluate((id) => localStorage.getItem(`px-workspace-ready-v1:${id}`), session.userId), "the ready flag is missing").not.toBeNull();
+    expect(await personMeta(page, session.userId, `sync:done:${A.projectId}:boq_lines`), "the projects were copied although the service said not found").toBeFalsy();
+  });
+
+  await test.step("the copy is retried quietly, each wait longer than the last (15 s, 30 s ...)", async () => {
+    await expect.poll(() => manifestHits().length, { timeout: 150_000, intervals: [2_000], message: "no quiet retry of the projects copy" }).toBeGreaterThanOrEqual(3);
+    const at = manifestHits();
+    const gaps = at.slice(1, 4).map((t, i) => t - at[i]!);
+    console.log(`[B5] quiet retry gaps (ms): ${JSON.stringify(gaps)}`);
+    expect(gaps[0]!, "first wait is about 15 s").toBeGreaterThan(10_000);
+    expect(gaps[1]!, "second wait is longer than the first").toBeGreaterThan(gaps[0]! * 1.4);
+  });
+
+  const afterInstall = sightings.length; // the one appearance during the install itself
+  await test.step("refresh three times: no screen", async () => {
+    for (let i = 0; i < 3; i += 1) {
+      await page.reload();
+      await page.waitForTimeout(6_000);
+    }
+    expect(sightings.length, "the install screen appeared after a refresh").toBe(afterInstall);
+  });
+
+  await test.step("sign in again (cookies cleared, laptop's storage kept): no screen", async () => {
+    await context.clearCookies();
+    const again = await signIn(page, context, world, A);
+    currentUserId = again.session.userId; // signing in again makes a NEW session: the laptop keeps one database per signed-in id
+    await page.goto(`/scope/${A.boqId}`);
+    await page.waitForTimeout(8_000);
+    expect(sightings.length, "the install screen appeared after signing in again").toBe(afterInstall);
+  });
+});
+
+// OPEN (AUDIT-100 B5, last leg): once the service starts answering again, the quiet retry should copy the projects without the screen coming back.
+// Measured 2026-10-05 in real Chromium: after three quick refreshes and a new sign-in the sync breaker (replica.ts: 3 failures -> a stored pause of 1 min,
+// doubling to 30 min) sent NO request for 240 s after the service recovered, so the copy did not land in that window. Whether a 30-min wait is the
+// intended product behaviour for a person who refreshes repeatedly is an owner decision, so this stays fixme rather than a test asserting either way.
+test.fixme("an account with no organisation: after the service answers again, the projects are copied by the quiet retry (see the note above)", async () => {});
 
 async function newMachine(browser: Browser, baseURL: string) {
   const context = await browser.newContext({ baseURL, serviceWorkers: "allow" });
