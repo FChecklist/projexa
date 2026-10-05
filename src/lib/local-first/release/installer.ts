@@ -20,7 +20,9 @@ import { canonicalJson, sha256Hex } from "./canonical";
 import {
   META_KEYS,
   RELEASE_CACHE_PREFIX,
+  STATIC_BASE,
   contentTypeFor,
+  installFetchUrl,
   releaseCacheName,
   urlForReleasePath,
 } from "./release-constants";
@@ -100,8 +102,14 @@ export type InstallerDeps = {
   caches: CacheStorageLike;
   meta: MetaStore;
   now?: () => number;
-  /** Where release.json is. Default: the app's own, same-origin /_release/release.json. */
+  /** Where release.json is. Default: /_release/release.json on the static host (staticBase), or the app's own when there is none. */
   manifestUrl?: string;
+  /**
+   * The static host the release is downloaded from (AUDIT-100 B60, release-constants.ts STATIC_BASE). Default: this build's
+   * NEXT_PUBLIC_PX_STATIC_BASE; "" = the app origin (the behaviour before B60). Only WHERE the bytes come from changes: every byte
+   * is still checked against the manifest, and the cache keys are still the app-origin paths.
+   */
+  staticBase?: string;
   gunzip?: Gunzip;
   /** This laptop's random id (see getDeviceId). */
   deviceId: string;
@@ -210,7 +218,13 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
   const previousFiles = (await safeGet<AppFileTable>(deps.meta, META_KEYS.files)) ?? null;
   // The install fetches must reach the NETWORK, never the service worker's cache: the same URL can hold different bytes in the
   // old and the new release (an unhashed public file), and the bytes are about to be compared with the new manifest.
-  const fetchOpts: RequestInit = { cache: "no-store", credentials: "same-origin", headers: { "X-Px-Install": "1" } };
+  // Same-origin they carry the X-Px-Install header; to a static host they carry ?px-install=1 instead (a custom header would make
+  // every request a CORS preflight) and no credentials (the files are public).
+  const staticBase = deps.staticBase ?? STATIC_BASE;
+  const sameOriginOpts: RequestInit = { cache: "no-store", credentials: "same-origin", headers: { "X-Px-Install": "1" } };
+  const fetchOpts: RequestInit = staticBase ? { cache: "no-store", credentials: "omit", mode: "cors" } : sameOriginOpts;
+  const where = (urlPath: string) => installFetchUrl(staticBase, urlPath);
+  const optsFor = (urlPath: string) => (where(urlPath) === urlPath ? sameOriginOpts : fetchOpts);
 
   let manifest: ReleaseManifest | null = null;
   let newCacheName: string | null = null;
@@ -223,7 +237,8 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     // 1. the manifest, verified
     let manifestRes: Response;
     try {
-      manifestRes = await doFetch(deps.manifestUrl ?? "/_release/release.json", fetchOpts);
+      const manifestUrl = deps.manifestUrl ?? where("/_release/release.json");
+      manifestRes = await doFetch(manifestUrl, manifestUrl.startsWith("/") ? sameOriginOpts : fetchOpts);
     } catch (err) {
       throw new InstallError("manifest_unreachable", `The release manifest could not be fetched (${errText(err)}).`);
     }
@@ -280,7 +295,7 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
           }
         }
         if (!bytes) {
-          bytes = await fetchFile(doFetch, fetchOpts, file.path);
+          bytes = await fetchFile(doFetch, (urlPath) => [where(urlPath), optsFor(urlPath)], file.path);
           downloaded += 1;
           bytesDownloaded += bytes.length;
         }
@@ -291,7 +306,7 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
       // 2a/3/4. the ONE bundle
       let bundleRes: Response;
       try {
-        bundleRes = await doFetch(`/${manifest.bundle.path}`, fetchOpts);
+        bundleRes = await doFetch(where(`/${manifest.bundle.path}`), optsFor(`/${manifest.bundle.path}`));
       } catch (err) {
         throw new InstallError("bundle_unreachable", `The release bundle could not be fetched (${errText(err)}).`);
       }
@@ -414,10 +429,11 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
   }
 }
 
-async function fetchFile(doFetch: typeof fetch, opts: RequestInit, path: string): Promise<Uint8Array> {
+async function fetchFile(doFetch: typeof fetch, target: (urlPath: string) => [string, RequestInit], path: string): Promise<Uint8Array> {
   let res: Response;
   try {
-    res = await doFetch(urlForReleasePath(path), opts);
+    const [url, opts] = target(urlForReleasePath(path));
+    res = await doFetch(url, opts);
   } catch (err) {
     throw new InstallError("file_unreachable", `A release file could not be fetched: ${path} (${errText(err)}).`);
   }

@@ -279,6 +279,8 @@ jobs:
       - run: bunx playwright install --with-deps chromium
       - name: Offline and server-down, end to end
         run: bunx playwright test -c playwright.local-first.config.ts
+      - name: Static files on a separate static host (AUDIT-100 B60, NEXT_PUBLIC_PX_STATIC_BASE on, a second production build)
+        run: bunx playwright test -c playwright.static-host.config.ts
       - name: Laptop to laptop, no server (WebRTC, two real browser contexts)
         run: bunx playwright test -c playwright.peer.config.ts
       - run: bunx playwright install --with-deps webkit
