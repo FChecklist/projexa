@@ -46,6 +46,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { createRequire } from "node:module"
 
 function readVercelJson() {
   const raw = readFileSync(join(import.meta.dir, "..", "..", "vercel.json"), "utf8")
@@ -109,7 +110,8 @@ afterAll(() => {
 // matter what the catch-all says, and the catch-all must be `**`, not `*`: a bare `*` does not cross
 // `/`, which is exactly the R87 bug (every real branch here is `type/name`, so `"*": false` never
 // matched one). The ignoreCommand stays as a second layer.
-const minimatch = require("minimatch") as (path: string, pattern: string) => boolean
+// minimatch is what Vercel documents for these keys; v3 is CommonJS with no bundled types, so load it via createRequire.
+const minimatch = createRequire(import.meta.url)("minimatch") as (path: string, pattern: string) => boolean
 
 /** Vercel's documented rule for git.deploymentEnabled (object form): unmatched -> true; matched -> true if any matching key is true. */
 function vercelWouldDeploy(deploymentEnabled: unknown, branch: string): boolean {
