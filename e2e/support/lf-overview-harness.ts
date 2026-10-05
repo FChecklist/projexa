@@ -111,9 +111,10 @@ export function watchConsole(page: Page) {
   }
 }
 
-/** The project names the shell's switcher offers, in order. */
+/** The project names the shell's switcher offers, in order (the "+ New project" action is not a project). */
 export async function switcherNames(page: Page): Promise<string[]> {
-  return page.getByTestId("local-shell-project").locator("option").allTextContents()
+  const all = await page.getByTestId("local-shell-project").locator("option").allTextContents()
+  return all.filter((t) => t !== "+ New project")
 }
 
 /** The figures card of the dashboard as {label: value}. */
