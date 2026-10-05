@@ -45,7 +45,10 @@ export function buildShellData(input: {
   const { identity, replica, names } = input;
   const replicaMatches = replica && replica.userId === identity.userId ? replica : null;
   const namesMatch = names && names.user.id === identity.userId ? names : null;
-  const nameOf = new Map((namesMatch?.projects ?? []).map((p) => [p.id, p.name]));
+  // The replica's names come from the manifest of its LAST sync (a project made or given today is named at once); the cached manifest's
+  // (refreshed once a day) fill in for a replica record written by an older build.
+  const nameOf = new Map<string, string | null>((namesMatch?.projects ?? []).map((p) => [p.id, p.name]));
+  for (const [id, name] of Object.entries(replicaMatches?.projectNames ?? {})) if (name && name.trim()) nameOf.set(id, name);
   const ids = replicaMatches ? replicaMatches.projectIds : (namesMatch?.projects ?? []).map((p) => p.id);
   const orgId = replicaMatches?.orgId ?? namesMatch?.user.org_id ?? identity.orgId;
   return {

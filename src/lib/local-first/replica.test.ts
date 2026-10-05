@@ -86,6 +86,25 @@ describe("replica sync", () => {
     db.close();
   });
 
+  test("AUDIT-100 B10: the stored manifest keeps the project NAMES of the manifest it came from, so a project made today is named at once", async () => {
+    const idb = new IDBFactory();
+    const fake = fakeService({ projects: ["p1", "p2"] });
+    let projects: { id: string; name?: string }[] = [{ id: "p1", name: "Cedar Heights Villa" }, { id: "p2" }];
+    const manifest = fake.client.manifest.bind(fake.client);
+    fake.client.manifest = async (signal) => ({ ...(await manifest(signal)), projects });
+    const replica = createReplica({ userId: "u1", client: fake.client, idb, yieldFn: noYield });
+    expect((await replica.sync()).status).toBe("done");
+    const read = async () => {
+      const db = await openLocalDb(idb, localDbNameFor("u1"));
+      try { return await db.getMeta<{ projectIds: string[]; projectNames?: Record<string, string> }>(MANIFEST_KEY); } finally { db.close(); }
+    };
+    expect((await read())?.projectNames).toEqual({ p1: "Cedar Heights Villa" }); // an unnamed project is not given an empty name
+    // the person makes a project: the next whole sync lists it and names it
+    projects = [...projects, { id: "p3", name: "Riverside Annex" }];
+    expect((await replica.sync()).status).toBe("done");
+    expect(await read()).toMatchObject({ projectIds: ["p1", "p2", "p3"], projectNames: { p1: "Cedar Heights Villa", p3: "Riverside Annex" } });
+  });
+
   test("a second sync pulls only what changed (it starts from the stored cursor), and is idempotent", async () => {
     const idb = new IDBFactory();
     const fake = fakeService({ pageSize: 100, data: { "p1:boq_lines": rows(3) } });
