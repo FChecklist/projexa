@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { fetchJson } from "@/lib/fetch-json";
 import { soleOptionId } from "@/lib/reference-lookups";
 
+import { viaPxApi } from "@/lib/px-api";
 type Employee = { id: string; name: string };
 
 export default function LeaveBalanceCreateClient() {
@@ -48,7 +49,7 @@ export default function LeaveBalanceCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/leave/balances", {
+      const res = await viaPxApi("/api/leave/balances", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, leaveType, year: Number(year), totalDays: Number(totalDays) }),
       });

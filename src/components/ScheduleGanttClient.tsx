@@ -80,6 +80,7 @@ import {
 } from "@/lib/schedule-progress";
 import "@svar-ui/react-gantt/all.css";
 
+import { viaPxApi } from "@/lib/px-api";
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ScopeClient.tsx's
 // RegistryColumn.
@@ -221,7 +222,7 @@ export default function ScheduleGanttClient({
     setStartedAt(Date.now());
     setError(null);
     try {
-      const res = await fetch(`/api/schedule/gantt?projectId=${encodeURIComponent(projectId)}`);
+      const res = await viaPxApi(`/api/schedule/gantt?projectId=${encodeURIComponent(projectId)}`);
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });

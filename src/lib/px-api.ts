@@ -11,7 +11,8 @@
 // PX_API_DEFAULT_BASE below on the production origins only. A person with no access token in the browser also goes same origin.
 // Every caller of a listed route in the browser goes through this function: src/lib/local-first/shell/snapshot-cache.ts (dashboard,
 // exceptions and BOQ-analysis snapshots), shell/documents-file-cache.ts (the three file-signing reads), shell/pending-edits.ts (the BOQ line
-// edit). src/lib/px-api.test.ts holds the list equal to ai-os/audit37/projexa-api-routes.json.
+// edit), and, since AUDIT-100 A2 batch 2, src/lib/fetch-json.ts / src/lib/use-submit.ts and the online screens' direct calls of the batch-2
+// routes (fetch -> viaPxApi). src/lib/projexa-api-edge.test.ts holds the list equal to ai-os/audit37/projexa-api-routes.json.
 
 export const PX_API_EDGE_URL = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-api";
 
@@ -34,7 +35,47 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "/api/scope/line-items/:id": ["PATCH"],
   "/api/documents/:id": ["GET", "PATCH"],
   "/api/drawings/:id/document-url": ["GET"],
-  "/api/permits/:id": ["GET", "PATCH", "DELETE"],
+  "/api/permits/:id": ["DELETE", "GET", "PATCH"],
+  "/api/vendors": ["GET", "POST"],
+  "/api/companies": ["GET", "POST"],
+  "/api/customers": ["GET", "POST"],
+  "/api/employees": ["GET", "POST"],
+  "/api/hr/departments": ["GET", "POST"],
+  "/api/inventory/items": ["GET", "POST"],
+  "/api/accounts": ["GET"],
+  "/api/inventory/warehouses": ["GET", "POST"],
+  "/api/recruitment/candidates": ["GET", "POST"],
+  "/api/recruitment/job-openings": ["GET", "POST"],
+  "/api/access-review": ["GET", "POST"],
+  "/api/audit-engagements": ["GET", "POST"],
+  "/api/board": ["GET", "PATCH"],
+  "/api/ffe": ["GET", "POST"],
+  "/api/leave/requests": ["GET", "POST"],
+  "/api/payroll/runs": ["GET", "POST"],
+  "/api/payroll/salary-components": ["GET", "POST"],
+  "/api/procurement/requisitions": ["GET", "POST"],
+  "/api/procurement/rfqs": ["GET", "POST"],
+  "/api/projects/:id": ["PATCH"],
+  "/api/sales-invoices": ["GET", "POST"],
+  "/api/schedule/gantt": ["GET"],
+  "/api/change-orders/:id/signature-status": ["GET"],
+  "/api/credit-notes": ["GET", "POST"],
+  "/api/expenses": ["GET", "POST"],
+  "/api/floor-plans/:id/rooms/:roomId": ["DELETE", "PATCH"],
+  "/api/fraud-cases": ["GET", "POST"],
+  "/api/fraud-cases/:id": ["GET", "PATCH"],
+  "/api/grc-dashboard": ["GET"],
+  "/api/journal-entries": ["GET", "POST"],
+  "/api/kpis": ["GET", "POST"],
+  "/api/leads": ["GET", "POST"],
+  "/api/leave/balances": ["GET", "POST"],
+  "/api/opportunities": ["GET", "POST"],
+  "/api/payroll/income-tax-slabs": ["GET", "POST"],
+  "/api/payroll/salary-structures": ["GET", "POST"],
+  "/api/payroll/statutory-rules": ["GET", "POST"],
+  "/api/policies": ["GET", "POST"],
+  "/api/policies/:id": ["GET", "PATCH"],
+  "/api/procurement/goods-receipts": ["GET", "POST"],
 };
 
 function currentOrigin(): string | null {

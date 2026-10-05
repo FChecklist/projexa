@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Customer = { id: string; customerName: string };
 
 export default function OpportunityCreateClient() {
@@ -23,7 +24,7 @@ export default function OpportunityCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {});
+    viaPxApi("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {});
   }, []);
 
   async function create() {

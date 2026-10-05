@@ -42,6 +42,7 @@ import { useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { type Company } from "@/components/company-scope";
 
+import { viaPxApi } from "@/lib/px-api";
 type Vendor = { id: string; vendorName: string };
 /** Same shape GoodsReceiptCreateClient/StockEntryCreateClient read off /api/inventory/items. */
 type ItemRow = { id: string; itemCode: string; itemName: string };
@@ -71,7 +72,7 @@ export default function PurchaseOrderCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {});
+    viaPxApi("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {});
     fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
     // Same lookup GoodsReceiptCreateClient.tsx and StockEntryCreateClient.tsx
     // read. A failure is swallowed like its siblings here: the item link is

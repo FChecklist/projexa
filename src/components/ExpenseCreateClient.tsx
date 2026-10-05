@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { viaPxApi } from "@/lib/px-api";
 const HEADS = ["material", "labour", "transport", "subcontractor", "equipment", "misc"];
 
 export default function ExpenseCreateClient({ projectId }: { projectId: string }) {
@@ -30,7 +31,7 @@ export default function ExpenseCreateClient({ projectId }: { projectId: string }
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/expenses", {
+      const res = await viaPxApi("/api/expenses", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, expenseHead, description: description || undefined, amount: Number(amount), expenseDate }),
       });

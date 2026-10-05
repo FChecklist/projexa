@@ -153,6 +153,9 @@ export function build(previous) {
     },
     // AUDIT-100 A2: shell-reachable routes still answered by Vercel on the production origins (the beacon); the guard holds it
     shell_vercel_routes_budget: previous?.shell_vercel_routes_budget ?? 1,
+    // AUDIT-100 A2 batch 2+: how many /api routes are still answered by Vercel on the production origins (served_by "vercel"); it may only
+    // go DOWN: each batch moved to the edge function lowers it by the batch size (src/lib/vercel-route-inventory.test.ts)
+    vercel_served_routes_budget: previous?.vercel_served_routes_budget ?? entries.filter((e) => e.served_by !== EDGE_SERVED).length,
     shell_api_references: shellApiReferences,
     // measured by e2e/lf-lifecycle-vercel-budget.spec.ts: the only /api calls a first install and a daily walk of the shell may make
     install_phase_api_allowlist: previous?.install_phase_api_allowlist ?? [],
@@ -190,6 +193,8 @@ export function check(inventory) {
   const shellOnVercel = (inventory.routes ?? []).filter((r) => r.shell_reachable && r.served_by !== EDGE_SERVED);
   const budget = inventory.shell_vercel_routes_budget ?? 0;
   if (shellOnVercel.length > budget) problems.push(`${shellOnVercel.length} shell-reachable routes are still answered by Vercel (${shellOnVercel.map((r) => r.route).join(", ")}), the budget is ${budget}`);
+  const onVercel = (inventory.routes ?? []).filter((r) => r.served_by !== EDGE_SERVED).length;
+  if (inventory.vercel_served_routes_budget !== undefined && onVercel > inventory.vercel_served_routes_budget) problems.push(`${onVercel} /api routes are answered by Vercel on the production origins, the budget is ${inventory.vercel_served_routes_budget}: a route moved back to Vercel (or a new one) must lower another first`);
   return problems;
 }
 

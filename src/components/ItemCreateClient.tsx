@@ -11,6 +11,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { viaPxApi } from "@/lib/px-api";
 export default function ItemCreateClient() {
   const router = useRouter();
   const [itemCode, setItemCode] = useState("");
@@ -30,7 +31,7 @@ export default function ItemCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/inventory/items", {
+      const res = await viaPxApi("/api/inventory/items", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           itemCode, itemName, uom: uom || undefined,

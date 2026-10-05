@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { viaPxApi } from "@/lib/px-api";
 const FRAUD_TYPES = ["procurement", "payroll", "expense", "vendor_collusion", "asset_misappropriation", "other"];
 
 export default function FraudCaseCreateClient() {
@@ -28,7 +29,7 @@ export default function FraudCaseCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/fraud-cases", {
+      const res = await viaPxApi("/api/fraud-cases", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, fraudType, reportedDate, description: description || undefined }),
       });

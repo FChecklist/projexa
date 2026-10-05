@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
+import { viaPxApi } from "@/lib/px-api";
 type Account = { id: string; accountName: string; accountNumber: string | null };
 type JeLine = { accountId: string; debit: string; credit: string };
 
@@ -42,7 +43,7 @@ export default function JournalEntryCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/accounts")
+    viaPxApi("/api/accounts")
       .then((r) => r.json())
       .then((data) => setAccounts(data.accounts ?? []))
       .catch(() => {})
@@ -64,7 +65,7 @@ export default function JournalEntryCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/journal-entries", {
+      const res = await viaPxApi("/api/journal-entries", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postingDate, userRemark: userRemark || undefined,

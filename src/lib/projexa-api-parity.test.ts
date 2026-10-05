@@ -21,6 +21,9 @@ process.env.VERIDIAN_API_BASE_URL = BASE;
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projexa.test";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
 
+/** What the upstream receives, relative to BASE: the URL-normalised href (fetch percent-encodes a raw space etc. before sending; a bare "?" stays). */
+const wirePath = (url: string) => new URL(url).href.slice(new URL(BASE).href.length);
+
 let current: ParityCase | null = null;
 let calls: UpstreamCall[] = [];
 
@@ -79,7 +82,8 @@ beforeAll(() => {
     const h = new Headers(init?.headers);
     calls.push({
       method: (init?.method ?? "GET").toUpperCase(),
-      path: url.slice(BASE.length),
+      // the path AS IT GOES ON THE WIRE (URL-normalised: a raw space in an id is sent as %20 by fetch); compliance-tracker records the same way
+      path: wirePath(url),
       authorization: h.get("authorization"),
       acting_user: h.get("x-acting-user"),
       acting_email: h.get("x-acting-user-email"),
@@ -130,7 +134,8 @@ export async function runNext(c: ParityCase): Promise<Outcome> {
   } catch {
     body = { __not_json__: text.slice(0, 80) };
   }
-  return { status: res.status, body, retry_after: res.headers.get("retry-after"), upstream_calls: calls };
+  const cc = res.headers.get("cache-control");
+  return { status: res.status, body, retry_after: res.headers.get("retry-after"), upstream_calls: calls, ...(cc && cc !== "no-store" ? { cache_control: cc } : {}) };
 }
 
 describe("projexa-api parity contract: the Next pipeline (AUDIT-100 A2)", () => {

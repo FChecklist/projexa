@@ -123,10 +123,10 @@ describe("the browser switch (src/lib/px-api.ts)", () => {
     const h = new Headers(seen[0]!.init.headers);
     expect(h.get("authorization")).toBe("Bearer tok-123");
     expect(h.get("content-type")).toBe("application/json");
-    await pxApiFetch("/api/payroll/runs", { method: "POST" }, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
+    await pxApiFetch("/api/assistant", { method: "POST" }, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
     await pxApiFetch("/api/dashboard/project/p1", { method: "DELETE" }, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
     await pxApiFetch("https://storage.example/signed?x=1", {}, { fetchImpl, getAccessToken, base: PX_API_EDGE_URL });
-    expect(seen.slice(1).map((s) => s.url)).toEqual(["/api/payroll/runs", "/api/dashboard/project/p1", "https://storage.example/signed?x=1"]);
+    expect(seen.slice(1).map((s) => s.url)).toEqual(["/api/assistant", "/api/dashboard/project/p1", "https://storage.example/signed?x=1"]);
   });
 
   test("base set but no access token: same-origin (the cookie still works), never a call without credentials", async () => {

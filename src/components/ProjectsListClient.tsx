@@ -50,6 +50,7 @@ import {
   type ProjectRow,
 } from "@/lib/project-list";
 
+import { viaPxApi } from "@/lib/px-api";
 const FUNCTION_ID = "projects.list";
 
 // Six columns, still inside ListScreen's M28 cap of seven High. "AI work link" is a synthetic field (no such key on ProjectRow,
@@ -87,7 +88,7 @@ export default function ProjectsListClient() {
       // refetches it on every navigation; this screen needs the money and task
       // figures, so it reads the aggregate endpoint instead. See
       // src/app/api/projects/route.ts's header for why they are two routes.
-      const res = await fetch("/api/projects/overview");
+      const res = await viaPxApi("/api/projects/overview");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         // The rows are CLEARED on failure, so the empty-state sentence below

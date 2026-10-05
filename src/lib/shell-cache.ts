@@ -33,6 +33,7 @@
 // (put this value in), and subscribe (tell the mounted panel it changed). They
 // are here rather than in schedule-cache.ts because they are properties of the
 // store, not of the schedule.
+import { viaPxApi } from "@/lib/px-api";
 export const SHELL_CACHE_TTL_MS = 60_000;
 
 // R67 F-13 (R-193/R-217). Two different kinds of shell read, two windows:
@@ -122,7 +123,8 @@ export async function cachedShellJson<T>(
       notify(key);
       return value as unknown;
     }
-    const res = await fetch(url);
+    // AUDIT-100 A2: a listed route goes to the projexa-api Edge Function on the production origins (src/lib/px-api.ts); else same origin
+    const res = await viaPxApi(url);
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) {
       const fromBody =

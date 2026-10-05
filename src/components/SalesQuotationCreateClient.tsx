@@ -17,6 +17,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { soleOptionId } from "@/lib/reference-lookups";
 import { type Company } from "@/components/company-scope";
 
+import { viaPxApi } from "@/lib/px-api";
 type Customer = { id: string; customerName: string };
 type Project = { id: string; name: string };
 type Line = { description: string; quantity: string; rate: string };
@@ -38,7 +39,7 @@ export default function SalesQuotationCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/customers")
+    viaPxApi("/api/customers")
       .then((r) => r.json())
       .then((d) => {
         const rows: Customer[] = d.customers ?? [];

@@ -14,6 +14,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { viaPxApi } from "@/lib/px-api";
 export default function LeaveRequestCreateClient() {
   const router = useRouter();
   const [leaveType, setLeaveType] = useState("");
@@ -29,7 +30,7 @@ export default function LeaveRequestCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/leave/requests", {
+      const res = await viaPxApi("/api/leave/requests", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leaveType, startDate, endDate, reason: reason || undefined }),
       });

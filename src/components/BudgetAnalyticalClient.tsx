@@ -140,7 +140,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
   useEffect(() => {
     // The vendor picker is a convenience: its failure must not stop the budget
     // being read or its percents being edited.
-    fetch("/api/vendors")
+    viaPxApi("/api/vendors")
       .then((r) => (r.ok ? r.json() : { vendors: [] }))
       .then((d) => setVendors(d.vendors ?? []))
       .catch(() => setVendors([]));

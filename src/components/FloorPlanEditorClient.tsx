@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Pencil, Trash2, RotateCw, Box, X } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Point = { x: number; y: number };
 type Material = { id: string; name: string; category: string; colorHex: string };
 type Room = {
@@ -141,7 +142,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
 
   async function removeRoom(roomId: string) {
     try {
-      await fetch(`/api/floor-plans/${floorPlanId}/rooms/${roomId}`, { method: "DELETE" });
+      await viaPxApi(`/api/floor-plans/${floorPlanId}/rooms/${roomId}`, { method: "DELETE" });
       load();
     } catch {
       toast.error("Couldn't remove room");
@@ -150,7 +151,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
 
   async function setRoomMaterial(roomId: string, field: "floorMaterialId" | "wallMaterialId" | "ceilingMaterialId", materialId: string) {
     try {
-      await fetch(`/api/floor-plans/${floorPlanId}/rooms/${roomId}`, {
+      await viaPxApi(`/api/floor-plans/${floorPlanId}/rooms/${roomId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: materialId }),
       });

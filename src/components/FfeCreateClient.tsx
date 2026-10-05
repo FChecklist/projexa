@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
+import { viaPxApi } from "@/lib/px-api";
 const CATEGORIES = ["furniture", "fixture", "equipment", "finish", "textile", "lighting", "other"];
 
 export default function FfeCreateClient({ projectId }: { projectId: string }) {
@@ -34,7 +35,7 @@ export default function FfeCreateClient({ projectId }: { projectId: string }) {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/ffe", {
+      const res = await viaPxApi("/api/ffe", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId, itemName, roomOrArea: roomOrArea || undefined, category,
