@@ -1,0 +1,5 @@
+<!-- AUDIT-100 B52 fixture: NOT CAPTURED from the live site. On 2026-10-05 one page load of https://claude.ai/new (fresh profile, no login,
+     no cookies, nothing typed or sent; scripts/verify/chat-site-selectors.mjs) showed a Cloudflare bot check ("Just a moment...") instead of the chat page:
+     the message box only appears after that check / a login, which this audit does not bypass or perform. The structure below therefore follows
+     the extension selector comment 'div.ProseMirror[contenteditable="true"]  // Claude': a ProseMirror (tiptap) contenteditable div, no id. Re-run the script by hand (or from a signed-in owner browser) to replace it with a real capture. -->
+<!doctype html><html><head><meta charset="utf-8"><title>claude fixture</title></head><body><fieldset class="flex w-full"><div aria-label="Write your prompt to Claude" class="relative"><div contenteditable="true" translate="no" class="tiptap ProseMirror"><p data-placeholder="How can I help you today?" class="is-empty is-editor-empty"><br class="ProseMirror-trailingBreak"></p></div></div></fieldset></body></html>

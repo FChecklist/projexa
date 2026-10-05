@@ -1,0 +1,5 @@
+<!-- AUDIT-100 B52 fixture: NOT CAPTURED from the live site. On 2026-10-05 one page load of https://chat.deepseek.com/ (fresh profile, no login,
+     no cookies, nothing typed or sent; scripts/verify/chat-site-selectors.mjs) showed an Amazon CloudFront block page ("ERROR: The request could not be satisfied"):
+     the message box only appears after that check / a login, which this audit does not bypass or perform. The structure below therefore follows
+     the extension selector comment "textarea#chat-input  // DeepSeek": a plain textarea with id chat-input. Re-run the script by hand (or from a signed-in owner browser) to replace it with a real capture. -->
+<!doctype html><html><head><meta charset="utf-8"><title>deepseek fixture</title></head><body><div class="chat-input-wrapper"><textarea id="chat-input" rows="2" placeholder="Message DeepSeek"></textarea></div></body></html>

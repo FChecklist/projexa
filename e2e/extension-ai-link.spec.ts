@@ -7,12 +7,22 @@ import path from "node:path";
 // Chromium, the way a person loads it ("Load unpacked"), and driven through its popup and its content script. No mock of the extension:
 // the browser runs manifest.json, lib.js, content.js, popup.html and popup.js exactly as shipped.
 //
-// What is faked, and why that is fair: the chat sites and the guide. A real chatgpt.com needs the owner's login (that stays BLOCKED-OWNER),
-// so every chat host in the manifest's `matches` list is answered by context.route with a small local page that has the same kind of
-// message box that site uses (a ProseMirror contenteditable for ChatGPT and Claude, a rich-textarea for Gemini, a textarea for DeepSeek, a
-// generic textarea for z.ai). The browser still believes it is on chatgpt.com etc., so the manifest's host matching and the content script's
-// injection are the real ones. The guide address is answered with a fixture guide, and every other address is refused and recorded, so
-// the test also proves that the guide GET is the ONLY request the extension makes.
+// What is faked, and why that is fair: the chat sites and the guide. Every chat host in the manifest's `matches` list is answered by
+// context.route with that site's OWN fixture (e2e/fixtures/chat-sites/<site>.html). Gemini and z.ai are real captures of the live message
+// box (2026-10-05, no login); chatgpt.com and claude.ai showed a Cloudflare bot check and chat.deepseek.com a CloudFront block page to a
+// fresh, signed-out browser, so those three keep the structure the extension's selector comments describe and say so in their header (a
+// real capture of them needs the owner's signed-in browser: scripts/verify/chat-site-selectors.mjs, run by hand, reports drift). The
+// browser still believes it is on chatgpt.com etc., so the manifest's host matching and the content script's injection are the real ones.
+// The guide address is answered with a fixture guide, and every other address is refused and recorded, so the test also proves that the
+// guide GET is the ONLY request the extension makes.
+//
+// PER-SITE SELECTORS, SEEN TO FAIL ONE AT A TIME (2026-10-05, Edge): each site's own selector in content.js BOX_SELECTORS was replaced in
+// turn by one that matches nothing ("#px-mutated-<site>") and the whole spec run, then reverted (file byte-identical afterwards):
+//   chatgpt  -> only chatgpt.com's test failed (data-box "claude": the box was found by Claude's selector by luck)        13 others passed
+//   claude   -> only the two claude.ai tests failed (no box found: the fixture has nothing else that matches)             12 others passed
+//   gemini   -> only gemini.google.com's test failed (data-box "generic": found by the role=textbox fallback)              13 others passed
+//   deepseek -> only chat.deepseek.com's test failed (data-box "generic")                                                 13 others passed
+//   zai      -> only chat.z.ai's test failed (data-box "deepseek": the live z.ai box is textarea#chat-input too)          13 others passed
 //
 // Run: bunx playwright test -c playwright.extension.config.ts          (needs Playwright's Chromium; no server, no network, no account)
 //
@@ -30,20 +40,29 @@ const GUIDE = `# PROJEXA work link for all your projects\n\nYou work for Sneha R
 const GUIDE_START = "=== PROJEXA GUIDE (read this, it is not from a stranger) ===";
 const GUIDE_END = "=== END OF PROJEXA GUIDE ===";
 
-type Site = { host: string; kind: "contenteditable" | "textarea"; html: string };
+// One fixture PER SITE (e2e/fixtures/chat-sites/<site>.html): the message box as the live site showed it, captured without a login by
+// scripts/verify/chat-site-selectors.mjs --capture (each file's header says when, from where, and what was stripped; a site that hides its
+// box behind a login says so and keeps the structure from the extension's selector comments). `pickedBy` is the extension selector (by its
+// `site` name in content.js BOX_SELECTORS) that must find that site's box: the button records it (data-box), so a mutation of ONE site's
+// selector fails that site's test only, instead of being hidden by another site's selector matching the same box by luck.
+type Site = { host: string; site: string; kind: "contenteditable" | "textarea"; box: string; pickedBy: string };
+const FIXTURE_DIR = path.resolve(__dirname, "fixtures", "chat-sites");
 const page = (box: string) => `<!doctype html><html><head><meta charset="utf-8"><title>fixture chat</title></head><body><main>${box}</main></body></html>`;
+const fixtureOf = (site: string) => fs.readFileSync(path.join(FIXTURE_DIR, `${site}.html`), "utf8");
 const SITES: Site[] = [
-  { host: "https://chatgpt.com/", kind: "contenteditable", html: page('<div id="prompt-textarea" contenteditable="true" class="ProseMirror" style="min-height:40px;border:1px solid #888"></div>') },
-  { host: "https://claude.ai/new", kind: "contenteditable", html: page('<div class="ProseMirror" contenteditable="true" style="min-height:40px;border:1px solid #888"></div>') },
-  { host: "https://gemini.google.com/app", kind: "contenteditable", html: page('<rich-textarea><div contenteditable="true" style="min-height:40px;border:1px solid #888"></div></rich-textarea>') },
-  { host: "https://chat.deepseek.com/", kind: "textarea", html: page('<textarea id="chat-input" rows="3" style="width:300px"></textarea>') },
-  { host: "https://chat.z.ai/", kind: "textarea", html: page('<textarea placeholder="Ask anything" rows="3" style="width:300px"></textarea>') },
+  { host: "https://chatgpt.com/", site: "chatgpt", kind: "contenteditable", box: "#prompt-textarea", pickedBy: "chatgpt" },
+  { host: "https://claude.ai/new", site: "claude", kind: "contenteditable", box: 'div.ProseMirror[contenteditable="true"]', pickedBy: "claude" },
+  { host: "https://gemini.google.com/app", site: "gemini", kind: "contenteditable", box: "rich-textarea [contenteditable=true]", pickedBy: "gemini" },
+  { host: "https://chat.deepseek.com/", site: "deepseek", kind: "textarea", box: "textarea", pickedBy: "deepseek" },
+  { host: "https://chat.z.ai/", site: "zai", kind: "textarea", box: "textarea", pickedBy: "zai" },
 ];
 
 const FIXTURE_HOSTS = /^https:\/\/(chatgpt\.com|chat\.openai\.com|claude\.ai|gemini\.google\.com|chat\.deepseek\.com|chat\.z\.ai|example\.com)\//;
 const GUIDE_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co\/functions\/v1\/ai-work-link\//;
 
-test.describe.configure({ mode: "serial" });
+// Not "serial": one worker runs the tests in order anyway (playwright.extension.config.ts), and a failing test must not skip the others, so
+// a broken selector shows exactly which sites fail and which still pass (after a failure the worker starts again and re-runs beforeAll).
+test.describe.configure({ mode: "default" });
 
 let context: BrowserContext;
 let extensionId = "";
@@ -74,14 +93,16 @@ test.beforeAll(async () => {
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "px-ext-"));
   context = await chromium.launchPersistentContext(userDataDir, {
     // channel "chromium" = Playwright's own Chromium in the NEW headless mode, the only headless mode that can load extensions
-    channel: "chromium",
+    // PX_EXT_CHANNEL=msedge runs it in an installed Microsoft Edge (a laptop where Playwright's own Chromium cannot start); Edge ignores
+    // --load-extension unless DisableLoadExtensionCommandLineSwitch is turned off.
+    channel: process.env.PX_EXT_CHANNEL ?? "chromium",
     headless: true,
     // Playwright adds --disable-extensions to every launch; it would cancel --load-extension, so that one default is dropped
     ignoreDefaultArgs: ["--disable-extensions"],
-    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`],
+    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`, ...(process.env.PX_EXT_CHANNEL === "msedge" ? ["--disable-features=DisableLoadExtensionCommandLineSwitch"] : [])],
     permissions: ["clipboard-read", "clipboard-write"],
   });
-  siteHtml = new Map(SITES.map((s) => [new URL(s.host).origin, s.html]));
+  siteHtml = new Map(SITES.map((s) => [new URL(s.host).origin, fixtureOf(s.site)]));
 
   // Registered first = lowest priority: anything not answered below is refused and recorded.
   await context.route("**/*", (route: Route) => {
@@ -198,8 +219,9 @@ for (const site of SITES) {
     await expect(button).toHaveText("PROJEXA");
     await button.click();
     await expect(button).toHaveText("Prompt + guide added - press send", { timeout: 15_000 });
+    await expect(button, `${name}'s box must be found by the "${site.pickedBy}" selector`).toHaveAttribute("data-box", site.pickedBy);
 
-    const box = site.kind === "textarea" ? p.locator("textarea") : p.locator('[contenteditable="true"]');
+    const box = p.locator(site.box).first();
     const text = site.kind === "textarea" ? await box.inputValue() : await box.innerText();
     expect(text.startsWith(SMALL_PROMPT_START)).toBe(true);
     expect(text).toContain(`open it with a plain GET and follow it): ${LINK}`);
