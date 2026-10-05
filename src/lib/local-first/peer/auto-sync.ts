@@ -73,6 +73,8 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
       onChange: (peers) => setPeerStatus({ peers }),
       onPeerVerified: () => { void scheduler.trigger("peer"); },
       onRows: () => setPeerStatus({ lastPeerSyncAt: now() }),
+      // B22: heard but unreachable -> one calm sentence in the marker; the app carries on (server sync is untouched)
+      onLinkFailed: () => { if ((net?.verifiedCount() ?? 0) === 0) setPeerStatus({ unreachable: true }); },
     });
     return net;
   }
@@ -117,7 +119,7 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
       scheduler.stop();
       net?.close();
       net = null;
-      setPeerStatus({ peers: 0 });
+      setPeerStatus({ peers: 0, unreachable: false });
     },
   };
 }
