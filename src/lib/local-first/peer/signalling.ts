@@ -249,6 +249,14 @@ export function ntfyProvider(options: NtfyOptions = {}): SignalProvider {
   };
 }
 
+/**
+ * The remote providers the app races, in one place (peer-shared.ts uses it; so does the real-browser test of "Supabase down -> ntfy",
+ * e2e/lf-peer-ntfy.spec.ts, so the list it proves is the list that ships): Supabase Realtime first, ntfy.sh as the free fallback.
+ */
+export function remoteSignalProviders(getClient: () => RealtimeClientLike, ntfy: NtfyOptions = {}): SignalProvider[] {
+  return [supabaseRealtimeProvider(getClient), ntfyProvider(ntfy)];
+}
+
 // ─── the race and the hub ───────────────────────────────────────────────────────────────────────────
 
 /** Starts every provider at once; the first to connect wins and the rest are closed. Rejects only when all of them fail. */

@@ -14,7 +14,8 @@ import { createLocalDbPeerStore } from "./localdb-store";
 import { createPeerNetwork, type NetworkStats, type PeerNetwork } from "./network";
 import { createServerStep, HEADS_KEY, type StoredHeads } from "./server-step";
 import { resetLocalCopy } from "./reset-copy";
-import { parseEnvelope, type SignalConnection, type SignalEnvelope, type SignalProvider } from "./signalling";
+import { createClient } from "@supabase/supabase-js";
+import { parseEnvelope, remoteSignalProviders, type RealtimeClientLike, type SignalConnection, type SignalEnvelope, type SignalProvider } from "./signalling";
 import { createRtcLink } from "./transport";
 import { createKeyRing, PEER_ATTEST_KEY, verifyToken, type KeyRing, type PublicKeyInfo, type SignedRow } from "./verify";
 
@@ -37,6 +38,8 @@ let auto: AutoSync | null = null;
 let conn: (SignalConnection & { deliver(m: SignalEnvelope): void }) | null = null;
 const refusals: Array<{ peer: string; reason: string }> = [];
 const counters = { serverStep: 0, attestFetch: 0, fetch: 0 };
+/** startAutoReal: which real signalling provider connected, and which failed (with why). */
+const providerLog: { connected: string[]; failed: Array<{ name: string; error: string }> } = { connected: [], failed: [] };
 
 // every network request this page makes is counted: the peer path must make none
 const realFetch = window.fetch.bind(window);
@@ -130,6 +133,32 @@ const harness = {
       isVisible: () => true, isOnline: () => true, locks: null, foreignOrg,
     });
   },
+  /**
+   * AUDIT-100 B21: the same auto-sync assembly with the app's REAL signalling providers (remoteSignalProviders, the list peer-shared.ts
+   * races) instead of the bridge: a real supabase-js Realtime client pointed at `supabaseUrl` (the test makes it refuse: Supabase down)
+   * and the real ntfy provider (real EventSource + fetch) pointed at `ntfyBase` (the test's local ntfy stand-in). Each provider is only
+   * watched (connected / failed), never changed.
+   */
+  async startAutoReal(o: { attestation: { token: string; expiresAt: number; viewClass: string; projects: string[]; channel: string }; supabaseUrl: string; ntfyBase: string }) {
+    await db!.setMeta(PEER_ATTEST_KEY, { ...o.attestation, orgId: me.org, userId: me.userId, fetchedAt: Date.now() });
+    const client = createClient(o.supabaseUrl, "local-placeholder-anon-key", { auth: { persistSession: false, autoRefreshToken: false } });
+    const watched = remoteSignalProviders(() => client as unknown as RealtimeClientLike, { baseUrl: o.ntfyBase }).map((p): SignalProvider => ({
+      name: p.name,
+      connect: (channel, selfId) => p.connect(channel, selfId).then(
+        (c) => { providerLog.connected.push(p.name); return c; },
+        (e: unknown) => { providerLog.failed.push({ name: p.name, error: String(e) }); throw e; },
+      ),
+    }));
+    auto = createAutoSync({
+      userId: me.userId, selfId: me.userId, db: db!,
+      fetchAttest: async () => { counters.attestFetch += 1; throw new Error("our server is down"); },
+      remoteProviders: watched,
+      openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal, iceServers: [] }),
+      serverStep: async () => { counters.serverStep += 1; throw new Error("our server is down"); },
+      isVisible: () => true, isOnline: () => true, locks: null, foreignOrg,
+    });
+  },
+  providers() { return { connected: providerLog.connected.slice(), failed: providerLog.failed.slice() }; },
   /**
    * One heads-mode server step (server-step.ts) against a stubbed GET /heads answer: when the epoch or view class differs from the stored
    * one, the REAL resetLocalCopy runs (reset-copy.ts) and a whole sync follows (stubbed: counted, stores nothing).
