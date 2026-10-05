@@ -17,7 +17,7 @@ import { resetLocalCopy } from "./reset-copy";
 import { SYNC_BASE_URL, SYNC_PROTOCOL } from "../sync-client";
 import { createAutoSync, type AutoSync } from "./auto-sync";
 import type { RealtimeClientLike } from "./signalling";
-import { broadcastChannelProvider, ntfyProvider, supabaseRealtimeProvider } from "./signalling";
+import { broadcastChannelProvider, remoteSignalProviders } from "./signalling";
 import { createServerStep } from "./server-step";
 import { createRtcLink } from "./transport";
 
@@ -60,10 +60,7 @@ export function startPeerSync(userId: string): void {
       selfId: `${getDeviceId()}:${userId.slice(0, 8)}`.slice(0, 64),
       db,
       fetchAttest,
-      remoteProviders: [
-        supabaseRealtimeProvider(() => createClient() as unknown as RealtimeClientLike),
-        ntfyProvider(),
-      ],
+      remoteProviders: remoteSignalProviders(() => createClient() as unknown as RealtimeClientLike),
       localProviders: [broadcastChannelProvider()],
       openLink: ({ initiator, sendSignal }) => createRtcLink({ initiator, sendSignal }),
       // heads mode (FC cost:COST-03): ONE GET /heads per run, a project's feed only when its head moved, a reset when the view class
