@@ -19,6 +19,7 @@ import { Loader2, Plus } from "lucide-react";
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 // Real-screen conversion (2026-08-30): "New Lead" routes to a real create
 // screen (LeadCreateClient.tsx). Rows route to a real Object Page
 // (LeadObjectClient.tsx, which gained a real detail view this conversion --
@@ -103,7 +104,7 @@ export default function LeadsClient() {
   async function bulkReassign() {
     if (!selected.size || !bulkOwnerId.trim()) return;
     try {
-      const res = await fetch("/api/leads/bulk-reassign", {
+      const res = await viaPxApi("/api/leads/bulk-reassign", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leadIds: Array.from(selected), ownerId: bulkOwnerId }),
       });

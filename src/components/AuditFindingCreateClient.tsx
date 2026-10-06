@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { fetchJson } from "@/lib/fetch-json";
 import { soleOptionId } from "@/lib/reference-lookups";
 
+import { viaPxApi } from "@/lib/px-api";
 type Engagement = { id: string; name: string };
 
 export default function AuditFindingCreateClient() {
@@ -46,7 +47,7 @@ export default function AuditFindingCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/audit-findings", {
+      const res = await viaPxApi("/api/audit-findings", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ auditEngagementId: engagementId, title, severity }),
       });

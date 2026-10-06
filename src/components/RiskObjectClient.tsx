@@ -13,6 +13,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type Risk = {
   id: string; title: string; category: string; likelihood: number; impact: number;
   severity: string; status: string; ownerDept: string | null;
@@ -48,7 +49,7 @@ export default function RiskObjectClient({ riskId }: { riskId: string }) {
     if (!next) return;
     setAdvancing(true);
     try {
-      const res = await fetch(`/api/risks/${riskId}`, {
+      const res = await viaPxApi(`/api/risks/${riskId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: next }),
       });
       const data = await res.json();

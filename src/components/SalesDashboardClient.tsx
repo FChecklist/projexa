@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
+import { viaPxApi } from "@/lib/px-api";
 type Overview = {
   totalLeads: number;
   totalOpportunities: number;
@@ -34,7 +35,7 @@ export default function SalesDashboardClient() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/sales-pipeline")
+    viaPxApi("/api/sales-pipeline")
       .then((r) => r.json())
       .then((d) => setData(d))
       .catch(() => toast.error("Couldn't load sales pipeline overview"))

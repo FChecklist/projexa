@@ -127,7 +127,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
   async function finishRoom() {
     if (!roomName.trim() || drawPoints.length < 3) return;
     try {
-      const res = await fetch(`/api/floor-plans/${floorPlanId}/rooms`, {
+      const res = await viaPxApi(`/api/floor-plans/${floorPlanId}/rooms`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: roomName, polygon: drawPoints }),
       });
@@ -166,7 +166,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
     const firstRoom = (floorPlan.rooms ?? [])[0];
     const pos = firstRoom ? centroid(firstRoom.polygon) : { x: 200, y: 200 };
     try {
-      const res = await fetch(`/api/floor-plans/${floorPlanId}/placements`, {
+      const res = await viaPxApi(`/api/floor-plans/${floorPlanId}/placements`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ffeItemId, roomId: firstRoom?.id, x: pos.x, y: pos.y }),
       });
@@ -205,7 +205,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
     const placement = (floorPlan.placements ?? []).find((p) => p.id === placementId);
     if (!placement) return;
     try {
-      await fetch(`/api/floor-plans/${floorPlanId}/placements/${placementId}`, {
+      await viaPxApi(`/api/floor-plans/${floorPlanId}/placements/${placementId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ x: Number(placement.x), y: Number(placement.y) }),
       });
@@ -220,7 +220,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
     if (!placement) return;
     const nextRotation = (Number(placement.rotationDeg) + 15) % 360;
     try {
-      await fetch(`/api/floor-plans/${floorPlanId}/placements/${selectedPlacementId}`, {
+      await viaPxApi(`/api/floor-plans/${floorPlanId}/placements/${selectedPlacementId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rotationDeg: nextRotation }),
       });
@@ -233,7 +233,7 @@ export default function FloorPlanEditorClient({ floorPlanId }: { floorPlanId: st
   async function removeSelected() {
     if (!selectedPlacementId) return;
     try {
-      await fetch(`/api/floor-plans/${floorPlanId}/placements/${selectedPlacementId}`, { method: "DELETE" });
+      await viaPxApi(`/api/floor-plans/${floorPlanId}/placements/${selectedPlacementId}`, { method: "DELETE" });
       setSelectedPlacementId(null);
       load();
     } catch {

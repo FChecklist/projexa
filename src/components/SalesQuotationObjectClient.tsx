@@ -28,6 +28,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 
+import { viaPxApi } from "@/lib/px-api";
 type QuotationItem = { id: string; description: string; quantity: string; rate: string; amount: string };
 type Quotation = {
   id: string; quotationNumber: number; customerId: string | null; customerName: string | null;
@@ -121,7 +122,7 @@ export default function SalesQuotationObjectClient({ quotationId }: { quotationI
   async function convertToOrder() {
     setBusy("convert");
     try {
-      const res = await fetch(`/api/quotations/${quotationId}/convert`, {
+      const res = await viaPxApi(`/api/quotations/${quotationId}/convert`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderDate }),
       });
       const data = await res.json().catch(() => null);

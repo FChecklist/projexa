@@ -20,6 +20,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 // Real-screen conversion (2026-08-30): "New Sales Order" routes to a real
 // create screen (SalesOrderCreateClient.tsx). Rows route to a real Object
 // Page (SalesOrderObjectClient.tsx, which gained a real detail view this
@@ -105,7 +106,7 @@ export default function SalesOrdersClient() {
   async function bulkStatus(status: string) {
     if (!selected.size) return;
     try {
-      const res = await fetch("/api/sales-orders/bulk-status", {
+      const res = await viaPxApi("/api/sales-orders/bulk-status", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ salesOrderIds: Array.from(selected), status }),
       });

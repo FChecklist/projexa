@@ -250,7 +250,7 @@ export function ReportCatalogSection({
     // might satisfy by accident. `cancelled` avoids committing either fetch's
     // result after this component has unmounted (e.g. the user switched back
     // to the "Project Reports" tab before either resolved).
-    fetch("/api/reports/catalog")
+    viaPxApi("/api/reports/catalog")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`catalog fetch failed (${r.status})`))))
       .then((d) => {
         if (cancelled) return;

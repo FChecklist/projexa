@@ -30,6 +30,7 @@ import { useLocalWrites } from "@/lib/local-first/use-local-writes";
 import { useDraft } from "@/lib/local-first/outbox-drafts";
 import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
+import { viaPxApi } from "@/lib/px-api";
 type Task = {
   id: string; projectId: string; number: number; title: string; description: string | null;
   priority: string; statusId: string; startDate: string | null; dueDate: string | null;
@@ -176,7 +177,7 @@ export default function ScheduleTaskObjectClient({
         // Refused before it was stored (too long, a derived %): the form keeps the text; the online save may still take it.
         if (result && !result.queued) refused = result.refused;
       }
-      const res = await fetch(`/api/schedule/tasks/${taskId}`, {
+      const res = await viaPxApi(`/api/schedule/tasks/${taskId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: values.title, description: values.description, priority: values.priority,
@@ -201,7 +202,7 @@ export default function ScheduleTaskObjectClient({
   async function handleArchive() {
     setArchiving(true);
     try {
-      const res = await fetch(`/api/schedule/tasks/${taskId}`, {
+      const res = await viaPxApi(`/api/schedule/tasks/${taskId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isArchived: true }),
       });

@@ -1,0 +1,195 @@
+# AUDIT-100 A2 batches 2-4 live smoke, projexa-api v3 (compliance-tracker main 86b7feb8), test org only, read-only probes + role refusals
+edge policy 89a278e8a74fa3dceb382a181752917ebef248476fd8e9f8e5eb7c0db18a44c7 routes=113
+┌─────────┬────────────────────────────────────────────────────────┬─────────────────┬─────────┬────────────────────────────────────────────────────────────────┬──────┬────────┬──────┐
+│ (index) │ label                                                  │ who             │ method  │ path                                                           │ edge │ vercel │ same │
+├─────────┼────────────────────────────────────────────────────────┼─────────────────┼─────────┼────────────────────────────────────────────────────────────────┼──────┼────────┼──────┤
+│ 0       │ "deployed policy = this checkout's"                    │ '-'             │ 'GET'   │ '/_policy'                                                     │ 113  │ 113    │ true │
+│ 1       │ 'dashboard snapshot'                                   │ 'owner'         │ 'GET'   │ '/api/dashboard/project/b6uqvsxyhgsb5nwpf4kaptsa'              │ 200  │ 200    │ true │
+│ 2       │ 'exceptions'                                           │ 'owner'         │ 'GET'   │ '/api/exceptions?projectId=b6uqvsxyhgsb5nwpf4kaptsa'           │ 200  │ 200    │ true │
+│ 3       │ 'BOQ analysis'                                         │ 'owner'         │ 'GET'   │ '/api/reports/boq-analysis?projectId=b6uqvsxyhgsb5nwpf4kaptsa' │ 200  │ 200    │ true │
+│ 4       │ 'document (unknown id)'                                │ 'owner'         │ 'GET'   │ '/api/documents/:id'                                           │ 404  │ 404    │ true │
+│ 5       │ 'drawing file URL (unknown id)'                        │ 'owner'         │ 'GET'   │ '/api/drawings/:id/document-url'                               │ 404  │ 404    │ true │
+│ 6       │ 'permit (unknown id)'                                  │ 'owner'         │ 'GET'   │ '/api/permits/:id'                                             │ 404  │ 404    │ true │
+│ 7       │ 'dashboard snapshot'                                   │ 'pm'            │ 'GET'   │ '/api/dashboard/project/b6uqvsxyhgsb5nwpf4kaptsa'              │ 200  │ 200    │ true │
+│ 8       │ 'exceptions'                                           │ 'pm'            │ 'GET'   │ '/api/exceptions?projectId=b6uqvsxyhgsb5nwpf4kaptsa'           │ 200  │ 200    │ true │
+│ 9       │ 'BOQ analysis'                                         │ 'pm'            │ 'GET'   │ '/api/reports/boq-analysis?projectId=b6uqvsxyhgsb5nwpf4kaptsa' │ 200  │ 200    │ true │
+│ 10      │ 'document (unknown id)'                                │ 'pm'            │ 'GET'   │ '/api/documents/:id'                                           │ 404  │ 404    │ true │
+│ 11      │ 'drawing file URL (unknown id)'                        │ 'pm'            │ 'GET'   │ '/api/drawings/:id/document-url'                               │ 404  │ 404    │ true │
+│ 12      │ 'permit (unknown id)'                                  │ 'pm'            │ 'GET'   │ '/api/permits/:id'                                             │ 404  │ 404    │ true │
+│ 13      │ 'dashboard snapshot'                                   │ 'client_viewer' │ 'GET'   │ '/api/dashboard/project/b6uqvsxyhgsb5nwpf4kaptsa'              │ 200  │ 200    │ true │
+│ 14      │ 'exceptions'                                           │ 'client_viewer' │ 'GET'   │ '/api/exceptions?projectId=b6uqvsxyhgsb5nwpf4kaptsa'           │ 200  │ 200    │ true │
+│ 15      │ 'BOQ analysis'                                         │ 'client_viewer' │ 'GET'   │ '/api/reports/boq-analysis?projectId=b6uqvsxyhgsb5nwpf4kaptsa' │ 200  │ 200    │ true │
+│ 16      │ 'document (unknown id)'                                │ 'client_viewer' │ 'GET'   │ '/api/documents/:id'                                           │ 404  │ 404    │ true │
+│ 17      │ 'drawing file URL (unknown id)'                        │ 'client_viewer' │ 'GET'   │ '/api/drawings/:id/document-url'                               │ 404  │ 404    │ true │
+│ 18      │ 'permit (unknown id)'                                  │ 'client_viewer' │ 'GET'   │ '/api/permits/:id'                                             │ 404  │ 404    │ true │
+│ 19      │ 'BOQ line edit refused by role'                        │ 'client_viewer' │ 'PATCH' │ '/api/scope/line-items/:id'                                    │ 403  │ 403    │ true │
+│ 20      │ 'BOQ line edit, unknown line'                          │ 'pm'            │ 'PATCH' │ '/api/scope/line-items/:id'                                    │ 404  │ 404    │ true │
+│ 21      │ 'permit edit refused by role'                          │ 'client_viewer' │ 'PATCH' │ '/api/permits/:id'                                             │ 403  │ 403    │ true │
+│ 22      │ 'missing projectId'                                    │ 'pm'            │ 'GET'   │ '/api/exceptions'                                              │ 400  │ 400    │ true │
+│ 23      │ 'signed out'                                           │ 'nobody'        │ 'GET'   │ '/api/exceptions?projectId=b6uqvsxyhgsb5nwpf4kaptsa'           │ 401  │ 401    │ true │
+│ 24      │ 'batch 2 read /api/vendors'                            │ 'owner'         │ 'GET'   │ '/api/vendors'                                                 │ 200  │ 200    │ true │
+│ 25      │ 'batch 2 read /api/vendors'                            │ 'client_viewer' │ 'GET'   │ '/api/vendors'                                                 │ 200  │ 200    │ true │
+│ 26      │ 'batch 2 read /api/companies'                          │ 'owner'         │ 'GET'   │ '/api/companies'                                               │ 200  │ 200    │ true │
+│ 27      │ 'batch 2 read /api/companies'                          │ 'client_viewer' │ 'GET'   │ '/api/companies'                                               │ 200  │ 200    │ true │
+│ 28      │ 'batch 2 read /api/customers'                          │ 'owner'         │ 'GET'   │ '/api/customers?limit=5'                                       │ 200  │ 200    │ true │
+│ 29      │ 'batch 2 read /api/customers'                          │ 'client_viewer' │ 'GET'   │ '/api/customers?limit=5'                                       │ 200  │ 200    │ true │
+│ 30      │ 'batch 2 read /api/employees'                          │ 'owner'         │ 'GET'   │ '/api/employees?limit=5'                                       │ 200  │ 200    │ true │
+│ 31      │ 'batch 2 read /api/employees'                          │ 'client_viewer' │ 'GET'   │ '/api/employees?limit=5'                                       │ 200  │ 200    │ true │
+│ 32      │ 'batch 2 read /api/hr/departments'                     │ 'owner'         │ 'GET'   │ '/api/hr/departments'                                          │ 200  │ 200    │ true │
+│ 33      │ 'batch 2 read /api/hr/departments'                     │ 'client_viewer' │ 'GET'   │ '/api/hr/departments'                                          │ 200  │ 200    │ true │
+│ 34      │ 'batch 2 read /api/inventory/items'                    │ 'owner'         │ 'GET'   │ '/api/inventory/items'                                         │ 200  │ 200    │ true │
+│ 35      │ 'batch 2 read /api/inventory/items'                    │ 'client_viewer' │ 'GET'   │ '/api/inventory/items'                                         │ 200  │ 200    │ true │
+│ 36      │ 'batch 2 read /api/accounts'                           │ 'owner'         │ 'GET'   │ '/api/accounts'                                                │ 200  │ 200    │ true │
+│ 37      │ 'batch 2 read /api/accounts'                           │ 'client_viewer' │ 'GET'   │ '/api/accounts'                                                │ 200  │ 200    │ true │
+│ 38      │ 'batch 2 read /api/inventory/warehouses'               │ 'owner'         │ 'GET'   │ '/api/inventory/warehouses'                                    │ 200  │ 200    │ true │
+│ 39      │ 'batch 2 read /api/inventory/warehouses'               │ 'client_viewer' │ 'GET'   │ '/api/inventory/warehouses'                                    │ 200  │ 200    │ true │
+│ 40      │ 'batch 2 read /api/recruitment/candidates'             │ 'owner'         │ 'GET'   │ '/api/recruitment/candidates'                                  │ 200  │ 200    │ true │
+│ 41      │ 'batch 2 read /api/recruitment/candidates'             │ 'client_viewer' │ 'GET'   │ '/api/recruitment/candidates'                                  │ 200  │ 200    │ true │
+│ 42      │ 'batch 2 read /api/recruitment/job-openings'           │ 'owner'         │ 'GET'   │ '/api/recruitment/job-openings'                                │ 200  │ 200    │ true │
+│ 43      │ 'batch 2 read /api/recruitment/job-openings'           │ 'client_viewer' │ 'GET'   │ '/api/recruitment/job-openings'                                │ 200  │ 200    │ true │
+│ 44      │ 'batch 2 read /api/access-review'                      │ 'owner'         │ 'GET'   │ '/api/access-review?limit=5'                                   │ 200  │ 200    │ true │
+│ 45      │ 'batch 2 read /api/access-review'                      │ 'client_viewer' │ 'GET'   │ '/api/access-review?limit=5'                                   │ 200  │ 200    │ true │
+│ 46      │ 'batch 2 read /api/audit-engagements'                  │ 'owner'         │ 'GET'   │ '/api/audit-engagements'                                       │ 200  │ 200    │ true │
+│ 47      │ 'batch 2 read /api/audit-engagements'                  │ 'client_viewer' │ 'GET'   │ '/api/audit-engagements'                                       │ 200  │ 200    │ true │
+│ 48      │ 'batch 2 read /api/board'                              │ 'owner'         │ 'GET'   │ '/api/board?projectId=b6uqvsxyhgsb5nwpf4kaptsa'                │ 200  │ 200    │ true │
+│ 49      │ 'batch 2 read /api/board'                              │ 'client_viewer' │ 'GET'   │ '/api/board?projectId=b6uqvsxyhgsb5nwpf4kaptsa'                │ 200  │ 200    │ true │
+│ 50      │ 'batch 2 read /api/ffe'                                │ 'owner'         │ 'GET'   │ '/api/ffe?projectId=b6uqvsxyhgsb5nwpf4kaptsa'                  │ 200  │ 200    │ true │
+│ 51      │ 'batch 2 read /api/ffe'                                │ 'client_viewer' │ 'GET'   │ '/api/ffe?projectId=b6uqvsxyhgsb5nwpf4kaptsa'                  │ 200  │ 200    │ true │
+│ 52      │ 'batch 2 read /api/leave/requests'                     │ 'owner'         │ 'GET'   │ '/api/leave/requests?limit=5'                                  │ 200  │ 200    │ true │
+│ 53      │ 'batch 2 read /api/leave/requests'                     │ 'client_viewer' │ 'GET'   │ '/api/leave/requests?limit=5'                                  │ 200  │ 200    │ true │
+│ 54      │ 'batch 2 read /api/payroll/runs'                       │ 'owner'         │ 'GET'   │ '/api/payroll/runs'                                            │ 200  │ 200    │ true │
+│ 55      │ 'batch 2 read /api/payroll/runs'                       │ 'client_viewer' │ 'GET'   │ '/api/payroll/runs'                                            │ 200  │ 200    │ true │
+│ 56      │ 'batch 2 read /api/payroll/salary-components'          │ 'owner'         │ 'GET'   │ '/api/payroll/salary-components'                               │ 200  │ 200    │ true │
+│ 57      │ 'batch 2 read /api/payroll/salary-components'          │ 'client_viewer' │ 'GET'   │ '/api/payroll/salary-components'                               │ 200  │ 200    │ true │
+│ 58      │ 'batch 2 read /api/procurement/requisitions'           │ 'owner'         │ 'GET'   │ '/api/procurement/requisitions'                                │ 200  │ 200    │ true │
+│ 59      │ 'batch 2 read /api/procurement/requisitions'           │ 'client_viewer' │ 'GET'   │ '/api/procurement/requisitions'                                │ 200  │ 200    │ true │
+│ 60      │ 'batch 2 read /api/procurement/rfqs'                   │ 'owner'         │ 'GET'   │ '/api/procurement/rfqs'                                        │ 200  │ 200    │ true │
+│ 61      │ 'batch 2 read /api/procurement/rfqs'                   │ 'client_viewer' │ 'GET'   │ '/api/procurement/rfqs'                                        │ 200  │ 200    │ true │
+│ 62      │ 'batch 2 read /api/sales-invoices'                     │ 'owner'         │ 'GET'   │ '/api/sales-invoices?limit=5'                                  │ 200  │ 200    │ true │
+│ 63      │ 'batch 2 read /api/sales-invoices'                     │ 'client_viewer' │ 'GET'   │ '/api/sales-invoices?limit=5'                                  │ 200  │ 200    │ true │
+│ 64      │ 'batch 2 read /api/schedule/gantt'                     │ 'owner'         │ 'GET'   │ '/api/schedule/gantt?projectId=b6uqvsxyhgsb5nwpf4kaptsa'       │ 200  │ 200    │ true │
+│ 65      │ 'batch 2 read /api/schedule/gantt'                     │ 'client_viewer' │ 'GET'   │ '/api/schedule/gantt?projectId=b6uqvsxyhgsb5nwpf4kaptsa'       │ 200  │ 200    │ true │
+│ 66      │ 'batch 2 read /api/change-orders/:id/signature-status' │ 'owner'         │ 'GET'   │ '/api/change-orders/:id/signature-status'                      │ 404  │ 404    │ true │
+│ 67      │ 'batch 2 read /api/change-orders/:id/signature-status' │ 'client_viewer' │ 'GET'   │ '/api/change-orders/:id/signature-status'                      │ 404  │ 404    │ true │
+│ 68      │ 'batch 2 read /api/credit-notes'                       │ 'owner'         │ 'GET'   │ '/api/credit-notes'                                            │ 200  │ 200    │ true │
+│ 69      │ 'batch 2 read /api/credit-notes'                       │ 'client_viewer' │ 'GET'   │ '/api/credit-notes'                                            │ 200  │ 200    │ true │
+│ 70      │ 'batch 2 read /api/expenses'                           │ 'owner'         │ 'GET'   │ '/api/expenses?projectId=b6uqvsxyhgsb5nwpf4kaptsa'             │ 200  │ 200    │ true │
+│ 71      │ 'batch 2 read /api/expenses'                           │ 'client_viewer' │ 'GET'   │ '/api/expenses?projectId=b6uqvsxyhgsb5nwpf4kaptsa'             │ 200  │ 200    │ true │
+│ 72      │ 'batch 2 read /api/fraud-cases'                        │ 'owner'         │ 'GET'   │ '/api/fraud-cases'                                             │ 200  │ 200    │ true │
+│ 73      │ 'batch 2 read /api/fraud-cases'                        │ 'client_viewer' │ 'GET'   │ '/api/fraud-cases'                                             │ 200  │ 200    │ true │
+│ 74      │ 'batch 2 read /api/fraud-cases/:id'                    │ 'owner'         │ 'GET'   │ '/api/fraud-cases/:id'                                         │ 404  │ 404    │ true │
+│ 75      │ 'batch 2 read /api/fraud-cases/:id'                    │ 'client_viewer' │ 'GET'   │ '/api/fraud-cases/:id'                                         │ 404  │ 404    │ true │
+│ 76      │ 'batch 2 read /api/grc-dashboard'                      │ 'owner'         │ 'GET'   │ '/api/grc-dashboard'                                           │ 200  │ 200    │ true │
+│ 77      │ 'batch 2 read /api/grc-dashboard'                      │ 'client_viewer' │ 'GET'   │ '/api/grc-dashboard'                                           │ 200  │ 200    │ true │
+│ 78      │ 'batch 2 read /api/journal-entries'                    │ 'owner'         │ 'GET'   │ '/api/journal-entries?limit=5'                                 │ 200  │ 200    │ true │
+│ 79      │ 'batch 2 read /api/journal-entries'                    │ 'client_viewer' │ 'GET'   │ '/api/journal-entries?limit=5'                                 │ 200  │ 200    │ true │
+│ 80      │ 'batch 2 read /api/kpis'                               │ 'owner'         │ 'GET'   │ '/api/kpis?projectId=b6uqvsxyhgsb5nwpf4kaptsa'                 │ 200  │ 200    │ true │
+│ 81      │ 'batch 2 read /api/kpis'                               │ 'client_viewer' │ 'GET'   │ '/api/kpis?projectId=b6uqvsxyhgsb5nwpf4kaptsa'                 │ 200  │ 200    │ true │
+│ 82      │ 'batch 2 read /api/leads'                              │ 'owner'         │ 'GET'   │ '/api/leads?limit=5'                                           │ 200  │ 200    │ true │
+│ 83      │ 'batch 2 read /api/leads'                              │ 'client_viewer' │ 'GET'   │ '/api/leads?limit=5'                                           │ 200  │ 200    │ true │
+│ 84      │ 'batch 2 read /api/leave/balances'                     │ 'owner'         │ 'GET'   │ '/api/leave/balances'                                          │ 200  │ 200    │ true │
+│ 85      │ 'batch 2 read /api/leave/balances'                     │ 'client_viewer' │ 'GET'   │ '/api/leave/balances'                                          │ 200  │ 200    │ true │
+│ 86      │ 'batch 2 read /api/opportunities'                      │ 'owner'         │ 'GET'   │ '/api/opportunities?limit=5'                                   │ 200  │ 200    │ true │
+│ 87      │ 'batch 2 read /api/opportunities'                      │ 'client_viewer' │ 'GET'   │ '/api/opportunities?limit=5'                                   │ 200  │ 200    │ true │
+│ 88      │ 'batch 2 read /api/payroll/income-tax-slabs'           │ 'owner'         │ 'GET'   │ '/api/payroll/income-tax-slabs'                                │ 200  │ 200    │ true │
+│ 89      │ 'batch 2 read /api/payroll/income-tax-slabs'           │ 'client_viewer' │ 'GET'   │ '/api/payroll/income-tax-slabs'                                │ 200  │ 200    │ true │
+│ 90      │ 'batch 2 read /api/payroll/salary-structures'          │ 'owner'         │ 'GET'   │ '/api/payroll/salary-structures'                               │ 200  │ 200    │ true │
+│ 91      │ 'batch 2 read /api/payroll/salary-structures'          │ 'client_viewer' │ 'GET'   │ '/api/payroll/salary-structures'                               │ 200  │ 200    │ true │
+│ 92      │ 'batch 2 read /api/payroll/statutory-rules'            │ 'owner'         │ 'GET'   │ '/api/payroll/statutory-rules'                                 │ 200  │ 200    │ true │
+│ 93      │ 'batch 2 read /api/payroll/statutory-rules'            │ 'client_viewer' │ 'GET'   │ '/api/payroll/statutory-rules'                                 │ 200  │ 200    │ true │
+│ 94      │ 'batch 2 read /api/policies'                           │ 'owner'         │ 'GET'   │ '/api/policies'                                                │ 200  │ 200    │ true │
+│ 95      │ 'batch 2 read /api/policies'                           │ 'client_viewer' │ 'GET'   │ '/api/policies'                                                │ 200  │ 200    │ true │
+│ 96      │ 'batch 2 read /api/policies/:id'                       │ 'owner'         │ 'GET'   │ '/api/policies/:id'                                            │ 404  │ 404    │ true │
+│ 97      │ 'batch 2 read /api/policies/:id'                       │ 'client_viewer' │ 'GET'   │ '/api/policies/:id'                                            │ 404  │ 404    │ true │
+│ 98      │ 'batch 2 read /api/procurement/goods-receipts'         │ 'owner'         │ 'GET'   │ '/api/procurement/goods-receipts'                              │ 200  │ 200    │ true │
+│ 99      │ 'batch 2 read /api/procurement/goods-receipts'         │ 'client_viewer' │ 'GET'   │ '/api/procurement/goods-receipts'                              │ 200  │ 200    │ true │
+│ 100     │ 'batch 3 read /api/procurement/purchase-orders'        │ 'owner'         │ 'GET'   │ '/api/procurement/purchase-orders'                             │ 200  │ 200    │ true │
+│ 101     │ 'batch 3 read /api/procurement/purchase-orders'        │ 'client_viewer' │ 'GET'   │ '/api/procurement/purchase-orders'                             │ 200  │ 200    │ true │
+│ 102     │ 'batch 3 read /api/procurement/quotations'             │ 'owner'         │ 'GET'   │ '/api/procurement/quotations?limit=5'                          │ 200  │ 200    │ true │
+│ 103     │ 'batch 3 read /api/procurement/quotations'             │ 'client_viewer' │ 'GET'   │ '/api/procurement/quotations?limit=5'                          │ 200  │ 200    │ true │
+│ 104     │ 'batch 3 read /api/quotations'                         │ 'owner'         │ 'GET'   │ '/api/quotations?limit=5'                                      │ 200  │ 200    │ true │
+│ 105     │ 'batch 3 read /api/quotations'                         │ 'client_viewer' │ 'GET'   │ '/api/quotations?limit=5'                                      │ 200  │ 200    │ true │
+│ 106     │ 'batch 3 read /api/recruitment/applications'           │ 'owner'         │ 'GET'   │ '/api/recruitment/applications'                                │ 200  │ 200    │ true │
+│ 107     │ 'batch 3 read /api/recruitment/applications'           │ 'client_viewer' │ 'GET'   │ '/api/recruitment/applications'                                │ 200  │ 200    │ true │
+│ 108     │ 'batch 3 read /api/risks'                              │ 'owner'         │ 'GET'   │ '/api/risks'                                                   │ 200  │ 200    │ true │
+│ 109     │ 'batch 3 read /api/risks'                              │ 'client_viewer' │ 'GET'   │ '/api/risks'                                                   │ 200  │ 200    │ true │
+│ 110     │ 'batch 3 read /api/risks/:id'                          │ 'owner'         │ 'GET'   │ '/api/risks/:id'                                               │ 404  │ 404    │ true │
+│ 111     │ 'batch 3 read /api/risks/:id'                          │ 'client_viewer' │ 'GET'   │ '/api/risks/:id'                                               │ 404  │ 404    │ true │
+│ 112     │ 'batch 3 read /api/sales-orders'                       │ 'owner'         │ 'GET'   │ '/api/sales-orders?limit=5'                                    │ 200  │ 200    │ true │
+│ 113     │ 'batch 3 read /api/sales-orders'                       │ 'client_viewer' │ 'GET'   │ '/api/sales-orders?limit=5'                                    │ 200  │ 200    │ true │
+│ 114     │ 'batch 3 read /api/schedule/tasks/:id'                 │ 'owner'         │ 'GET'   │ '/api/schedule/tasks/:id'                                      │ 404  │ 404    │ true │
+│ 115     │ 'batch 3 read /api/schedule/tasks/:id'                 │ 'client_viewer' │ 'GET'   │ '/api/schedule/tasks/:id'                                      │ 404  │ 404    │ true │
+│ 116     │ 'batch 3 read /api/submittals'                         │ 'owner'         │ 'GET'   │ '/api/submittals?projectId=b6uqvsxyhgsb5nwpf4kaptsa'           │ 200  │ 200    │ true │
+│ 117     │ 'batch 3 read /api/submittals'                         │ 'client_viewer' │ 'GET'   │ '/api/submittals?projectId=b6uqvsxyhgsb5nwpf4kaptsa'           │ 200  │ 200    │ true │
+│ 118     │ 'batch 3 read /api/vendor-risk'                        │ 'owner'         │ 'GET'   │ '/api/vendor-risk'                                             │ 200  │ 200    │ true │
+│ 119     │ 'batch 3 read /api/vendor-risk'                        │ 'client_viewer' │ 'GET'   │ '/api/vendor-risk'                                             │ 200  │ 200    │ true │
+│ 120     │ 'batch 3 read /api/ar-aging'                           │ 'owner'         │ 'GET'   │ '/api/ar-aging?limit=5'                                        │ 200  │ 200    │ true │
+│ 121     │ 'batch 3 read /api/ar-aging'                           │ 'client_viewer' │ 'GET'   │ '/api/ar-aging?limit=5'                                        │ 200  │ 200    │ true │
+│ 122     │ 'batch 3 read /api/balance-sheet'                      │ 'owner'         │ 'GET'   │ '/api/balance-sheet?limit=5'                                   │ 200  │ 200    │ true │
+│ 123     │ 'batch 3 read /api/balance-sheet'                      │ 'client_viewer' │ 'GET'   │ '/api/balance-sheet?limit=5'                                   │ 200  │ 200    │ true │
+│ 124     │ 'batch 3 read /api/bank-reconciliation'                │ 'owner'         │ 'GET'   │ '/api/bank-reconciliation?limit=5'                             │ 200  │ 200    │ true │
+│ 125     │ 'batch 3 read /api/bank-reconciliation'                │ 'client_viewer' │ 'GET'   │ '/api/bank-reconciliation?limit=5'                             │ 200  │ 200    │ true │
+│ 126     │ 'batch 3 read /api/compliance-register'                │ 'owner'         │ 'GET'   │ '/api/compliance-register?limit=5'                             │ 200  │ 200    │ true │
+│ 127     │ 'batch 3 read /api/compliance-register'                │ 'client_viewer' │ 'GET'   │ '/api/compliance-register?limit=5'                             │ 200  │ 200    │ true │
+│ 128     │ 'batch 3 read /api/customers/:id/overview'             │ 'owner'         │ 'GET'   │ '/api/customers/:id/overview'                                  │ 404  │ 404    │ true │
+│ 129     │ 'batch 3 read /api/customers/:id/overview'             │ 'client_viewer' │ 'GET'   │ '/api/customers/:id/overview'                                  │ 404  │ 404    │ true │
+│ 130     │ 'batch 3 read /api/ffe/margin-summary'                 │ 'owner'         │ 'GET'   │ '/api/ffe/margin-summary?projectId=b6uqvsxyhgsb5nwpf4kaptsa'   │ 200  │ 200    │ true │
+│ 131     │ 'batch 3 read /api/ffe/margin-summary'                 │ 'client_viewer' │ 'GET'   │ '/api/ffe/margin-summary?projectId=b6uqvsxyhgsb5nwpf4kaptsa'   │ 200  │ 200    │ true │
+│ 132     │ 'batch 3 read /api/finance-dashboard'                  │ 'owner'         │ 'GET'   │ '/api/finance-dashboard'                                       │ 200  │ 200    │ true │
+│ 133     │ 'batch 3 read /api/finance-dashboard'                  │ 'client_viewer' │ 'GET'   │ '/api/finance-dashboard'                                       │ 200  │ 200    │ true │
+│ 134     │ 'batch 3 read /api/floor-plans'                        │ 'owner'         │ 'GET'   │ '/api/floor-plans?projectId=b6uqvsxyhgsb5nwpf4kaptsa'          │ 200  │ 200    │ true │
+│ 135     │ 'batch 3 read /api/floor-plans'                        │ 'client_viewer' │ 'GET'   │ '/api/floor-plans?projectId=b6uqvsxyhgsb5nwpf4kaptsa'          │ 200  │ 200    │ true │
+│ 136     │ 'batch 3 read /api/floor-plans/:id/scene'              │ 'owner'         │ 'GET'   │ '/api/floor-plans/:id/scene'                                   │ 404  │ 404    │ true │
+│ 137     │ 'batch 3 read /api/floor-plans/:id/scene'              │ 'client_viewer' │ 'GET'   │ '/api/floor-plans/:id/scene'                                   │ 404  │ 404    │ true │
+│ 138     │ 'batch 3 read /api/hr/org-chart'                       │ 'owner'         │ 'GET'   │ '/api/hr/org-chart'                                            │ 200  │ 200    │ true │
+│ 139     │ 'batch 3 read /api/hr/org-chart'                       │ 'client_viewer' │ 'GET'   │ '/api/hr/org-chart'                                            │ 200  │ 200    │ true │
+│ 140     │ 'batch 3 read /api/inventory/items/:id'                │ 'owner'         │ 'GET'   │ '/api/inventory/items/:id'                                     │ 404  │ 404    │ true │
+│ 141     │ 'batch 3 read /api/inventory/items/:id'                │ 'client_viewer' │ 'GET'   │ '/api/inventory/items/:id'                                     │ 404  │ 404    │ true │
+│ 142     │ 'batch 3 read /api/inventory/stock-balance'            │ 'owner'         │ 'GET'   │ '/api/inventory/stock-balance?limit=5'                         │ 200  │ 200    │ true │
+│ 143     │ 'batch 3 read /api/inventory/stock-balance'            │ 'client_viewer' │ 'GET'   │ '/api/inventory/stock-balance?limit=5'                         │ 200  │ 200    │ true │
+│ 144     │ 'batch 3 read /api/inventory/stock-entries'            │ 'owner'         │ 'GET'   │ '/api/inventory/stock-entries?limit=5'                         │ 200  │ 200    │ true │
+│ 145     │ 'batch 3 read /api/inventory/stock-entries'            │ 'client_viewer' │ 'GET'   │ '/api/inventory/stock-entries?limit=5'                         │ 200  │ 200    │ true │
+│ 146     │ 'batch 3 read /api/journal-entries/:id'                │ 'owner'         │ 'GET'   │ '/api/journal-entries/:id'                                     │ 404  │ 404    │ true │
+│ 147     │ 'batch 3 read /api/journal-entries/:id'                │ 'client_viewer' │ 'GET'   │ '/api/journal-entries/:id'                                     │ 404  │ 404    │ true │
+│ 148     │ 'batch 4 read /api/labour-roster/trades'               │ 'owner'         │ 'GET'   │ '/api/labour-roster/trades'                                    │ 200  │ 200    │ true │
+│ 149     │ 'batch 4 read /api/labour-roster/trades'               │ 'client_viewer' │ 'GET'   │ '/api/labour-roster/trades'                                    │ 200  │ 200    │ true │
+│ 150     │ 'batch 4 read /api/leads/:id/history'                  │ 'owner'         │ 'GET'   │ '/api/leads/:id/history'                                       │ 200  │ 200    │ true │
+│ 151     │ 'batch 4 read /api/leads/:id/history'                  │ 'client_viewer' │ 'GET'   │ '/api/leads/:id/history'                                       │ 200  │ 200    │ true │
+│ 152     │ 'batch 4 read /api/meetings/:id'                       │ 'owner'         │ 'GET'   │ '/api/meetings/:id'                                            │ 404  │ 404    │ true │
+│ 153     │ 'batch 4 read /api/meetings/:id'                       │ 'client_viewer' │ 'GET'   │ '/api/meetings/:id'                                            │ 404  │ 404    │ true │
+│ 154     │ 'batch 4 read /api/opportunities/:id/history'          │ 'owner'         │ 'GET'   │ '/api/opportunities/:id/history'                               │ 200  │ 200    │ true │
+│ 155     │ 'batch 4 read /api/opportunities/:id/history'          │ 'client_viewer' │ 'GET'   │ '/api/opportunities/:id/history'                               │ 200  │ 200    │ true │
+│ 156     │ 'batch 4 read /api/procurement/requisitions/:id'       │ 'owner'         │ 'GET'   │ '/api/procurement/requisitions/:id'                            │ 404  │ 404    │ true │
+│ 157     │ 'batch 4 read /api/procurement/requisitions/:id'       │ 'client_viewer' │ 'GET'   │ '/api/procurement/requisitions/:id'                            │ 404  │ 404    │ true │
+│ 158     │ 'batch 4 read /api/procurement/rfqs/:id/comparison'    │ 'owner'         │ 'GET'   │ '/api/procurement/rfqs/:id/comparison'                         │ 200  │ 200    │ true │
+│ 159     │ 'batch 4 read /api/procurement/rfqs/:id/comparison'    │ 'client_viewer' │ 'GET'   │ '/api/procurement/rfqs/:id/comparison'                         │ 200  │ 200    │ true │
+│ 160     │ 'batch 4 read /api/profit-and-loss'                    │ 'owner'         │ 'GET'   │ '/api/profit-and-loss?limit=5'                                 │ 200  │ 200    │ true │
+│ 161     │ 'batch 4 read /api/profit-and-loss'                    │ 'client_viewer' │ 'GET'   │ '/api/profit-and-loss?limit=5'                                 │ 200  │ 200    │ true │
+│ 162     │ 'batch 4 read /api/profit-and-loss-by-project'         │ 'owner'         │ 'GET'   │ '/api/profit-and-loss-by-project?limit=5'                      │ 200  │ 200    │ true │
+│ 163     │ 'batch 4 read /api/profit-and-loss-by-project'         │ 'client_viewer' │ 'GET'   │ '/api/profit-and-loss-by-project?limit=5'                      │ 200  │ 200    │ true │
+│ 164     │ 'batch 4 read /api/project-budgets/:id'                │ 'owner'         │ 'GET'   │ '/api/project-budgets/:id'                                     │ 404  │ 404    │ true │
+│ 165     │ 'batch 4 read /api/project-budgets/:id'                │ 'client_viewer' │ 'GET'   │ '/api/project-budgets/:id'                                     │ 404  │ 404    │ true │
+│ 166     │ 'batch 4 read /api/reports/catalog'                    │ 'owner'         │ 'GET'   │ '/api/reports/catalog'                                         │ 200  │ 200    │ true │
+│ 167     │ 'batch 4 read /api/reports/catalog'                    │ 'client_viewer' │ 'GET'   │ '/api/reports/catalog'                                         │ 200  │ 200    │ true │
+│ 168     │ 'batch 4 read /api/sales-pipeline'                     │ 'owner'         │ 'GET'   │ '/api/sales-pipeline'                                          │ 200  │ 200    │ true │
+│ 169     │ 'batch 4 read /api/sales-pipeline'                     │ 'client_viewer' │ 'GET'   │ '/api/sales-pipeline'                                          │ 200  │ 200    │ true │
+│ 170     │ 'batch 4 read /api/schedule/baselines/:id'             │ 'owner'         │ 'GET'   │ '/api/schedule/baselines/:id'                                  │ 404  │ 404    │ true │
+│ 171     │ 'batch 4 read /api/schedule/baselines/:id'             │ 'client_viewer' │ 'GET'   │ '/api/schedule/baselines/:id'                                  │ 404  │ 404    │ true │
+│ 172     │ 'batch 4 read /api/schedule/tasks/:id/completion'      │ 'owner'         │ 'GET'   │ '/api/schedule/tasks/:id/completion'                           │ 404  │ 404    │ true │
+│ 173     │ 'batch 4 read /api/schedule/tasks/:id/completion'      │ 'client_viewer' │ 'GET'   │ '/api/schedule/tasks/:id/completion'                           │ 404  │ 404    │ true │
+│ 174     │ 'batch 4 read /api/schedule/types'                     │ 'owner'         │ 'GET'   │ '/api/schedule/types'                                          │ 200  │ 200    │ true │
+│ 175     │ 'batch 4 read /api/schedule/types'                     │ 'client_viewer' │ 'GET'   │ '/api/schedule/types'                                          │ 200  │ 200    │ true │
+│ 176     │ 'batch 4 read /api/site-instructions/:id'              │ 'owner'         │ 'GET'   │ '/api/site-instructions/:id'                                   │ 404  │ 404    │ true │
+│ 177     │ 'batch 4 read /api/site-instructions/:id'              │ 'client_viewer' │ 'GET'   │ '/api/site-instructions/:id'                                   │ 404  │ 404    │ true │
+│ 178     │ 'batch 4 read /api/tax-templates'                      │ 'owner'         │ 'GET'   │ '/api/tax-templates'                                           │ 200  │ 200    │ true │
+│ 179     │ 'batch 4 read /api/tax-templates'                      │ 'client_viewer' │ 'GET'   │ '/api/tax-templates'                                           │ 200  │ 200    │ true │
+│ 180     │ 'batch 4 read /api/trial-balance'                      │ 'owner'         │ 'GET'   │ '/api/trial-balance?limit=5'                                   │ 200  │ 200    │ true │
+│ 181     │ 'batch 4 read /api/trial-balance'                      │ 'client_viewer' │ 'GET'   │ '/api/trial-balance?limit=5'                                   │ 200  │ 200    │ true │
+│ 182     │ 'batch 4 read /api/wiki/:id'                           │ 'owner'         │ 'GET'   │ '/api/wiki/:id'                                                │ 404  │ 404    │ true │
+│ 183     │ 'batch 4 read /api/wiki/:id'                           │ 'client_viewer' │ 'GET'   │ '/api/wiki/:id'                                                │ 404  │ 404    │ true │
+│ 184     │ 'batch 2: create vendor refused by role'               │ 'client_viewer' │ 'POST'  │ '/api/vendors'                                                 │ 403  │ 403    │ true │
+│ 185     │ 'batch 2: payroll run refused by role'                 │ 'pm'            │ 'POST'  │ '/api/payroll/runs'                                            │ 403  │ 403    │ true │
+│ 186     │ 'batch 2: policy edit refused by role'                 │ 'client_viewer' │ 'PATCH' │ '/api/policies/:id'                                            │ 403  │ 403    │ true │
+│ 187     │ 'deny by default (/api/shell)'                         │ 'owner'         │ 'GET'   │ '/api/shell'                                                   │ 404  │ '-'    │ true │
+└─────────┴────────────────────────────────────────────────────────┴─────────────────┴─────────┴────────────────────────────────────────────────────────────────┴──────┴────────┴──────┘
+all 188 probes identical

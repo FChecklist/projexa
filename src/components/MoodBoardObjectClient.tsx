@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Image as ImageIcon, X } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type MoodBoardItem = { id: string; label: string | null; notes: string | null };
 type MoodBoard = { id: string; projectId: string; title: string; roomOrArea: string | null; description: string | null; status: string; items: MoodBoardItem[] };
 
@@ -116,7 +117,7 @@ export default function MoodBoardObjectClient({ boardId }: { boardId: string }) 
   async function removeItem(itemId: string) {
     setRemovingId(itemId);
     try {
-      const res = await fetch(`/api/mood-boards/${boardId}/items/${itemId}`, { method: "DELETE" });
+      const res = await viaPxApi(`/api/mood-boards/${boardId}/items/${itemId}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to remove item");
       toast.success("Item removed");

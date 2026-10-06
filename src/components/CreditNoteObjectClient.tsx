@@ -21,6 +21,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 
+import { viaPxApi } from "@/lib/px-api";
 type NoteItem = { id: string; description: string; quantity: string; rate: string; amount: string };
 type CreditNote = {
   id: string; creditNoteNumber: number; customerId: string; customerName: string | null; salesInvoiceId: string | null;
@@ -55,7 +56,7 @@ export default function CreditNoteObjectClient({ noteId }: { noteId: string }) {
   async function submitNote() {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/credit-notes/${noteId}/submit`, { method: "POST" });
+      const res = await viaPxApi(`/api/credit-notes/${noteId}/submit`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit credit note");
       toast.success("Credit note submitted");

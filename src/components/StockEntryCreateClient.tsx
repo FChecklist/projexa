@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { fetchJson } from "@/lib/fetch-json";
 import { soleOptionId } from "@/lib/reference-lookups";
 
+import { viaPxApi } from "@/lib/px-api";
 type ItemRow = { id: string; itemCode: string; itemName: string };
 type WarehouseRow = { id: string; warehouseName: string };
 
@@ -56,7 +57,7 @@ export default function StockEntryCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/inventory/stock-entries", {
+      const res = await viaPxApi("/api/inventory/stock-entries", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: entryType, itemId, warehouseId, quantity: Number(quantity),
