@@ -187,7 +187,8 @@ test("empty project and a project that has not finished copying: calm, true word
 
 test("create/import pages only the server can do: calm offline, the server's own page when connected", async ({ page, context }) => {
   const l = await offlineLaptop(page, context, "member");
-  const pages = [["/labour/new", "Adding a worker"], ["/labour/import", "Importing a roster"], ["/materials/new", "Adding a material"], ["/schedule/tasks/new", "Adding a task"]] as const;
+  // G-15: /labour/new, /materials/new and /schedule/tasks/new are offline screens now (modules/*NewScreen.tsx, proven in delivery-screens.test.tsx); the roster import stays the server's
+  const pages = [["/labour/import", "Importing a roster"]] as const;
 
   await test.step("offline: each says it is done on the server, no error", async () => {
     for (const [path, what] of pages) {
@@ -200,11 +201,11 @@ test("create/import pages only the server can do: calm offline, the server's own
   });
 
   await test.step("online: the shell hands the page to the server (marked so the worker does not serve the shell back)", async () => {
-    // the page still open from the offline loop ("Adding a task") hands itself to the server as soon as the connection is back
+    // the page still open from the offline loop ("Importing a roster") hands itself to the server as soon as the connection is back
     await goOnline(context, l.net, l.app);
-    await expect(page).toHaveURL(new RegExp(`/schedule/tasks/new\\?projectId=${PROJECT_ID}&px-server=1$`), { timeout: 30_000 });
+    await expect(page).toHaveURL(new RegExp(`/labour/import\\?projectId=${PROJECT_ID}&px-server=1$`), { timeout: 30_000 });
     // and a fresh visit, online: the screen replaces the address at once, so the first navigation is aborted by the second (the hand-off)
-    await page.goto(`/local/materials/new${q}`).catch((e: Error) => expect(e.message).toContain("ERR_ABORTED"));
-    await expect(page).toHaveURL(new RegExp(`/materials/new\\?projectId=${PROJECT_ID}&px-server=1$`), { timeout: 30_000 });
+    await page.goto(`/local/labour/import${q}`).catch((e: Error) => expect(e.message).toContain("ERR_ABORTED"));
+    await expect(page).toHaveURL(new RegExp(`/labour/import\\?projectId=${PROJECT_ID}&px-server=1$`), { timeout: 30_000 });
   });
 });
