@@ -330,7 +330,62 @@ export const REQUESTS: { route: string; method: string; path: string; body?: unk
   { route: "/api/vendors/:id/qualification", method: "GET", path: "/api/vendors/x-1/qualification" },
   { route: "/api/vendors/:id/qualification", method: "POST", path: "/api/vendors/x-1/qualification", body: {"name": "Batch 5", "amount": "12.50", "actorEmail": "someone@else.test"} },
   { route: "/api/vendors/:id/sanction-checks", method: "GET", path: "/api/vendors/x-1/sanction-checks" },
-  { route: "/api/vendors/:id/sanction-checks", method: "POST", path: "/api/vendors/x-1/sanction-checks", body: {"name": "Batch 5", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/vendors/:id/sanction-checks", method: "POST", path: "/api/vendors/x-1/sanction-checks", body: {"name": "Batch 5", "amount": "12.50", "actorEmail": "someone@else.test"} },  // AUDIT-100 A2 batch 6: body validation / reshaping, query rebuilding, response reshaping (each a spec key ported from the handler's own
+  // statements; a body carries every field the handler requires so the role sweep below reaches the upstream)
+  { route: "/api/schedule/baselines", method: "GET", path: "/api/schedule/baselines?projectId=p%201"},
+  { route: "/api/schedule/baselines", method: "POST", path: "/api/schedule/baselines", body: {"name": "v-name", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId"}},
+  { route: "/api/schedule/sprints", method: "GET", path: "/api/schedule/sprints?projectId=p%201"},
+  { route: "/api/schedule/sprints", method: "POST", path: "/api/schedule/sprints", body: {"name": "v-name", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId"}},
+  { route: "/api/schedule/sprints/:id/issues", method: "GET", path: "/api/schedule/sprints/x-1/issues"},
+  { route: "/api/schedule/sprints/:id/issues", method: "POST", path: "/api/schedule/sprints/x-1/issues", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "issueId": "v-issueId"}},
+  { route: "/api/schedule/sprints/:id/issues", method: "DELETE", path: "/api/schedule/sprints/x-1/issues?issueId=p%201"},
+  { route: "/api/schedule/tasks", method: "GET", path: "/api/schedule/tasks?projectId=p%201"},
+  { route: "/api/schedule/tasks", method: "POST", path: "/api/schedule/tasks", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId", "title": "v-title", "startDate": "v-startDate"}},
+  { route: "/api/schedule/workload", method: "GET", path: "/api/schedule/workload?projectId=p%201"},
+  { route: "/api/schedule/workload", method: "POST", path: "/api/schedule/workload", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId", "userId": "v-userId", "allocatedHoursPerDay": "v-allocatedHoursPerDay", "startDate": "v-startDate", "endDate": "v-endDate"}},
+  { route: "/api/wiki", method: "GET", path: "/api/wiki?projectId=p%201"},
+  { route: "/api/wiki", method: "POST", path: "/api/wiki", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId", "title": "v-title"}},
+  { route: "/api/work-progress/activities", method: "GET", path: "/api/work-progress/activities?projectId=p%201"},
+  { route: "/api/work-progress/activities", method: "POST", path: "/api/work-progress/activities", body: {"name": "v-name", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId"}},
+  { route: "/api/timesheets/submit-day", method: "POST", path: "/api/timesheets/submit-day", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "projectId": "v-projectId", "spentOn": "v-spentOn"}},
+  { route: "/api/timesheets/review-day", method: "POST", path: "/api/timesheets/review-day", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "designerId": "v-designerId", "projectId": "v-projectId", "spentOn": "v-spentOn", "decision": "v-decision"}},
+  { route: "/api/timesheets", method: "GET", path: "/api/timesheets?projectId=p%201&issueId=v%20issueId&mine=v%20mine&spentOn=v%20spentOn"},
+  { route: "/api/timesheets", method: "POST", path: "/api/timesheets", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test", "issueId": "v-issueId", "hours": "v-hours", "spentOn": "v-spentOn"}},
+  { route: "/api/work-progress/:id", method: "GET", path: "/api/work-progress/x-1"},
+  { route: "/api/work-progress/:id", method: "PATCH", path: "/api/work-progress/x-1", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/work-progress/:id", method: "DELETE", path: "/api/work-progress/x-1"},
+  { route: "/api/tasks", method: "GET", path: "/api/tasks?projectId=v%20projectId&status=v%20status&limit=v%20limit&cursor=v%20cursor"},
+  { route: "/api/tasks", method: "POST", path: "/api/tasks", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/tasks/:id", method: "GET", path: "/api/tasks/x-1"},
+  { route: "/api/attendance/summary", method: "GET", path: "/api/attendance/summary?projectId=p%201&from=v%20from&to=v%20to"},
+  { route: "/api/billing-claims", method: "GET", path: "/api/billing-claims?projectId=v%20projectId&all=v%20all"},
+  { route: "/api/billing-claims", method: "POST", path: "/api/billing-claims", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/construction-materials/cost-report", method: "GET", path: "/api/construction-materials/cost-report?projectId=p%201&from=v%20from&to=v%20to&groupBy=v%20groupBy"},
+  { route: "/api/knowledge-base/search", method: "GET", path: "/api/knowledge-base/search?q=a%20b"},
+  { route: "/api/manpower-cost-report", method: "GET", path: "/api/manpower-cost-report?projectId=p%201&trade=a%20b%26c&date=a%20b%26c"},
+  { route: "/api/org-users", method: "GET", path: "/api/org-users?q=a%20b%26c"},
+  { route: "/api/project-budgets/:id/variance", method: "GET", path: "/api/project-budgets/x-1/variance?asOfDate=a%20b%26c"},
+  { route: "/api/reports/portfolio/budget-vs-actual", method: "GET", path: "/api/reports/portfolio/budget-vs-actual?status=open&q=a%20b"},
+  { route: "/api/scope/:id/compare", method: "GET", path: "/api/scope/x-1/compare?against=a%20b%26c"},
+  { route: "/api/scope/categories", method: "GET", path: "/api/scope/categories?includeInactive=1"},
+  { route: "/api/scope/categories", method: "POST", path: "/api/scope/categories", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/scope/categories/:id", method: "PATCH", path: "/api/scope/categories/x-1", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/scope/categories/:id", method: "DELETE", path: "/api/scope/categories/x-1"},
+  { route: "/api/scope/cost-visibility", method: "GET", path: "/api/scope/cost-visibility"},
+  { route: "/api/scope/cost-visibility", method: "PATCH", path: "/api/scope/cost-visibility", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/scope/lines", method: "GET", path: "/api/scope/lines?projectId=p%201&q=v%20q&boqId=v%20boqId&limit=v%20limit"},
+  { route: "/api/screen-drafts", method: "GET", path: "/api/screen-drafts?functionId=p%201&objectId=v%20objectId"},
+  { route: "/api/screen-drafts", method: "POST", path: "/api/screen-drafts", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/design-materials", method: "GET", path: "/api/design-materials?category=a%20b%26c"},
+  { route: "/api/design-materials", method: "POST", path: "/api/design-materials", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/products", method: "GET", path: "/api/products"},
+  { route: "/api/projects/overview", method: "GET", path: "/api/projects/overview"},
+  { route: "/api/vendors/:id", method: "GET", path: "/api/vendors/x-1"},
+  { route: "/api/vendors/:id", method: "PATCH", path: "/api/vendors/x-1", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/vendors/:id", method: "DELETE", path: "/api/vendors/x-1", body: {"name": "ignored"}},
+  { route: "/api/customers/:id", method: "GET", path: "/api/customers/x-1"},
+  { route: "/api/customers/:id", method: "PATCH", path: "/api/customers/x-1", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
+  { route: "/api/customers/:id", method: "DELETE", path: "/api/customers/x-1", body: {"name": "ignored"}},
 ];
 
 export function buildCases(): ParityCase[] {
@@ -403,5 +458,117 @@ export function buildCases(): ParityCase[] {
   cases.push({ name: "GET /api/policies/:id with a slash in the id", method: "GET", path: "/api/policies/a%2Fb%3Fc", who: "pm", upstream: OK });
   cases.push({ name: "POST /api/sales-invoices/:id/submit with a path-walking id", method: "POST", path: "/api/sales-invoices/..%2F..%2Fconstruction%2Fx/submit", body: {}, who: "owner", upstream: OK });
   cases.push({ name: "GET /api/materials/:id with a path-walking id (root route)", method: "GET", path: "/api/materials/..%2F..%2F..%2Fprojexa%2Fdashboard", who: "pm", upstream: OK });
+  // AUDIT-100 A2 batch 6: the handlers' own statements as spec keys (body validation / reshaping, query rebuilding, response reshaping).
+  // Every check both ways (good / missing / empty / falsy / JSON null / array / broken bodies), every query form with and without its
+  // values, the reshaped answers, the constant-body DELETEs and the new forms under the upstream's failures.
+  const b6 = (route: string, method: string) => batch2(route, method);
+  const add = (name: string, method: string, path: string, who: Who, extra: Partial<ParityCase> = {}) => cases.push({ name, method, path, who, upstream: OK, ...extra });
+  for (const [route, method] of [["/api/schedule/baselines", "POST"], ["/api/schedule/sprints/:id/issues", "DELETE"], ["/api/work-progress/:id", "PATCH"], ["/api/scope/categories", "POST"], ["/api/scope/cost-visibility", "PATCH"], ["/api/vendors/:id", "DELETE"], ["/api/products", "GET"], ["/api/timesheets", "GET"], ["/api/tasks", "POST"], ["/api/billing-claims", "POST"]]) {
+    const r = b6(route, method);
+    const tag = `${r.method} ${r.route}`;
+    cases.push({ name: `${tag}: another organisation's record`, method: r.method, path: r.path, body: r.body, who: "wrong_org", upstream: { kind: "json", status: 404, body: { error: "Not found" } } });
+    cases.push({ name: `${tag}: upstream 409 with message`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "json", status: 409, body: { error: "Changed by someone else" } } });
+    cases.push({ name: `${tag}: upstream 500`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "json", status: 500, body: { error: "boom" } } });
+    cases.push({ name: `${tag}: upstream 502 not JSON`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "text", status: 502, status_text: "Bad Gateway", text: "<html>bad gateway</html>" } });
+    cases.push({ name: `${tag}: upstream 200 not JSON`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "text", status: 200, status_text: "OK", text: "not json" } });
+    cases.push({ name: `${tag}: connection refused`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "refused" } });
+    cases.push({ name: `${tag}: organisation has no VERIDIAN key`, method: r.method, path: r.path, body: r.body, who: "no_key", upstream: OK });
+    cases.push({ name: `${tag}: membership read fails`, method: r.method, path: r.path, body: r.body, who: "membership_error", upstream: OK });
+    cases.push({ name: `${tag} as null_role`, method: r.method, path: r.path, body: r.body, who: "null_role", upstream: OK });
+  }
+  // body_required: each check refuses a missing, empty, 0 and false field; a JSON-null body throws in the handler (an empty 500 on both
+  // sides); an array or a number is "no field" (400); the second check of /schedule/tasks runs only after the first passes
+  for (const [route, method, path, full] of [
+    ["/api/schedule/baselines", "POST", "/api/schedule/baselines", { projectId: "p-1", name: "Base" }],
+    ["/api/schedule/sprints", "POST", "/api/schedule/sprints", { projectId: "p-1", name: "S1" }],
+    ["/api/schedule/sprints/:id/issues", "POST", "/api/schedule/sprints/x-1/issues", { issueId: "i-1" }],
+    ["/api/schedule/tasks", "POST", "/api/schedule/tasks", { projectId: "p-1", title: "T", startDate: "2026-10-06" }],
+    ["/api/schedule/workload", "POST", "/api/schedule/workload", { projectId: "p-1", userId: "u-1", allocatedHoursPerDay: 4, startDate: "2026-10-06", endDate: "2026-10-09" }],
+    ["/api/wiki", "POST", "/api/wiki", { projectId: "p-1", title: "W" }],
+    ["/api/work-progress/activities", "POST", "/api/work-progress/activities", { projectId: "p-1", name: "A" }],
+    ["/api/timesheets/submit-day", "POST", "/api/timesheets/submit-day", { projectId: "p-1", spentOn: "2026-10-06" }],
+    ["/api/timesheets/review-day", "POST", "/api/timesheets/review-day", { designerId: "d-1", projectId: "p-1", spentOn: "2026-10-06", decision: "approve" }],
+    ["/api/timesheets", "POST", "/api/timesheets", { issueId: "i-1", hours: 2, spentOn: "2026-10-06" }],
+  ] as [string, string, string, Record<string, unknown>][]) {
+    const tag = `${method} ${route}`;
+    add(`${tag} with every required field and extras`, method, path, "pm", { body: { ...full, extra: "kept or dropped", actorEmail: "x@y.test" } });
+    const first = Object.keys(full)[0]!;
+    const last = Object.keys(full)[Object.keys(full).length - 1]!;
+    add(`${tag} without ${first}`, method, path, "pm", { body: { ...full, [first]: undefined } });
+    add(`${tag} with ${last} empty`, method, path, "pm", { body: { ...full, [last]: "" } });
+    add(`${tag} with ${last} 0`, method, path, "pm", { body: { ...full, [last]: 0 } });
+    add(`${tag} with ${first} false`, method, path, "pm", { body: { ...full, [first]: false } });
+    add(`${tag} with an empty object`, method, path, "pm", { body: {} });
+    add(`${tag} with a JSON null body`, method, path, "pm", { raw_body: "null" });
+    add(`${tag} with an array body`, method, path, "pm", { raw_body: "[1,2]" });
+    add(`${tag} with a number body`, method, path, "pm", { raw_body: "5" });
+    add(`${tag} as client_viewer with a bad body`, method, path, "client_viewer", { body: {} });
+    add(`${tag} as no_org with a bad body`, method, path, "no_org", { body: {} });
+  }
+  add("POST /api/schedule/tasks with projectId and title but no startDate", "POST", "/api/schedule/tasks", "pm", { body: { projectId: "p-1", title: "T" } });
+  add("POST /api/timesheets/review-day with a rejection reason", "POST", "/api/timesheets/review-day", "pm", { body: { designerId: "d-1", projectId: "p-1", spentOn: "2026-10-06", decision: "reject", rejectionReason: "late", extra: 1 } });
+  // lenient reads (submit-day, review-day): an empty or broken body is {} and so "required"
+  for (const path of ["/api/timesheets/submit-day", "/api/timesheets/review-day"]) {
+    add(`POST ${path} with an empty body`, "POST", path, "pm", { raw_body: "" });
+    add(`POST ${path} with a broken body`, "POST", path, "pm", { raw_body: "{not json" });
+  }
+  // body_object_error (`request.json().catch(() => null)` + `!body || typeof body !== "object"`): an array passes, the rest is 400
+  for (const [route, path] of [["/api/work-progress/:id", "/api/work-progress/x-1"], ["/api/tasks", "/api/tasks"]]) {
+    const method = route === "/api/tasks" ? "POST" : "PATCH";
+    for (const [label, raw] of [["an empty body", ""], ["a broken body", "{not json"], ["a JSON null body", "null"], ["a number body", "5"], ["a string body", "\"text\""], ["an array body", "[1,2]"], ["an empty object", "{}"], ["false", "false"]]) {
+      add(`${method} ${route} with ${label}`, method, path, "pm", { raw_body: raw });
+    }
+  }
+  // invalid_body_error (the handler's own catch): broken / empty is its 400; JSON null is forwarded as no body
+  for (const [method, path] of [["POST", "/api/scope/categories"], ["PATCH", "/api/scope/categories/x-1"]]) {
+    for (const [label, raw] of [["an empty body", ""], ["a broken body", "{not json"], ["a JSON null body", "null"], ["an array body", "[\"a\"]"]]) add(`${method} ${path.replace("x-1", ":id")} with ${label}`, method, path, "pm", { raw_body: raw });
+  }
+  // body_reject_if: the hard floor on cost visibility, and what is NOT refused
+  add("PATCH /api/scope/cost-visibility granting client_viewer cost", "PATCH", "/api/scope/cost-visibility", "owner", { body: { role: "client_viewer", canSeeCost: true } });
+  add("PATCH /api/scope/cost-visibility granting client_viewer cost as the string true", "PATCH", "/api/scope/cost-visibility", "owner", { body: { role: "client_viewer", canSeeCost: "true" } });
+  add("PATCH /api/scope/cost-visibility removing client_viewer cost", "PATCH", "/api/scope/cost-visibility", "owner", { body: { role: "client_viewer", canSeeCost: false, actorEmail: "x@y.test" } });
+  add("PATCH /api/scope/cost-visibility granting pm cost", "PATCH", "/api/scope/cost-visibility", "owner", { body: { role: "pm", canSeeCost: true } });
+  add("PATCH /api/scope/cost-visibility with a JSON null body", "PATCH", "/api/scope/cost-visibility", "owner", { raw_body: "null" });
+  add("PATCH /api/scope/cost-visibility as client_viewer granting itself", "PATCH", "/api/scope/cost-visibility", "client_viewer", { body: { role: "client_viewer", canSeeCost: true } });
+  // body_in_try: a broken body is caught by the handler's own catch (the fallback 502), an empty one too; JSON null spreads to {}
+  for (const [label, raw] of [["a broken body", "{not json"], ["an empty body", ""], ["a JSON null body", "null"], ["an array body", "[1]"]]) add(`POST /api/screen-drafts with ${label}`, "POST", "/api/screen-drafts", "pm", { raw_body: raw });
+  // the query a handler rebuilds, with and without its values (encodeURIComponent vs URLSearchParams, "?" vs "&", flags, normalising)
+  for (const path of [
+    "/api/schedule/sprints/x-1/issues", "/api/schedule/sprints/x-1/issues?issueId=", "/api/schedule/sprints/x-1/issues?issueId=a%20b%2Bc",
+    "/api/timesheets", "/api/timesheets?issueId=i%201", "/api/timesheets?projectId=&issueId=", "/api/timesheets?projectId=p-1&issueId=i-1&mine=1&spentOn=2026-10-06&x=1",
+    "/api/tasks", "/api/tasks?", "/api/tasks?status=&limit=", "/api/tasks?projectId=p%201&status=open&limit=5&cursor=c%2B1&other=1",
+    "/api/attendance/summary", "/api/attendance/summary?projectId=p-1", "/api/attendance/summary?projectId=p-1&from=&to=2026-10-31",
+    "/api/billing-claims", "/api/billing-claims?projectId=p-1", "/api/billing-claims?all=true&ignored=1",
+    "/api/construction-materials/cost-report", "/api/construction-materials/cost-report?projectId=p-1&groupBy=supplier",
+    "/api/knowledge-base/search", "/api/knowledge-base/search?q=", "/api/knowledge-base/search?q=%C3%A9%20%2B%26",
+    "/api/manpower-cost-report", "/api/manpower-cost-report?projectId=p-1", "/api/manpower-cost-report?projectId=p-1&date=2026-10-06", "/api/manpower-cost-report?projectId=p%26x&trade=a%2Bb",
+    "/api/org-users", "/api/org-users?q=", "/api/org-users?q=r%C3%A9%20a",
+    "/api/project-budgets/x-1/variance", "/api/project-budgets/x-1/variance?asOfDate=2026-10-06",
+    "/api/reports/portfolio/budget-vs-actual", "/api/reports/portfolio/budget-vs-actual?", "/api/reports/portfolio/budget-vs-actual?b=2&a=x%20y&a=z&c=%2B&d",
+    "/api/scope/x-1/compare", "/api/scope/x-1/compare?against=", "/api/scope/x-1/compare?against=r%202",
+    "/api/scope/categories", "/api/scope/categories?includeInactive=true", "/api/scope/categories?includeInactive=1&x=2",
+    "/api/scope/lines", "/api/scope/lines?projectId=p-1", "/api/scope/lines?projectId=p-1&q=a%20b&boqId=&limit=20",
+    "/api/screen-drafts", "/api/screen-drafts?functionId=f-1", "/api/screen-drafts?functionId=f%201&objectId=", "/api/screen-drafts?objectId=o-1",
+    "/api/design-materials", "/api/design-materials?category=", "/api/design-materials?category=tile%20%26%20stone",
+    "/api/schedule/workload", "/api/wiki?projectId=", "/api/schedule/tasks?projectId=p%2F1",
+  ]) add(`GET ${path}`.replace(/^GET (\/api\/schedule\/sprints\/x-1\/issues)/, "DELETE $1"), path.startsWith("/api/schedule/sprints/x-1/issues") ? "DELETE" : "GET", path, "pm");
+  // the reshaped answers: response_pick's default and its value, a JSON-null answer (the handler's catch: fallback 502); response_wrap
+  for (const [path, key] of [["/api/products", "products"], ["/api/projects/overview", "projects"]]) {
+    add(`GET ${path}: the upstream gives the list`, "GET", path, "client_viewer", { upstream: { kind: "json", status: 200, body: { [key]: [{ id: "a" }], other: 1 } } });
+    add(`GET ${path}: the upstream gives null for the list`, "GET", path, "pm", { upstream: { kind: "json", status: 200, body: { [key]: null } } });
+    add(`GET ${path}: the upstream answers JSON null`, "GET", path, "pm", { upstream: { kind: "json", status: 200, body: null } });
+    add(`GET ${path}: the upstream answers a number`, "GET", path, "pm", { upstream: { kind: "json", status: 200, body: 7 } });
+  }
+  for (const route of ["vendors", "customers"]) {
+    add(`DELETE /api/${route}/:id with an encoded id`, "DELETE", `/api/${route}/a%20b%2Fc`, "owner", { upstream: { kind: "json", status: 200, body: { id: "a b/c", isActive: false } } });
+    add(`DELETE /api/${route}/:id with a body that is ignored`, "DELETE", `/api/${route}/x-1`, "owner", { raw_body: "{not json" });
+    add(`PATCH /api/${route}/:id with a JSON null body`, "PATCH", `/api/${route}/x-1`, "pm", { raw_body: "null" });
+  }
+  // roles_also: billing milestones are PM_OR_ABOVE plus member (the handler's `if (ctx.role !== "member") requireRole(...)`)
+  add("POST /api/billing-claims as member (the one role added to the set)", "POST", "/api/billing-claims", "member", { body: { projectId: "p-1", amount: "1" } });
+  add("POST /api/billing-claims as site_engineer", "POST", "/api/billing-claims", "site_engineer", { body: { projectId: "p-1", amount: "1" } });
+  // the own role set of baselines (PM_OR_ABOVE) runs before the body is read: a refused role never sees its 400
+  add("POST /api/schedule/baselines as null_role with a bad body", "POST", "/api/schedule/baselines", "null_role", { body: {} });
+  add("POST /api/schedule/baselines as null_role with a JSON null body", "POST", "/api/schedule/baselines", "null_role", { raw_body: "null" });
   return cases;
 }

@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { viaPxApi } from "@/lib/px-api";
 
 type BoqCategory = { id: string; name: string; sortOrder: number; isActive: boolean };
 
@@ -35,7 +36,7 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/scope/categories");
+      const res = await viaPxApi("/api/scope/categories");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load BOQ categories");
       setCategories(data.categories ?? []);
@@ -54,7 +55,7 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
     if (!name) return;
     setAdding(true);
     try {
-      const res = await fetch("/api/scope/categories", {
+      const res = await viaPxApi("/api/scope/categories", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
       });
       const data = await res.json();
@@ -74,7 +75,7 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
     if (!name || name === category.name) return;
     setBusyId(category.id);
     try {
-      const res = await fetch(`/api/scope/categories/${category.id}`, {
+      const res = await viaPxApi(`/api/scope/categories/${category.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
       });
       const data = await res.json();
@@ -103,7 +104,7 @@ export default function BoqCategoriesCard({ canEdit }: { canEdit: boolean }) {
   async function remove(category: BoqCategory) {
     setBusyId(category.id);
     try {
-      const res = await fetch(`/api/scope/categories/${category.id}`, { method: "DELETE" });
+      const res = await viaPxApi(`/api/scope/categories/${category.id}`, { method: "DELETE" });
       const data = await res.json();
       // The refusal ("Used by 12 BOQ lines") is the server's own wording and is
       // shown verbatim -- it names the exact reason and the exact count, which

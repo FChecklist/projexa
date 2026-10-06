@@ -66,6 +66,7 @@ import { draftBoqTotal, draftLineAmount } from "@/lib/boq-helpers";
 import { useShellChain } from "@/components/shell/shell-chain-context";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 import type { CreateField } from "@/lib/create-screen";
+import { viaPxApi } from "@/lib/px-api";
 
 const FIELDS: CreateField[] = [
   {
@@ -185,7 +186,7 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
     setCategoryNotice(null);
     const fallback = `"${name}" was applied to this line but could not be added to the category list.`;
     try {
-      const res = await fetch("/api/scope/categories", {
+      const res = await viaPxApi("/api/scope/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),

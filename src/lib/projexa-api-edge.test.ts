@@ -85,7 +85,14 @@ describe("the route list (deny by default: only these are answered by the edge)"
     expect([...PX_EDGE_SHADOWS].sort()).toEqual([...generated.SHADOW_ROUTES].sort());
     expect(isEdgeRoute("GET", "/api/drawings/export?projectId=p-1")).toBe(false);
     expect(isEdgeRoute("GET", "/api/materials/master")).toBe(false);
-    expect(isEdgeRoute("POST", "/api/timesheets/review-day")).toBe(false);
+    // batch 6: review-day moved to the edge itself; /api/work-progress/photos and /report are the new literal siblings of /api/work-progress/:id
+    expect(isEdgeRoute("POST", "/api/timesheets/review-day")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/work-progress/report?projectId=p")).toBe(false);
+    expect(isEdgeRoute("POST", "/api/work-progress/photos")).toBe(false);
+    expect(isEdgeRoute("PATCH", "/api/work-progress/e-1")).toBe(true);
+    // a literal edge route beats a dynamic edge route: POST /api/scope/categories/approve is /api/scope/categories/:id (no POST), not /api/scope/:id/approve
+    expect(isEdgeRoute("POST", "/api/scope/categories/approve")).toBe(false);
+    expect(isEdgeRoute("POST", "/api/scope/s-1/approve")).toBe(true);
     expect(isEdgeRoute("GET", "/api/drawings/d-1")).toBe(true);
     expect(isEdgeRoute("GET", "/api/materials/issues?projectId=p")).toBe(true);
     expect(isEdgeRoute("GET", "/api/materials/m-1")).toBe(true);

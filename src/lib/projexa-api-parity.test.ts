@@ -139,7 +139,13 @@ export async function runNext(c: ParityCase): Promise<Outcome> {
   if (res.headers.get("x-middleware-next") === "1") {
     const { route, params } = routeOf(c.path);
     const mod = (await import(`@/app${route.replace(/:(\w+)/g, "[$1]")}/route`)) as Record<string, Handler>;
-    res = await mod[c.method]!(new NextRequest(url, init), { params: Promise.resolve(params) });
+    try {
+      res = await mod[c.method]!(new NextRequest(url, init), { params: Promise.resolve(params) });
+    } catch {
+      // AUDIT-100 A2 batch 6: a handler that THROWS (a field read on a JSON-null body: `null.projectId`) is rendered by Next as an empty
+      // 500 (withTiming rethrows; next/dist/build/templates/app-route.js: `new Response(null, { status: 500 })`). The edge answers the same.
+      res = new Response(null, { status: 500 });
+    }
   }
   const text = await res.text();
   let body: unknown = null;

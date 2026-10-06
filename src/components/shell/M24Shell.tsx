@@ -245,6 +245,7 @@ import {
   rowDetailFor,
 } from "@/lib/task-errors";
 import { asOfLabel } from "@/lib/pane-state";
+import { viaPxApi } from "@/lib/px-api";
 
 // R67 A-14 -- THE PINS, AND ONLY THE PINS.
 //
@@ -1493,7 +1494,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       const timer = setTimeout(async () => {
         pollTimersRef.current.delete(timer);
         try {
-          const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+          const res = await viaPxApi(`/api/tasks/${encodeURIComponent(taskId)}`);
           const body = await res.json().catch(() => null);
           const task = res.ok ? (body?.task as ApiTask | undefined) : undefined;
           if (task) {
@@ -2787,7 +2788,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       const body = pendingFunctionId
         ? { functionId: pendingFunctionId, params: {}, mode, projectId, selectedChain: hint }
         : { rawInput: typed, mode, projectId, selectedChain: hint };
-      const res = await fetch("/api/tasks", {
+      const res = await viaPxApi("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -2968,7 +2969,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     setConfirmBusy(true);
     setConfirmError(null);
     try {
-      const res = await fetch("/api/tasks", {
+      const res = await viaPxApi("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3174,7 +3175,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         // VERDICT and mint nothing, which is not what "Retry" promises.
         void (async () => {
           try {
-            await fetch("/api/tasks", {
+            await viaPxApi("/api/tasks", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(

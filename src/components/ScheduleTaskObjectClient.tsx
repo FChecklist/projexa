@@ -221,7 +221,7 @@ export default function ScheduleTaskObjectClient({
     if (!logHours) return;
     setLoggingTime(true);
     try {
-      const res = await fetch("/api/timesheets", {
+      const res = await viaPxApi("/api/timesheets", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId: taskId, hours: logHours, spentOn: logSpentOn }),
       });
