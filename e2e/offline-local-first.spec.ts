@@ -39,7 +39,7 @@ async function reloadAgain(page: Page): Promise<void> {
   try {
     await page.reload();
   } catch (err) {
-    if (!/ERR_ABORTED|frame was detached/.test(String(err))) throw err;
+    if (!/ERR_ABORTED|frame was detached|Not attached to an active page|Target (page, context or browser )?has been closed/.test(String(err))) throw err;
     await page.waitForLoadState("domcontentloaded").catch(() => undefined);
     await page.reload();
   }
