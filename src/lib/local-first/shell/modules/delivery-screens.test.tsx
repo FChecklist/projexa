@@ -180,14 +180,22 @@ describe("the delivery screens open OFFLINE from the laptop's own copy", () => {
     expect(noDialog()).toBe(true);
   });
 
-  test("/labour/new is not read as a worker id: offline it says calmly that adding a worker is done on the server", async () => {
+  test("/labour/new is not read as a worker id: offline it opens the add-worker form on the laptop (G-15)", async () => {
     await seedLaptop();
     go("/local/labour/new?projectId=p1");
+    const { findByTestId, queryByTestId } = render(<LocalShell />);
+    await findByTestId("labour-worker-form");
+    expect(queryByTestId("delivery-server-only")).toBeNull();
+    expect(noDialog()).toBe(true);
+  });
+
+  test("/labour/import is still the server's (calm note offline)", async () => {
+    await seedLaptop();
+    go("/local/labour/import?projectId=p1");
     const { findByTestId } = render(<LocalShell />);
     const note = await findByTestId("delivery-server-only");
     expect(note.getAttribute("data-online")).toBe("0");
-    expect(note.textContent).toContain("Adding a worker");
-    expect(noDialog()).toBe(true);
+    expect(note.textContent).toContain("Importing a roster");
   });
 });
 
@@ -225,6 +233,58 @@ describe("the daily writes are kept on the laptop with the network off", () => {
     const ops = await outbox!.listPending();
     expect(ops.map((o) => o.functionId)).toEqual(["record_attendance"]);
     expect(ops[0]!.params).toEqual({ projectId: "p1", rosterId: "w1", date: "2026-10-02", status: "half_day" });
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("G-15 a new worker: saved on the laptop, ONE add_roster_entry op in the outbox, nothing fetched", async () => {
+    await seedLaptop();
+    go("/local/labour/new?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId } = render(<LocalShell />);
+    await findByTestId("labour-worker-form");
+    fireEvent.input(getByLabelText("Name"), { target: { value: "A. Worker" } });
+    fireEvent.input(getByLabelText("Trade"), { target: { value: "Mason" } });
+    fireEvent.input(getByLabelText("Daily rate"), { target: { value: "800" } });
+    fireEvent.submit(getByTestId("labour-worker-form"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    const ops = await outbox!.listPending();
+    expect(ops.map((o) => [o.functionId, o.params])).toEqual([["add_roster_entry", { projectId: "p1", name: "A. Worker", dailyRate: 800, trade: "Mason" }]]);
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("G-15 a new material: ONE create_material op; a blank unit is stopped before anything is kept", async () => {
+    await seedLaptop();
+    go("/local/materials/new?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId } = render(<LocalShell />);
+    await findByTestId("material-new-form");
+    fireEvent.input(getByLabelText("Name"), { target: { value: "Sand, fine" } });
+    fireEvent.submit(getByTestId("material-new-form")); // no unit
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("0"));
+    expect(await outbox?.listPending() ?? []).toEqual([]);
+    fireEvent.input(getByLabelText("Unit (bag, cum, nos ...)"), { target: { value: "cum" } });
+    fireEvent.input(getByLabelText("Unit cost (optional)"), { target: { value: "1800" } });
+    fireEvent.submit(getByTestId("material-new-form"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    const ops = await outbox!.listPending();
+    expect(ops.map((o) => [o.functionId, o.params])).toEqual([["create_material", { projectId: "p1", name: "Sand, fine", unit: "cum", unitCost: 1800 }]]);
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("G-15 a new task: ONE create_schedule_task op with its dates; a due date before the start is stopped", async () => {
+    await seedLaptop();
+    go("/local/schedule/tasks/new?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId } = render(<LocalShell />);
+    await findByTestId("schedule-task-form");
+    fireEvent.input(getByLabelText("Title"), { target: { value: "Pour slab" } });
+    fireEvent.input(getByLabelText("Start date"), { target: { value: "2026-10-05" } });
+    fireEvent.input(getByLabelText("Due date (optional)"), { target: { value: "2026-10-01" } });
+    fireEvent.submit(getByTestId("schedule-task-form"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("0"));
+    expect(await outbox?.listPending() ?? []).toEqual([]);
+    fireEvent.input(getByLabelText("Due date (optional)"), { target: { value: "2026-10-09" } });
+    fireEvent.submit(getByTestId("schedule-task-form"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    const ops = await outbox!.listPending();
+    expect(ops.map((o) => [o.functionId, o.params])).toEqual([["create_schedule_task", { projectId: "p1", title: "Pour slab", startDate: "2026-10-05", dueDate: "2026-10-09" }]]);
     expect(fetchCalls).toEqual([]);
   });
 
