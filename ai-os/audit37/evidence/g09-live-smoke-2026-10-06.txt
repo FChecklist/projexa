@@ -1,0 +1,39 @@
+G-09 live evidence, 2026-10-06. projexa-api version 7 (compliance-tracker 79226210). Statuses and counts only; no key, token or password printed.
+
+== smoke (new org, idempotency, proxy with the new key, repair GET, mirror, anon refused) ==
+keys_found {"px_anon":true,"px_service":true,"ver_service":true}
+user_created 200
+signed_in true
+provision_signed_out 401
+provision_empty_name 400
+repair_get_no_org 400
+provision_new {"status":201,"keys":["organizationId"],"acao":"https://projexa-ai.com"}
+provision_again {"status":200,"organizationId":true,"alreadyProvisioned":true,"veridianConnected":true}
+proxy_get_vendors {"status":200,"err":null}
+repair_get {"status":200,"veridianConnected":true,"repairAvailable":false}
+repair_post_healthy {"status":200,"alreadyHealthy":true}
+px_rows {"org":1,"name_ok":true,"membership_role":"owner","legacy_mirror_rows":1}
+compliance_credential_row true
+anon_projexa_org_credential_get 401
+anon_projexa_org_veridian_id_get 401
+anon_projexa_provision_org 401
+
+== phase 2 (stranded org -> AR-04 refusal -> repair -> proxy works again) ==
+legacy_row_deleted 204
+repair_get_stranded {"status":200,"veridianConnected":false,"repairAvailable":true}
+proxy_while_stranded {"status":500,"error_has_AR04":true}
+provision_reports_repair_required {"status":200,"alreadyProvisioned":true,"veridianConnected":false,"repairRequired":true}
+repair_post {"status":201,"repaired":true}
+repair_get_after {"status":200,"veridianConnected":true}
+proxy_after_repair {"status":200}
+repaired_org_is_a_new_veridian_org {"present":true,"differs_from_first":true}
+
+== backfill (dry run, then apply; counts only) ==
+{"mode":"dry-run","legacy_rows":15,"well_formed":15,"malformed":0} 
+{"mode":"apply","legacy_rows":15,"well_formed":15,"malformed":0,"outcomes":{"stored":13,"exists":1,"key_mismatch":1}} 
+
+== verification by one-way hash (SQL, same day) ==
+legacy rows 15 (14 original + the smoke org's mirror row). new table: 14 rows matched sha256(legacy key) = sha256(stored key), each VERIDIAN org exists and the key hash is an active api_keys row. 1 legacy row (PROJEXA org bc689d97...) names VERIDIAN org ve45lczmkodbiq1m20fy48r5 which does not exist: refused by the SQL (key_mismatch), NOT copied (dead credential; the G-04 orphan). After cleanup of the smoke org the new table holds 13 rows = the 13 live legacy credentials. Legacy table untouched except the smoke org's own rows.
+
+== cleanup ==
+VERIDIAN: 2 smoke organisations (first orphan + repaired) with users, ai_assistants, api_keys, enablements, departments, fiscal years, accounts, currencies, credentials deleted; 0 left (name and email check). PROJEXA: smoke org, membership, legacy credentials row, auth user deleted (404 after).
