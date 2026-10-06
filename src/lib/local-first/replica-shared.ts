@@ -10,6 +10,7 @@
 import { createReplica, type Replica, type SyncReport } from "./replica";
 import { createSharedSyncClient, sharedPacer } from "./shared-client";
 import { isLocalFirstEnabled, setActiveLocalUser } from "./local-reader";
+import { activeProjectFor } from "./shell/context";
 
 const replicas = new Map<string, Replica>();
 
@@ -35,7 +36,12 @@ export function getSharedReplica(userId: string): Replica {
   setActiveLocalUser(userId);
   let replica = replicas.get(userId);
   if (!replica) {
-    replica = gateByFlag(createReplica({ userId, client: createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 2 }), pacer: sharedPacer() }));
+    replica = gateByFlag(createReplica({
+      userId,
+      client: createSharedSyncClient({ timeoutMs: 15_000, maxRetries: 2 }),
+      pacer: sharedPacer(),
+      priorityProject: () => activeProjectFor(userId), // the project the person last picked is copied first
+    }));
     replicas.set(userId, replica);
   }
   return replica;
