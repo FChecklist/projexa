@@ -34,7 +34,10 @@ const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_que
   // AUDIT-100 A2 batch 6: body validation / reshaping, query rebuilding, response reshaping (each one a port of a handler statement)
   "body_required", "body_pick", "body_object_error", "invalid_body_error", "body_in_try", "body_reject_if", "body_const", "upstream_method",
   "optional_query", "query_flags", "search_params_omit_empty", "forward_query_normalized", "required_query_any", "roles_also", "response_pick",
-  "response_wrap"]);
+  "response_wrap",
+  // AUDIT-100 A2 batch 7: per-instance TTL cache of a person-free read, a multipart upload, derived / allow-listed query parts, an answer redacted by
+  // role, the BOQ create verification, and the page-side cache entries the browser clears after a write (client-only, the edge never reads it)
+  "cache_ttl", "search_param_defaults", "include_allow", "response_redact", "boq_create_verify", "revalidate"]);
 /** Route-level keys of projexa-api-routes.json the function does not read (they steer the browser switch and the inventory, not the edge). */
 const ROUTE_KEYS = new Set(["route", "methods", "batch"]);
 
@@ -64,7 +67,8 @@ export function validateRoutes(spec, inventory) {
       // AUDIT-100 A2 batch 5: the handler's own role set, the VERIDIAN root (/api/v1 instead of /api/v1/projexa), and the body forms
       if (m.roles !== undefined && !Object.prototype.hasOwnProperty.call(ROLE_GROUPS, m.roles)) problems.push(`${entry.route} ${method}: roles must name a ROLE_GROUPS group (src/lib/authz/roles.ts)`);
       if (m.root !== undefined && m.root !== true) problems.push(`${entry.route} ${method}: root is true or absent`);
-      if (m.body !== undefined && !["json", "json_lenient", "empty"].includes(m.body)) problems.push(`${entry.route} ${method}: body must be json, json_lenient or empty`);
+      if (m.body !== undefined && !["json", "json_lenient", "empty", "multipart"].includes(m.body)) problems.push(`${entry.route} ${method}: body must be json, json_lenient, empty or multipart`);
+      if (m.acting_user !== undefined && !["explicit", "session", "none"].includes(m.acting_user)) problems.push(`${entry.route} ${method}: acting_user is explicit, session or none`);
       if (m.body_defaults !== undefined && (!["json", "json_lenient"].includes(m.body) || typeof m.body_defaults !== "object" || Object.values(m.body_defaults).some((v) => typeof v !== "string"))) problems.push(`${entry.route} ${method}: body_defaults is an object of strings, only on a forwarded body`);
       if (m.body_actor_email !== undefined && (m.body_actor_email !== "always" || m.body === undefined)) problems.push(`${entry.route} ${method}: body_actor_email "always" needs a body`);
       // AUDIT-100 A2 batch 6
@@ -87,6 +91,19 @@ export function validateRoutes(spec, inventory) {
       if (m.response_pick !== undefined && (typeof m.response_pick !== "object" || m.response_pick === null || !Object.keys(m.response_pick).length)) problems.push(`${entry.route} ${method}: response_pick is { field: default }`);
       if (m.response_wrap !== undefined && (typeof m.response_wrap?.into !== "string" || typeof m.response_wrap.with !== "object" || !Array.isArray(m.response_wrap.params) || m.response_wrap.params.some((p) => !entry.route.includes(`:${p}`)))) problems.push(`${entry.route} ${method}: response_wrap is { with, params (path parameters), into }`);
       if (m.response_pick !== undefined && m.response_wrap !== undefined) problems.push(`${entry.route} ${method}: response_pick and response_wrap are exclusive`);
+      // AUDIT-100 A2 batch 7
+      if (m.cache_ttl !== undefined && (method !== "GET" || !Number.isInteger(m.cache_ttl) || m.cache_ttl < 1 || m.cache_ttl > 3600 || m.acting_user !== "none" || m.body !== undefined)) problems.push(`${entry.route} ${method}: cache_ttl is whole seconds (1..3600) on a GET without a body that runs without an acting person (acting_user "none": the cached answer is the organisation's, never one person's)`);
+      if (m.acting_user === "none" && m.cache_ttl === undefined) problems.push(`${entry.route} ${method}: acting_user "none" is only for a cached person-free read (cache_ttl)`);
+      if (m.body === "multipart" && (method !== "POST" || m.body_required !== undefined || m.body_pick !== undefined || m.body_defaults !== undefined || m.body_actor_email !== undefined || m.body_reject_if !== undefined || m.body_object_error !== undefined || m.invalid_body_error !== undefined || m.body_in_try !== undefined)) problems.push(`${entry.route} ${method}: multipart is a POST whose form is relayed as it is (no JSON body keys)`);
+      if (m.search_param_defaults !== undefined && (!m.search_params || typeof m.search_param_defaults !== "object" || Object.entries(m.search_param_defaults).some(([k, v]) => !m.search_params.includes(k) || typeof v?.default !== "string" || !m.search_params.includes(v?.when) || Object.keys(v).length !== 2))) problems.push(`${entry.route} ${method}: search_param_defaults is { param: { default, when } } over search_params (set only when the "when" param is, to the request's value or the default)`);
+      if (m.include_allow !== undefined && (!isStrArr(m.include_allow) || !m.upstream.includes("?"))) problems.push(`${entry.route} ${method}: include_allow is a list of values, on an upstream that already has a query`);
+      if (m.response_redact !== undefined && (!isStrArr(m.response_redact.roles) || typeof m.response_redact.list !== "string" || typeof m.response_redact.set !== "object" || m.response_redact.set === null || Object.keys(m.response_redact).length !== 3)) problems.push(`${entry.route} ${method}: response_redact is { roles, list, set }`);
+      if (m.boq_create_verify !== undefined && (m.boq_create_verify !== true || method !== "POST" || m.body !== "json")) problems.push(`${entry.route} ${method}: boq_create_verify is true on a JSON POST`);
+      if (m.revalidate !== undefined) {
+        const r = m.revalidate;
+        const okList = (v) => Array.isArray(v) && v.every((x) => typeof x === "string" && /^[\w:\/-]+$/.test(x));
+        if (method === "GET" || !r || !okList(r.tags) || (r.paths !== undefined && !okList(r.paths)) || !(r.tags.length || r.paths?.length) || (r.when !== undefined && !["success", "always"].includes(r.when)) || Object.keys(r).some((k) => !["tags", "paths", "when"].includes(k))) problems.push(`${entry.route} ${method}: revalidate is { tags, paths?, when? } on a write (the page-side cache entries the Next handler clears; the browser asks Vercel to clear them after the edge answered)`);
+      }
     }
     for (const k of Object.keys(entry)) if (!ROUTE_KEYS.has(k)) problems.push(`${entry.route}: unknown route key ${k}`);
     if (entry.batch !== undefined && !(Number.isInteger(entry.batch) && entry.batch >= 1)) problems.push(`${entry.route}: batch must be a positive integer`);
@@ -156,8 +173,8 @@ export function render(data = sourceData()) {
   lines.push(`export const MUTATING_METHODS: ReadonlySet<string> = new Set(${j(data.mutatingMethods)})`);
   lines.push("");
   lines.push("export type EdgeMethodSpec = {");
-  lines.push("  upstream: string; acting_user?: \"explicit\" | \"session\"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;");
-  lines.push("  search_params?: string[]; body?: \"json\" | \"json_lenient\" | \"empty\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
+  lines.push("  upstream: string; acting_user?: \"explicit\" | \"session\" | \"none\"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;");
+  lines.push("  search_params?: string[]; body?: \"json\" | \"json_lenient\" | \"empty\" | \"multipart\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
   lines.push("  forward_search?: boolean; success_status?: 200 | 201; cache_control?: string");
   lines.push("  root?: true; roles?: string; body_defaults?: Record<string, string>");
   lines.push("  body_required?: { fields: string[]; error: string }[]; body_pick?: string[]; body_object_error?: string; invalid_body_error?: string; body_in_try?: true");
@@ -165,6 +182,9 @@ export function render(data = sourceData()) {
   lines.push("  optional_query?: string[]; query_flags?: Record<string, string>; search_params_omit_empty?: true; forward_query_normalized?: true");
   lines.push("  required_query_any?: { params: string[]; error: string }; roles_also?: string[]; response_pick?: Record<string, unknown>");
   lines.push("  response_wrap?: { with: Record<string, unknown>; params: string[]; into: string }");
+  lines.push("  cache_ttl?: number; search_param_defaults?: Record<string, { default: string; when: string }>; include_allow?: string[]");
+  lines.push("  response_redact?: { roles: string[]; list: string; set: Record<string, unknown> }; boq_create_verify?: true");
+  lines.push("  revalidate?: { tags: string[]; paths?: string[]; when?: \"success\" | \"always\" }");
   lines.push("}");
   lines.push("/** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */");
   lines.push("export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [");

@@ -52,6 +52,7 @@ import {
   type EmailHeaders,
 } from "@/lib/document-intake";
 
+import { viaPxApi } from "@/lib/px-api";
 export const DROP_ZONE_LABEL = `Drop a PDF, image or email here, or Choose File - up to ${DOCUMENT_MAX_MB} MB`;
 
 type RelatesToOption = { type: "project" | "permit" | "rfi" | "mom"; id: string; label: string };
@@ -211,7 +212,7 @@ export default function DocumentUploadClient({
 
     setSaving(true);
     try {
-      const res = await fetch("/api/documents", { method: "POST", body: formData });
+      const res = await viaPxApi("/api/documents", { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to upload document");
       writeLastCategory(category);

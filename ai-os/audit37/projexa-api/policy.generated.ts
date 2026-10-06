@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "e2e44a258a403f55a4341471a773f99a8aab25556d1b61260b273df38888741a"
+export const SOURCE_SHA256 = "6357305dc97e5fc32975242cc4a78986cb048f4595078c722ada0d2e7434fe6d"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -23,6 +23,7 @@ export const API_WRITE_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/board", "FIELD"],
   ["/change-orders", "PM_OR_ABOVE"],
   ["/change-orders/[id]", "PM_OR_ABOVE"],
+  ["/cache/revalidate", "ANY_ROLE"],
   ["/classify", "ANY_MEMBER"],
   ["/companies", "ORG_ADMIN"],
   ["/compliance-register", "ORG_ADMIN"],
@@ -232,8 +233,8 @@ export const DEFAULT_WRITE_TIER = "FIELD"
 export const MUTATING_METHODS: ReadonlySet<string> = new Set(["DELETE","PATCH","POST","PUT"])
 
 export type EdgeMethodSpec = {
-  upstream: string; acting_user?: "explicit" | "session"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;
-  search_params?: string[]; body?: "json" | "json_lenient" | "empty"; body_actor_email?: "always"; error_style?: "veridian" | "plain"
+  upstream: string; acting_user?: "explicit" | "session" | "none"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;
+  search_params?: string[]; body?: "json" | "json_lenient" | "empty" | "multipart"; body_actor_email?: "always"; error_style?: "veridian" | "plain"
   forward_search?: boolean; success_status?: 200 | 201; cache_control?: string
   root?: true; roles?: string; body_defaults?: Record<string, string>
   body_required?: { fields: string[]; error: string }[]; body_pick?: string[]; body_object_error?: string; invalid_body_error?: string; body_in_try?: true
@@ -241,6 +242,9 @@ export type EdgeMethodSpec = {
   optional_query?: string[]; query_flags?: Record<string, string>; search_params_omit_empty?: true; forward_query_normalized?: true
   required_query_any?: { params: string[]; error: string }; roles_also?: string[]; response_pick?: Record<string, unknown>
   response_wrap?: { with: Record<string, unknown>; params: string[]; into: string }
+  cache_ttl?: number; search_param_defaults?: Record<string, { default: string; when: string }>; include_allow?: string[]
+  response_redact?: { roles: string[]; list: string; set: Record<string, unknown> }; boq_create_verify?: true
+  revalidate?: { tags: string[]; paths?: string[]; when?: "success" | "always" }
 }
 /** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */
 export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [
@@ -250,7 +254,7 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/scope/line-items/:id","methods":{"PATCH":{"upstream":"/scope/line-items/{id}","acting_user":"explicit","body":"json","fallback":"Failed to update line item budget"}}},
   {"route":"/api/documents/:id","methods":{"GET":{"upstream":"/documents/{id}","fallback":"Failed to load document"},"PATCH":{"upstream":"/documents/{id}","body":"json","fallback":"Failed to update document"}}},
   {"route":"/api/drawings/:id/document-url","methods":{"GET":{"upstream":"/drawings/{id}/document-url","error_style":"plain","fallback":"Couldn't open this drawing's file"}}},
-  {"route":"/api/permits/:id","methods":{"GET":{"upstream":"/permits/{id}","fallback":"Failed to load permit"},"PATCH":{"upstream":"/permits/{id}","body":"json","body_actor_email":"always","fallback":"Failed to update permit"},"DELETE":{"upstream":"/permits/{id}","fallback":"Failed to delete permit"}}},
+  {"route":"/api/permits/:id","methods":{"GET":{"upstream":"/permits/{id}","fallback":"Failed to load permit"},"PATCH":{"upstream":"/permits/{id}","body":"json","body_in_try":true,"body_actor_email":"always","fallback":"Failed to update permit"},"DELETE":{"upstream":"/permits/{id}","fallback":"Failed to delete permit"}}},
   {"route":"/api/vendors","methods":{"GET":{"upstream":"/vendors","cache_control":"private, max-age=600","fallback":"Failed to load vendors"},"POST":{"upstream":"/vendors","body":"json","success_status":201,"fallback":"Failed to create vendor"}}},
   {"route":"/api/companies","methods":{"GET":{"upstream":"/companies","fallback":"Failed to load companies"},"POST":{"upstream":"/companies","body":"json","success_status":201,"fallback":"Failed to create company"}}},
   {"route":"/api/customers","methods":{"GET":{"upstream":"/customers","forward_search":true,"fallback":"Failed to load customers"},"POST":{"upstream":"/customers","body":"json","success_status":201,"fallback":"Failed to create customer"}}},
@@ -362,7 +366,7 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/construction-budget/lines","methods":{"POST":{"upstream":"/construction/budget/lines","root":true,"body":"json","success_status":201,"fallback":"Failed to save budget line"}}},
   {"route":"/api/credit-notes/:id","methods":{"GET":{"upstream":"/credit-notes/{id}","fallback":"Failed to load credit note"}}},
   {"route":"/api/documents/:id/dispose","methods":{"POST":{"upstream":"/documents/{id}/dispose","root":true,"fallback":"Failed to dispose document"}}},
-  {"route":"/api/drawings/:id","methods":{"GET":{"upstream":"/drawings/{id}","error_style":"plain","fallback":"Failed to load this drawing"},"PATCH":{"upstream":"/drawings/{id}","body":"json","error_style":"plain","fallback":"Failed to update this drawing"},"DELETE":{"upstream":"/drawings/{id}","error_style":"plain","fallback":"Failed to remove this drawing"}}},
+  {"route":"/api/drawings/:id","methods":{"GET":{"upstream":"/drawings/{id}","error_style":"plain","fallback":"Failed to load this drawing"},"PATCH":{"upstream":"/drawings/{id}","body":"json","body_in_try":true,"error_style":"plain","fallback":"Failed to update this drawing"},"DELETE":{"upstream":"/drawings/{id}","error_style":"plain","fallback":"Failed to remove this drawing"}}},
   {"route":"/api/employees/:id","methods":{"GET":{"upstream":"/employees/{id}","fallback":"Failed to load employee"},"PATCH":{"upstream":"/employees/{id}","body":"json","fallback":"Failed to update employee"}}},
   {"route":"/api/ffe/:id","methods":{"GET":{"upstream":"/ffe/{id}","fallback":"Failed to load FF&E item"},"PATCH":{"upstream":"/ffe/{id}","body":"json","body_defaults":{"action":"status"},"fallback":"Failed to update FF&E item"}}},
   {"route":"/api/floor-plans/:id","methods":{"GET":{"upstream":"/floor-plans/{id}","fallback":"Failed to load floor plan"},"PATCH":{"upstream":"/floor-plans/{id}","body":"json","body_defaults":{"action":"status"},"fallback":"Failed to update floor plan"}}},
@@ -379,8 +383,8 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/milestones","methods":{"GET":{"upstream":"/milestones?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load milestones"},"POST":{"upstream":"/milestones","roles":"PM_OR_ABOVE","body":"json","success_status":201,"fallback":"Failed to create milestone"}}},
   {"route":"/api/milestones/:id","methods":{"PATCH":{"upstream":"/milestones/{id}","roles":"PM_OR_ABOVE","body":"json","fallback":"Failed to update milestone"}}},
   {"route":"/api/module-chain","methods":{"GET":{"upstream":"/module-chain","fallback":"Failed to load the PROJEXA module chain"}}},
-  {"route":"/api/moms/:id","methods":{"GET":{"upstream":"/veri-meetings/{id}","fallback":"Failed to load meeting"},"PATCH":{"upstream":"/veri-meetings/{id}","body":"json","fallback":"Failed to update meeting"},"DELETE":{"upstream":"/veri-meetings/{id}","fallback":"Failed to delete meeting"}}},
-  {"route":"/api/moms/:id/action-items","methods":{"POST":{"upstream":"/veri-meetings/{id}/action-items","body":"json","success_status":201,"fallback":"Failed to add action item"}}},
+  {"route":"/api/moms/:id","methods":{"GET":{"upstream":"/veri-meetings/{id}","fallback":"Failed to load meeting"},"PATCH":{"upstream":"/veri-meetings/{id}","body":"json","body_in_try":true,"fallback":"Failed to update meeting"},"DELETE":{"upstream":"/veri-meetings/{id}","fallback":"Failed to delete meeting"}}},
+  {"route":"/api/moms/:id/action-items","methods":{"POST":{"upstream":"/veri-meetings/{id}/action-items","body":"json","body_in_try":true,"success_status":201,"fallback":"Failed to add action item"}}},
   {"route":"/api/moms/:id/generate-intelligence","methods":{"POST":{"upstream":"/veri-meetings/{id}/generate-intelligence","fallback":"Failed to generate meeting intelligence"}}},
   {"route":"/api/mood-boards/:id","methods":{"GET":{"upstream":"/mood-boards/{id}","fallback":"Failed to load mood board"},"PATCH":{"upstream":"/mood-boards/{id}","body":"json","fallback":"Failed to update mood board"},"POST":{"upstream":"/mood-boards/{id}","body":"json","success_status":201,"fallback":"Failed to add mood board item"}}},
   {"route":"/api/opportunities/:id","methods":{"GET":{"upstream":"/opportunities/{id}","fallback":"Failed to load opportunity"},"PATCH":{"upstream":"/opportunities/{id}","body":"json","fallback":"Failed to update opportunity"}}},
@@ -417,7 +421,7 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/sales-order-document-flow/:id","methods":{"GET":{"upstream":"/sales-order-document-flow/{id}","fallback":"Failed to load document flow"}}},
   {"route":"/api/sales-orders/:id","methods":{"GET":{"upstream":"/sales-orders/{id}","fallback":"Failed to load sales order"},"PATCH":{"upstream":"/sales-orders/{id}","body":"json","fallback":"Failed to update sales order"}}},
   {"route":"/api/schedule-tracker","methods":{"GET":{"upstream":"/construction/schedule?projectId={query:projectId}","root":true,"required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load schedule"}}},
-  {"route":"/api/screen-drafts/:id","methods":{"PATCH":{"upstream":"/screen-drafts/{id}","body":"json","body_actor_email":"always","fallback":"Failed to autosave draft"},"DELETE":{"upstream":"/screen-drafts/{id}","body":"empty","body_actor_email":"always","fallback":"Failed to discard draft"}}},
+  {"route":"/api/screen-drafts/:id","methods":{"PATCH":{"upstream":"/screen-drafts/{id}","body":"json","body_in_try":true,"body_actor_email":"always","fallback":"Failed to autosave draft"},"DELETE":{"upstream":"/screen-drafts/{id}","body":"empty","body_actor_email":"always","fallback":"Failed to discard draft"}}},
   {"route":"/api/site-diary","methods":{"GET":{"upstream":"/site-diary?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load site diary"},"POST":{"upstream":"/site-diary","roles":"FIELD","body":"json","success_status":201,"fallback":"Failed to create diary entry"}}},
   {"route":"/api/site-diary/:id","methods":{"GET":{"upstream":"/site-diary/{id}","fallback":"Failed to load diary entry"}}},
   {"route":"/api/timesheets/:id","methods":{"GET":{"upstream":"/timesheets/{id}","acting_user":"explicit","fallback":"Failed to load time entry"},"PATCH":{"upstream":"/timesheets/{id}","acting_user":"explicit","body":"json_lenient","fallback":"Failed to update time entry"},"DELETE":{"upstream":"/timesheets/{id}","acting_user":"explicit","body":"empty","fallback":"Failed to delete time entry"}}},
@@ -461,9 +465,24 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/projects/overview","methods":{"GET":{"upstream":"/dashboard","acting_user":"explicit","response_pick":{"projects":[]},"fallback":"Failed to load projects"}}},
   {"route":"/api/vendors/:id","methods":{"GET":{"upstream":"/vendors/{id}","fallback":"Failed to load vendor"},"PATCH":{"upstream":"/vendors/{id}","body":"json","fallback":"Failed to update vendor"},"DELETE":{"upstream":"/vendors/{id}","upstream_method":"PATCH","body_const":{"isActive":false},"response_wrap":{"with":{"deactivated":true},"params":["id"],"into":"vendor"},"fallback":"Failed to deactivate vendor"}}},
   {"route":"/api/customers/:id","methods":{"GET":{"upstream":"/customers/{id}","fallback":"Failed to load customer"},"PATCH":{"upstream":"/customers/{id}","body":"json","fallback":"Failed to update customer"},"DELETE":{"upstream":"/customers/{id}","upstream_method":"PATCH","body_const":{"isActive":false},"response_wrap":{"with":{"deactivated":true},"params":["id"],"into":"customer"},"fallback":"Failed to deactivate customer"}}},
+  {"route":"/api/cost-centers","methods":{"GET":{"upstream":"/cost-centers","acting_user":"none","cache_ttl":60,"fallback":"Failed to load cost centers"}}},
+  {"route":"/api/currencies","methods":{"GET":{"upstream":"/currencies","acting_user":"none","cache_ttl":60,"fallback":"Failed to load currencies"}}},
+  {"route":"/api/fiscal-years","methods":{"GET":{"upstream":"/fiscal-years","acting_user":"none","cache_ttl":60,"fallback":"Failed to load fiscal years"}}},
+  {"route":"/api/documents","methods":{"GET":{"upstream":"/documents","root":true,"required_query_any":{"params":["linkedEntityId","projectScopeId"],"error":"linkedEntityId or projectScopeId query param is required"},"search_params":["linkedEntityType","linkedEntityId","projectScopeId","category"],"search_param_defaults":{"linkedEntityType":{"default":"project","when":"linkedEntityId"}},"fallback":"Failed to load documents"},"POST":{"upstream":"/documents","root":true,"body":"multipart","timeout_ms":30000,"success_status":201,"fallback":"Failed to upload document","revalidate":{"tags":["module:documents"]}}}},
+  {"route":"/api/drawings","methods":{"GET":{"upstream":"/drawings","required_query":{"projectId":"projectId query param is required"},"search_params":["projectId","kind","discipline","status"],"fallback":"Failed to load drawings"},"POST":{"upstream":"/drawings","body":"multipart","timeout_ms":30000,"success_status":201,"fallback":"Failed to create drawing","revalidate":{"tags":["module:drawings"]}}}},
+  {"route":"/api/permits","methods":{"GET":{"upstream":"/permits","search_params":["withinDays","projectId"],"search_params_omit_empty":true,"query_flags":{"all":"true"},"fallback":"Failed to load permits"},"POST":{"upstream":"/permits","body":"multipart","timeout_ms":30000,"success_status":201,"fallback":"Failed to create permit","revalidate":{"tags":["module:permits"]}}}},
+  {"route":"/api/labour-roster","methods":{"GET":{"upstream":"/construction/labour-roster?projectId={query:projectId}","root":true,"required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load labour roster"},"POST":{"upstream":"/construction/labour-roster","root":true,"body":"json","success_status":201,"fallback":"Failed to add worker","revalidate":{"tags":["module:manpower"]}}}},
+  {"route":"/api/materials/master","methods":{"GET":{"upstream":"/construction/materials?projectId={query:projectId}","root":true,"required_query":{"projectId":"projectId query param is required"},"response_redact":{"roles":["site_engineer","client_viewer"],"list":"materials","set":{"unitCost":null}},"fallback":"Failed to load material master"},"POST":{"upstream":"/construction/materials","root":true,"body":"json","success_status":201,"fallback":"Failed to create material","revalidate":{"tags":["module:materials"]}}}},
+  {"route":"/api/meetings","methods":{"GET":{"upstream":"/meetings?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load meetings"},"POST":{"upstream":"/meetings","body":"json","success_status":201,"fallback":"Failed to create meeting","revalidate":{"tags":["module:meetings"]}}}},
+  {"route":"/api/moms","methods":{"GET":{"upstream":"/veri-meetings","optional_query":["projectId"],"fallback":"Failed to load meetings"},"POST":{"upstream":"/veri-meetings","body":"json","body_in_try":true,"success_status":201,"fallback":"Failed to create meeting","revalidate":{"tags":["module:moms"]}}}},
+  {"route":"/api/mood-boards","methods":{"GET":{"upstream":"/mood-boards?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load mood boards"},"POST":{"upstream":"/mood-boards","body":"json","success_status":201,"fallback":"Failed to create mood board","revalidate":{"tags":["module:mood-boards"]}}}},
+  {"route":"/api/knowledge-base","methods":{"GET":{"upstream":"/knowledge-base","fallback":"Failed to load knowledge base pages"},"POST":{"upstream":"/knowledge-base","body":"json","body_required":[{"fields":["title"],"error":"title is required"}],"success_status":201,"fallback":"Failed to create knowledge base page","revalidate":{"tags":["knowledge-base"]}}}},
+  {"route":"/api/knowledge-base/:id","methods":{"GET":{"upstream":"/knowledge-base/{id}","fallback":"Failed to load page"},"PATCH":{"upstream":"/knowledge-base/{id}","body":"json","fallback":"Failed to update knowledge base page","revalidate":{"tags":["knowledge-base"]}}}},
+  {"route":"/api/projects","methods":{"GET":{"upstream":"/projects","response_pick":{"projects":[]},"fallback":"Failed to load projects"},"POST":{"upstream":"/projects","body":"json","success_status":201,"fallback":"Failed to create project","revalidate":{"tags":["projects"],"when":"always"}}}},
+  {"route":"/api/scope","methods":{"GET":{"upstream":"/scope?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"include_allow":["variation","compare"],"fallback":"Failed to load scope of work"},"POST":{"upstream":"/scope","acting_user":"explicit","body":"json","invalid_body_error":"Request body must be valid JSON","boq_create_verify":true,"success_status":201,"fallback":"Failed to create BOQ","revalidate":{"tags":["module:scope"],"paths":["/scope"]}}}},
 ]
 /** Next routes that stay on Vercel but win over an edge route for some path (a literal sibling of a dynamic edge route): 404 here. */
-export const SHADOW_ROUTES: ReadonlyArray<string> = ["/api/drawings/export","/api/labour-roster/import","/api/materials/master","/api/projects/from-document","/api/work-progress/photos","/api/work-progress/report"]
+export const SHADOW_ROUTES: ReadonlyArray<string> = ["/api/drawings/export","/api/labour-roster/import","/api/projects/from-document","/api/work-progress/photos","/api/work-progress/report"]
 
 /** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */
 export function sourceData() {

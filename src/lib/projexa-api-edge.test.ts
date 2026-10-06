@@ -84,7 +84,10 @@ describe("the route list (deny by default: only these are answered by the edge)"
   test("batch 5: the browser switch's shadow list is the generated one; a literal Vercel sibling of a dynamic edge route stays same-origin", () => {
     expect([...PX_EDGE_SHADOWS].sort()).toEqual([...generated.SHADOW_ROUTES].sort());
     expect(isEdgeRoute("GET", "/api/drawings/export?projectId=p-1")).toBe(false);
-    expect(isEdgeRoute("GET", "/api/materials/master")).toBe(false);
+    // batch 7: /api/materials/master is an edge route itself now (it was the literal sibling of /api/materials/:id), no longer a shadow
+    expect(isEdgeRoute("GET", "/api/materials/master?projectId=p-1")).toBe(true);
+    expect(isEdgeRoute("POST", "/api/materials/master")).toBe(true);
+    expect(isEdgeRoute("PATCH", "/api/materials/master")).toBe(false);
     // batch 6: review-day moved to the edge itself; /api/work-progress/photos and /report are the new literal siblings of /api/work-progress/:id
     expect(isEdgeRoute("POST", "/api/timesheets/review-day")).toBe(true);
     expect(isEdgeRoute("GET", "/api/work-progress/report?projectId=p")).toBe(false);

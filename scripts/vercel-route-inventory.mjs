@@ -61,6 +61,7 @@ const AREA_WHY = {
   integrations: "third-party connection (Google Sheets) with secrets and webhooks: server only",
   ai: "the AI assistant and its tools: the user's own AI is reached through the AI Work Link edge function; these routes are the legacy in-app chat",
   assistant: "legacy in-app assistant: server only",
+  cache: "AUDIT-100 A2 batch 7: the one small route that clears the page-side list caches (unstable_cache tags) after a write that the edge function answered; a function on Supabase cannot reach Vercel's data cache",
 };
 
 function areaOf(pattern) {

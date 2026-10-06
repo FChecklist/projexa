@@ -38,15 +38,33 @@ export type Upstream =
   | { kind: "refused" };
 
 /** raw_body (batch 5): the request body sent AS TEXT, for the empty / invalid / null bodies a lenient or defaulted body read must handle. */
-export type ParityCase = { name: string; method: string; path: string; body?: unknown; raw_body?: string; who: Who; upstream: Upstream };
+/** AUDIT-100 A2 batch 7: a multipart form (a document / drawing / permit upload): text fields and files, sent as the browser sends a FormData
+ *  (the content type with its boundary is made by the HTTP stack, never written by hand). */
+export type Multipart = { fields: [string, string][]; files?: { field: string; name: string; type: string; content: string }[] };
+/** content_type (batch 7): only with raw_body, for a body that is not JSON (a urlencoded form sent to an upload route). */
+export type ParityCase = { name: string; method: string; path: string; body?: unknown; raw_body?: string; content_type?: string; multipart?: Multipart; who: Who; upstream: Upstream };
 export type UpstreamCall = { method: string; path: string; authorization: string | null; acting_user: string | null; acting_email: string | null; content_type: string | null; body: unknown };
 /** cache_control: present only when the answer sets a Cache-Control other than "no-store" (both sides normalise the same way). */
-export type Outcome = { status: number; body: unknown; retry_after: string | null; upstream_calls: UpstreamCall[]; cache_control?: string };
+/** revalidated (batch 7): the page-side cache entries the real Next handler cleared (revalidateTag / revalidatePath); the edge cannot clear them, the
+ *  browser asks Vercel to (projexa-api-routes.json `revalidate`, proven equal to this record by projexa-api-edge.test.ts). Absent when none. */
+export type Outcome = { status: number; body: unknown; retry_after: string | null; upstream_calls: UpstreamCall[]; cache_control?: string; revalidated?: { tags: string[]; paths: string[] } };
+/** The form as the contract records it (what the upstream received): [name, text] or [name, { file: { name, type, size, text } }], in order. */
+export type RecordedForm = { multipart: [string, string | { file: { name: string; type: string; size: number; text: string } }][] };
+/** AUDIT-100 A2 batch 7: a SEQUENCE is several requests in a row against one cache that starts empty (the per-instance TTL cache of the three
+ *  person-free reads), the clock moving by advance_ms before each step. Recorded from the real Next pipeline with a model of unstable_cache. */
+export type SequenceStep = { method: string; path: string; who: Who; upstream: Upstream; advance_ms?: number };
+export type Sequence = { name: string; steps: SequenceStep[] };
 
 const OK: Upstream = { kind: "json", status: 200, body: { ok: true, figures: { contractValue: "1000.00", percentByValue: 42 }, rows: [{ id: "r1" }] } };
 
+/** The form a Documents / Drawings / Permits upload sends (a file and its fields). */
+const UPLOAD_FORM: Multipart = {
+  fields: [["name", "Site permit"], ["category", "insurance"], ["linkedEntityType", "permit"], ["linkedEntityId", "pm-1"], ["projectId", "p-1"]],
+  files: [{ field: "file", name: "permit.pdf", type: "application/pdf", content: "%PDF-1.4 a small test file" }],
+};
+
 /** One request per route+method the function answers (the edge's whole allowlist: a route added to projexa-api-routes.json must appear here). */
-export const REQUESTS: { route: string; method: string; path: string; body?: unknown }[] = [
+export const REQUESTS: { route: string; method: string; path: string; body?: unknown; multipart?: Multipart }[] = [
   { route: "/api/dashboard/project/:projectId", method: "GET", path: "/api/dashboard/project/p-1" },
   { route: "/api/exceptions", method: "GET", path: "/api/exceptions?projectId=p%201" },
   { route: "/api/reports/boq-analysis", method: "GET", path: "/api/reports/boq-analysis?projectId=p-1&sortBy=margin&ignored=1" },
@@ -386,13 +404,49 @@ export const REQUESTS: { route: string; method: string; path: string; body?: unk
   { route: "/api/customers/:id", method: "GET", path: "/api/customers/x-1"},
   { route: "/api/customers/:id", method: "PATCH", path: "/api/customers/x-1", body: {"name": "Batch 6", "amount": "12.50", "actorEmail": "someone@else.test"}},
   { route: "/api/customers/:id", method: "DELETE", path: "/api/customers/x-1", body: {"name": "ignored"}},
+  // AUDIT-100 A2 batch 7: the routes with a cross-request cache, or whose writes clear a page-side cache, or that upload a file, or that verify
+  // their own create (hand-described in projexa-api-routes.json; these requests record what the REAL handlers answer)
+  { route: "/api/cost-centers", method: "GET", path: "/api/cost-centers" },
+  { route: "/api/currencies", method: "GET", path: "/api/currencies" },
+  { route: "/api/fiscal-years", method: "GET", path: "/api/fiscal-years" },
+  { route: "/api/documents", method: "GET", path: "/api/documents?projectScopeId=p%201&category=insurance&ignored=1" },
+  { route: "/api/documents", method: "POST", path: "/api/documents", multipart: UPLOAD_FORM },
+  { route: "/api/drawings", method: "GET", path: "/api/drawings?projectId=p%201&kind=plan&discipline=civil&status=issued&ignored=1" },
+  { route: "/api/drawings", method: "POST", path: "/api/drawings", multipart: UPLOAD_FORM },
+  { route: "/api/permits", method: "GET", path: "/api/permits?withinDays=30&projectId=p%201&all=true&ignored=1" },
+  { route: "/api/permits", method: "POST", path: "/api/permits", multipart: UPLOAD_FORM },
+  { route: "/api/labour-roster", method: "GET", path: "/api/labour-roster?projectId=p%201" },
+  { route: "/api/labour-roster", method: "POST", path: "/api/labour-roster", body: {"name": "Batch 7", "trade": "mason", "actorEmail": "someone@else.test"} },
+  { route: "/api/materials/master", method: "GET", path: "/api/materials/master?projectId=p%201" },
+  { route: "/api/materials/master", method: "POST", path: "/api/materials/master", body: {"name": "Batch 7", "unitCost": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/meetings", method: "GET", path: "/api/meetings?projectId=p%201" },
+  { route: "/api/meetings", method: "POST", path: "/api/meetings", body: {"name": "Batch 7", "actorEmail": "someone@else.test"} },
+  { route: "/api/moms", method: "GET", path: "/api/moms?projectId=p%201" },
+  { route: "/api/moms", method: "POST", path: "/api/moms", body: {"name": "Batch 7", "actorEmail": "someone@else.test"} },
+  { route: "/api/mood-boards", method: "GET", path: "/api/mood-boards?projectId=p%201" },
+  { route: "/api/mood-boards", method: "POST", path: "/api/mood-boards", body: {"name": "Batch 7", "actorEmail": "someone@else.test"} },
+  { route: "/api/knowledge-base", method: "GET", path: "/api/knowledge-base" },
+  { route: "/api/knowledge-base", method: "POST", path: "/api/knowledge-base", body: {"title": "Batch 7", "body": "text", "actorEmail": "someone@else.test"} },
+  { route: "/api/knowledge-base/:id", method: "GET", path: "/api/knowledge-base/kb%201" },
+  { route: "/api/knowledge-base/:id", method: "PATCH", path: "/api/knowledge-base/kb%201", body: {"title": "Batch 7", "actorEmail": "someone@else.test"} },
+  { route: "/api/projects", method: "GET", path: "/api/projects" },
+  { route: "/api/projects", method: "POST", path: "/api/projects", body: {"name": "Batch 7", "actorEmail": "someone@else.test"} },
+  { route: "/api/scope", method: "GET", path: "/api/scope?projectId=p%201&include=variation,compare" },
+  { route: "/api/scope", method: "POST", path: "/api/scope", body: {"title": "Batch 7", "projectId": "p-1", "lineItems": [{"description": "a"}, {"description": "b"}], "actorEmail": "someone@else.test"} },
 ];
 
 export function buildCases(): ParityCase[] {
   const cases: ParityCase[] = [];
   // every request x every role, signed out and no organisation, upstream answering normally
   for (const r of REQUESTS) {
-    for (const who of [...ROLES, "signed_out", "no_org"] as Who[]) cases.push({ name: `${r.method} ${r.route} as ${who}`, method: r.method, path: r.path, body: r.body, who, upstream: OK });
+    for (const who of [...ROLES, "signed_out", "no_org"] as Who[]) cases.push({ name: `${r.method} ${r.route} as ${who}`, method: r.method, path: r.path, body: r.body, ...(r.multipart ? { multipart: r.multipart } : {}), who, upstream: OK });
+  }
+  // AUDIT-100 A2 batch 7: a body that is not JSON, on EVERY route that reads one. Found while recording batch 7: a handler that reads `await
+  // request.json()` outside its try (almost all do, the first route of the contract included) THROWS on it, which Next answers with an empty 500; the
+  // edge had answered 400 {"error":"Invalid JSON body"} for such a body since batch 1, an answer no recorded case ever compared.
+  for (const r of REQUESTS) {
+    if (r.body === undefined) continue;
+    cases.push({ name: `${r.method} ${r.route}: a body that is not JSON`, method: r.method, path: r.path, raw_body: "{not json", who: "pm", upstream: OK });
   }
   // the edge cases, on a read, a write and the plain-error route
   const probes = [REQUESTS[0], REQUESTS[3], REQUESTS[6], REQUESTS[8]];
@@ -570,5 +624,156 @@ export function buildCases(): ParityCase[] {
   // the own role set of baselines (PM_OR_ABOVE) runs before the body is read: a refused role never sees its 400
   add("POST /api/schedule/baselines as null_role with a bad body", "POST", "/api/schedule/baselines", "null_role", { body: {} });
   add("POST /api/schedule/baselines as null_role with a JSON null body", "POST", "/api/schedule/baselines", "null_role", { raw_body: "null" });
+  // AUDIT-100 A2 batch 7: cross-request caches, page-cache invalidation on writes (recorded as `revalidated`), file uploads, redaction by role, the
+  // BOQ create verification. Every form both ways, each new shape under the upstream's failures, and the bodies a handler must survive.
+  const ok = (body: unknown): Upstream => ({ kind: "json", status: 200, body });
+  const failureSet = (r: { route: string; method: string; path: string; body?: unknown; multipart?: Multipart }) => {
+    const tag = `${r.method} ${r.route}`;
+    const base = { method: r.method, path: r.path, body: r.body, ...(r.multipart ? { multipart: r.multipart } : {}) };
+    cases.push({ name: `${tag}: another organisation's record`, ...base, who: "wrong_org", upstream: { kind: "json", status: 404, body: { error: "Not found" } } });
+    cases.push({ name: `${tag}: upstream 409 with message`, ...base, who: "owner", upstream: { kind: "json", status: 409, body: { error: "Changed by someone else" } } });
+    cases.push({ name: `${tag}: upstream 500`, ...base, who: "owner", upstream: { kind: "json", status: 500, body: { error: "boom" } } });
+    cases.push({ name: `${tag}: upstream 502 not JSON`, ...base, who: "owner", upstream: { kind: "text", status: 502, status_text: "Bad Gateway", text: "<html>bad gateway</html>" } });
+    cases.push({ name: `${tag}: upstream 200 not JSON`, ...base, who: "owner", upstream: { kind: "text", status: 200, status_text: "OK", text: "not json" } });
+    cases.push({ name: `${tag}: connection refused`, ...base, who: "owner", upstream: { kind: "refused" } });
+    cases.push({ name: `${tag}: organisation has no VERIDIAN key`, ...base, who: "no_key", upstream: OK });
+    cases.push({ name: `${tag}: membership read fails`, ...base, who: "membership_error", upstream: OK });
+  };
+  for (const [route, method] of [["/api/cost-centers", "GET"], ["/api/documents", "GET"], ["/api/documents", "POST"], ["/api/drawings", "POST"], ["/api/permits", "GET"], ["/api/labour-roster", "POST"], ["/api/materials/master", "GET"], ["/api/moms", "POST"], ["/api/knowledge-base", "POST"], ["/api/knowledge-base/:id", "PATCH"], ["/api/projects", "GET"], ["/api/projects", "POST"], ["/api/scope", "GET"], ["/api/scope", "POST"]]) failureSet(batch2(route, method));
+
+  // documents: either of two query params is needed; linkedEntityType defaults to "project" and is only sent with linkedEntityId; every other
+  // param is dropped when empty; the order of the forwarded query is the handler's
+  for (const q of ["", "?category=x", "?linkedEntityId=", "?projectScopeId=", "?linkedEntityId=e-1", "?linkedEntityId=e-1&linkedEntityType=permit", "?linkedEntityId=e-1&linkedEntityType=", "?linkedEntityType=permit&projectScopeId=p-1", "?projectScopeId=p-1&linkedEntityId=e%201&category=a%26b&linkedEntityType=rfi", "?projectScopeId=a%20b%2Bc&category=", "?category=z&projectScopeId=p-1&junk=1&linkedEntityId=e-2"]) {
+    add(`GET /api/documents${q || " without a query"}`, "GET", `/api/documents${q}`, "pm");
+  }
+  // drawings: projectId is needed; kind / discipline / status are forwarded in that order when set (URLSearchParams encoding)
+  for (const q of ["", "?projectId=", "?projectId=p-1", "?projectId=a%20b%2Bc&kind=x%26y", "?status=s&discipline=d&kind=k&projectId=p-1", "?projectId=p-1&kind=&discipline=&status=", "?projectId=p-1&discipline=d%20e&extra=1"]) {
+    add(`GET /api/drawings${q || " without a query"}`, "GET", `/api/drawings${q}`, "pm");
+  }
+  // permits: withinDays, projectId, then all=true only for exactly "true"
+  for (const q of ["", "?", "?withinDays=30", "?projectId=p%201", "?all=true", "?all=1", "?all=TRUE", "?all=", "?all=true&withinDays=7&projectId=p-1", "?withinDays=&all=true", "?projectId=p-1&withinDays=7&all=true&all=false", "?withinDays=a%20b&junk=1"]) {
+    add(`GET /api/permits${q || " without a query"}`, "GET", `/api/permits${q}`, "pm");
+  }
+  // scope: only variation / compare are forwarded (whitespace trimmed, any order, once), the rest is dropped
+  for (const inc of ["", "&include=", "&include=variation", "&include=compare", "&include=compare,variation", "&include=%20variation%20,%20compare%20", "&include=bogus", "&include=variation,variation,bogus", "&include=VARIATION", "&include=variation%2Ccompare"]) {
+    add(`GET /api/scope?projectId=p-1${inc}`, "GET", `/api/scope?projectId=p-1${inc}`, "pm");
+  }
+  add("GET /api/scope without projectId", "GET", "/api/scope", "pm");
+  add("GET /api/scope with an empty projectId", "GET", "/api/scope?projectId=", "pm");
+  add("GET /api/scope as client_viewer", "GET", "/api/scope?projectId=p-1&include=compare", "client_viewer");
+  // moms: projectId is optional
+  for (const q of ["", "?projectId=", "?projectId=p-1", "?projectId=a%20b%2Bc&x=1"]) add(`GET /api/moms${q || " without a query"}`, "GET", `/api/moms${q}`, "pm");
+  for (const route of ["labour-roster", "materials/master", "meetings", "mood-boards"]) {
+    add(`GET /api/${route} without projectId`, "GET", `/api/${route}`, "pm");
+    add(`GET /api/${route} with an empty projectId`, "GET", `/api/${route}?projectId=`, "pm");
+  }
+  // materials master: unit costs are hidden from site_engineer and client_viewer only, in the list, whatever else the answer holds
+  const materials = { materials: [{ id: "m1", name: "Cement", unitCost: "420.00" }, null, 7, "x", { id: "m2", unitCost: null }, { id: "m3" }], total: 6 };
+  for (const who of ROLES) add(`GET /api/materials/master with costs as ${who}`, "GET", "/api/materials/master?projectId=p-1", who, { upstream: ok(materials) });
+  for (const [label, body] of [["materials is not a list", { materials: { id: "m1", unitCost: "1" } }], ["materials is null", { materials: null }], ["no materials key", { other: [1] }], ["an empty list", { materials: [] }], ["the answer is a list", [{ unitCost: "9" }]], ["the answer is null", null], ["the answer is a number", 7], ["the answer is a string", "text"]] as [string, unknown][]) {
+    add(`GET /api/materials/master redaction: ${label} (site_engineer)`, "GET", "/api/materials/master?projectId=p-1", "site_engineer", { upstream: ok(body) });
+  }
+  add("GET /api/materials/master redaction: the answer keeps its other fields (client_viewer)", "GET", "/api/materials/master?projectId=p-1", "client_viewer", { upstream: ok({ materials: [{ unitCost: "5", a: 1 }], units: ["bag"], nested: { unitCost: "7" } }) });
+  add("GET /api/materials/master as null_role (no role: not redacted)", "GET", "/api/materials/master?projectId=p-1", "null_role", { upstream: ok(materials) });
+
+  // the answer of projects: { projects: data.projects ?? [] }
+  for (const [label, body] of [["a list", { projects: [{ id: "a", name: "A", status: "x", extra: 1 }], other: 1 }], ["null", { projects: null }], ["missing", {}], ["JSON null", null], ["a number", 7]] as [string, unknown][]) {
+    add(`GET /api/projects: the upstream gives ${label}`, "GET", "/api/projects", "pm", { upstream: ok(body) });
+  }
+
+  // JSON bodies: a bad body is the handler's own answer (an empty 500, or its own 400 / 502); an empty object or array is forwarded
+  const jsonBodies: [string, string][] = [["an empty body", ""], ["a broken body", "{not json"], ["a JSON null body", "null"], ["an array body", "[1,2]"], ["a number body", "5"], ["an empty object", "{}"], ["a string body", "\"text\""]];
+  for (const [route, method, path] of [["/api/labour-roster", "POST", "/api/labour-roster"], ["/api/materials/master", "POST", "/api/materials/master"], ["/api/meetings", "POST", "/api/meetings"], ["/api/mood-boards", "POST", "/api/mood-boards"], ["/api/moms", "POST", "/api/moms"], ["/api/projects", "POST", "/api/projects"], ["/api/knowledge-base", "POST", "/api/knowledge-base"], ["/api/knowledge-base/:id", "PATCH", "/api/knowledge-base/kb-1"], ["/api/scope", "POST", "/api/scope"]]) {
+    for (const [label, raw] of jsonBodies) add(`${method} ${route} with ${label}`, method, path, "pm", { raw_body: raw, upstream: route === "/api/scope" ? ok({ id: "b-1" }) : OK });
+  }
+  // knowledge-base: title is required (a falsy title is refused, a JSON null body throws in the handler)
+  for (const [label, body] of [["no title", { body: "x" }], ["an empty title", { title: "" }], ["title 0", { title: 0 }], ["title false", { title: false }], ["title null", { title: null }], ["a title", { title: "T", extra: 1, actorEmail: "x@y.test" }], ["title as a number 1", { title: 1 }]] as [string, unknown][]) {
+    add(`POST /api/knowledge-base with ${label}`, "POST", "/api/knowledge-base", "pm", { body });
+  }
+  add("PATCH /api/knowledge-base/:id with a slash in the id", "PATCH", "/api/knowledge-base/a%2Fb%3Fc", "pm", { body: { title: "x" } });
+  add("GET /api/knowledge-base/:id with a path-walking id", "GET", "/api/knowledge-base/..%2F..%2Fadmin", "pm");
+  // the role gate of the writes (swept above for every role); a client_viewer / member refused here never reaches the upstream or clears anything
+  add("POST /api/projects as client_viewer with a good body", "POST", "/api/projects", "client_viewer", { body: { name: "n" } });
+  add("POST /api/scope as site_engineer", "POST", "/api/scope", "site_engineer", { body: { lineItems: [] }, upstream: ok({ id: "b-1" }) });
+
+  // scope create: the handler verifies what came back (an id; at least as many line items as were sent) before it answers 201
+  const boq = (name: string, body: unknown, upBody: unknown, who: Who = "pm") => add(name, "POST", "/api/scope", who, { body, upstream: ok(upBody) });
+  const two = { title: "T", projectId: "p-1", lineItems: [{ d: "a" }, { d: "b" }] };
+  boq("POST /api/scope: saved with every line", two, { id: "b-1", lineItems: [{}, {}] });
+  boq("POST /api/scope: saved with more lines than sent", two, { id: "b-1", lineItems: [{}, {}, {}] });
+  boq("POST /api/scope: one line did not come back", two, { id: "b-1", lineItems: [{}] });
+  boq("POST /api/scope: lines missing from the answer", two, { id: "b-1" });
+  boq("POST /api/scope: lines not a list in the answer", two, { id: "b-1", lineItems: "x" });
+  boq("POST /api/scope: no id in the answer", two, { lineItems: [{}, {}] });
+  boq("POST /api/scope: a blank id", two, { id: "   ", lineItems: [{}, {}] });
+  boq("POST /api/scope: an id with spaces around it is accepted", two, { id: "  b-1  ", lineItems: [{}, {}] });
+  boq("POST /api/scope: a numeric id", two, { id: 7, lineItems: [{}, {}] });
+  boq("POST /api/scope: the answer is JSON null", two, null);
+  boq("POST /api/scope: the answer is an array", two, [{ id: "b-1" }]);
+  boq("POST /api/scope: the answer is a number", two, 7);
+  boq("POST /api/scope: no lines sent, an id back", { title: "T" }, { id: "b-1" });
+  boq("POST /api/scope: lineItems is not a list, an id back", { title: "T", lineItems: "x" }, { id: "b-1" });
+  boq("POST /api/scope: an empty list sent", { title: "T", lineItems: [] }, { id: "b-1", lineItems: [] });
+  boq("POST /api/scope: the body is an array", [{ lineItems: [1] }], { id: "b-1" });
+  boq("POST /api/scope: client_viewer is refused by the gate", two, { id: "b-1", lineItems: [{}, {}] }, "client_viewer");
+  boq("POST /api/scope: an actorEmail in the body is not rewritten (the acting person is explicit)", { ...two, actorEmail: "evil@x.test" }, { id: "b-1", lineItems: [{}, {}] }, "owner");
+
+  // uploads: the form goes to the upstream as it is; a body that is not a form is the handler's own failure; roles by the gate (swept above)
+  const form = (extra: Partial<Multipart>): Multipart => ({ fields: UPLOAD_FORM.fields, files: UPLOAD_FORM.files, ...extra });
+  const up = (name: string, route: string, multipart: Multipart, who: Who = "site_engineer", extra: Partial<ParityCase> = {}) => add(name, "POST", route, who, { multipart, ...extra });
+  for (const route of ["/api/documents", "/api/drawings", "/api/permits"]) {
+    up(`POST ${route} with two files`, route, form({ files: [{ field: "file", name: "a.pdf", type: "application/pdf", content: "AAA" }, { field: "attachment", name: "b é.png", type: "image/png", content: "BBBB" }] }));
+    up(`POST ${route} with fields only`, route, form({ files: [] }));
+    up(`POST ${route} with an empty file`, route, form({ files: [{ field: "file", name: "empty.txt", type: "text/plain", content: "" }] }));
+    up(`POST ${route} with text that is not ASCII and a repeated field`, route, form({ fields: [["name", "Çevre izni ✓"], ["tag", "a"], ["tag", "b"]], files: [] }));
+    up(`POST ${route} with a 64 kB file`, route, form({ files: [{ field: "file", name: "big.bin", type: "application/octet-stream", content: "x".repeat(65_536) }] }));
+    add(`POST ${route} with a JSON body (not a form)`, "POST", route, "site_engineer", { body: { name: "x" } });
+    add(`POST ${route} with an empty body`, "POST", route, "site_engineer", { raw_body: "" });
+    add(`POST ${route} with a urlencoded form`, "POST", route, "site_engineer", { raw_body: "name=Site+permit&category=insurance", content_type: "application/x-www-form-urlencoded" });
+  }
   return cases;
+}
+
+/** AUDIT-100 A2 batch 7: requests in a row against one cache that starts empty. A cached answer is the ORGANISATION's (the call runs with no acting
+ *  person), served to any role for the TTL, per organisation; a failed read is never cached. (After the TTL the real Next serves the stale answer once
+ *  and refreshes in the background, the edge refetches at once: that step is therefore NOT part of the contract, see projexa-api-cache.test.ts.) */
+export function buildSequences(): Sequence[] {
+  const seqs: Sequence[] = [];
+  const A = (n: number): Upstream => ({ kind: "json", status: 200, body: { generation: n, rows: [{ id: `r${n}` }] } });
+  for (const route of ["/api/currencies", "/api/cost-centers", "/api/fiscal-years"]) {
+    seqs.push({
+      name: `GET ${route}: one upstream read serves every role of the organisation for 60 s, another organisation has its own`,
+      steps: [
+        { method: "GET", path: route, who: "owner", upstream: A(1) },
+        { method: "GET", path: route, who: "client_viewer", upstream: A(2), advance_ms: 10_000 },
+        { method: "GET", path: route, who: "site_engineer", upstream: A(3), advance_ms: 49_000 },
+        { method: "GET", path: route, who: "wrong_org", upstream: A(4) },
+        { method: "GET", path: route, who: "wrong_org", upstream: A(5), advance_ms: 1 },
+        { method: "GET", path: route, who: "pm", upstream: A(6) },
+        { method: "GET", path: route, who: "signed_out", upstream: A(7) },
+        { method: "GET", path: route, who: "no_org", upstream: A(8) },
+      ],
+    });
+    seqs.push({
+      name: `GET ${route}: a failed read is not cached, the next read goes upstream again and its answer is kept`,
+      steps: [
+        { method: "GET", path: route, who: "owner", upstream: { kind: "json", status: 500, body: { error: "boom" } } },
+        { method: "GET", path: route, who: "owner", upstream: { kind: "refused" } },
+        { method: "GET", path: route, who: "owner", upstream: { kind: "json", status: 404, body: { error: "Not found" } } },
+        { method: "GET", path: route, who: "owner", upstream: A(1) },
+        { method: "GET", path: route, who: "pm", upstream: A(2) },
+      ],
+    });
+  }
+  seqs.push({
+    name: "GET /api/currencies, /api/fiscal-years and /api/cost-centers are cached apart (the path is part of the key)",
+    steps: [
+      { method: "GET", path: "/api/currencies", who: "owner", upstream: A(1) },
+      { method: "GET", path: "/api/fiscal-years", who: "owner", upstream: A(2) },
+      { method: "GET", path: "/api/currencies", who: "owner", upstream: A(3) },
+      { method: "GET", path: "/api/fiscal-years", who: "owner", upstream: A(4) },
+      { method: "GET", path: "/api/cost-centers", who: "owner", upstream: A(5) },
+    ],
+  });
+  return seqs;
 }

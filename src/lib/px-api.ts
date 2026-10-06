@@ -247,7 +247,51 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "/api/projects/overview": ["GET"],
   "/api/vendors/:id": ["DELETE", "GET", "PATCH"],
   "/api/customers/:id": ["DELETE", "GET", "PATCH"],
+  // AUDIT-100 A2 batch 7 (cross-request caches, writes that clear a page-side cache, uploads, redaction by role, the BOQ create check)
+  "/api/cost-centers": ["GET"],
+  "/api/currencies": ["GET"],
+  "/api/fiscal-years": ["GET"],
+  "/api/documents": ["GET", "POST"],
+  "/api/drawings": ["GET", "POST"],
+  "/api/permits": ["GET", "POST"],
+  "/api/labour-roster": ["GET", "POST"],
+  "/api/materials/master": ["GET", "POST"],
+  "/api/meetings": ["GET", "POST"],
+  "/api/moms": ["GET", "POST"],
+  "/api/mood-boards": ["GET", "POST"],
+  "/api/knowledge-base": ["GET", "POST"],
+  "/api/knowledge-base/:id": ["GET", "PATCH"],
+  "/api/projects": ["GET", "POST"],
+  "/api/scope": ["GET", "POST"],
 };
+
+/** AUDIT-100 A2 batch 7: the page-side cache entries a write clears. The Next write handlers call revalidateTag / revalidatePath so a new row shows at
+ *  once on the server-rendered list; a function on Supabase cannot, so after the edge answered a write the browser asks Vercel's one small route
+ *  (src/app/api/cache/revalidate/route.ts) to clear the same entries. Equal to `revalidate` in ai-os/audit37/projexa-api-routes.json, which
+ *  src/lib/projexa-api-edge.test.ts holds equal to what the REAL Next handlers cleared in the recorded parity contract. `when`: "success" (a 2xx
+ *  answer, the default) or "always" (the handler clears before it calls the backend: /api/projects). */
+export type PxRevalidate = { tags: readonly string[]; paths?: readonly string[]; when?: "success" | "always" };
+export const PX_EDGE_REVALIDATE: Readonly<Record<string, PxRevalidate>> = {
+  "POST /api/documents": { tags: ["module:documents"] },
+  "POST /api/drawings": { tags: ["module:drawings"] },
+  "POST /api/permits": { tags: ["module:permits"] },
+  "POST /api/labour-roster": { tags: ["module:manpower"] },
+  "POST /api/materials/master": { tags: ["module:materials"] },
+  "POST /api/meetings": { tags: ["module:meetings"] },
+  "POST /api/moms": { tags: ["module:moms"] },
+  "POST /api/mood-boards": { tags: ["module:mood-boards"] },
+  "POST /api/knowledge-base": { tags: ["knowledge-base"] },
+  "PATCH /api/knowledge-base/:id": { tags: ["knowledge-base"] },
+  "POST /api/projects": { tags: ["projects"], when: "always" },
+  "POST /api/scope": { tags: ["module:scope"], paths: ["/scope"] },
+};
+/** What /api/cache/revalidate will clear: the union of the table above (nothing else). */
+export const PX_REVALIDATABLE: { tags: readonly string[]; paths: readonly string[] } = {
+  tags: [...new Set(Object.values(PX_EDGE_REVALIDATE).flatMap((r) => r.tags))],
+  paths: [...new Set(Object.values(PX_EDGE_REVALIDATE).flatMap((r) => r.paths ?? []))],
+};
+/** How long a write waits for Vercel to clear the page-side entries before it returns anyway (the write itself already succeeded). */
+export const PX_REVALIDATE_WAIT_MS = 2_500;
 
 /** AUDIT-100 A2 batch 5: Next routes that stay on Vercel but win over a dynamic edge route for some path (the App Router prefers a literal
  *  segment: GET /api/drawings/export is the xlsx download, not /api/drawings/:id). Such a path stays same-origin. Equal to the generated
@@ -255,7 +299,6 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
 export const PX_EDGE_SHADOWS: readonly string[] = [
   "/api/drawings/export",
   "/api/labour-roster/import",
-  "/api/materials/master",
   "/api/projects/from-document",
   "/api/work-progress/photos",
   "/api/work-progress/report",
@@ -275,19 +318,24 @@ export function pxApiBase(env: string | undefined = process.env.NEXT_PUBLIC_PX_A
  *  Router resolves it (a literal segment beats a dynamic one, over the edge routes AND the Vercel routes that shadow them), then the method
  *  must be one of that route's. */
 export function isEdgeRoute(method: string, path: string): boolean {
-  if (!path.startsWith("/api/")) return false;
+  return matchEdgeRoute(method, path) !== null;
+}
+
+/** The edge route pattern a `method path` is answered by ("/api/knowledge-base/:id"), or null when it stays on Vercel. */
+export function matchEdgeRoute(method: string, path: string): string | null {
+  if (!path.startsWith("/api/")) return null;
   const segs = path.split("?")[0]!.split("/").filter(Boolean);
-  let best: { rank: string; methods: readonly string[] | null } | null = null;
+  let best: { rank: string; route: string; methods: readonly string[] | null } | null = null;
   const consider = (route: string, methods: readonly string[] | null) => {
     const pat = route.split("/").filter(Boolean);
     if (pat.length !== segs.length || !pat.every((p, i) => (p.startsWith(":") ? segs[i]!.length > 0 : p === segs[i]))) return;
     const rank = pat.map((p) => (p.startsWith(":") ? "0" : "1")).join("");
-    if (!best || rank > best.rank) best = { rank, methods };
+    if (!best || rank > best.rank) best = { rank, route, methods };
   };
   for (const [route, methods] of Object.entries(PX_EDGE_ROUTES)) consider(route, methods);
   for (const route of PX_EDGE_SHADOWS) consider(route, null);
-  const found = best as { rank: string; methods: readonly string[] | null } | null;
-  return !!found?.methods?.includes(method.toUpperCase());
+  const found = best as { rank: string; route: string; methods: readonly string[] | null } | null;
+  return found?.methods?.includes(method.toUpperCase()) ? found.route : null;
 }
 
 async function browserAccessToken(): Promise<string | null> {
@@ -300,7 +348,34 @@ async function browserAccessToken(): Promise<string | null> {
   }
 }
 
-export type PxApiDeps = { fetchImpl?: typeof fetch; getAccessToken?: () => Promise<string | null>; base?: string };
+export type PxApiDeps = { fetchImpl?: typeof fetch; getAccessToken?: () => Promise<string | null>; base?: string; revalidateWaitMs?: number };
+
+/** After the edge answered a write whose Next handler clears page-side cache entries: ask Vercel's one small route to clear the same ones. Waits (a
+ *  bounded time) so the person's next navigation sees the new row, never fails the write, never throws. Same-origin, with the session cookie. */
+export async function revalidateAfterEdgeWrite(
+  method: string,
+  path: string,
+  res: Response,
+  doFetch: typeof fetch,
+  waitMs: number = PX_REVALIDATE_WAIT_MS
+): Promise<void> {
+  const route = matchEdgeRoute(method, path);
+  const rule = route ? PX_EDGE_REVALIDATE[`${method.toUpperCase()} ${route}`] : undefined;
+  if (!rule) return;
+  if ((rule.when ?? "success") === "success" && !res.ok) return;
+  try {
+    const call = doFetch("/api/cache/revalidate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      keepalive: true,
+      body: JSON.stringify({ tags: rule.tags, paths: rule.paths ?? [] }),
+    }).then(() => undefined, () => undefined);
+    await Promise.race([call, new Promise<void>((resolve) => setTimeout(resolve, waitMs))]);
+  } catch {
+    // a cache that was not cleared is up to 30 s of an old list, never a failed save
+  }
+}
 
 /** fetch() for PROJEXA's own /api routes: same origin, or the edge function for a listed route when the switch is on. */
 export async function pxApiFetch(input: string, init: RequestInit = {}, deps: PxApiDeps = {}): Promise<Response> {
@@ -312,7 +387,9 @@ export async function pxApiFetch(input: string, init: RequestInit = {}, deps: Px
     if (token) {
       const headers = new Headers(init.headers);
       headers.set("Authorization", `Bearer ${token}`);
-      return doFetch(`${base}${input}`, { ...init, headers, credentials: "omit" });
+      const res = await doFetch(`${base}${input}`, { ...init, headers, credentials: "omit" });
+      if (method !== "GET") await revalidateAfterEdgeWrite(method, input, res, doFetch, deps.revalidateWaitMs);
+      return res;
     }
   }
   return doFetch(input, init);

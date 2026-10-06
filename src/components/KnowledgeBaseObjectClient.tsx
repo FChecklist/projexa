@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type KbPage = { id: string; slug: string; title: string; content: string | null; version: number; isArchived: boolean; isPublished: boolean };
 
 export default function KnowledgeBaseObjectClient({ pageId }: { pageId: string }) {
@@ -55,7 +56,7 @@ export default function KnowledgeBaseObjectClient({ pageId }: { pageId: string }
     if (!draftTitle.trim()) { toast.error("Title is required"); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/knowledge-base/${pageId}`, {
+      const res = await viaPxApi(`/api/knowledge-base/${pageId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: draftTitle.trim(), content: draftContent }),
       });
@@ -74,7 +75,7 @@ export default function KnowledgeBaseObjectClient({ pageId }: { pageId: string }
   async function archivePage() {
     setArchiving(true);
     try {
-      const res = await fetch(`/api/knowledge-base/${pageId}`, {
+      const res = await viaPxApi(`/api/knowledge-base/${pageId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isArchived: true }),
       });
