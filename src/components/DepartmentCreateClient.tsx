@@ -11,6 +11,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { viaPxApi } from "@/lib/px-api";
 export default function DepartmentCreateClient() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -24,7 +25,7 @@ export default function DepartmentCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/hr/departments", {
+      const res = await viaPxApi("/api/hr/departments", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description: description || undefined }),
       });

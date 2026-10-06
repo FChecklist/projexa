@@ -45,6 +45,7 @@ import { catalogDestination, catalogEntrySlug, monthToDate } from "@/lib/report-
 // clicks away.
 import { isInReportRegistry } from "@/lib/report-registry";
 
+import { viaPxApi } from "@/lib/px-api";
 /**
  * R67 E-14 (R-132 / R-139): what a card says about a report PROJEXA genuinely
  * cannot render. "Not yet viewable here" said nothing about where it CAN be
@@ -257,7 +258,7 @@ export function ReportCatalogSection({
         setCatalog(d.catalog);
       })
       .catch(() => { if (!cancelled) { setLoadError(true); setCatalog([]); } });
-    fetch("/api/companies")
+    viaPxApi("/api/companies")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`companies fetch failed (${r.status})`))))
       .then((d) => { if (!cancelled) setCompanies(Array.isArray(d.companies) ? d.companies : []); })
       .catch(() => { if (!cancelled) setCompanies([]); });

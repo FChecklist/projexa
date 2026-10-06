@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "122618857bbfa6594366495f9ee0182f343ec7568ff191eaaeb893532600563a"
+export const SOURCE_SHA256 = "194c7e961795a1f574374aff2e6f5e2b95fec17e0ea1143e67338d5ec01b822e"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -234,6 +234,7 @@ export const MUTATING_METHODS: ReadonlySet<string> = new Set(["DELETE","PATCH","
 export type EdgeMethodSpec = {
   upstream: string; acting_user?: "explicit" | "session"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;
   search_params?: string[]; body?: "json"; body_actor_email?: "always"; error_style?: "veridian" | "plain"
+  forward_search?: boolean; success_status?: 200 | 201; cache_control?: string
 }
 /** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */
 export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [
@@ -244,6 +245,46 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/documents/:id","methods":{"GET":{"upstream":"/documents/{id}","fallback":"Failed to load document"},"PATCH":{"upstream":"/documents/{id}","body":"json","fallback":"Failed to update document"}}},
   {"route":"/api/drawings/:id/document-url","methods":{"GET":{"upstream":"/drawings/{id}/document-url","error_style":"plain","fallback":"Couldn't open this drawing's file"}}},
   {"route":"/api/permits/:id","methods":{"GET":{"upstream":"/permits/{id}","fallback":"Failed to load permit"},"PATCH":{"upstream":"/permits/{id}","body":"json","body_actor_email":"always","fallback":"Failed to update permit"},"DELETE":{"upstream":"/permits/{id}","fallback":"Failed to delete permit"}}},
+  {"route":"/api/vendors","methods":{"GET":{"upstream":"/vendors","cache_control":"private, max-age=600","fallback":"Failed to load vendors"},"POST":{"upstream":"/vendors","body":"json","success_status":201,"fallback":"Failed to create vendor"}}},
+  {"route":"/api/companies","methods":{"GET":{"upstream":"/companies","fallback":"Failed to load companies"},"POST":{"upstream":"/companies","body":"json","success_status":201,"fallback":"Failed to create company"}}},
+  {"route":"/api/customers","methods":{"GET":{"upstream":"/customers","forward_search":true,"fallback":"Failed to load customers"},"POST":{"upstream":"/customers","body":"json","success_status":201,"fallback":"Failed to create customer"}}},
+  {"route":"/api/employees","methods":{"GET":{"upstream":"/employees","forward_search":true,"fallback":"Failed to load employees"},"POST":{"upstream":"/employees","body":"json","success_status":201,"fallback":"Failed to save employee"}}},
+  {"route":"/api/hr/departments","methods":{"GET":{"upstream":"/hr/departments","fallback":"Failed to load departments"},"POST":{"upstream":"/hr/departments","body":"json","success_status":201,"fallback":"Failed to create department"}}},
+  {"route":"/api/inventory/items","methods":{"GET":{"upstream":"/inventory/items","fallback":"Failed to load items"},"POST":{"upstream":"/inventory/items","body":"json","success_status":201,"fallback":"Failed to create item"}}},
+  {"route":"/api/accounts","methods":{"GET":{"upstream":"/accounts","fallback":"Failed to load chart of accounts"}}},
+  {"route":"/api/inventory/warehouses","methods":{"GET":{"upstream":"/inventory/warehouses","fallback":"Failed to load warehouses"},"POST":{"upstream":"/inventory/warehouses","body":"json","success_status":201,"fallback":"Failed to create warehouse"}}},
+  {"route":"/api/recruitment/candidates","methods":{"GET":{"upstream":"/recruitment/candidates","fallback":"Failed to load candidates"},"POST":{"upstream":"/recruitment/candidates","body":"json","success_status":201,"fallback":"Failed to add candidate"}}},
+  {"route":"/api/recruitment/job-openings","methods":{"GET":{"upstream":"/recruitment/job-openings","fallback":"Failed to load job openings"},"POST":{"upstream":"/recruitment/job-openings","body":"json","success_status":201,"fallback":"Failed to create job opening"}}},
+  {"route":"/api/access-review","methods":{"GET":{"upstream":"/access-review","forward_search":true,"fallback":"Failed to load access review data"},"POST":{"upstream":"/access-review","body":"json","success_status":201,"fallback":"Failed to open access review cycle"}}},
+  {"route":"/api/audit-engagements","methods":{"GET":{"upstream":"/audit-engagements","fallback":"Failed to load audit engagements"},"POST":{"upstream":"/audit-engagements","body":"json","success_status":201,"fallback":"Failed to create audit engagement"}}},
+  {"route":"/api/board","methods":{"GET":{"upstream":"/board?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load board"},"PATCH":{"upstream":"/board","body":"json","fallback":"Failed to update issue status"}}},
+  {"route":"/api/ffe","methods":{"GET":{"upstream":"/ffe?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load FF&E items"},"POST":{"upstream":"/ffe","body":"json","success_status":201,"fallback":"Failed to create FF&E item"}}},
+  {"route":"/api/leave/requests","methods":{"GET":{"upstream":"/leave/requests","forward_search":true,"fallback":"Failed to load leave requests"},"POST":{"upstream":"/leave/requests","body":"json","success_status":201,"fallback":"Failed to create leave request"}}},
+  {"route":"/api/payroll/runs","methods":{"GET":{"upstream":"/payroll/runs","fallback":"Failed to load payroll runs"},"POST":{"upstream":"/payroll/runs","body":"json","success_status":201,"fallback":"Failed to create payroll run"}}},
+  {"route":"/api/payroll/salary-components","methods":{"GET":{"upstream":"/payroll/salary-components","fallback":"Failed to load salary components"},"POST":{"upstream":"/payroll/salary-components","body":"json","success_status":201,"fallback":"Failed to create salary component"}}},
+  {"route":"/api/procurement/requisitions","methods":{"GET":{"upstream":"/procurement/requisitions","fallback":"Failed to load purchase requisitions"},"POST":{"upstream":"/procurement/requisitions","body":"json","success_status":201,"fallback":"Failed to create purchase requisition"}}},
+  {"route":"/api/procurement/rfqs","methods":{"GET":{"upstream":"/procurement/rfqs","fallback":"Failed to load RFQs"},"POST":{"upstream":"/procurement/rfqs","body":"json","success_status":201,"fallback":"Failed to create RFQ"}}},
+  {"route":"/api/projects/:id","methods":{"PATCH":{"upstream":"/projects/{id}","body":"json","fallback":"Failed to update project value"}}},
+  {"route":"/api/sales-invoices","methods":{"GET":{"upstream":"/sales-invoices","forward_search":true,"fallback":"Failed to load sales invoices"},"POST":{"upstream":"/sales-invoices","body":"json","success_status":201,"fallback":"Failed to create sales invoice"}}},
+  {"route":"/api/schedule/gantt","methods":{"GET":{"upstream":"/schedule/gantt?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load schedule from PROJEXA"}}},
+  {"route":"/api/change-orders/:id/signature-status","methods":{"GET":{"upstream":"/change-orders/{id}/signature-status","fallback":"Failed to load signature status"}}},
+  {"route":"/api/credit-notes","methods":{"GET":{"upstream":"/credit-notes","fallback":"Failed to load credit notes"},"POST":{"upstream":"/credit-notes","body":"json","success_status":201,"fallback":"Failed to create credit note"}}},
+  {"route":"/api/expenses","methods":{"GET":{"upstream":"/expenses?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load expenses"},"POST":{"upstream":"/expenses","body":"json","success_status":201,"fallback":"Failed to log expense"}}},
+  {"route":"/api/floor-plans/:id/rooms/:roomId","methods":{"PATCH":{"upstream":"/floor-plans/{id}/rooms/{roomId}","body":"json","fallback":"Failed to update room"},"DELETE":{"upstream":"/floor-plans/{id}/rooms/{roomId}","fallback":"Failed to remove room"}}},
+  {"route":"/api/fraud-cases","methods":{"GET":{"upstream":"/fraud-cases","fallback":"Failed to load fraud cases"},"POST":{"upstream":"/fraud-cases","body":"json","success_status":201,"fallback":"Failed to create fraud case"}}},
+  {"route":"/api/fraud-cases/:id","methods":{"GET":{"upstream":"/fraud-cases/{id}","fallback":"Failed to load fraud case"},"PATCH":{"upstream":"/fraud-cases/{id}","body":"json","fallback":"Failed to update fraud case"}}},
+  {"route":"/api/grc-dashboard","methods":{"GET":{"upstream":"/grc-dashboard","fallback":"Failed to load GRC dashboard"}}},
+  {"route":"/api/journal-entries","methods":{"GET":{"upstream":"/journal-entries","forward_search":true,"fallback":"Failed to load journal entries"},"POST":{"upstream":"/journal-entries","body":"json","success_status":201,"fallback":"Failed to create journal entry"}}},
+  {"route":"/api/kpis","methods":{"GET":{"upstream":"/kpis?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load KPI definitions"},"POST":{"upstream":"/kpis","body":"json","success_status":201,"fallback":"Failed to create KPI definition"}}},
+  {"route":"/api/leads","methods":{"GET":{"upstream":"/leads","forward_search":true,"fallback":"Failed to load leads"},"POST":{"upstream":"/leads","body":"json","success_status":201,"fallback":"Failed to create lead"}}},
+  {"route":"/api/leave/balances","methods":{"GET":{"upstream":"/leave/balances","fallback":"Failed to load leave balances"},"POST":{"upstream":"/leave/balances","body":"json","success_status":201,"fallback":"Failed to set leave balance"}}},
+  {"route":"/api/opportunities","methods":{"GET":{"upstream":"/opportunities","forward_search":true,"fallback":"Failed to load opportunities"},"POST":{"upstream":"/opportunities","body":"json","success_status":201,"fallback":"Failed to create opportunity"}}},
+  {"route":"/api/payroll/income-tax-slabs","methods":{"GET":{"upstream":"/payroll/income-tax-slabs","fallback":"Failed to load income tax slabs"},"POST":{"upstream":"/payroll/income-tax-slabs","body":"json","success_status":201,"fallback":"Failed to create income tax slab"}}},
+  {"route":"/api/payroll/salary-structures","methods":{"GET":{"upstream":"/payroll/salary-structures","fallback":"Failed to load salary structures"},"POST":{"upstream":"/payroll/salary-structures","body":"json","success_status":201,"fallback":"Failed to create salary structure"}}},
+  {"route":"/api/payroll/statutory-rules","methods":{"GET":{"upstream":"/payroll/statutory-rules","fallback":"Failed to load statutory rules"},"POST":{"upstream":"/payroll/statutory-rules","body":"json","success_status":201,"fallback":"Failed to create statutory rule"}}},
+  {"route":"/api/policies","methods":{"GET":{"upstream":"/policies","fallback":"Failed to load policies"},"POST":{"upstream":"/policies","body":"json","success_status":201,"fallback":"Failed to create policy"}}},
+  {"route":"/api/policies/:id","methods":{"GET":{"upstream":"/policies/{id}","fallback":"Failed to load policy"},"PATCH":{"upstream":"/policies/{id}","body":"json","fallback":"Failed to update policy"}}},
+  {"route":"/api/procurement/goods-receipts","methods":{"GET":{"upstream":"/procurement/goods-receipts","fallback":"Failed to load goods receipts"},"POST":{"upstream":"/procurement/goods-receipts","body":"json","success_status":201,"fallback":"Failed to create goods receipt"}}},
 ]
 
 /** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */

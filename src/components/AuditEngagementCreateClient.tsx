@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { viaPxApi } from "@/lib/px-api";
 const TYPES = ["internal", "certification", "statutory"];
 
 export default function AuditEngagementCreateClient() {
@@ -27,7 +28,7 @@ export default function AuditEngagementCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/audit-engagements", {
+      const res = await viaPxApi("/api/audit-engagements", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, auditType }),
       });
       const data = await res.json().catch(() => ({}));

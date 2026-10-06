@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Company } from "@/components/company-scope";
 
+import { viaPxApi } from "@/lib/px-api";
 export default function CompanyCreateClient() {
   const router = useRouter();
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -23,7 +24,7 @@ export default function CompanyCreateClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/companies").then((r) => r.json()).then((data) => setCompanies(data.companies ?? [])).catch(() => {});
+    viaPxApi("/api/companies").then((r) => r.json()).then((data) => setCompanies(data.companies ?? [])).catch(() => {});
   }, []);
 
   async function createCompany() {
@@ -33,7 +34,7 @@ export default function CompanyCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/companies", {
+      const res = await viaPxApi("/api/companies", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyName, abbr: abbr || undefined, country: country || undefined,

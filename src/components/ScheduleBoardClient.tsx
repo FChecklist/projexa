@@ -37,6 +37,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { viaPxApi } from "@/lib/px-api";
 type BoardIssue = {
   id: string; number: number; title: string; priority: string; statusId: string; completionPercentage: number;
 };
@@ -63,7 +64,7 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
     setStartedAt(Date.now());
     setError(null);
     try {
-      const res = await fetch(`/api/board?projectId=${encodeURIComponent(projectId)}`);
+      const res = await viaPxApi(`/api/board?projectId=${encodeURIComponent(projectId)}`);
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });
@@ -94,7 +95,7 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
       }));
     });
     try {
-      const res = await fetch("/api/board", {
+      const res = await viaPxApi("/api/board", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId, statusId }),
       });

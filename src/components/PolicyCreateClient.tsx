@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { viaPxApi } from "@/lib/px-api";
 const CATEGORIES = ["governance", "hr", "environment", "data_privacy", "third_party", "sop"];
 
 export default function PolicyCreateClient() {
@@ -25,7 +26,7 @@ export default function PolicyCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/policies", {
+      const res = await viaPxApi("/api/policies", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, category }),
       });
       const data = await res.json();

@@ -28,3 +28,15 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   production: 8 -> 1 (the usage beacon), guarded (`shell_vercel_routes_budget` 1). e2e `lf-lifecycle-vercel-budget` (fast rig, real Chromium):
   passes; the production view of a daily walk is beacon-only; falsified by putting the dashboard back on Vercel (both tests failed, restored).
   ROLLBACK: revert this PR, or set `PX_API_EDGE_ENABLED = false` in src/lib/px-api.ts (one line), or build with NEXT_PUBLIC_PX_API_BASE="".
+- BATCH 2 (2026-10-06, branch `audit100/a2-batch-2` in both repos): 40 more routes, the most-used PLAIN proxies of the online screens.
+  RANKED by the number of browser source files that call each route (fetchJson / use-submit / fetch call sites; the shell's own routes were
+  batch 1); `scripts/projexa-api-candidates.mjs` (new) derives each spec from the handler's own source and refuses anything that is not a plain
+  proxy (own requireRole, Promise.all, caches, uploads, other imports, body validation): 106 of the 275 remaining proxies qualify today.
+  Generator: 3 new keys (`forward_search`, `success_status` 201, `cache_control` private only) + a route-level `batch`. Parity contract:
+  750 cases (was 122, the 122 unchanged) recorded from the REAL Next pipeline, upstream path compared AS IT GOES ON THE WIRE on both sides.
+  Callers: 43 direct `fetch("/api/<batch route>")` call sites in 30 components + `shell-cache.ts` now go through `viaPxApi` (fetchJson /
+  use-submit already did), so on projexa-ai.com every browser call of the 40 routes goes to the edge. Inventory: 47 routes
+  `edge:projexa-api`; Vercel-served /api routes 304 -> 264, guarded (`vercel_served_routes_budget` 264, may only go down).
+  SEEN TO FAIL: Next side `/payroll/runs` ORG_ADMIN -> PM_OR_ABOVE in api-write-policy.ts (the recorder failed: pm 201 vs recorded 403);
+  edge side the same loosening in the edge copy (compliance-tracker parity "POST /api/payroll/runs as pm" failed + hash check); both reverted.
+  ORDER: compliance-tracker PR merged + `projexa-api` deployed + live smoke BEFORE this repo's PR (the client list) merges.

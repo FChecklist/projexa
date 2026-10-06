@@ -4,8 +4,10 @@
 //   PROJEXA_SERVICE_ROLE_KEY=... PROJEXA_ANON_KEY=... node scripts/verify/projexa-api-live-smoke.mjs
 //
 // TEST ORGANISATION ONLY: a session is minted (admin magic link + verify, no email is sent, no password is used) only for an address of the
-// E2E test org (*.e2e-test.projexa-ai.com, e2e/users.ts). Nothing writes data: the writes probed are a role refusal (client_viewer) and an
-// unknown id (the backend answers 404 before writing). Nothing prints a key, a token or an email. Exit 0 = every probe identical.
+// E2E test org (*.e2e-test.projexa-ai.com, e2e/users.ts). Nothing writes data: the writes probed are role refusals (the gate answers 403
+// before any handler runs) and an unknown id (the backend answers 404 before writing). Batch 2 (AUDIT-100 A2) adds every GET of the batch as
+// the owner and as client_viewer, and checks the deployed policy hash equals this checkout's. Nothing prints a key, a token or an email.
+// Exit 0 = every probe identical.
 
 const PROJEXA = process.env.PROJEXA_SUPABASE_URL ?? "https://evpckeuxgvahguwsaeul.supabase.co";
 const EDGE = process.env.PX_API_EDGE_URL ?? "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-api";
@@ -103,6 +105,13 @@ if (!projectId) throw new Error("the test organisation has no project");
 
 const policy = await (await fetch(`${EDGE}/_policy`)).json();
 console.log(`edge policy ${policy.source_sha256} routes=${policy.routes?.length}`);
+// the deployed table must be THIS checkout's generated one (same hash, same routes)
+{
+  const { readFileSync } = await import("node:fs");
+  const local = readFileSync(new URL("../../ai-os/audit37/projexa-api/policy.generated.ts", import.meta.url), "utf8").match(/SOURCE_SHA256 = "([0-9a-f]{64})"/)?.[1];
+  const routes = JSON.parse(readFileSync(new URL("../../ai-os/audit37/projexa-api-routes.json", import.meta.url), "utf8")).routes;
+  results.push({ label: "deployed policy = this checkout's", who: "-", method: "GET", path: "/_policy", edge: policy.routes?.length, vercel: routes.length, same: policy.source_sha256 === local && policy.routes?.length === routes.length });
+}
 
 for (const who of ["owner", "pm", "client_viewer"]) {
   const s = sessions[who];
@@ -118,6 +127,24 @@ await probe("BOQ line edit, unknown line", "pm", sessions.pm, "PATCH", `/api/sco
 await probe("permit edit refused by role", "client_viewer", sessions.client_viewer, "PATCH", `/api/permits/${UNKNOWN}`, { status: "approved" });
 await probe("missing projectId", "pm", sessions.pm, "GET", `/api/exceptions`);
 await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exceptions?projectId=${projectId}`);
+
+// AUDIT-100 A2 batch 2: every GET of the batch (read-only), as the owner and as client_viewer; an :id route with an unknown id
+{
+  const { readFileSync } = await import("node:fs");
+  const batch2 = JSON.parse(readFileSync(new URL("../../ai-os/audit37/projexa-api-routes.json", import.meta.url), "utf8")).routes.filter((r) => r.batch === 2);
+  for (const r of batch2) {
+    const get = r.methods.GET;
+    if (!get) continue;
+    let path = r.route.replace(/:\w+/g, UNKNOWN);
+    if (get.required_query) path += `?projectId=${projectId}`;
+    else if (get.forward_search) path += "?limit=5";
+    for (const who of ["owner", "client_viewer"]) await probe(`batch 2 read ${r.route}`, who, sessions[who], "GET", path);
+  }
+  // writes the role gate refuses before any handler runs (nothing is written): client_viewer creating a vendor, pm starting a payroll run
+  await probe("batch 2: create vendor refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/vendors", { vendorName: "a2 smoke (never written)" });
+  await probe("batch 2: payroll run refused by role", "pm", sessions.pm, "POST", "/api/payroll/runs", { period: "2099-01" });
+  await probe("batch 2: policy edit refused by role", "client_viewer", sessions.client_viewer, "PATCH", `/api/policies/${UNKNOWN}`, { title: "x" });
+}
 
 // deny by default: a real Vercel route the edge does not answer
 const notListed = await call(EDGE, "/api/shell", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });

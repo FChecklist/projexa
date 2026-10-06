@@ -36,7 +36,8 @@ export type Upstream =
 
 export type ParityCase = { name: string; method: string; path: string; body?: unknown; who: Who; upstream: Upstream };
 export type UpstreamCall = { method: string; path: string; authorization: string | null; acting_user: string | null; acting_email: string | null; content_type: string | null; body: unknown };
-export type Outcome = { status: number; body: unknown; retry_after: string | null; upstream_calls: UpstreamCall[] };
+/** cache_control: present only when the answer sets a Cache-Control other than "no-store" (both sides normalise the same way). */
+export type Outcome = { status: number; body: unknown; retry_after: string | null; upstream_calls: UpstreamCall[]; cache_control?: string };
 
 const OK: Upstream = { kind: "json", status: 200, body: { ok: true, figures: { contractValue: "1000.00", percentByValue: 42 }, rows: [{ id: "r1" }] } };
 
@@ -52,6 +53,83 @@ export const REQUESTS: { route: string; method: string; path: string; body?: unk
   { route: "/api/permits/:id", method: "GET", path: "/api/permits/pm-1" },
   { route: "/api/permits/:id", method: "PATCH", path: "/api/permits/pm-1", body: { status: "approved" } },
   { route: "/api/permits/:id", method: "DELETE", path: "/api/permits/pm-1" },
+  // AUDIT-100 A2 batch 2: the 40 most-used plain proxies of the online screens (scripts/projexa-api-candidates.mjs derived each spec from the
+  // handler's source; these requests record what the REAL handler answers). A list read forwards its whole query string, a create answers 201.
+  { route: "/api/vendors", method: "GET", path: "/api/vendors" },
+  { route: "/api/vendors", method: "POST", path: "/api/vendors", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/companies", method: "GET", path: "/api/companies" },
+  { route: "/api/companies", method: "POST", path: "/api/companies", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/customers", method: "GET", path: "/api/customers?status=open&q=a%20b" },
+  { route: "/api/customers", method: "POST", path: "/api/customers", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/employees", method: "GET", path: "/api/employees?status=open&q=a%20b" },
+  { route: "/api/employees", method: "POST", path: "/api/employees", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/hr/departments", method: "GET", path: "/api/hr/departments" },
+  { route: "/api/hr/departments", method: "POST", path: "/api/hr/departments", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/inventory/items", method: "GET", path: "/api/inventory/items" },
+  { route: "/api/inventory/items", method: "POST", path: "/api/inventory/items", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/accounts", method: "GET", path: "/api/accounts" },
+  { route: "/api/inventory/warehouses", method: "GET", path: "/api/inventory/warehouses" },
+  { route: "/api/inventory/warehouses", method: "POST", path: "/api/inventory/warehouses", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/recruitment/candidates", method: "GET", path: "/api/recruitment/candidates" },
+  { route: "/api/recruitment/candidates", method: "POST", path: "/api/recruitment/candidates", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/recruitment/job-openings", method: "GET", path: "/api/recruitment/job-openings" },
+  { route: "/api/recruitment/job-openings", method: "POST", path: "/api/recruitment/job-openings", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/access-review", method: "GET", path: "/api/access-review?status=open&q=a%20b" },
+  { route: "/api/access-review", method: "POST", path: "/api/access-review", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/audit-engagements", method: "GET", path: "/api/audit-engagements" },
+  { route: "/api/audit-engagements", method: "POST", path: "/api/audit-engagements", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/board", method: "GET", path: "/api/board?projectId=p%201&ignored=1" },
+  { route: "/api/board", method: "PATCH", path: "/api/board", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/ffe", method: "GET", path: "/api/ffe?projectId=p%201&ignored=1" },
+  { route: "/api/ffe", method: "POST", path: "/api/ffe", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/leave/requests", method: "GET", path: "/api/leave/requests?status=open&q=a%20b" },
+  { route: "/api/leave/requests", method: "POST", path: "/api/leave/requests", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/payroll/runs", method: "GET", path: "/api/payroll/runs" },
+  { route: "/api/payroll/runs", method: "POST", path: "/api/payroll/runs", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/payroll/salary-components", method: "GET", path: "/api/payroll/salary-components" },
+  { route: "/api/payroll/salary-components", method: "POST", path: "/api/payroll/salary-components", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/procurement/requisitions", method: "GET", path: "/api/procurement/requisitions" },
+  { route: "/api/procurement/requisitions", method: "POST", path: "/api/procurement/requisitions", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/procurement/rfqs", method: "GET", path: "/api/procurement/rfqs" },
+  { route: "/api/procurement/rfqs", method: "POST", path: "/api/procurement/rfqs", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/projects/:id", method: "PATCH", path: "/api/projects/x-1", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/sales-invoices", method: "GET", path: "/api/sales-invoices?status=open&q=a%20b" },
+  { route: "/api/sales-invoices", method: "POST", path: "/api/sales-invoices", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/schedule/gantt", method: "GET", path: "/api/schedule/gantt?projectId=p%201&ignored=1" },
+  { route: "/api/change-orders/:id/signature-status", method: "GET", path: "/api/change-orders/x-1/signature-status" },
+  { route: "/api/credit-notes", method: "GET", path: "/api/credit-notes" },
+  { route: "/api/credit-notes", method: "POST", path: "/api/credit-notes", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/expenses", method: "GET", path: "/api/expenses?projectId=p%201&ignored=1" },
+  { route: "/api/expenses", method: "POST", path: "/api/expenses", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/floor-plans/:id/rooms/:roomId", method: "PATCH", path: "/api/floor-plans/x-1/rooms/rm-1", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/floor-plans/:id/rooms/:roomId", method: "DELETE", path: "/api/floor-plans/x-1/rooms/rm-1" },
+  { route: "/api/fraud-cases", method: "GET", path: "/api/fraud-cases" },
+  { route: "/api/fraud-cases", method: "POST", path: "/api/fraud-cases", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/fraud-cases/:id", method: "GET", path: "/api/fraud-cases/x-1" },
+  { route: "/api/fraud-cases/:id", method: "PATCH", path: "/api/fraud-cases/x-1", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/grc-dashboard", method: "GET", path: "/api/grc-dashboard" },
+  { route: "/api/journal-entries", method: "GET", path: "/api/journal-entries?status=open&q=a%20b" },
+  { route: "/api/journal-entries", method: "POST", path: "/api/journal-entries", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/kpis", method: "GET", path: "/api/kpis?projectId=p%201&ignored=1" },
+  { route: "/api/kpis", method: "POST", path: "/api/kpis", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/leads", method: "GET", path: "/api/leads?status=open&q=a%20b" },
+  { route: "/api/leads", method: "POST", path: "/api/leads", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/leave/balances", method: "GET", path: "/api/leave/balances" },
+  { route: "/api/leave/balances", method: "POST", path: "/api/leave/balances", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/opportunities", method: "GET", path: "/api/opportunities?status=open&q=a%20b" },
+  { route: "/api/opportunities", method: "POST", path: "/api/opportunities", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/payroll/income-tax-slabs", method: "GET", path: "/api/payroll/income-tax-slabs" },
+  { route: "/api/payroll/income-tax-slabs", method: "POST", path: "/api/payroll/income-tax-slabs", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/payroll/salary-structures", method: "GET", path: "/api/payroll/salary-structures" },
+  { route: "/api/payroll/salary-structures", method: "POST", path: "/api/payroll/salary-structures", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/payroll/statutory-rules", method: "GET", path: "/api/payroll/statutory-rules" },
+  { route: "/api/payroll/statutory-rules", method: "POST", path: "/api/payroll/statutory-rules", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/policies", method: "GET", path: "/api/policies" },
+  { route: "/api/policies", method: "POST", path: "/api/policies", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/policies/:id", method: "GET", path: "/api/policies/x-1" },
+  { route: "/api/policies/:id", method: "PATCH", path: "/api/policies/x-1", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
+  { route: "/api/procurement/goods-receipts", method: "GET", path: "/api/procurement/goods-receipts" },
+  { route: "/api/procurement/goods-receipts", method: "POST", path: "/api/procurement/goods-receipts", body: {"name": "Batch two", "amount": "12.50", "actorEmail": "someone@else.test"} },
 ];
 
 export function buildCases(): ParityCase[] {
@@ -75,6 +153,22 @@ export function buildCases(): ParityCase[] {
     cases.push({ name: `${tag}: upstream 200 not JSON`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "text", status: 200, status_text: "OK", text: "not json" } });
     cases.push({ name: `${tag}: connection refused`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "refused" } });
   }
+  // AUDIT-100 A2 batch 2: the new answer shapes under the upstream's failures too: a create (201 on success), a read that forwards its whole
+  // query string, a read with a private browser cache, and a two-parameter route
+  const batch2 = (route: string, method: string) => REQUESTS.find((r) => r.route === route && r.method === method)!;
+  for (const r of [batch2("/api/vendors", "POST"), batch2("/api/customers", "GET"), batch2("/api/vendors", "GET"), batch2("/api/floor-plans/:id/rooms/:roomId", "PATCH")]) {
+    const tag = `${r.method} ${r.route}`;
+    cases.push({ name: `${tag}: another organisation's record`, method: r.method, path: r.path, body: r.body, who: "wrong_org", upstream: { kind: "json", status: 404, body: { error: "Not found" } } });
+    cases.push({ name: `${tag}: upstream 409 with message`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "json", status: 409, body: { error: "Changed by someone else" } } });
+    cases.push({ name: `${tag}: upstream 500`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "json", status: 500, body: { error: "boom" } } });
+    cases.push({ name: `${tag}: upstream 502 not JSON`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "text", status: 502, status_text: "Bad Gateway", text: "<html>bad gateway</html>" } });
+    cases.push({ name: `${tag}: connection refused`, method: r.method, path: r.path, body: r.body, who: "owner", upstream: { kind: "refused" } });
+    cases.push({ name: `${tag}: organisation has no VERIDIAN key`, method: r.method, path: r.path, body: r.body, who: "no_key", upstream: OK });
+  }
+  cases.push({ name: "GET /api/customers without a query string", method: "GET", path: "/api/customers", who: "pm", upstream: OK });
+  cases.push({ name: "GET /api/customers with an empty query string", method: "GET", path: "/api/customers?", who: "pm", upstream: OK });
+  cases.push({ name: "GET /api/board without projectId", method: "GET", path: "/api/board", who: "pm", upstream: OK });
+  cases.push({ name: "GET /api/policies/:id with an encoded id", method: "GET", path: "/api/policies/a%20b", who: "pm", upstream: OK });
   // the missing-query refusal of the exceptions route
   cases.push({ name: "GET /api/exceptions without projectId", method: "GET", path: "/api/exceptions", who: "pm", upstream: OK });
   cases.push({ name: "GET /api/reports/boq-analysis without query", method: "GET", path: "/api/reports/boq-analysis", who: "pm", upstream: OK });

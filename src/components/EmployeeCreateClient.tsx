@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { fetchJson } from "@/lib/fetch-json";
 import { type Company } from "@/components/company-scope";
 
+import { viaPxApi } from "@/lib/px-api";
 type Employee = { id: string; name: string; email: string };
 
 export default function EmployeeCreateClient() {
@@ -46,7 +47,7 @@ export default function EmployeeCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/employees", {
+      const res = await viaPxApi("/api/employees", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId, employeeCode: employeeCode || undefined, jobTitle: jobTitle || undefined,

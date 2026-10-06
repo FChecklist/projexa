@@ -14,6 +14,7 @@ import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 // Real-screen conversion (2026-08-30): "New Opportunity" routes to a real
 // create screen (OpportunityCreateClient.tsx). Rows route to a real Object
 // Page (OpportunityObjectClient.tsx, which gained a real detail view this
@@ -65,7 +66,7 @@ export default function OpportunitiesClient() {
   }, [page, search, stageFilter]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
+  useEffect(() => { viaPxApi("/api/customers").then((r) => r.json()).then((d) => setCustomers(d.customers ?? [])).catch(() => {}); }, []);
 
   async function updateStage(opp: Opportunity, stage: string) {
     try {

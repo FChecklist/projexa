@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 type WarehouseRow = { id: string; warehouseName: string };
 
 export default function WarehouseCreateClient() {
@@ -33,7 +34,7 @@ export default function WarehouseCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/inventory/warehouses", {
+      const res = await viaPxApi("/api/inventory/warehouses", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ warehouseName, parentWarehouseId: parentWarehouseId === "__none__" ? undefined : parentWarehouseId }),
       });

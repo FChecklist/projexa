@@ -17,6 +17,7 @@ import { formatDate, formatDateTime } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
 
+import { viaPxApi } from "@/lib/px-api";
 // R43 F_031: which of the six data sources a given tab renders, so a tab
 // whose own source failed can say so instead of falling into its
 // `array.length === 0` empty-state copy. Keyed the same as the `key` values
@@ -112,7 +113,7 @@ export default function PayrollClient({ initialTab }: { initialTab?: string }) {
     // instead of only the first rejection's reason, which is all Promise.all
     // ever surfaces, and (b) a successful sibling still lands via its own
     // setter instead of being discarded because the other one failed.
-    const [runsRes, empRes] = await Promise.allSettled([fetch("/api/payroll/runs"), fetch("/api/employees")]);
+    const [runsRes, empRes] = await Promise.allSettled([viaPxApi("/api/payroll/runs"), viaPxApi("/api/employees")]);
     const primary: [PromiseSettledResult<Response>, PayrollLoadKey, string, (v: never[]) => void][] = [
       [runsRes, "runs", "Payroll runs", setRuns as (v: never[]) => void],
       [empRes, "employees", "Employees", setEmployees as (v: never[]) => void],
@@ -138,10 +139,10 @@ export default function PayrollClient({ initialTab }: { initialTab?: string }) {
     // Pass 2 -- the lookups behind the other tabs. allSettled so one 504 does
     // not discard the others, which is exactly what the old Promise.all did.
     const [compRes, structRes, rulesRes, slabsRes] = await Promise.allSettled([
-      fetch("/api/payroll/salary-components"),
-      fetch("/api/payroll/salary-structures"),
-      fetch("/api/payroll/statutory-rules"),
-      fetch("/api/payroll/income-tax-slabs"),
+      viaPxApi("/api/payroll/salary-components"),
+      viaPxApi("/api/payroll/salary-structures"),
+      viaPxApi("/api/payroll/statutory-rules"),
+      viaPxApi("/api/payroll/income-tax-slabs"),
     ]);
 
     const secondary: [PromiseSettledResult<Response>, PayrollLoadKey, string, (v: never[]) => void][] = [

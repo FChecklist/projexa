@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 
+import { viaPxApi } from "@/lib/px-api";
 type FraudCase = {
   id: string; caseNumber: number; title: string; status: string; fraudType: string;
   description: string | null; financialExposure: string | null; reportedDate: string;
@@ -40,7 +41,7 @@ export default function FraudCaseObjectClient({ caseId }: { caseId: string }) {
 
   async function load() {
     try {
-      const res = await fetch(`/api/fraud-cases/${caseId}`);
+      const res = await viaPxApi(`/api/fraud-cases/${caseId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load this case");
       setFraudCase(data);
@@ -56,7 +57,7 @@ export default function FraudCaseObjectClient({ caseId }: { caseId: string }) {
   async function transition(status: string) {
     setTransitioning(status);
     try {
-      const res = await fetch(`/api/fraud-cases/${caseId}`, {
+      const res = await viaPxApi(`/api/fraud-cases/${caseId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, resolutionSummary: status === "resolved" ? (resolutionSummary || undefined) : undefined }),
       });

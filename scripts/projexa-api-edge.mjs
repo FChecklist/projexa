@@ -30,7 +30,9 @@ export const CT_RELATIVE = join("supabase", "functions", "projexa-api", "policy.
 export const GOLDEN_PATH = join(ROOT, "ai-os", "audit37", "projexa-api", "parity.golden.json");
 export const CT_GOLDEN_RELATIVE = join("supabase", "functions", "projexa-api", "parity.golden.json");
 
-const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style"]);
+const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style", "forward_search", "success_status", "cache_control"]);
+/** Route-level keys of projexa-api-routes.json the function does not read (they steer the browser switch and the inventory, not the edge). */
+const ROUTE_KEYS = new Set(["route", "methods", "batch"]);
 
 /** Problems with the route list: [] when every route is a real proxy route of the inventory with a complete upstream description. */
 export function validateRoutes(spec, inventory) {
@@ -52,7 +54,12 @@ export function validateRoutes(spec, inventory) {
       if (typeof m.upstream !== "string" || !m.upstream.startsWith("/")) problems.push(`${entry.route} ${method}: no upstream path`);
       if (typeof m.fallback !== "string" || m.fallback.length < 5) problems.push(`${entry.route} ${method}: no fallback message`);
       for (const p of (m.upstream ?? "").matchAll(/\{(?!query:)(\w+)\}/g)) if (!entry.route.includes(`:${p[1]}`)) problems.push(`${entry.route} ${method}: upstream names {${p[1]}} which is not a path parameter`);
+      if (m.success_status !== undefined && ![200, 201].includes(m.success_status)) problems.push(`${entry.route} ${method}: success_status must be 200 or 201`);
+      if (m.cache_control !== undefined && !/^private, max-age=\d+$/.test(m.cache_control)) problems.push(`${entry.route} ${method}: cache_control must be "private, max-age=<n>" (never a shared cache: the rows are the org's own)`);
+      if (m.forward_search && m.search_params) problems.push(`${entry.route} ${method}: forward_search and search_params are exclusive`);
     }
+    for (const k of Object.keys(entry)) if (!ROUTE_KEYS.has(k)) problems.push(`${entry.route}: unknown route key ${k}`);
+    if (entry.batch !== undefined && !(Number.isInteger(entry.batch) && entry.batch >= 1)) problems.push(`${entry.route}: batch must be a positive integer`);
     if (!Object.keys(entry.methods ?? {}).length) problems.push(`${entry.route}: no methods`);
   }
   return problems;
@@ -101,6 +108,7 @@ export function render(data = sourceData()) {
   lines.push("export type EdgeMethodSpec = {");
   lines.push("  upstream: string; acting_user?: \"explicit\" | \"session\"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;");
   lines.push("  search_params?: string[]; body?: \"json\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
+  lines.push("  forward_search?: boolean; success_status?: 200 | 201; cache_control?: string");
   lines.push("}");
   lines.push("/** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */");
   lines.push("export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [");

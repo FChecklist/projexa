@@ -9,6 +9,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { viaPxApi } from "@/lib/px-api";
 export default function AccessReviewCreateClient() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -21,7 +22,7 @@ export default function AccessReviewCreateClient() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/access-review", {
+      const res = await viaPxApi("/api/access-review", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
       });
       const data = await res.json();

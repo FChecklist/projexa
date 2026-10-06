@@ -17,6 +17,7 @@ import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 
+import { viaPxApi } from "@/lib/px-api";
 // Priority 17 Wave 1 (multi-currency Selling & Buying): the first Purchase
 // Order creation UI in PROJEXA -- VendorsClient.tsx only ever managed
 // vendor master data, confirmed by a full-repo search that no PO creation
@@ -67,7 +68,7 @@ export default function PurchaseOrdersClient() {
   }, [scope.companyId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {}); }, []);
+  useEffect(() => { viaPxApi("/api/vendors").then((r) => r.json()).then((d) => setVendors(d.vendors ?? [])).catch(() => {}); }, []);
   useEffect(() => {
     (async () => {
       try {

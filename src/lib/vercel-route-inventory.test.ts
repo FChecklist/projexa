@@ -14,6 +14,7 @@ type Inventory = {
   daily_use_api_allowlist: string[];
   daily_use_api_allowlist_production: string[];
   shell_vercel_routes_budget: number;
+  vercel_served_routes_budget: number;
   routes: { route: string; why: string; plan: string; shell_reachable: boolean; methods: string[]; served_by?: string }[];
 };
 const inventory = (): Inventory => JSON.parse(readFileSync(INVENTORY_PATH as string, "utf8"));
@@ -98,6 +99,25 @@ describe("Vercel route inventory (A2/A3)", () => {
     const expected = inv.daily_use_api_allowlist.filter((e) => !edge.some((r) => routeMatches(e.split(" ")[1]!, r)));
     expect(inv.daily_use_api_allowlist_production).toEqual(expected);
     expect(inv.daily_use_api_allowlist_production).toEqual(["POST /api/local-first/client-error"]);
+  });
+
+  test("A2 batch 2: 47 routes are answered by the edge function on the production origins; Vercel answers at most 264 of 311 (measured 304 -> 264)", () => {
+    const inv = inventory();
+    const edge = inv.routes.filter((r) => r.served_by === "edge:projexa-api");
+    const onVercel = inv.routes.filter((r) => r.served_by !== "edge:projexa-api");
+    expect(edge.length).toBe(47);
+    expect(onVercel.length).toBe(inv.vercel_served_routes_budget);
+    expect(inv.vercel_served_routes_budget).toBeLessThanOrEqual(264);
+    // only VERIDIAN proxies move; the own-logic and Supabase routes stay on Vercel, each with its reason
+    expect(edge.every((r) => (r as { backend?: string }).backend === "veridian-proxy")).toBe(true);
+  });
+
+  test("CAN FAIL: a batch-2 route put back on Vercel exceeds the Vercel-served budget", () => {
+    const inv = copy();
+    inv.routes.find((r) => r.route === "/api/vendors")!.served_by = "vercel";
+    const problems = check(inv) as string[];
+    expect(problems.some((p) => p.includes("265 /api routes are answered by Vercel") && p.includes("budget is 264"))).toBe(true);
+    expect(problems.some((p) => p.includes("/api/vendors is answered by the edge function"))).toBe(true);
   });
 
   test("CAN FAIL: a shell route put back on Vercel breaks the budget; a served_by that disagrees with the edge's list is reported", () => {

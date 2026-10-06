@@ -72,6 +72,7 @@ import { ExportShareActions } from "@/components/ExportShareActions";
 // number the server did not send.
 import { readCachedReport, reportCacheKey, writeCachedReport } from "@/lib/report-result-cache";
 
+import { viaPxApi } from "@/lib/px-api";
 /**
  * R67 E-13 (R-131): a Project Status with no BOQ budget lines is a real state
  * with a real next step, not a blank table.
@@ -308,7 +309,7 @@ function ProjectReportsPanel({
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("categories"))))
       .then((d) => { if (!cancelled) setCategories(Array.isArray(d.categories) ? d.categories : []); })
       .catch(() => { if (!cancelled) setCategories([]); });
-    fetch("/api/vendors")
+    viaPxApi("/api/vendors")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("vendors"))))
       .then((d) => { if (!cancelled) setVendors(Array.isArray(d.vendors) ? d.vendors : []); })
       .catch(() => { if (!cancelled) setVendors([]); });

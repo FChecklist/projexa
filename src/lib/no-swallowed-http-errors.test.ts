@@ -54,7 +54,7 @@ function unguardedSites(source: string): string[] {
   const lines = source.split("\n");
   const found: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*await\s+fetch\((.+)\);\s*$/.exec(lines[i]);
+    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*await\s+(?:fetch|viaPxApi)\((.+)\);\s*$/.exec(lines[i]);
     if (!m) continue;
     const [, varName, args] = m;
     if (args.trimEnd().endsWith("}") || args.includes(", {")) continue; // a write call
@@ -109,7 +109,7 @@ function unguardedBatchFiles(source: string): boolean {
     }
     const end = Math.min(lines.length, arrayEnd + 8);
     const block = lines.slice(i, end).join("\n");
-    if (/\bfetch\(/.test(block) && /await\s+\w+\.json\(\)/.test(block) && !/\.ok\b/.test(block)) {
+    if (/\b(?:fetch|viaPxApi)\(/.test(block) && /await\s+\w+\.json\(\)/.test(block) && !/\.ok\b/.test(block)) {
       return true;
     }
   }
@@ -158,7 +158,7 @@ function unguardedChainSites(source: string): string[] {
   const found: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (!/\bfetch\(/.test(line)) continue;
+    if (!/\b(?:fetch|viaPxApi)\(/.test(line)) continue;
     if (/^\s*(\/\/|\*)/.test(line)) continue; // a comment describing the defect, not the defect
     if (line.includes(", {") || /,\s*$/.test(line)) continue; // a write, or a multi-line call with options
 
@@ -214,7 +214,7 @@ function discardedStatusSites(source: string): string[] {
   const lines = source.split("\n");
   const found: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*await\s+fetch\((.+)\);\s*$/.exec(lines[i]);
+    const m = /^\s*(?:const|let)\s+(\w+)\s*=\s*await\s+(?:fetch|viaPxApi)\((.+)\);\s*$/.exec(lines[i]);
     if (!m) continue;
     const [, varName, args] = m;
     if (args.trimEnd().endsWith("}") || args.includes(", {")) continue; // a write call
@@ -395,6 +395,8 @@ describe("R48_HTTP_ERROR_SWALLOWED_AS_EMPTY_LIST_01", () => {
           .then((data) => setPermits(data.permits ?? []));
       }`;
     expect(unguardedChainSites(bad)).toHaveLength(1);
+    // AUDIT-100 A2: viaPxApi (src/lib/px-api.ts, fetch's own signature) is a fetch too -- switching a call to it must not hide the defect
+    expect(unguardedChainSites(bad.replace("fetch(", "viaPxApi("))).toHaveLength(1);
 
     const good = `"use client";
       function load() {

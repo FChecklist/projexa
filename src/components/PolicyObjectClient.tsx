@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+import { viaPxApi } from "@/lib/px-api";
 type HistoryEntry = { version: string; date: string; editedBy: string; note: string };
 type Policy = {
   id: string; title: string; category: string; version: string; status: string;
@@ -35,7 +36,7 @@ export default function PolicyObjectClient({ policyId }: { policyId: string }) {
 
   async function load() {
     try {
-      const res = await fetch(`/api/policies/${policyId}`);
+      const res = await viaPxApi(`/api/policies/${policyId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load this policy");
       setPolicy(data);
@@ -51,7 +52,7 @@ export default function PolicyObjectClient({ policyId }: { policyId: string }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch(`/api/policies/${policyId}`, {
+      const res = await viaPxApi(`/api/policies/${policyId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "edit", note: note || undefined }),
       });
@@ -70,7 +71,7 @@ export default function PolicyObjectClient({ policyId }: { policyId: string }) {
   async function requestPublish() {
     setPublishing(true);
     try {
-      const res = await fetch(`/api/policies/${policyId}`, {
+      const res = await viaPxApi(`/api/policies/${policyId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "request_publish" }),
       });
       const data = await res.json();

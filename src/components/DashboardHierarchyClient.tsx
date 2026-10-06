@@ -15,6 +15,7 @@ import { CategoryDistributionCharts } from "@/components/CategoryDistributionCha
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 import { mayShowEmptyState, type PaneStatus } from "@/lib/pane-state";
 
+import { viaPxApi } from "@/lib/px-api";
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
 /** R67 E-37: why the companies list came back empty, from resolveHierarchyCompanies. */
@@ -248,7 +249,7 @@ export function DashboardHierarchyClient() {
     if (raw === null) return;
     const projectValue = raw.trim() === "" ? null : Number(raw);
     if (projectValue !== null && !Number.isFinite(projectValue)) return;
-    await fetch(`/api/projects/${projectId}`, {
+    await viaPxApi(`/api/projects/${projectId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectValue }),
     });
