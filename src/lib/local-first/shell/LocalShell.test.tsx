@@ -206,7 +206,7 @@ describe("an edit made offline is kept, then sent when the laptop is back online
 
     setOnline(true);
     await waitFor(() => expect(fetchCalls.filter((c) => c.method === "PATCH")).toHaveLength(1), { timeout: 4000 });
-    expect(fetchCalls.find((c) => c.method === "PATCH")).toEqual({ url: "/api/scope/line-items/2", method: "PATCH", body: { category: "Steel" } });
+    expect(fetchCalls.find((c) => c.method === "PATCH")).toEqual({ url: "/api/scope/line-items/2", method: "PATCH", body: { category: "Steel", expectedCategory: null } }); // G-14: carries what the person saw (line 2 had no category)
     await waitFor(() => expect(queryByTestId("boq-line-waiting") === null).toBe(true), { timeout: 4000 });
     const after = await openLocalDb(idb, localDbNameFor("u1"));
     expect(await after.getMeta(EDITS_META_KEY)).toEqual([]);

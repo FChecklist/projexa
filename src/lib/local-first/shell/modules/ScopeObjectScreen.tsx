@@ -34,9 +34,13 @@ type RowLine = {
 
 // AUDIT-100 B15: one memoised row. A keystroke in one Category box used to re-render EVERY row (5,000 lines: a 0.5-0.9 s freeze per key,
 // measured in real Chromium, e2e/lf-lifecycle-large-project.spec.ts). Now only the row whose draft, saving or waiting state changed renders.
-const LineRow = memo(function LineRow({ line, index, draft, waiting, saving, onDraft, onSave }: {
-  line: RowLine; index: number; draft: string | undefined; waiting: boolean; saving: boolean;
+type Conflict = { editId: string; lineId: string; mine: string | null; theirs: string | null };
+const shown = (v: string | null) => (v === null || v === "" ? "(empty)" : `“${v}”`);
+
+const LineRow = memo(function LineRow({ line, index, draft, waiting, conflict, saving, onDraft, onSave, onResolve }: {
+  line: RowLine; index: number; draft: string | undefined; waiting: boolean; conflict?: Conflict; saving: boolean;
   onDraft: (lineId: string, value: string) => void; onSave: (lineId: string, raw: string) => void;
+  onResolve: (editId: string, lineId: string, choice: "mine" | "theirs") => void;
 }) {
   const changed = draft !== undefined && draft.trim() !== (line.category ?? "");
   return (
@@ -74,6 +78,13 @@ const LineRow = memo(function LineRow({ line, index, draft, waiting, saving, onD
           {waiting ? (
             <span className="text-xs text-px-muted" data-testid="boq-line-waiting">Waiting to sync</span>
           ) : null}
+          {conflict ? (
+            <span className="text-xs text-px-ink" role="alert" data-testid="boq-line-conflict">
+              Someone else changed this to {shown(conflict.theirs)} while you changed it to {shown(conflict.mine)}. Which do you want to keep?{" "}
+              <Button type="button" size="sm" variant="outline" data-testid="boq-conflict-mine" onClick={() => onResolve(conflict.editId, line.id, "mine")}>Keep mine</Button>{" "}
+              <Button type="button" size="sm" variant="outline" data-testid="boq-conflict-theirs" onClick={() => onResolve(conflict.editId, line.id, "theirs")}>Keep theirs</Button>
+            </span>
+          ) : null}
         </div>
       </TableCell>
     </TableRow>
@@ -100,7 +111,9 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     const boq = d.boq;
     setSaving(lineId);
     try {
-      await sh.writer.enqueue({ lineId, boqId: boq.id, projectId: boq.projectId, patch: { category: raw.trim() === "" ? null : raw.trim() } });
+      // base = what the person SAW in this box before changing it (G-14); the writer keeps the first base of a line with edits already waiting
+      const seen = d.lines.find((l) => l.id === lineId)?.category ?? null;
+      await sh.writer.enqueue({ lineId, boqId: boq.id, projectId: boq.projectId, patch: { category: raw.trim() === "" ? null : raw.trim() }, base: { category: seen } });
       setDrafts((cur) => {
         const next = { ...cur };
         delete next[lineId];
@@ -115,6 +128,18 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     }
   }, []);
 
+  const onResolve = useCallback(async (editId: string, lineId: string, choice: "mine" | "theirs") => {
+    const { shell: sh, data: d } = latest.current;
+    await sh.writer.resolveConflict(editId, choice);
+    if (choice === "theirs" && d.state === "local") {
+      // their value is on the server: bring this project's lines up to date now so the box shows it (the writer already dropped the edit)
+      void import("../../replica-shared").then((m) => m.revalidateViaSharedReplica({ kind: "boq_lines", projectId: d.boq.projectId, userId: sh.data.userId })).catch(() => {});
+    }
+    setNote(choice === "mine" ? "Kept yours. It is being sent again." : "Kept theirs.");
+    sh.refresh();
+    if (choice === "mine") void sh.writer.flush();
+  }, []);
+
   // AUDIT-100 B15: a long BOQ draws only the lines on screen (plus a margin), not all of them: drawing 5,000 real rows took 5-9 s
   // (e2e/lf-lifecycle-large-project.spec.ts). See use-row-window.ts for what keeps working (focus, printing, the row count for a screen reader).
   const { plan: rows, windowed, gapHeight, attachBody, onFocus: onBodyFocus, onBlur: onBodyBlur } = useRowWindow(data.state === "local" ? data.lines.length : 0);
@@ -125,6 +150,7 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
 
   const { boq, lines } = data;
   const waiting = new Set(data.waitingLineIds);
+  const conflicts = new Map((data.conflicts ?? []).map((c) => [c.lineId, c]));
 
   return (
     <section data-testid="scope-object" data-state="local" data-boq-id={boq.id}>
@@ -163,7 +189,7 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
               }
               const line = lines[item.index];
               return (
-                <LineRow key={line.id} line={line} index={item.index} draft={drafts[line.id]} waiting={waiting.has(line.id)} saving={saving === line.id} onDraft={setDraft} onSave={onSave} />
+                <LineRow key={line.id} line={line} index={item.index} draft={drafts[line.id]} waiting={waiting.has(line.id)} conflict={conflicts.get(line.id)} saving={saving === line.id} onDraft={setDraft} onSave={onSave} onResolve={onResolve} />
               );
             })}
           </TableBody>
