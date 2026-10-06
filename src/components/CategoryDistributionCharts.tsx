@@ -39,6 +39,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { viaPxApi } from "@/lib/px-api";
 import { isAllUncategorized } from "@/lib/category-distribution";
 import { MONEY_CELL_CLASS } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
@@ -226,7 +227,7 @@ export function CategoryDistributionCharts({
     const url = companyId
       ? `/api/dashboard-hierarchy/companies/${companyId}/projects/${projectId}/category-distribution`
       : `/api/projects/${encodeURIComponent(projectId)}/category-distribution`;
-    return fetch(url)
+    return viaPxApi(url)
       .then((res) => {
         if (!res.ok) throw new Error(`category-distribution fetch failed: ${res.status}`);
         return res.json();

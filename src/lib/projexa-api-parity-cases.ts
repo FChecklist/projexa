@@ -8,13 +8,14 @@
 export const ROLES = ["owner", "admin", "pm", "site_engineer", "member", "client_viewer"] as const;
 /** null_role (batch 5): a membership whose role is empty. The write gate lets it through (role == null), a handler's own requireRole() does
  *  not: the one case that tells the own-role check apart from the gate (every own role set equals its route's write tier today). */
-export type Who = (typeof ROLES)[number] | "signed_out" | "no_org" | "wrong_org" | "membership_error" | "no_key" | "null_role";
+export type Who = (typeof ROLES)[number] | "signed_out" | "no_org" | "wrong_org" | "membership_error" | "no_key" | "null_role" | "multi";
 
 export const ORG_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 export const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 export const ORG_C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-export type Identity = { sub: string; email: string | null; membership: { organization_id: string; role: string | null } | null | "error" };
+/** more (batch 8): further memberships after the oldest one (`membership` is the oldest, what every ordinary route works in); a company route names one of them. */
+export type Identity = { sub: string; email: string | null; membership: { organization_id: string; role: string | null } | null | "error"; more?: { organization_id: string; role: string | null }[] };
 const sub = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 export const IDENTITIES: Record<Exclude<Who, "signed_out">, Identity> = {
   owner: { sub: sub(1), email: "owner@a.test", membership: { organization_id: ORG_A, role: "owner" } },
@@ -28,6 +29,8 @@ export const IDENTITIES: Record<Exclude<Who, "signed_out">, Identity> = {
   membership_error: { sub: sub(9), email: "flaky@a.test", membership: "error" },
   no_key: { sub: sub(10), email: "owner@c.test", membership: { organization_id: ORG_C, role: "owner" } },
   null_role: { sub: sub(11), email: "norole@a.test", membership: { organization_id: ORG_A, role: null } },
+  /** batch 8: oldest membership ORG_A (pm), and ORG_B as owner: the person a company route must serve with the company's own key. */
+  multi: { sub: sub(12), email: "multi@a.test", membership: { organization_id: ORG_A, role: "pm" }, more: [{ organization_id: ORG_B, role: "owner" }] },
 };
 export const ORG_KEYS: Record<string, string> = { [ORG_A]: "key-org-a", [ORG_B]: "key-org-b" };
 
@@ -35,7 +38,15 @@ export type Upstream =
   | { kind: "json"; status: number; body: unknown }
   | { kind: "text"; status: number; status_text: string; text: string }
   /** the connection is refused (no response at all) */
-  | { kind: "refused" };
+  | { kind: "refused" }
+  /** batch 8: a different answer per upstream URL (the first entry whose text the URL contains; else `otherwise`): the two reads of a category distribution */
+  | { kind: "paths"; map: [string, Upstream][]; otherwise: Upstream };
+/** The answer for one upstream URL (a "paths" upstream picks by the URL; every other kind answers every URL alike). */
+export function pickUpstream(u: Upstream, url: string): Exclude<Upstream, { kind: "paths" }> {
+  if (u.kind !== "paths") return u;
+  const hit = u.map.find(([text]) => url.includes(text));
+  return pickUpstream(hit ? hit[1] : u.otherwise, url);
+}
 
 /** raw_body (batch 5): the request body sent AS TEXT, for the empty / invalid / null bodies a lenient or defaulted body read must handle. */
 /** AUDIT-100 A2 batch 7: a multipart form (a document / drawing / permit upload): text fields and files, sent as the browser sends a FormData
@@ -433,6 +444,11 @@ export const REQUESTS: { route: string; method: string; path: string; body?: unk
   { route: "/api/projects", method: "POST", path: "/api/projects", body: {"name": "Batch 7", "actorEmail": "someone@else.test"} },
   { route: "/api/scope", method: "GET", path: "/api/scope?projectId=p%201&include=variation,compare" },
   { route: "/api/scope", method: "POST", path: "/api/scope", body: {"title": "Batch 7", "projectId": "p-1", "lineItems": [{"description": "a"}, {"description": "b"}], "actorEmail": "someone@else.test"} },
+  // AUDIT-100 A2 batch 8: the category distribution (two reads combined) and the company-scoped dashboard routes (a company named in the path)
+  { route: "/api/projects/:id/category-distribution", method: "GET", path: "/api/projects/p%201/category-distribution?boqId=b%201" },
+  { route: "/api/dashboard-hierarchy/companies/:companyId/dashboard", method: "GET", path: `/api/dashboard-hierarchy/companies/${ORG_A}/dashboard?departmentId=d%201&from=2026-01-01&to=2026-03-31&ignored=1` },
+  { route: "/api/dashboard-hierarchy/companies/:companyId/departments", method: "GET", path: `/api/dashboard-hierarchy/companies/${ORG_A}/departments` },
+  { route: "/api/dashboard-hierarchy/companies/:companyId/projects/:projectId/category-distribution", method: "GET", path: `/api/dashboard-hierarchy/companies/${ORG_A}/projects/p%201/category-distribution?boqId=ignored` },
 ];
 
 export function buildCases(): ParityCase[] {
@@ -730,6 +746,64 @@ export function buildCases(): ParityCase[] {
     add(`POST ${route} with a JSON body (not a form)`, "POST", route, "site_engineer", { body: { name: "x" } });
     add(`POST ${route} with an empty body`, "POST", route, "site_engineer", { raw_body: "" });
     add(`POST ${route} with a urlencoded form`, "POST", route, "site_engineer", { raw_body: "name=Site+permit&category=insurance", content_type: "application/x-www-form-urlencoded" });
+  }
+  // AUDIT-100 A2 batch 8. The category distribution reads TWO reports and combines them; a company route first checks the person's membership of the
+  // company in the path (a second lookup) and then works with THAT company's key.
+  const amountsBody = { categories: [{ categoryId: "c1", name: "Civil", totalAmount: 600 }, { categoryId: "c2", name: "Paint", totalAmount: 0 }, { categoryId: "c3", name: "MEP", totalAmount: 400 }], uncategorizedAmount: 100, totalAmount: 1100 };
+  const progressBody = { categories: [{ categoryId: "c1", name: "Civil", percentComplete: 50 }, { categoryId: "c3", name: "MEP", percentComplete: 12.5 }] };
+  const both = (a: Upstream, p: Upstream): Upstream => ({ kind: "paths", map: [["category-boq-amounts", a], ["category-progress", p]], otherwise: OK });
+  const GOOD = both(ok(amountsBody), ok(progressBody));
+  const CDP = "/api/projects/p-1/category-distribution";
+  const CDC = (company: string) => `/api/dashboard-hierarchy/companies/${company}/projects/p-1/category-distribution`;
+  const cd = (name: string, path: string, who: Who, upstream: Upstream) => add(name, "GET", path, who, { upstream });
+  for (const [tag, path] of [["project", CDP], ["company", CDC(ORG_A)]] as const) {
+    cd(`GET category-distribution (${tag}): both reads good`, path, "pm", GOOD);
+    cd(`GET category-distribution (${tag}): nothing logged yet (an empty progress)`, path, "pm", both(ok(amountsBody), ok({ categories: [] })));
+    cd(`GET category-distribution (${tag}): a zero total`, path, "pm", both(ok({ categories: [{ categoryId: "c1", name: "Civil", totalAmount: 0 }], uncategorizedAmount: 0, totalAmount: 0 }), ok(progressBody)));
+    cd(`GET category-distribution (${tag}): no uncategorized money`, path, "pm", both(ok({ ...amountsBody, uncategorizedAmount: 0 }), ok(progressBody)));
+    cd(`GET category-distribution (${tag}): the progress read has no categories (the builder throws)`, path, "pm", both(ok(amountsBody), ok({})));
+    cd(`GET category-distribution (${tag}): the amounts read has no categories (the builder throws)`, path, "pm", both(ok({ totalAmount: 5 }), ok(progressBody)));
+    cd(`GET category-distribution (${tag}): the amounts read is JSON null`, path, "pm", both(ok(null), ok(progressBody)));
+    cd(`GET category-distribution (${tag}): the progress read is a number`, path, "pm", both(ok(amountsBody), ok(7)));
+    cd(`GET category-distribution (${tag}): the progress read fails (404), the amounts read is good`, path, "pm", both(ok(amountsBody), { kind: "json", status: 404, body: { error: "No progress for this project" } }));
+    cd(`GET category-distribution (${tag}): the amounts read fails (409), the progress read is good`, path, "pm", both({ kind: "json", status: 409, body: { error: "BOQ changed" } }, ok(progressBody)));
+    cd(`GET category-distribution (${tag}): both reads fail, the first one's answer wins`, path, "pm", both({ kind: "json", status: 500, body: { error: "amounts down" } }, { kind: "json", status: 404, body: { error: "progress missing" } }));
+    cd(`GET category-distribution (${tag}): the amounts read is not JSON`, path, "pm", both({ kind: "text", status: 200, status_text: "OK", text: "nope" }, ok(progressBody)));
+    cd(`GET category-distribution (${tag}): a 502 that is not JSON`, path, "pm", { kind: "text", status: 502, status_text: "Bad Gateway", text: "<html>bad gateway</html>" });
+    cd(`GET category-distribution (${tag}): storage unconfigured`, path, "pm", { kind: "json", status: 500, body: { error: "supabaseKey is required." } });
+    cd(`GET category-distribution (${tag}): connection refused (each read retries once)`, path, "pm", { kind: "refused" });
+    for (const who of ["wrong_org", "no_key", "membership_error", "null_role"] as Who[]) cd(`GET category-distribution (${tag}) as ${who}`, path, who, GOOD);
+  }
+  // the optional boqId of the project route only
+  for (const q of ["", "?boqId=", "?boqId=b-1", "?boqId=a%20b%2Bc&x=1"]) cd(`GET /api/projects/:id/category-distribution${q || " without a query"}`, `${CDP}${q}`, "pm", GOOD);
+  cd("GET /api/projects/:id/category-distribution with an encoded id", "/api/projects/a%20b%2Fc/category-distribution", "pm", GOOD);
+  cd("GET company category-distribution ignores boqId", `${CDC(ORG_A)}?boqId=b-1`, "pm", GOOD);
+  cd("GET company category-distribution with an encoded project id", `/api/dashboard-hierarchy/companies/${ORG_A}/projects/a%20b%2Fc/category-distribution`, "pm", GOOD);
+
+  // the company routes: membership of the company in the path, its key, and what each refusal looks like
+  const COMPANY_ROUTES: [string, (company: string) => string][] = [
+    ["dashboard", (c) => `/api/dashboard-hierarchy/companies/${c}/dashboard`],
+    ["dashboard with filters", (c) => `/api/dashboard-hierarchy/companies/${c}/dashboard?departmentId=d%201&from=2026-01-01&to=2026-03-31&junk=1`],
+    ["departments", (c) => `/api/dashboard-hierarchy/companies/${c}/departments`],
+    ["category distribution", (c) => CDC(c)],
+  ];
+  for (const [label, at] of COMPANY_ROUTES) {
+    cd(`GET company ${label}: a member of a company that is not their oldest one (multi, ORG_B owner)`, at(ORG_B), "multi", GOOD);
+    cd(`GET company ${label}: multi in the oldest company`, at(ORG_A), "multi", GOOD);
+    cd(`GET company ${label}: not a member (owner of ORG_A asks for ORG_B)`, at(ORG_B), "owner", GOOD);
+    cd(`GET company ${label}: not a member (an unknown company id)`, at("dddddddd-dddd-4ddd-8ddd-dddddddddddd"), "pm", GOOD);
+    cd(`GET company ${label}: a company id that is not a UUID (the database refuses it)`, at("not-a-uuid"), "pm", GOOD);
+    cd(`GET company ${label}: a member of a company with no VERIDIAN key`, at(ORG_C), "no_key", GOOD);
+    cd(`GET company ${label}: signed out`, at(ORG_A), "signed_out", GOOD);
+    cd(`GET company ${label}: no organisation at all`, at(ORG_A), "no_org", GOOD);
+    cd(`GET company ${label}: the company's membership read fails (multi)`, at(ORG_B), "membership_error", GOOD);
+    cd(`GET company ${label}: client_viewer reads (a read is open to every role)`, at(ORG_A), "client_viewer", GOOD);
+    cd(`GET company ${label}: upstream 500`, at(ORG_A), "owner", { kind: "json", status: 500, body: { error: "boom" } });
+    cd(`GET company ${label}: connection refused`, at(ORG_A), "owner", { kind: "refused" });
+  }
+  // the company dashboard and departments forward their filters / nothing: which acting-person headers go with them
+  for (const q of ["", "?", "?departmentId=", "?departmentId=d-1", "?from=2026-01-01", "?to=2026-12-31&from=2026-01-01&departmentId=d%2F1", "?junk=1"]) {
+    cd(`GET company dashboard${q || " without a query"}`, `/api/dashboard-hierarchy/companies/${ORG_A}/dashboard${q}`, "pm", OK);
   }
   return cases;
 }
