@@ -65,8 +65,11 @@ export type SwClient = {
   useRelease(version: string, personId?: string | null, localFirst?: boolean): Promise<SwReply | null>;
   setMode(localFirst: boolean): Promise<SwReply | null>;
   setPerson(personId: string): Promise<SwReply | null>;
-  /** Sign-out: delete this person's release caches and pointer. */
-  clearPerson(personId: string | null): Promise<SwReply | null>;
+  /**
+   * Sign-out: this person's release stops being served. With keepRelease (the default sign-out, AUDIT-100 A3) the release cache stays on the
+   * laptop for the same person's next sign-in; without it the release caches and the pointer are deleted.
+   */
+  clearPerson(personId: string | null, options?: { keepRelease?: boolean }): Promise<SwReply | null>;
   /** Take control of the open pages (clients.claim()): for a page that loaded while the worker was activating. */
   claim?(): Promise<SwReply | null>;
   status(): Promise<SwReply | null>;
@@ -79,7 +82,7 @@ export function createSwClient(options: { container?: SwContainerLike | null; ti
       send({ type: "USE_RELEASE", version, ...(personId ? { personId } : {}), ...(typeof localFirst === "boolean" ? { localFirst } : {}) }),
     setMode: (localFirst) => send({ type: "SET_MODE", localFirst }),
     setPerson: (personId) => send({ type: "SET_PERSON", personId }),
-    clearPerson: (personId) => send({ type: "CLEAR_PERSON", ...(personId ? { personId } : {}) }),
+    clearPerson: (personId, options) => send({ type: "CLEAR_PERSON", ...(personId ? { personId } : {}), ...(options?.keepRelease && personId ? { keepRelease: true } : {}) }),
     claim: () => send({ type: "CLAIM" }),
     status: () => send({ type: "STATUS" }),
   };
@@ -100,4 +103,17 @@ export async function ensureServiceWorker(options: { container?: SwContainerLike
   } catch {
     return false;
   }
+}
+
+/**
+ * A release that a signed-out person KEPT on this laptop (sw-core.ts CLEAR_PERSON keepRelease) is dropped before ANOTHER person installs:
+ * SET_PERSON for someone else deletes it, so the installer sees the cache gone and downloads this person's own. Returns true when it was dropped.
+ * Called by both install paths (boot's quiet install, the prepare screen's verified install) before installRelease.
+ */
+export async function dropReleaseKeptForAnother(sw: Pick<SwClient, "status" | "setPerson">, personId: string | null): Promise<boolean> {
+  if (!personId) return false;
+  const status = await sw.status().catch(() => null);
+  if (!status || status.signedOut !== true || typeof status.personId !== "string" || status.personId === personId) return false;
+  const reply = await sw.setPerson(personId).catch(() => null);
+  return Boolean(reply && reply.ok && reply.cleared);
 }

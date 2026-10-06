@@ -271,8 +271,13 @@ export function startIdentityMirror(auth: AuthLike, store: IdentityStore, option
 export type SignOutDeps = {
   auth: Pick<AuthLike, "signOut">;
   store: IdentityStore;
-  /** Tells the service worker to delete this person's release caches. Default: the real worker. */
+  /** Tells the service worker this person signed out. Default: the real worker. */
   sw?: Pick<SwClient, "clearPerson">;
+  /**
+   * Keep the (public) release cache on the laptop for this same person's next sign-in, no shell served online meanwhile (offline it opens the passcode sign-in, B20) (AUDIT-100 A3, step 1b).
+   * False: the release caches are deleted (the explicit "Sign out and delete this laptop's copy"). Default false.
+   */
+  keepRelease?: boolean;
   /** Removes the Supabase session cookies and storage entries by hand, for when the server could not be reached to end the session. */
   clearBrowserSession?: () => void;
 };
@@ -308,7 +313,7 @@ function defaultBrowserEnv() {
 /**
  * THE sign-out. In this order, because each step must survive the failure of the next:
  *   1. clear the identity mirror (so no other tab or a later start can rebuild the session from it),
- *   2. tell the service worker to delete this person's release caches,
+ *   2. tell the service worker this person signed out (no shell is served online from its release; kept for this person's next sign-in when keepRelease),
  *   3. end the Supabase session; when the server cannot be reached (offline) end it locally by hand instead.
  * Never throws. Returns whether the server was told.
  */
@@ -322,7 +327,7 @@ export async function signOutDeliberately(deps: SignOutDeps): Promise<{ serverTo
   }
   await deps.store.clear().catch(() => {});
   try {
-    await (deps.sw ?? createSwClient()).clearPerson(personId);
+    await (deps.sw ?? createSwClient()).clearPerson(personId, deps.keepRelease ? { keepRelease: true } : undefined);
   } catch {
     /* no worker: nothing to clear */
   }

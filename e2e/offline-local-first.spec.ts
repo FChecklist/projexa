@@ -1,3 +1,4 @@
+import { evalSettled } from "./support/eval-settled";
 import { test, expect, type BrowserContext, type Page, type Route } from "@playwright/test";
 import { signInLocally, stubAppApis, type AppStub, type LocalSession } from "./support/boq-local";
 import type { FixtureLine, ProjectFixture } from "./support/boq-fixture";
@@ -142,7 +143,7 @@ async function stubLineEdits(page: Page, net: Net) {
 // ─── reading what is really stored on the laptop ───────────────────────────────────────────────
 
 function readMeta(page: Page, dbName: string, key: string): Promise<unknown> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(dbName);
@@ -180,10 +181,10 @@ async function prepareLaptop(page: Page, context: BrowserContext, net: Net) {
       .poll(() => deviceMeta(page, "app:release"), { timeout: 240_000, message: "the release was never installed (meta app:release)" })
       .toMatchObject({ version: expect.stringMatching(/^\d{4}\.\d{2}\.\d{2}-\d{3}$/) });
     await expect
-      .poll(() => page.evaluate(async () => (await caches.keys()).filter((n) => n.startsWith("px-release-"))), { message: "no px-release-<version> cache exists" })
+      .poll(() => evalSettled(page, async () => (await caches.keys()).filter((n) => n.startsWith("px-release-"))), { message: "no px-release-<version> cache exists" })
       .toHaveLength(1);
     await expect
-      .poll(() => page.evaluate(() => localStorage.getItem("px-identity-v1")), { message: "the identity was never mirrored to localStorage" })
+      .poll(() => evalSettled(page, () => localStorage.getItem("px-identity-v1")), { message: "the identity was never mirrored to localStorage" })
       .toContain(session.userId);
     await expect
       .poll(() => deviceMeta(page, `shell:manifest:${session.userId}`), { timeout: 60_000, message: "the project names were never cached" })
@@ -196,7 +197,7 @@ async function prepareLaptop(page: Page, context: BrowserContext, net: Net) {
   await test.step("the page is controlled by the service worker (reload once, online)", async () => {
     await page.reload();
     await expect
-      .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" })
+      .poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" })
       .toBe(true);
   });
 
@@ -236,7 +237,7 @@ test("R1: with NO internet the app opens from the laptop, shows the BOQ from the
   const { session, patches, app } = await prepareLaptop(page, context, net);
 
   await goOffline(context, net, app);
-  expect(await page.evaluate(() => navigator.onLine), "the browser still thinks it is online").toBe(false);
+  expect(await evalSettled(page, () => navigator.onLine), "the browser still thinks it is online").toBe(false);
 
   await test.step("offline: the shell opens, signed in, from the laptop", async () => {
     await page.goto(`/local/scope?projectId=${PROJECT_ID}`);
@@ -310,7 +311,7 @@ test("R2: with internet but OUR server down (sync service and /api refused) the 
 
   await test.step("the server is back: coming back to the tab sends it", async () => {
     setNetwork(net, app, "up");
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await evalSettled(page, () => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => patches.length, { timeout: 90_000, message: "the edit was never sent after the server came back" }).toBe(1);
     expect(patches[0]).toEqual({ path: "/api/scope/line-items/lf-line-2", body: { category: "Civil" } });
     await expect.poll(() => personMeta(page, session.userId, "shell:edits")).toEqual([]);
@@ -332,7 +333,7 @@ test("R9: once signed in the person stays signed in: a lost cookie and a dead si
     await expect(page.getByTestId("local-shell-person")).toHaveText("local-first-spec@example.invalid");
     await expect(page).toHaveURL(/\/local\/scope/); // not /login
     await expect(page.getByTestId("local-shell-signed-out")).toHaveCount(0);
-    expect(await page.evaluate(() => localStorage.getItem("px-identity-v1"))).toContain(session.userId);
+    expect(await evalSettled(page, () => localStorage.getItem("px-identity-v1"))).toContain(session.userId);
   });
 });
 
@@ -347,11 +348,11 @@ test("R10: the app asks the browser to keep its storage, and puts the release ba
   });
 
   await test.step("the release cache is deleted (as a browser under storage pressure would) and a reload, online, installs it again", async () => {
-    await page.evaluate(async () => { for (const name of await caches.keys()) if (name.startsWith("px-release-")) await caches.delete(name); });
-    expect(await page.evaluate(async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).length)).toBe(0);
+    await evalSettled(page, async () => { for (const name of await caches.keys()) if (name.startsWith("px-release-")) await caches.delete(name); });
+    expect(await evalSettled(page, async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).length)).toBe(0);
     await page.reload();
     await expect
-      .poll(() => page.evaluate(async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).length), { timeout: 240_000, message: "the missing release was not silently installed again" })
+      .poll(() => evalSettled(page, async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).length), { timeout: 240_000, message: "the missing release was not silently installed again" })
       .toBe(1);
   });
 });

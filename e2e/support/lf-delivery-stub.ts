@@ -23,6 +23,7 @@
 //
 // Every name, id and figure is made up. Nothing here reaches Vercel, Supabase or any real network.
 
+import { evalSettled } from "./eval-settled";
 import type { BrowserContext, ConsoleMessage, Page, Route } from "@playwright/test"
 import { signInLocally, stubAppApis, type AppStub, type LocalSession } from "./boq-local"
 import type { ProjectFixture } from "./boq-fixture"
@@ -283,7 +284,7 @@ export const DELIVERY_KIND_NAMES = Object.keys(deliveryFixtures())
 // ─── what is really stored on the laptop ────────────────────────────────────────────────────────
 
 export function readMeta(page: Page, dbName: string, key: string): Promise<unknown> {
-  return page.evaluate(
+  return evalSettled(page, 
     ({ dbName, key }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(dbName)
@@ -302,7 +303,7 @@ export function readMeta(page: Page, dbName: string, key: string): Promise<unkno
 
 /** Every op waiting in this person's outbox (IndexedDB store `outbox` of projexa-local:<userId>), oldest first. */
 export function readOutbox(page: Page, userId: string): Promise<Array<{ opId: string; functionId: string; params: Record<string, unknown>; status: string }>> {
-  return page.evaluate(
+  return evalSettled(page, 
     (dbName) =>
       new Promise((resolve) => {
         const open = indexedDB.open(dbName)
@@ -359,7 +360,7 @@ export async function prepareDeliveryLaptop(
     .toMatchObject({ projects: expect.arrayContaining([expect.objectContaining({ id: PROJECT_ID, name: PROJECT_NAME }), ...extra.map((p) => expect.objectContaining({ id: p.id, name: p.name }))]) })
   await page.reload()
   await expect
-    .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" })
+    .poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" })
     .toBe(true)
   return { session, sync, app }
 }
@@ -437,7 +438,7 @@ export async function typeDate(page: Page, label: string, iso: string, expect: E
 /** Back online: the browser's switch, the stubs, and the person coming back to the tab. */
 export async function backOnline(page: Page, context: BrowserContext, net: Net, app: AppStub) {
   await goOnline(context, net, app)
-  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await evalSettled(page, () => window.dispatchEvent(new Event("focus")))
 }
 
 // ─── console hygiene ────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { APP_ORIGIN, stubAppApis } from "./support/boq-local";
+import { evalSettled } from "./support/eval-settled";
 import {
   deviceMeta, fixtureOf, makePerson, newWorld, personMeta, releaseCaches, signIn, stubSyncService, swPointer,
   type Person, type SyncWorld,
@@ -21,16 +22,17 @@ async function assertInstalled(page: Page, context: BrowserContext, world: SyncW
   const rel = (await deviceMeta(page, "app:release")) as { version: string; manifest_sha256: string } | undefined;
   expect(rel?.version, "IndexedDB meta app:release is not set").toMatch(/^\d{4}\.\d{2}\.\d{2}-\d{3}$/);
   expect(await releaseCaches(page), "Cache Storage holds no px-release-<version>").toEqual([`px-release-${rel!.version}`]);
-  expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true);
+  expect(await evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), "no service worker controls the page").toBe(true);
   expect((await swPointer(page))?.version, "the worker does not point at the installed release").toBe(rel!.version);
   expect(await deviceMeta(page, "persist:state"), "persistent storage was never requested").toMatchObject({ requestedAt: expect.any(Number) });
   expect(
-    await page.evaluate((id) => localStorage.getItem(`px-workspace-ready-v1:${id}`), userId),
+    await evalSettled(page, (id: string) => localStorage.getItem(`px-workspace-ready-v1:${id}`), userId),
     "the ready flag is missing"
   ).not.toBeNull();
   // the data (IndexedDB replica) is in
-  const done = await page.evaluate(
-    ({ db, key }) =>
+  const done = await evalSettled(
+    page,
+    ({ db, key }: { db: string; key: string }) =>
       new Promise<unknown>((resolve) => {
         const open = indexedDB.open(db);
         open.onerror = () => resolve(undefined);
@@ -46,6 +48,8 @@ async function assertInstalled(page: Page, context: BrowserContext, world: SyncW
   );
   expect(done, "the person's data is not in IndexedDB").toBeTruthy();
 
+  // AUDIT-100 A3 step 1: once the projects are copied the page hands over to the shell by itself; let that one navigation finish first.
+  await expect(page.getByTestId("local-shell"), "the page did not hand over to the shell after the install").toBeVisible({ timeout: 120_000 });
   // Going offline: the module's /local shell is served from the installed copy.
   world.net = "offline";
   await context.setOffline(true);
