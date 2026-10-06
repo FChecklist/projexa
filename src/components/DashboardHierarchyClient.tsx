@@ -16,7 +16,6 @@ import { CategoryDistributionCharts } from "@/components/CategoryDistributionCha
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 import { mayShowEmptyState, type PaneStatus } from "@/lib/pane-state";
 
-import { viaPxApi } from "@/lib/px-api";
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
 /** R67 E-37: why the companies list came back empty, from resolveHierarchyCompanies. */
