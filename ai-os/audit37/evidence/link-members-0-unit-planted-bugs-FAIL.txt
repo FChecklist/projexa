@@ -1,0 +1,47 @@
+AUDIT-100 link-invited-members: unit tests SEEN TO FAIL under planted bugs (each restored afterwards; restored runs all pass).
+
+== compliance-tracker src/lib/services/projexa-member-link.pglite.test.ts, PLANTED: drizzle/0728 maps pm -> admin
+(fail) the role mapping (public.projexa_member_veridian_role) > the exact table, and unknown roles are refused [37.14ms]
+(fail) the role mapping (public.projexa_member_veridian_role) > no PROJEXA role maps above its ceiling; only owner/admin reach admin; client_viewer stays read-only (rank 1) [14.30ms]
+(fail) the role mapping (public.projexa_member_veridian_role) > the Edge copy of the table (member-link.ts) is the SQL table [7.44ms]
+(fail) public.projexa_ensure_member_user > creates one user per PROJEXA role with the mapped role, the session id, the General department [39.13ms]
+(fail) public.projexa_ensure_member_user > idempotent: a second call answers already_linked, returns the same user and writes nothing [13.54ms]
+(fail) public.projexa_ensure_member_user > an existing unlinked row of this org is linked only when it is no more powerful than the PROJEXA role [11.87ms]
+ 5 pass
+ 6 fail
+Ran 11 tests across 1 file. [7.02s]
+
+== compliance-tracker projexa-member-link.pglite.test.ts, PLANTED: already-linked and email checks removed + no ON CONFLICT (double-create)
+(fail) public.projexa_ensure_member_user > idempotent: a second call answers already_linked, returns the same user and writes nothing [32.30ms]
+(fail) public.projexa_ensure_member_user > concurrent calls for one person create exactly one row [26.13ms]
+(fail) public.projexa_ensure_member_user > never upgrade: a linked person keeps their role even when PROJEXA now says owner [13.86ms]
+(fail) public.projexa_ensure_member_user > an existing unlinked row of this org is linked only when it is no more powerful than the PROJEXA role [14.14ms]
+(fail) public.projexa_ensure_member_user > a person linked elsewhere, a deactivated person and a taken (linked) email write nothing [15.90ms]
+ 6 pass
+ 5 fail
+Ran 11 tests across 1 file. [11.05s]
+
+== projexa src/app/api/org/invites/accept/route.test.ts, PLANTED: the accept route calls the member link twice
+(fail) the welcome e-mail with the AI prompt (B55) > an account with no e-mail on its session is still attached; the sender is told there is no address [0.74ms]
+(fail) the new member gets their own VERIDIAN user (AUDIT-100 link-invited-members) > a successful accept links the member ONCE, with the person's own session token, BEFORE the welcome e-mail mints their link [0.59ms]
+(fail) the new member gets their own VERIDIAN user (AUDIT-100 link-invited-members) > the link step never changes the answer: not linked, throwing, or no session -> still 200, and the welcome still runs [1.27ms]
+(fail) the new member gets their own VERIDIAN user (AUDIT-100 link-invited-members) > a link step that hangs is cut off by its budget: the accept still answers 200 (never blocks) [17011.08ms]
+(fail) the new member gets their own VERIDIAN user (AUDIT-100 link-invited-members) > no e-mail on the session: the link step still runs (the service decides), the accept is unchanged [0.99ms]
+ 9 pass
+ 5 fail
+Ran 14 tests across 1 file. [17.40s]
+
+== projexa accept route.test.ts, PLANTED: the member-link budget raised to 10 minutes (a hanging link blocks the accept)
+(fail) the new member gets their own VERIDIAN user (AUDIT-100 link-invited-members) > a link step that hangs is cut off by its budget: the accept still answers 200 (never blocks) [20003.20ms]
+ 13 pass
+ 1 fail
+Ran 14 tests across 1 file. [20.41s]
+
+== projexa src/lib/veridian-member-link.test.ts, PLANTED: the USER_NOT_LINKED heal is not limited to once per call
+(fail) the AI work link client heals a not-linked member once > never a loop: still not linked after the heal -> the original error, two mint sends and one heal in all [2.59ms]
+ 7 pass
+ 1 fail
+Ran 8 tests across 1 file. [170.00ms]
+
+== restored: compliance-tracker projexa-member-link.pglite.test.ts 11 pass 0 fail; projexa-api-member-link.test.ts + parity 145 pass 0 fail
+== restored: projexa veridian-member-link + accept route + ai-work-link-client + invite-welcome 50 pass 0 fail; ops-link-unlinked-members 4 pass

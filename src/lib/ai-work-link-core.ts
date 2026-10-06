@@ -23,6 +23,8 @@
 // THE URL IS A CODE CONSTANT, like BOQ_READ_GATEWAY_URL in boq-gateway-client.ts: a public address changed by a reviewed edit, not by an
 // environment variable that can drift between deployments.
 
+import { requestMemberLink, type MemberLinkResult } from "./veridian-member-link"
+
 export const AWL_URL = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/ai-work-link"
 
 export type AwlLevel = 0 | 1
@@ -103,6 +105,10 @@ export type AwlDeps = {
   /** The Fetch API. The tests pass a fake; the default is the browser's. */
   fetch?: typeof fetch
   baseUrl?: string
+  /** AUDIT-100 (link-invited-members): what to do when a call answers 403 USER_NOT_LINKED -- ask the service to give this person their own VERIDIAN
+   *  user (src/lib/veridian-member-link.ts) and, when it did, send the same call once more. Default: requestMemberLink with this client's fetch.
+   *  null switches it off. */
+  memberLink?: ((token: string) => Promise<MemberLinkResult>) | null
 }
 
 export type AwlClient = {
@@ -206,11 +212,14 @@ function refusal(status: number, body: unknown): AwlError {
 export function createAwlClient(deps: AwlDeps): AwlClient {
   const base = (deps.baseUrl ?? AWL_URL).replace(/\/+$/, "")
   const doFetch: typeof fetch = deps.fetch ?? ((input, init) => globalThis.fetch(input, init))
+  const memberLink = deps.memberLink === undefined ? (token: string) => requestMemberLink(token, { fetch: doFetch }) : deps.memberLink
 
   async function send(method: "GET" | "POST", path: string, body?: Record<string, unknown>): Promise<unknown> {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      // The first try uses the session as it is. After SESSION_STALE the second try uses a token the Auth service issued just now.
-      const token = attempt === 0 ? await deps.session.accessToken() : await deps.session.refresh()
+    let fresh = false
+    let healed = false
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      // The first try uses the session as it is. After SESSION_STALE the next try uses a token the Auth service issued just now.
+      const token = fresh ? await deps.session.refresh() : await deps.session.accessToken()
       if (!token) throw new AwlError("Sign in to PROJEXA again to make an AI work link.", 401, "SESSION_REQUIRED")
       let res: Response
       try {
@@ -228,7 +237,22 @@ export function createAwlClient(deps: AwlDeps): AwlClient {
       const answer = await readBody(res)
       if (res.ok) return answer
       const error = refusal(res.status, answer)
-      if (attempt === 0 && res.status === 401 && error.code === "SESSION_STALE") continue
+      if (!fresh && res.status === 401 && error.code === "SESSION_STALE") {
+        fresh = true
+        continue
+      }
+      // A member who joined before every member was linked: link them (once per call) and, when that worked, send the same call again. A refused
+      // call wrote nothing, so the second send cannot double anything. Whatever the link step answers, the person never sees a worse error.
+      if (!healed && memberLink && res.status === 403 && error.code === "USER_NOT_LINKED") {
+        healed = true
+        let linked = false
+        try {
+          linked = (await memberLink(token)).linked
+        } catch {
+          linked = false
+        }
+        if (linked) continue
+      }
       throw error
     }
     throw new AwlError("Sign in to PROJEXA again to make an AI work link.", 401, "SESSION_STALE")
