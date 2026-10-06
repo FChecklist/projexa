@@ -1752,6 +1752,34 @@
         "GET": { "upstream": "/scope?projectId={query:projectId}", "required_query": {"projectId": "projectId query param is required"}, "include_allow": ["variation","compare"], "fallback": "Failed to load scope of work" },
         "POST": { "upstream": "/scope", "acting_user": "explicit", "body": "json", "invalid_body_error": "Request body must be valid JSON", "boq_create_verify": true, "success_status": 201, "fallback": "Failed to create BOQ", "revalidate": {"tags": ["module:scope"],"paths": ["/scope"]} }
       }
+    },
+    {
+      "route": "/api/projects/:id/category-distribution",
+      "batch": 8,
+      "methods": {
+        "GET": { "upstream": "/reports/category-boq-amounts?format=legacy&projectId={id}", "category_distribution": {"progress": "/reports/category-progress?format=legacy&projectId={id}","boq_id": true}, "error_style": "plain", "fallback": "Failed to load category distribution" }
+      }
+    },
+    {
+      "route": "/api/dashboard-hierarchy/companies/:companyId/dashboard",
+      "batch": 8,
+      "methods": {
+        "GET": { "upstream": "/dashboard", "acting_user": "id_only", "company_scope": true, "search_params": ["departmentId","from","to"], "search_params_omit_empty": true, "fallback": "Failed to load dashboard" }
+      }
+    },
+    {
+      "route": "/api/dashboard-hierarchy/companies/:companyId/departments",
+      "batch": 8,
+      "methods": {
+        "GET": { "upstream": "/hr/departments", "company_scope": true, "fallback": "Failed to load departments" }
+      }
+    },
+    {
+      "route": "/api/dashboard-hierarchy/companies/:companyId/projects/:projectId/category-distribution",
+      "batch": 8,
+      "methods": {
+        "GET": { "upstream": "/reports/category-boq-amounts?format=legacy&projectId={projectId}", "category_distribution": {"progress": "/reports/category-progress?format=legacy&projectId={projectId}"}, "company_scope": true, "fallback": "Failed to load category distribution" }
+      }
     }
   ]
 }

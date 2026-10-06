@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildCases, buildSequences, IDENTITIES, ORG_KEYS, REQUESTS, type Outcome, type ParityCase, type RecordedForm, type Sequence, type UpstreamCall, type Who } from "./projexa-api-parity-cases";
+import { buildCases, buildSequences, IDENTITIES, ORG_KEYS, pickUpstream, REQUESTS, type Outcome, type ParityCase, type RecordedForm, type Sequence, type UpstreamCall, type Who } from "./projexa-api-parity-cases";
 
 // AUDIT-100 A2, the Next half of the PARITY CONTRACT with the Supabase Edge Function `projexa-api` (compliance-tracker
 // supabase/functions/projexa-api). Every case of projexa-api-parity-cases.ts runs through the REAL pipeline a browser's /api call meets on
@@ -74,15 +74,34 @@ function fakeSupabase() {
 
 mock.module("@/lib/supabase/server", () => ({ createClient: async () => fakeSupabase() }));
 mock.module("@supabase/ssr", () => ({ createServerClient: () => fakeSupabase(), createBrowserClient: () => fakeSupabase() }));
+// The database reads of the Next pipeline, answered from the identities: the organisation's VERIDIAN key (veridian_credentials, by organisation) and, for
+// the company routes (batch 8, src/lib/company-scope.ts requireCompanyScope), the person's membership of the company named in the path. A company id that
+// is not a UUID is refused by the database (an error, which no handler catches: Next renders an empty 500).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const companyInPath = () => /\/api\/dashboard-hierarchy\/companies\/([^/?]+)/.exec(current?.path ?? "")?.[1] ?? null;
+const membershipOf = (company: string) => {
+  const id = identity();
+  if (!id || id.membership === "error" || !id.membership) return null;
+  return [id.membership, ...(id.more ?? [])].find((m) => m.organization_id === company) ?? null;
+};
 mock.module("@/lib/db", () => ({
   veridianCredentials: { organizationId: "organization_id", veridianApiKey: "veridian_api_key" },
   db: {
-    select: () => ({
+    select: (fields?: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
           async limit() {
+            if (fields && "role" in fields) {
+              // requireCompanyScope: the membership of THIS person in the company of the path
+              const company = companyInPath() ?? "";
+              if (identity()?.membership === "error" || !UUID.test(decodeURIComponent(company))) throw new Error("connection reset / invalid input syntax for type uuid");
+              const m = membershipOf(decodeURIComponent(company));
+              return m ? [{ role: m.role }] : [];
+            }
+            // the organisation's key: a company route works in the company of the path, every other route in the person's own organisation
             const m = identity()?.membership;
-            const key = m && m !== "error" ? ORG_KEYS[m.organization_id] : undefined;
+            const org = companyInPath() ? decodeURIComponent(companyInPath()!) : m && m !== "error" ? m.organization_id : "";
+            const key = m && m !== "error" ? ORG_KEYS[org] : undefined;
             return key ? [{ apiKey: key }] : [];
           },
         }),
@@ -132,7 +151,7 @@ beforeAll(() => {
       content_type: h.get("content-type"),
       body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body instanceof FormData ? await recordForm(init.body) : null,
     });
-    const u = current!.upstream;
+    const u = pickUpstream(current!.upstream, url);
     if (u.kind === "refused") throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) });
     if (u.kind === "text") return new Response(u.text, { status: u.status, statusText: u.status_text });
     return new Response(JSON.stringify(u.body), { status: u.status, headers: { "Content-Type": "application/json" } });

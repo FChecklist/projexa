@@ -102,13 +102,13 @@ describe("Vercel route inventory (A2/A3)", () => {
     expect(inv.daily_use_api_allowlist_production).toEqual(["POST /api/local-first/client-error"]);
   });
 
-  test("A2 batches 2-7: 232 routes are answered by the edge function on the production origins; Vercel answers at most 80 of 312 (measured 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 80)", () => {
+  test("A2 batches 2-8: 236 routes are answered by the edge function on the production origins; Vercel answers at most 76 of 312 (measured 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 80 -> 76)", () => {
     const inv = inventory();
     const edge = inv.routes.filter((r) => r.served_by === "edge:projexa-api");
     const onVercel = inv.routes.filter((r) => r.served_by !== "edge:projexa-api");
-    expect(edge.length).toBe(232);
+    expect(edge.length).toBe(236);
     expect(onVercel.length).toBe(inv.vercel_served_routes_budget);
-    expect(inv.vercel_served_routes_budget).toBeLessThanOrEqual(80);
+    expect(inv.vercel_served_routes_budget).toBeLessThanOrEqual(76);
     // only VERIDIAN proxies move; the own-logic and Supabase routes stay on Vercel, each with its reason
     expect(edge.every((r) => (r as { backend?: string }).backend === "veridian-proxy")).toBe(true);
   });
@@ -117,7 +117,7 @@ describe("Vercel route inventory (A2/A3)", () => {
     const inv = copy();
     inv.routes.find((r) => r.route === "/api/vendors")!.served_by = "vercel";
     const problems = check(inv) as string[];
-    expect(problems.some((p) => p.includes("81 /api routes are answered by Vercel") && p.includes("budget is 80"))).toBe(true);
+    expect(problems.some((p) => p.includes("77 /api routes are answered by Vercel") && p.includes("budget is 76"))).toBe(true);
     expect(problems.some((p) => p.includes("/api/vendors is answered by the edge function"))).toBe(true);
   });
 

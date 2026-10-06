@@ -29,6 +29,10 @@ export const CT_RELATIVE = join("supabase", "functions", "projexa-api", "policy.
 /** The parity contract recorded by src/lib/projexa-api-parity.test.ts; compliance-tracker replays its copy. */
 export const GOLDEN_PATH = join(ROOT, "ai-os", "audit37", "projexa-api", "parity.golden.json");
 export const CT_GOLDEN_RELATIVE = join("supabase", "functions", "projexa-api", "parity.golden.json");
+/** AUDIT-100 A2 batch 8: the pure category-distribution builder the two category-distribution routes combine their two reads with; copied byte for byte
+ *  (the function must build the chart's rows exactly as the Next handler does, so there is one source). */
+export const BUILDER_SOURCE = join(ROOT, "src", "lib", "category-distribution.ts");
+export const CT_BUILDER_RELATIVE = join("supabase", "functions", "projexa-api", "category-distribution.ts");
 
 const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style", "forward_search", "success_status", "cache_control", "root", "roles", "body_defaults",
   // AUDIT-100 A2 batch 6: body validation / reshaping, query rebuilding, response reshaping (each one a port of a handler statement)
@@ -37,7 +41,10 @@ const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_que
   "response_wrap",
   // AUDIT-100 A2 batch 7: per-instance TTL cache of a person-free read, a multipart upload, derived / allow-listed query parts, an answer redacted by
   // role, the BOQ create verification, and the page-side cache entries the browser clears after a write (client-only, the edge never reads it)
-  "cache_ttl", "search_param_defaults", "include_allow", "response_redact", "boq_create_verify", "revalidate"]);
+  "cache_ttl", "search_param_defaults", "include_allow", "response_redact", "boq_create_verify", "revalidate",
+  // AUDIT-100 A2 batch 8: the company a person names in the path (a second membership check, the company's own key), the id-only acting person
+  // of the company dashboard, and the two-read category distribution
+  "company_scope", "category_distribution"]);
 /** Route-level keys of projexa-api-routes.json the function does not read (they steer the browser switch and the inventory, not the edge). */
 const ROUTE_KEYS = new Set(["route", "methods", "batch"]);
 
@@ -68,7 +75,7 @@ export function validateRoutes(spec, inventory) {
       if (m.roles !== undefined && !Object.prototype.hasOwnProperty.call(ROLE_GROUPS, m.roles)) problems.push(`${entry.route} ${method}: roles must name a ROLE_GROUPS group (src/lib/authz/roles.ts)`);
       if (m.root !== undefined && m.root !== true) problems.push(`${entry.route} ${method}: root is true or absent`);
       if (m.body !== undefined && !["json", "json_lenient", "empty", "multipart"].includes(m.body)) problems.push(`${entry.route} ${method}: body must be json, json_lenient, empty or multipart`);
-      if (m.acting_user !== undefined && !["explicit", "session", "none"].includes(m.acting_user)) problems.push(`${entry.route} ${method}: acting_user is explicit, session or none`);
+      if (m.acting_user !== undefined && !["explicit", "session", "none", "id_only"].includes(m.acting_user)) problems.push(`${entry.route} ${method}: acting_user is explicit, session, none or id_only`);
       if (m.body_defaults !== undefined && (!["json", "json_lenient"].includes(m.body) || typeof m.body_defaults !== "object" || Object.values(m.body_defaults).some((v) => typeof v !== "string"))) problems.push(`${entry.route} ${method}: body_defaults is an object of strings, only on a forwarded body`);
       if (m.body_actor_email !== undefined && (m.body_actor_email !== "always" || m.body === undefined)) problems.push(`${entry.route} ${method}: body_actor_email "always" needs a body`);
       // AUDIT-100 A2 batch 6
@@ -99,6 +106,14 @@ export function validateRoutes(spec, inventory) {
       if (m.include_allow !== undefined && (!isStrArr(m.include_allow) || !m.upstream.includes("?"))) problems.push(`${entry.route} ${method}: include_allow is a list of values, on an upstream that already has a query`);
       if (m.response_redact !== undefined && (!isStrArr(m.response_redact.roles) || typeof m.response_redact.list !== "string" || typeof m.response_redact.set !== "object" || m.response_redact.set === null || Object.keys(m.response_redact).length !== 3)) problems.push(`${entry.route} ${method}: response_redact is { roles, list, set }`);
       if (m.boq_create_verify !== undefined && (m.boq_create_verify !== true || method !== "POST" || m.body !== "json")) problems.push(`${entry.route} ${method}: boq_create_verify is true on a JSON POST`);
+      // AUDIT-100 A2 batch 8
+      if (m.company_scope !== undefined && (m.company_scope !== true || method !== "GET" || !entry.route.includes(":companyId"))) problems.push(`${entry.route} ${method}: company_scope is true on a GET whose route names :companyId`);
+      if (m.acting_user === "id_only" && m.company_scope !== true) problems.push(`${entry.route} ${method}: acting_user "id_only" is the company dashboard's (requireCompanyScope exposes the user id only)`);
+      if (m.category_distribution !== undefined) {
+        const c = m.category_distribution;
+        if (method !== "GET" || !c || typeof c.progress !== "string" || !c.progress.startsWith("/") || (c.boq_id !== undefined && c.boq_id !== true) || Object.keys(c).some((k) => !["progress", "boq_id"].includes(k)) || m.body !== undefined) problems.push(`${entry.route} ${method}: category_distribution is { progress: <path>, boq_id?: true } on a GET (upstream is the amounts read)`);
+        for (const p of (c?.progress ?? "").matchAll(/\{(\w+)\}/g)) if (!entry.route.includes(`:${p[1]}`)) problems.push(`${entry.route} ${method}: category_distribution.progress names {${p[1]}} which is not a path parameter`);
+      }
       if (m.revalidate !== undefined) {
         const r = m.revalidate;
         const okList = (v) => Array.isArray(v) && v.every((x) => typeof x === "string" && /^[\w:\/-]+$/.test(x));
@@ -173,7 +188,7 @@ export function render(data = sourceData()) {
   lines.push(`export const MUTATING_METHODS: ReadonlySet<string> = new Set(${j(data.mutatingMethods)})`);
   lines.push("");
   lines.push("export type EdgeMethodSpec = {");
-  lines.push("  upstream: string; acting_user?: \"explicit\" | \"session\" | \"none\"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;");
+  lines.push("  upstream: string; acting_user?: \"explicit\" | \"session\" | \"none\" | \"id_only\"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;");
   lines.push("  search_params?: string[]; body?: \"json\" | \"json_lenient\" | \"empty\" | \"multipart\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
   lines.push("  forward_search?: boolean; success_status?: 200 | 201; cache_control?: string");
   lines.push("  root?: true; roles?: string; body_defaults?: Record<string, string>");
@@ -185,6 +200,7 @@ export function render(data = sourceData()) {
   lines.push("  cache_ttl?: number; search_param_defaults?: Record<string, { default: string; when: string }>; include_allow?: string[]");
   lines.push("  response_redact?: { roles: string[]; list: string; set: Record<string, unknown> }; boq_create_verify?: true");
   lines.push("  revalidate?: { tags: string[]; paths?: string[]; when?: \"success\" | \"always\" }");
+  lines.push("  company_scope?: true; category_distribution?: { progress: string; boq_id?: true }");
   lines.push("}");
   lines.push("/** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */");
   lines.push("export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [");
@@ -257,12 +273,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       const golden = join(args[ctAt + 1], CT_GOLDEN_RELATIVE);
       writeFileSync(golden, lf(readFileSync(GOLDEN_PATH, "utf8")));
       console.log(`wrote ${golden}`);
+      const builder = join(args[ctAt + 1], CT_BUILDER_RELATIVE);
+      writeFileSync(builder, lf(readFileSync(BUILDER_SOURCE, "utf8")));
+      console.log(`wrote ${builder}`);
     }
   } else if (checkCt >= 0) {
     const out = join(args[checkCt + 1], CT_RELATIVE);
     const golden = join(args[checkCt + 1], CT_GOLDEN_RELATIVE);
+    const builder = join(args[checkCt + 1], CT_BUILDER_RELATIVE);
     const same =
-      existsSync(out) && lf(readFileSync(out, "utf8")) === text && existsSync(golden) && lf(readFileSync(golden, "utf8")) === lf(readFileSync(GOLDEN_PATH, "utf8"));
+      existsSync(out) && lf(readFileSync(out, "utf8")) === text && existsSync(golden) && lf(readFileSync(golden, "utf8")) === lf(readFileSync(GOLDEN_PATH, "utf8")) &&
+      existsSync(builder) && lf(readFileSync(builder, "utf8")) === lf(readFileSync(BUILDER_SOURCE, "utf8"));
     console.log(same ? `ok: ${out} and the parity contract are identical to this repo's` : `FAIL: ${out} or ${golden} differs from this repo's: regenerate with --write --ct`);
     process.exit(same ? 0 : 1);
   } else {

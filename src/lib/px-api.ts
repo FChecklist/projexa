@@ -263,6 +263,11 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "/api/knowledge-base/:id": ["GET", "PATCH"],
   "/api/projects": ["GET", "POST"],
   "/api/scope": ["GET", "POST"],
+  // AUDIT-100 A2 batch 8 (two reads combined; a company named in the path)
+  "/api/projects/:id/category-distribution": ["GET"],
+  "/api/dashboard-hierarchy/companies/:companyId/dashboard": ["GET"],
+  "/api/dashboard-hierarchy/companies/:companyId/departments": ["GET"],
+  "/api/dashboard-hierarchy/companies/:companyId/projects/:projectId/category-distribution": ["GET"],
 };
 
 /** AUDIT-100 A2 batch 7: the page-side cache entries a write clears. The Next write handlers call revalidateTag / revalidatePath so a new row shows at
