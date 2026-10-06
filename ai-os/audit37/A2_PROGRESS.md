@@ -180,3 +180,28 @@ legacy table has every org you need (it does: untouched).
   3 documents and 1 knowledge page (no API retires them, and a hard delete was not mine to run): the owner or a later session may remove them.
   ROLLBACK: revert the client PR (#407) first, then redeploy the previous good function commit (79226210, v7).
 
+
+- BATCH 8 (2026-10-06, branches `a2-edge-batch8` / `px-edge-batch8`): 4 of the 7 "several calls combined" routes, 236 proxies on the edge (238 with G-09's two org routes), Vercel-served 78 -> 74 (budget 74):
+  `/api/projects/:id/category-distribution` and the company-scoped `/api/dashboard-hierarchy/companies/:companyId/{dashboard,departments,projects/:projectId/category-distribution}`.
+  New spec keys: `category_distribution` (two reads in parallel, combined by the projexa repo's own pure builder `src/lib/category-distribution.ts`, COPIED BYTE FOR
+  BYTE to the function by `scripts/projexa-api-edge.mjs --write --ct`, checked by `--check-ct`; the first failing read in array order is the answer, a builder that
+  throws on a malformed answer is the handler's catch = the fallback 502, `boq_id` appends the optional `&boqId=`), `company_scope` (src/lib/company-scope.ts
+  requireCompanyScope: after the ordinary organisation step the person must be a member of THAT company, a second PostgREST read with the person's own token under RLS:
+  403 "Not a member of this company"; a failed read or a company id that is not a UUID is an unhandled throw = an empty 500; the COMPANY, not the oldest membership,
+  is the organisation whose key and answer are used: proven with an identity that is a member of two organisations) and `acting_user: "id_only"` (the company dashboard
+  names the acting user id without the e-mail). The recorder gained per-URL upstream answers (`paths`) and a database mock for the company membership.
+  Contract: 3923 cases + 7 sequences. SEEN TO FAIL (each reverted, byte-identical): 11 edge breaks (membership not required, works in the oldest organisation, a failed
+  lookup answered 403, e-mail sent with id-only, boqId dropped, first-failure order swapped, a builder throw answered 200, progress read asking the amounts URL, tampered
+  builder copy, wrong membership column, company taken from the oldest) and 6 Next / browser breaks (membership check dropped in requireCompanyScope, dashboard stops
+  naming the acting user, `format=legacy` dropped, builder share changed, departments path changed, a company route left out of the browser's list).
+  NOT MOVED, with the reason (stop-and-report cases of the brief): `/api/dashboard-hierarchy/companies/:companyId/projects/:projectId` (a four-way fan-out through
+  revenueForProjectInRange / expensesForProjectInRange / progressAsOf, paginated helpers of its own: porting them would be a second implementation of ~300 lines);
+  `/api/work-progress/report` (a 1004-line report builder, `src/lib/work-progress-report.ts`); `/api/shell` (PROJEXA's own Supabase session client, notifications,
+  the capability tree and currencies in one answer). Each needs its own design step, not a spec key.
+
+- BATCH 8 LIVE (2026-10-06): compliance-tracker #2109 merged (0147bb81); `projexa-api` deployed from a clean checkout of it: `/_policy` SOURCE_SHA256 eced11dcad7c... =
+  this repo's generated file, 236 proxy routes (+ the 2 G-09 org routes). LIVE SMOKE: 431 of 431 probes identical edge vs Vercel (the company dashboard with and without
+  filters, departments, both category distributions as owner and client_viewer, not a member of the company 403, a company id that is not a UUID, the category distribution
+  of an unknown project with an unknown boqId, plus every earlier probe): `evidence/a2-batch8-live-smoke-2026-10-06.txt`. Only then does the client PR merge.
+  ROLLBACK: revert the client PR first, then redeploy compliance-tracker 645133b4's parent main (batch 7 table, 232 routes).
+

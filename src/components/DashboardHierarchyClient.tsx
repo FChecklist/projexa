@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { viaPxApi } from "@/lib/px-api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -69,7 +70,7 @@ type ReadResult<T> = { ok: true; data: T } | { ok: false; message: string };
 async function getJson<T>(url: string): Promise<ReadResult<T>> {
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await viaPxApi(url);
   } catch (err) {
     // A thrown fetch never reached the server at all. Saying "the request did
     // not complete" is true; saying "there are no companies" would not be.
