@@ -19,6 +19,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 // the exact selector AccountingClient.tsx/LeadsClient.tsx already use, not
 // a third copy.
 import { type Company, type CompanyScope, CompanySelector } from "@/components/company-scope";
+import { viaPxApi } from "@/lib/px-api";
 
 const EMPLOYMENT_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   active: "default", on_leave: "secondary", terminated: "destructive", resigned: "outline",
@@ -179,7 +180,7 @@ export default function EmployeesClient({ initialTab }: { initialTab?: string })
   async function decide(id: string, decision: "approved" | "rejected") {
     setDecidingId(id);
     try {
-      const res = await fetch(`/api/leave/requests/${id}/decision`, {
+      const res = await viaPxApi(`/api/leave/requests/${id}/decision`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
       });
@@ -203,7 +204,7 @@ export default function EmployeesClient({ initialTab }: { initialTab?: string })
     let succeeded = 0;
     for (const r of pending) {
       try {
-        const res = await fetch(`/api/leave/requests/${r.id}/decision`, {
+        const res = await viaPxApi(`/api/leave/requests/${r.id}/decision`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ decision: "approved" }),
         });

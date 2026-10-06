@@ -70,7 +70,7 @@ export default function OpportunitiesClient() {
 
   async function updateStage(opp: Opportunity, stage: string) {
     try {
-      const res = await fetch(`/api/opportunities/${opp.id}`, {
+      const res = await viaPxApi(`/api/opportunities/${opp.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }),
       });
       if (!res.ok) throw new Error();

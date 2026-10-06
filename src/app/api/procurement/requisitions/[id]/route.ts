@@ -11,7 +11,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest, { 
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/procurement/requisitions/${id}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/procurement/requisitions/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load purchase requisition");

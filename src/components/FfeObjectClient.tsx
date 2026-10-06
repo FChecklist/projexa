@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type FfeItem = {
   id: string; projectId: string; itemName: string; roomOrArea: string | null; category: string; description: string | null;
@@ -63,7 +64,7 @@ export default function FfeObjectClient({ itemId }: { itemId: string }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch(`/api/ffe/${itemId}`, {
+      const res = await viaPxApi(`/api/ffe/${itemId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "dimensions",
@@ -88,7 +89,7 @@ export default function FfeObjectClient({ itemId }: { itemId: string }) {
     if (!next) return;
     setAdvancing(true);
     try {
-      const res = await fetch(`/api/ffe/${itemId}`, {
+      const res = await viaPxApi(`/api/ffe/${itemId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next }),
       });

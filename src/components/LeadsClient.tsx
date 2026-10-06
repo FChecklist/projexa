@@ -90,7 +90,7 @@ export default function LeadsClient() {
 
   async function updateStatus(lead: Lead, status: string) {
     try {
-      const res = await fetch(`/api/leads/${lead.id}`, {
+      const res = await viaPxApi(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       if (!res.ok) throw new Error();

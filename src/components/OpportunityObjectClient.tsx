@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type Opportunity = {
   id: string; name: string; leadId: string | null; erpCustomerId: string | null; stage: string;
@@ -58,7 +59,7 @@ export default function OpportunityObjectClient({ opportunityId }: { opportunity
   async function updateStage(stage: string) {
     setStageBusy(true);
     try {
-      const res = await fetch(`/api/opportunities/${opportunityId}`, {
+      const res = await viaPxApi(`/api/opportunities/${opportunityId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }),
       });
       const data = await res.json().catch(() => null);

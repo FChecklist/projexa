@@ -21,8 +21,15 @@ process.env.VERIDIAN_API_BASE_URL = BASE;
 process.env.NEXT_PUBLIC_SUPABASE_URL = "https://projexa.test";
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
 
-/** What the upstream receives, relative to BASE: the URL-normalised href (fetch percent-encodes a raw space etc. before sending; a bare "?" stays). */
-const wirePath = (url: string) => new URL(url).href.slice(new URL(BASE).href.length);
+/** The VERIDIAN root (veridian-client.ts VERIDIAN_API_ROOT): a `root: true` call goes to /api/v1/... instead of /api/v1/projexa/... (batch 5). */
+const ROOT = BASE.replace(/\/projexa$/, "");
+/** What the upstream receives, relative to BASE: the URL-normalised href (fetch percent-encodes a raw space etc. before sending; a bare "?" stays).
+ *  A call outside BASE (a `root` call) is written "[root]" + its path relative to ROOT; compliance-tracker records the same way. */
+const wirePath = (url: string) => {
+  const href = new URL(url).href;
+  const base = new URL(BASE).href;
+  return href.startsWith(base) ? href.slice(base.length) : `[root]${href.slice(new URL(ROOT).href.length)}`;
+};
 
 let current: ParityCase | null = null;
 let calls: UpstreamCall[] = [];
@@ -78,7 +85,7 @@ const realFetch = globalThis.fetch;
 beforeAll(() => {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (!url.startsWith(BASE)) throw new Error(`unexpected fetch ${url}`);
+    if (!url.startsWith(ROOT + "/")) throw new Error(`unexpected fetch ${url}`);
     const h = new Headers(init?.headers);
     calls.push({
       method: (init?.method ?? "GET").toUpperCase(),
@@ -100,15 +107,21 @@ afterAll(() => {
   globalThis.fetch = realFetch;
 });
 
+/** The route Next would pick for a path: a literal segment beats a dynamic one at the same position (/api/materials/issues is not
+ *  /api/materials/:id), as in the App Router. */
 const routeOf = (path: string) => {
   const segs = new URL(path, "http://x").pathname.split("/").filter(Boolean);
+  let best: { route: string; params: Record<string, string>; rank: string } | null = null;
   for (const r of REQUESTS) {
     const pat = r.route.split("/").filter(Boolean);
     if (pat.length !== segs.length) continue;
     const params: Record<string, string> = {};
-    if (pat.every((p, i) => (p.startsWith(":") ? ((params[p.slice(1)] = decodeURIComponent(segs[i]!)), true) : p === segs[i]))) return { route: r.route, params };
+    if (!pat.every((p, i) => (p.startsWith(":") ? ((params[p.slice(1)] = decodeURIComponent(segs[i]!)), true) : p === segs[i]))) continue;
+    const rank = pat.map((p) => (p.startsWith(":") ? "0" : "1")).join("");
+    if (!best || rank > best.rank) best = { route: r.route, params, rank };
   }
-  throw new Error(`no route for ${path}`);
+  if (!best) throw new Error(`no route for ${path}`);
+  return { route: best.route, params: best.params };
 };
 
 type Handler = (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
@@ -120,7 +133,8 @@ export async function runNext(c: ParityCase): Promise<Outcome> {
   const { NextRequest } = await import("next/server");
   const { middleware } = await import("@/middleware");
   const url = `http://localhost:3100${c.path}`;
-  const init = { method: c.method, headers: c.body === undefined ? {} : { "content-type": "application/json" }, body: c.body === undefined ? undefined : JSON.stringify(c.body) };
+  const sent = c.raw_body !== undefined ? c.raw_body : c.body === undefined ? undefined : JSON.stringify(c.body);
+  const init = { method: c.method, headers: sent === undefined ? {} : { "content-type": "application/json" }, body: sent };
   let res: Response = await middleware(new NextRequest(url, init));
   if (res.headers.get("x-middleware-next") === "1") {
     const { route, params } = routeOf(c.path);

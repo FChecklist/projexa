@@ -34,6 +34,7 @@ import { MATERIAL_UNITS, isMaterialUnit, materialUnitLabel, normaliseMaterialUni
 import { useOrgMoney } from "@/lib/use-org-money";
 import { EMPTY_VALUE, formatQty } from "@/lib/format-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type Material = {
   id: string;
@@ -98,7 +99,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
     if (!draft.name.trim() || !draft.unit.trim()) { toast.error("Name and unit are required"); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/materials/master/${materialId}`, {
+      const res = await viaPxApi(`/api/materials/master/${materialId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reorderLevel: draft.reorderLevel === "" ? null : Number(draft.reorderLevel), name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
       });
@@ -117,7 +118,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   async function deactivate() {
     setDeactivating(true);
     try {
-      const res = await fetch(`/api/materials/master/${materialId}`, {
+      const res = await viaPxApi(`/api/materials/master/${materialId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: false }),
       });

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { PackageCheck } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type GoodsReceipt = {
   id: string; receiptNumber: number; status: string; postingDate: string; supplierId: string; purchaseOrderId: string | null;
@@ -61,7 +62,7 @@ export default function GoodsReceiptObjectClient({ receiptId }: { receiptId: str
   async function submit() {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/procurement/goods-receipts/${receiptId}/submit`, { method: "POST" });
+      const res = await viaPxApi(`/api/procurement/goods-receipts/${receiptId}/submit`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to submit goods receipt");
       toast.success("Goods receipt posted to stock");

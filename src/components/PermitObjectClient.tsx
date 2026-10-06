@@ -141,7 +141,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
 
   function scheduleAutosave() {
     if (!draftId) return;
-    fetch(`/api/screen-drafts/${draftId}`, {
+    viaPxApi(`/api/screen-drafts/${draftId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payload: valuesRef.current }),
@@ -205,7 +205,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   }
 
   async function handleCancel() {
-    if (draftId) await fetch(`/api/screen-drafts/${draftId}`, { method: "DELETE" });
+    if (draftId) await viaPxApi(`/api/screen-drafts/${draftId}`, { method: "DELETE" });
     setDraftId(null);
     setHasDraft(false);
     setMode("display");

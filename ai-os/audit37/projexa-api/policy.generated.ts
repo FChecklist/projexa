@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "89a278e8a74fa3dceb382a181752917ebef248476fd8e9f8e5eb7c0db18a44c7"
+export const SOURCE_SHA256 = "da9014b517bc5510542cfb792c21f9bfc06c60992015b683168ecce0826cadb9"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -233,8 +233,9 @@ export const MUTATING_METHODS: ReadonlySet<string> = new Set(["DELETE","PATCH","
 
 export type EdgeMethodSpec = {
   upstream: string; acting_user?: "explicit" | "session"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;
-  search_params?: string[]; body?: "json"; body_actor_email?: "always"; error_style?: "veridian" | "plain"
+  search_params?: string[]; body?: "json" | "json_lenient" | "empty"; body_actor_email?: "always"; error_style?: "veridian" | "plain"
   forward_search?: boolean; success_status?: 200 | 201; cache_control?: string
+  root?: true; roles?: string; body_defaults?: Record<string, string>
 }
 /** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */
 export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [
@@ -351,11 +352,85 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/tax-templates","methods":{"GET":{"upstream":"/tax-templates","fallback":"Failed to load tax templates"}}},
   {"route":"/api/trial-balance","methods":{"GET":{"upstream":"/trial-balance","forward_search":true,"fallback":"Failed to generate trial balance"}}},
   {"route":"/api/wiki/:id","methods":{"GET":{"upstream":"/wiki/{id}","fallback":"Failed to load wiki page"},"PATCH":{"upstream":"/wiki/{id}","body":"json","fallback":"Failed to update wiki page"}}},
+  {"route":"/api/change-orders","methods":{"GET":{"upstream":"/change-orders?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load change orders"},"POST":{"upstream":"/change-orders","roles":"PM_OR_ABOVE","body":"json","success_status":201,"fallback":"Failed to create change order"}}},
+  {"route":"/api/change-orders/:id","methods":{"GET":{"upstream":"/change-orders/{id}","fallback":"Failed to load change order"},"PATCH":{"upstream":"/change-orders/{id}","roles":"PM_OR_ABOVE","acting_user":"explicit","body":"json","fallback":"Failed to update change order"}}},
+  {"route":"/api/construction-budget/lines","methods":{"POST":{"upstream":"/construction/budget/lines","root":true,"body":"json","success_status":201,"fallback":"Failed to save budget line"}}},
+  {"route":"/api/credit-notes/:id","methods":{"GET":{"upstream":"/credit-notes/{id}","fallback":"Failed to load credit note"}}},
+  {"route":"/api/documents/:id/dispose","methods":{"POST":{"upstream":"/documents/{id}/dispose","root":true,"fallback":"Failed to dispose document"}}},
+  {"route":"/api/drawings/:id","methods":{"GET":{"upstream":"/drawings/{id}","error_style":"plain","fallback":"Failed to load this drawing"},"PATCH":{"upstream":"/drawings/{id}","body":"json","error_style":"plain","fallback":"Failed to update this drawing"},"DELETE":{"upstream":"/drawings/{id}","error_style":"plain","fallback":"Failed to remove this drawing"}}},
+  {"route":"/api/employees/:id","methods":{"GET":{"upstream":"/employees/{id}","fallback":"Failed to load employee"},"PATCH":{"upstream":"/employees/{id}","body":"json","fallback":"Failed to update employee"}}},
+  {"route":"/api/ffe/:id","methods":{"GET":{"upstream":"/ffe/{id}","fallback":"Failed to load FF&E item"},"PATCH":{"upstream":"/ffe/{id}","body":"json","body_defaults":{"action":"status"},"fallback":"Failed to update FF&E item"}}},
+  {"route":"/api/floor-plans/:id","methods":{"GET":{"upstream":"/floor-plans/{id}","fallback":"Failed to load floor plan"},"PATCH":{"upstream":"/floor-plans/{id}","body":"json","body_defaults":{"action":"status"},"fallback":"Failed to update floor plan"}}},
+  {"route":"/api/kpi-entries","methods":{"GET":{"upstream":"/construction/kpi-entries?kpiDefinitionId={query:kpiDefinitionId}","root":true,"required_query":{"kpiDefinitionId":"kpiDefinitionId query param is required"},"fallback":"Failed to load KPI entries"},"POST":{"upstream":"/construction/kpi-entries","root":true,"body":"json","success_status":201,"fallback":"Failed to submit KPI entry"}}},
+  {"route":"/api/kpi-entries/:id/approve","methods":{"POST":{"upstream":"/construction/kpi-entries/{id}/approve","root":true,"fallback":"Failed to approve KPI entry"}}},
+  {"route":"/api/kpis/:id","methods":{"GET":{"upstream":"/kpis/{id}","fallback":"Failed to load KPI definition"}}},
+  {"route":"/api/labour-roster/:id","methods":{"GET":{"upstream":"/construction/labour-roster/{id}","root":true,"fallback":"Failed to load worker"},"PATCH":{"upstream":"/construction/labour-roster/{id}","root":true,"body":"json","fallback":"Failed to update worker"}}},
+  {"route":"/api/leads/:id","methods":{"GET":{"upstream":"/leads/{id}","fallback":"Failed to load lead"},"PATCH":{"upstream":"/leads/{id}","body":"json","fallback":"Failed to update lead"}}},
+  {"route":"/api/leave/requests/:id/decision","methods":{"POST":{"upstream":"/leave/requests/{id}/decision","body":"json","fallback":"Failed to decide leave request"}}},
+  {"route":"/api/materials","methods":{"GET":{"upstream":"/construction/materials/receipts?projectId={query:projectId}","root":true,"required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load materials"},"POST":{"upstream":"/construction/materials/receipts","root":true,"body":"json","success_status":201,"fallback":"Failed to record material receipt"}}},
+  {"route":"/api/materials/:id","methods":{"GET":{"upstream":"/construction/materials/receipts/{id}","root":true,"error_style":"plain","fallback":"Failed to load material receipt"},"PATCH":{"upstream":"/construction/materials/receipts/{id}","root":true,"body":"json","error_style":"plain","fallback":"Failed to void material receipt"}}},
+  {"route":"/api/materials/issues","methods":{"GET":{"upstream":"/construction/materials/issues?projectId={query:projectId}","root":true,"required_query":{"projectId":"projectId query param is required"},"error_style":"plain","fallback":"Failed to load material issues"},"POST":{"upstream":"/construction/materials/issues","root":true,"body":"json","success_status":201,"error_style":"plain","fallback":"Failed to record material issue"}}},
+  {"route":"/api/materials/master/:id","methods":{"GET":{"upstream":"/construction/materials/{id}","root":true,"fallback":"Failed to load material"},"PATCH":{"upstream":"/construction/materials/{id}","root":true,"body":"json","fallback":"Failed to update material"}}},
+  {"route":"/api/milestones","methods":{"GET":{"upstream":"/milestones?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load milestones"},"POST":{"upstream":"/milestones","roles":"PM_OR_ABOVE","body":"json","success_status":201,"fallback":"Failed to create milestone"}}},
+  {"route":"/api/milestones/:id","methods":{"PATCH":{"upstream":"/milestones/{id}","roles":"PM_OR_ABOVE","body":"json","fallback":"Failed to update milestone"}}},
+  {"route":"/api/module-chain","methods":{"GET":{"upstream":"/module-chain","fallback":"Failed to load the PROJEXA module chain"}}},
+  {"route":"/api/moms/:id","methods":{"GET":{"upstream":"/veri-meetings/{id}","fallback":"Failed to load meeting"},"PATCH":{"upstream":"/veri-meetings/{id}","body":"json","fallback":"Failed to update meeting"},"DELETE":{"upstream":"/veri-meetings/{id}","fallback":"Failed to delete meeting"}}},
+  {"route":"/api/moms/:id/action-items","methods":{"POST":{"upstream":"/veri-meetings/{id}/action-items","body":"json","success_status":201,"fallback":"Failed to add action item"}}},
+  {"route":"/api/moms/:id/generate-intelligence","methods":{"POST":{"upstream":"/veri-meetings/{id}/generate-intelligence","fallback":"Failed to generate meeting intelligence"}}},
+  {"route":"/api/mood-boards/:id","methods":{"GET":{"upstream":"/mood-boards/{id}","fallback":"Failed to load mood board"},"PATCH":{"upstream":"/mood-boards/{id}","body":"json","fallback":"Failed to update mood board"},"POST":{"upstream":"/mood-boards/{id}","body":"json","success_status":201,"fallback":"Failed to add mood board item"}}},
+  {"route":"/api/opportunities/:id","methods":{"GET":{"upstream":"/opportunities/{id}","fallback":"Failed to load opportunity"},"PATCH":{"upstream":"/opportunities/{id}","body":"json","fallback":"Failed to update opportunity"}}},
+  {"route":"/api/payroll/employees/:id/income-tax-slab","methods":{"POST":{"upstream":"/payroll/employees/{id}/income-tax-slab","body":"json","fallback":"Failed to assign income tax slab"}}},
+  {"route":"/api/payroll/employees/:id/tax-exemptions","methods":{"GET":{"upstream":"/payroll/employees/{id}/tax-exemptions","fallback":"Failed to load tax exemptions"},"POST":{"upstream":"/payroll/employees/{id}/tax-exemptions","body":"json","success_status":201,"fallback":"Failed to create tax exemption"}}},
+  {"route":"/api/payroll/payslips/:id","methods":{"GET":{"upstream":"/payroll/payslips/{id}","fallback":"Failed to load payslip"}}},
+  {"route":"/api/payroll/payslips/:id/finalize","methods":{"POST":{"upstream":"/payroll/payslips/{id}/finalize","fallback":"Failed to finalize payslip"}}},
+  {"route":"/api/payroll/payslips/:id/tds","methods":{"POST":{"upstream":"/payroll/payslips/{id}/tds","body":"json","fallback":"Failed to update TDS"}}},
+  {"route":"/api/payroll/runs/:id","methods":{"GET":{"upstream":"/payroll/runs/{id}","fallback":"Failed to load payroll run"}}},
+  {"route":"/api/payroll/runs/:id/payslips","methods":{"GET":{"upstream":"/payroll/runs/{id}/payslips","fallback":"Failed to load payslips"}}},
+  {"route":"/api/payroll/runs/:id/process","methods":{"POST":{"upstream":"/payroll/runs/{id}/process","fallback":"Failed to process payroll run"}}},
+  {"route":"/api/procurement/goods-receipts/:id","methods":{"GET":{"upstream":"/procurement/goods-receipts/{id}","fallback":"Failed to load goods receipt"}}},
+  {"route":"/api/procurement/goods-receipts/:id/submit","methods":{"POST":{"upstream":"/procurement/goods-receipts/{id}/submit","body":"empty","fallback":"Failed to submit goods receipt"}}},
+  {"route":"/api/procurement/purchase-orders/:id","methods":{"GET":{"upstream":"/procurement/purchase-orders/{id}","fallback":"Failed to load purchase order"},"PATCH":{"upstream":"/procurement/purchase-orders/{id}","body":"json","fallback":"Failed to update purchase order"},"DELETE":{"upstream":"/procurement/purchase-orders/{id}","fallback":"Failed to cancel purchase order"}}},
+  {"route":"/api/procurement/purchase-orders/:id/submit","methods":{"POST":{"upstream":"/procurement/purchase-orders/{id}/submit","body":"empty","fallback":"Failed to submit purchase order"}}},
+  {"route":"/api/procurement/requisitions/:id/submit","methods":{"POST":{"upstream":"/procurement/requisitions/{id}/submit","body":"empty","fallback":"Failed to submit purchase requisition"}}},
+  {"route":"/api/procurement/rfqs/:id","methods":{"GET":{"upstream":"/procurement/rfqs/{id}","fallback":"Failed to load RFQ"}}},
+  {"route":"/api/procurement/rfqs/:id/send","methods":{"POST":{"upstream":"/procurement/rfqs/{id}/send","body":"empty","fallback":"Failed to send RFQ"}}},
+  {"route":"/api/project-budgets","methods":{"GET":{"upstream":"/project-budgets","forward_search":true,"fallback":"Failed to load budgets"},"POST":{"upstream":"/project-budgets","roles":"PM_OR_ABOVE","body":"json","success_status":201,"fallback":"Failed to create budget"}}},
+  {"route":"/api/punch-list/:id","methods":{"GET":{"upstream":"/punch-list/{id}","fallback":"Failed to load punch list item"},"PATCH":{"upstream":"/punch-list/{id}","roles":"FIELD","body":"json","fallback":"Failed to update punch list item"}}},
+  {"route":"/api/purchase-orders","methods":{"GET":{"upstream":"/purchase-orders","forward_search":true,"fallback":"Failed to load purchase orders"},"POST":{"upstream":"/purchase-orders","roles":"PM_OR_ABOVE","body":"json","success_status":201,"fallback":"Failed to create purchase order"}}},
+  {"route":"/api/quotations/:id","methods":{"GET":{"upstream":"/quotations/{id}","fallback":"Failed to load quotation"},"PATCH":{"upstream":"/quotations/{id}","body":"json","fallback":"Failed to update quotation"}}},
+  {"route":"/api/quotations/:id/revisions","methods":{"POST":{"upstream":"/quotations/{id}/revisions","body":"json_lenient","success_status":201,"fallback":"Failed to create quotation revision"}}},
+  {"route":"/api/recruitment/applications/:id","methods":{"GET":{"upstream":"/recruitment/applications/{id}","fallback":"Failed to load application"}}},
+  {"route":"/api/recruitment/applications/:id/hire","methods":{"POST":{"upstream":"/recruitment/applications/{id}/hire","body":"json","fallback":"Failed to link hired employee"}}},
+  {"route":"/api/recruitment/applications/:id/interviews","methods":{"GET":{"upstream":"/recruitment/applications/{id}/interviews","fallback":"Failed to load interviews"},"POST":{"upstream":"/recruitment/applications/{id}/interviews","body":"json","success_status":201,"fallback":"Failed to schedule interview"}}},
+  {"route":"/api/recruitment/applications/:id/stage","methods":{"POST":{"upstream":"/recruitment/applications/{id}/stage","body":"json","fallback":"Failed to move application stage"}}},
+  {"route":"/api/recruitment/interviews/:id/feedback","methods":{"POST":{"upstream":"/recruitment/interviews/{id}/feedback","body":"json","fallback":"Failed to submit interview feedback"}}},
+  {"route":"/api/recruitment/job-openings/:id","methods":{"GET":{"upstream":"/recruitment/job-openings/{id}","fallback":"Failed to load job opening"}}},
+  {"route":"/api/recruitment/job-openings/:id/status","methods":{"POST":{"upstream":"/recruitment/job-openings/{id}/status","body":"json","fallback":"Failed to update job opening status"}}},
+  {"route":"/api/reports/definitions/:id/run","methods":{"POST":{"upstream":"/reports/definitions/{id}/run","body":"json_lenient","fallback":"Failed to run this report/analysis"}}},
+  {"route":"/api/rfis/:id","methods":{"GET":{"upstream":"/rfis/{id}","fallback":"Failed to load RFI"},"PATCH":{"upstream":"/rfis/{id}","body":"json","fallback":"Failed to update RFI"}}},
+  {"route":"/api/sales-invoices/:id","methods":{"GET":{"upstream":"/sales-invoices/{id}","fallback":"Failed to load invoice"}}},
+  {"route":"/api/sales-order-document-flow/:id","methods":{"GET":{"upstream":"/sales-order-document-flow/{id}","fallback":"Failed to load document flow"}}},
+  {"route":"/api/sales-orders/:id","methods":{"GET":{"upstream":"/sales-orders/{id}","fallback":"Failed to load sales order"},"PATCH":{"upstream":"/sales-orders/{id}","body":"json","fallback":"Failed to update sales order"}}},
+  {"route":"/api/schedule-tracker","methods":{"GET":{"upstream":"/construction/schedule?projectId={query:projectId}","root":true,"required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load schedule"}}},
+  {"route":"/api/screen-drafts/:id","methods":{"PATCH":{"upstream":"/screen-drafts/{id}","body":"json","body_actor_email":"always","fallback":"Failed to autosave draft"},"DELETE":{"upstream":"/screen-drafts/{id}","body":"empty","body_actor_email":"always","fallback":"Failed to discard draft"}}},
+  {"route":"/api/site-diary","methods":{"GET":{"upstream":"/site-diary?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"fallback":"Failed to load site diary"},"POST":{"upstream":"/site-diary","roles":"FIELD","body":"json","success_status":201,"fallback":"Failed to create diary entry"}}},
+  {"route":"/api/site-diary/:id","methods":{"GET":{"upstream":"/site-diary/{id}","fallback":"Failed to load diary entry"}}},
+  {"route":"/api/timesheets/:id","methods":{"GET":{"upstream":"/timesheets/{id}","acting_user":"explicit","fallback":"Failed to load time entry"},"PATCH":{"upstream":"/timesheets/{id}","acting_user":"explicit","body":"json_lenient","fallback":"Failed to update time entry"},"DELETE":{"upstream":"/timesheets/{id}","acting_user":"explicit","body":"empty","fallback":"Failed to delete time entry"}}},
+  {"route":"/api/timesheets/:id/approve","methods":{"POST":{"upstream":"/timesheets/{id}/approve","acting_user":"explicit","body":"empty","fallback":"Failed to approve time entry"}}},
+  {"route":"/api/timesheets/:id/reject","methods":{"POST":{"upstream":"/timesheets/{id}/reject","acting_user":"explicit","body":"json_lenient","fallback":"Failed to reject time entry"}}},
+  {"route":"/api/timesheets/:id/submit","methods":{"POST":{"upstream":"/timesheets/{id}/submit","acting_user":"explicit","body":"empty","fallback":"Failed to submit time entry"}}},
+  {"route":"/api/vendors/:id/bank-accounts","methods":{"GET":{"upstream":"/vendors/{id}/bank-accounts","fallback":"Failed to load bank accounts"},"POST":{"upstream":"/vendors/{id}/bank-accounts","body":"json","success_status":201,"fallback":"Failed to add bank account"}}},
+  {"route":"/api/vendors/:id/portal-links","methods":{"GET":{"upstream":"/vendors/{id}/portal-links","fallback":"Failed to load portal links"},"POST":{"upstream":"/vendors/{id}/portal-links","body":"json_lenient","success_status":201,"fallback":"Failed to create portal link"}}},
+  {"route":"/api/vendors/:id/portal-links/:linkId","methods":{"DELETE":{"upstream":"/vendors/{id}/portal-links/{linkId}","fallback":"Failed to revoke portal link"}}},
+  {"route":"/api/vendors/:id/qualification","methods":{"GET":{"upstream":"/vendors/{id}/qualification","fallback":"Failed to load qualification reviews"},"POST":{"upstream":"/vendors/{id}/qualification","body":"json","success_status":201,"fallback":"Failed to record qualification review"}}},
+  {"route":"/api/vendors/:id/sanction-checks","methods":{"GET":{"upstream":"/vendors/{id}/sanction-checks","fallback":"Failed to load sanction checks"},"POST":{"upstream":"/vendors/{id}/sanction-checks","body":"json","success_status":201,"fallback":"Failed to record sanction check"}}},
 ]
+/** Next routes that stay on Vercel but win over an edge route for some path (a literal sibling of a dynamic edge route): 404 here. */
+export const SHADOW_ROUTES: ReadonlyArray<string> = ["/api/drawings/export","/api/labour-roster/import","/api/materials/master","/api/projects/from-document","/api/projects/overview","/api/scope/categories/:id","/api/timesheets/review-day","/api/timesheets/submit-day"]
 
 /** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */
 export function sourceData() {
-  return { roleGroups: ROLE_GROUPS, policy: API_WRITE_POLICY, defaultTier: DEFAULT_WRITE_TIER, mutatingMethods: [...MUTATING_METHODS], edgeRoutes: EDGE_ROUTES }
+  return { roleGroups: ROLE_GROUPS, policy: API_WRITE_POLICY, defaultTier: DEFAULT_WRITE_TIER, mutatingMethods: [...MUTATING_METHODS], edgeRoutes: EDGE_ROUTES, shadowRoutes: SHADOW_ROUTES }
 }
 
 function matchesPattern(pattern: string, segments: readonly string[]): boolean {

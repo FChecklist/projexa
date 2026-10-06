@@ -142,7 +142,94 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "/api/tax-templates": ["GET"],
   "/api/trial-balance": ["GET"],
   "/api/wiki/:id": ["GET", "PATCH"],
+  // AUDIT-100 A2 batch 5 (own role sets, VERIDIAN root, empty / lenient / defaulted bodies)
+  "/api/change-orders": ["GET", "POST"],
+  "/api/change-orders/:id": ["GET", "PATCH"],
+  "/api/construction-budget/lines": ["POST"],
+  "/api/credit-notes/:id": ["GET"],
+  "/api/documents/:id/dispose": ["POST"],
+  "/api/drawings/:id": ["DELETE", "GET", "PATCH"],
+  "/api/employees/:id": ["GET", "PATCH"],
+  "/api/ffe/:id": ["GET", "PATCH"],
+  "/api/floor-plans/:id": ["GET", "PATCH"],
+  "/api/kpi-entries": ["GET", "POST"],
+  "/api/kpi-entries/:id/approve": ["POST"],
+  "/api/kpis/:id": ["GET"],
+  "/api/labour-roster/:id": ["GET", "PATCH"],
+  "/api/leads/:id": ["GET", "PATCH"],
+  "/api/leave/requests/:id/decision": ["POST"],
+  "/api/materials": ["GET", "POST"],
+  "/api/materials/:id": ["GET", "PATCH"],
+  "/api/materials/issues": ["GET", "POST"],
+  "/api/materials/master/:id": ["GET", "PATCH"],
+  "/api/milestones": ["GET", "POST"],
+  "/api/milestones/:id": ["PATCH"],
+  "/api/module-chain": ["GET"],
+  "/api/moms/:id": ["DELETE", "GET", "PATCH"],
+  "/api/moms/:id/action-items": ["POST"],
+  "/api/moms/:id/generate-intelligence": ["POST"],
+  "/api/mood-boards/:id": ["GET", "PATCH", "POST"],
+  "/api/opportunities/:id": ["GET", "PATCH"],
+  "/api/payroll/employees/:id/income-tax-slab": ["POST"],
+  "/api/payroll/employees/:id/tax-exemptions": ["GET", "POST"],
+  "/api/payroll/payslips/:id": ["GET"],
+  "/api/payroll/payslips/:id/finalize": ["POST"],
+  "/api/payroll/payslips/:id/tds": ["POST"],
+  "/api/payroll/runs/:id": ["GET"],
+  "/api/payroll/runs/:id/payslips": ["GET"],
+  "/api/payroll/runs/:id/process": ["POST"],
+  "/api/procurement/goods-receipts/:id": ["GET"],
+  "/api/procurement/goods-receipts/:id/submit": ["POST"],
+  "/api/procurement/purchase-orders/:id": ["DELETE", "GET", "PATCH"],
+  "/api/procurement/purchase-orders/:id/submit": ["POST"],
+  "/api/procurement/requisitions/:id/submit": ["POST"],
+  "/api/procurement/rfqs/:id": ["GET"],
+  "/api/procurement/rfqs/:id/send": ["POST"],
+  "/api/project-budgets": ["GET", "POST"],
+  "/api/punch-list/:id": ["GET", "PATCH"],
+  "/api/purchase-orders": ["GET", "POST"],
+  "/api/quotations/:id": ["GET", "PATCH"],
+  "/api/quotations/:id/revisions": ["POST"],
+  "/api/recruitment/applications/:id": ["GET"],
+  "/api/recruitment/applications/:id/hire": ["POST"],
+  "/api/recruitment/applications/:id/interviews": ["GET", "POST"],
+  "/api/recruitment/applications/:id/stage": ["POST"],
+  "/api/recruitment/interviews/:id/feedback": ["POST"],
+  "/api/recruitment/job-openings/:id": ["GET"],
+  "/api/recruitment/job-openings/:id/status": ["POST"],
+  "/api/reports/definitions/:id/run": ["POST"],
+  "/api/rfis/:id": ["GET", "PATCH"],
+  "/api/sales-invoices/:id": ["GET"],
+  "/api/sales-order-document-flow/:id": ["GET"],
+  "/api/sales-orders/:id": ["GET", "PATCH"],
+  "/api/schedule-tracker": ["GET"],
+  "/api/screen-drafts/:id": ["DELETE", "PATCH"],
+  "/api/site-diary": ["GET", "POST"],
+  "/api/site-diary/:id": ["GET"],
+  "/api/timesheets/:id": ["DELETE", "GET", "PATCH"],
+  "/api/timesheets/:id/approve": ["POST"],
+  "/api/timesheets/:id/reject": ["POST"],
+  "/api/timesheets/:id/submit": ["POST"],
+  "/api/vendors/:id/bank-accounts": ["GET", "POST"],
+  "/api/vendors/:id/portal-links": ["GET", "POST"],
+  "/api/vendors/:id/portal-links/:linkId": ["DELETE"],
+  "/api/vendors/:id/qualification": ["GET", "POST"],
+  "/api/vendors/:id/sanction-checks": ["GET", "POST"],
 };
+
+/** AUDIT-100 A2 batch 5: Next routes that stay on Vercel but win over a dynamic edge route for some path (the App Router prefers a literal
+ *  segment: GET /api/drawings/export is the xlsx download, not /api/drawings/:id). Such a path stays same-origin. Equal to the generated
+ *  SHADOW_ROUTES of the edge function (src/lib/projexa-api-edge.test.ts). */
+export const PX_EDGE_SHADOWS: readonly string[] = [
+  "/api/drawings/export",
+  "/api/labour-roster/import",
+  "/api/materials/master",
+  "/api/projects/from-document",
+  "/api/projects/overview",
+  "/api/scope/categories/:id",
+  "/api/timesheets/review-day",
+  "/api/timesheets/submit-day",
+];
 
 function currentOrigin(): string | null {
   return typeof window !== "undefined" && window.location ? window.location.origin : null;
@@ -154,16 +241,23 @@ export function pxApiBase(env: string | undefined = process.env.NEXT_PUBLIC_PX_A
   return origin && PX_EDGE_ORIGINS.includes(origin) ? PX_API_DEFAULT_BASE.replace(/\/+$/, "") : "";
 }
 
-/** True when `method path` is one of the edge function's routes. `path` may carry a query string. */
+/** True when `method path` is one of the edge function's routes. `path` may carry a query string. The path is resolved the way the App
+ *  Router resolves it (a literal segment beats a dynamic one, over the edge routes AND the Vercel routes that shadow them), then the method
+ *  must be one of that route's. */
 export function isEdgeRoute(method: string, path: string): boolean {
   if (!path.startsWith("/api/")) return false;
   const segs = path.split("?")[0]!.split("/").filter(Boolean);
-  for (const [route, methods] of Object.entries(PX_EDGE_ROUTES)) {
-    if (!methods.includes(method.toUpperCase())) continue;
+  let best: { rank: string; methods: readonly string[] | null } | null = null;
+  const consider = (route: string, methods: readonly string[] | null) => {
     const pat = route.split("/").filter(Boolean);
-    if (pat.length === segs.length && pat.every((p, i) => (p.startsWith(":") ? segs[i]!.length > 0 : p === segs[i]))) return true;
-  }
-  return false;
+    if (pat.length !== segs.length || !pat.every((p, i) => (p.startsWith(":") ? segs[i]!.length > 0 : p === segs[i]))) return;
+    const rank = pat.map((p) => (p.startsWith(":") ? "0" : "1")).join("");
+    if (!best || rank > best.rank) best = { rank, methods };
+  };
+  for (const [route, methods] of Object.entries(PX_EDGE_ROUTES)) consider(route, methods);
+  for (const route of PX_EDGE_SHADOWS) consider(route, null);
+  const found = best as { rank: string; methods: readonly string[] | null } | null;
+  return !!found?.methods?.includes(method.toUpperCase());
 }
 
 async function browserAccessToken(): Promise<string | null> {

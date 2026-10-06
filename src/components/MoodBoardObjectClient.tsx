@@ -60,7 +60,7 @@ export default function MoodBoardObjectClient({ boardId }: { boardId: string }) 
     if (!draft.title.trim()) { toast.error("Title is required"); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/mood-boards/${boardId}`, {
+      const res = await viaPxApi(`/api/mood-boards/${boardId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: draft.title.trim(), roomOrArea: draft.roomOrArea || null, description: draft.description || null }),
       });
@@ -79,7 +79,7 @@ export default function MoodBoardObjectClient({ boardId }: { boardId: string }) 
   async function advanceStatus(next: string) {
     setStatusBusy(true);
     try {
-      const res = await fetch(`/api/mood-boards/${boardId}`, {
+      const res = await viaPxApi(`/api/mood-boards/${boardId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "status", status: next }),
       });
@@ -98,7 +98,7 @@ export default function MoodBoardObjectClient({ boardId }: { boardId: string }) 
     if (!itemLabel.trim()) return;
     setAddingItem(true);
     try {
-      const res = await fetch(`/api/mood-boards/${boardId}`, {
+      const res = await viaPxApi(`/api/mood-boards/${boardId}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label: itemLabel, notes: itemNotes || undefined }),
       });

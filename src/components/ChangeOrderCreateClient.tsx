@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField, type FieldErrors, hasErrors } from "@/components/ui/form-field";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
+import { viaPxApi } from "@/lib/px-api";
 
 export default function ChangeOrderCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function ChangeOrderCreateClient({ projectId }: { projectId: stri
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/change-orders", {
+      const res = await viaPxApi("/api/change-orders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId, title, reason: reason || undefined,

@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type Lead = {
   id: string; name: string; contactEmail: string | null; contactPhone: string | null;
@@ -57,7 +58,7 @@ export default function LeadObjectClient({ leadId }: { leadId: string }) {
   async function updateStatus(status: string) {
     setStatusBusy(true);
     try {
-      const res = await fetch(`/api/leads/${leadId}`, {
+      const res = await viaPxApi(`/api/leads/${leadId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       const data = await res.json().catch(() => null);

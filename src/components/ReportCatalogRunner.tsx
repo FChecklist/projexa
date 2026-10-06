@@ -60,6 +60,7 @@ import { ReportFilters } from "@/components/reports/ReportFilters";
 import { monthToDateRange } from "@/lib/report-registry";
 import { formatDateDMY } from "@/lib/format-date";
 import { timeoutSentence, useTimedRun } from "@/lib/use-timed-run";
+import { viaPxApi } from "@/lib/px-api";
 
 /** The sentence an empty result gets. Exported so its wording is pinned by a test. */
 export function emptyResultSentence(subject: string, from: string, to: string): string {
@@ -108,7 +109,7 @@ export function ReportCatalogRunner({
         const params: Record<string, unknown> = { ...paramSet };
         if (project.trim()) params.projectId = project.trim();
         if (supportsCompanyScope && companyId) params.companyId = companyId;
-        const res = await fetch(`/api/reports/definitions/${encodeURIComponent(definitionId)}/run`, {
+        const res = await viaPxApi(`/api/reports/definitions/${encodeURIComponent(definitionId)}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ params }),

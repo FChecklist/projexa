@@ -51,6 +51,7 @@ import { Send, PackageCheck } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type PurchaseOrder = {
   id: string; poNumber: number; status: string; orderDate: string; expectedDeliveryDate: string | null; supplierId: string; grandTotal: string;
@@ -92,7 +93,7 @@ export default function PurchaseOrderObjectClient({ poId }: { poId: string }) {
   async function submit() {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/procurement/purchase-orders/${poId}/submit`, { method: "POST" });
+      const res = await viaPxApi(`/api/procurement/purchase-orders/${poId}/submit`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to submit purchase order");
       toast.success("Purchase order submitted");
@@ -118,7 +119,7 @@ export default function PurchaseOrderObjectClient({ poId }: { poId: string }) {
     if (!draft.supplierId || !draft.orderDate) { toast.error("Vendor and order date are required"); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/procurement/purchase-orders/${poId}`, {
+      const res = await viaPxApi(`/api/procurement/purchase-orders/${poId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           supplierId: draft.supplierId,
@@ -142,7 +143,7 @@ export default function PurchaseOrderObjectClient({ poId }: { poId: string }) {
   async function cancelPo() {
     setCancelling(true);
     try {
-      const res = await fetch(`/api/procurement/purchase-orders/${poId}`, { method: "DELETE" });
+      const res = await viaPxApi(`/api/procurement/purchase-orders/${poId}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to cancel purchase order");
       toast.success("Purchase order cancelled");

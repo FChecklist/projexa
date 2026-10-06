@@ -14,7 +14,7 @@ export const POST = withTiming("POST", async function POST(request: Request, { p
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/sales-invoices/${id}/submit`, { organizationId: ctx.organizationId!, method: "POST", body });
+    const data = await callVeridian(`/sales-invoices/${encodeURIComponent(id)}/submit`, { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to submit invoice");
