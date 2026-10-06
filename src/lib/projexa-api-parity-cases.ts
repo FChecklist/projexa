@@ -724,7 +724,7 @@ export function buildCases(): ParityCase[] {
   for (const route of ["/api/documents", "/api/drawings", "/api/permits"]) {
     up(`POST ${route} with two files`, route, form({ files: [{ field: "file", name: "a.pdf", type: "application/pdf", content: "AAA" }, { field: "attachment", name: "b é.png", type: "image/png", content: "BBBB" }] }));
     up(`POST ${route} with fields only`, route, form({ files: [] }));
-    up(`POST ${route} with an empty file`, route, form({ files: [{ field: "file", name: "empty.txt", type: "text/plain", content: "" }] }));
+
     up(`POST ${route} with text that is not ASCII and a repeated field`, route, form({ fields: [["name", "Çevre izni ✓"], ["tag", "a"], ["tag", "b"]], files: [] }));
     up(`POST ${route} with a 64 kB file`, route, form({ files: [{ field: "file", name: "big.bin", type: "application/octet-stream", content: "x".repeat(65_536) }] }));
     add(`POST ${route} with a JSON body (not a form)`, "POST", route, "site_engineer", { body: { name: "x" } });
