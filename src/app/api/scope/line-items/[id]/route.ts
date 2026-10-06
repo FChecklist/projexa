@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
-import { callVeridian } from "@/lib/veridian-client";
+import { callVeridian, VeridianApiError } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
 
@@ -27,6 +27,11 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
     });
     return NextResponse.json(data);
   } catch (err) {
+    // G-14: a 409 from an edit that carried `expectedCategory` says what is stored NOW, so the person can choose between theirs and mine.
+    const upstream = err instanceof VeridianApiError && err.status === 409 ? (err.body as { code?: unknown; current?: unknown } | undefined) : undefined;
+    if (upstream?.code === "EDIT_CONFLICT" && upstream.current && typeof upstream.current === "object") {
+      return veridianErrorResponse(err, "This line was changed by someone else.", undefined, { conflict: "EDIT_CONFLICT", current: upstream.current });
+    }
     return veridianErrorResponse(err, "Failed to update line item budget");
   }
 });
