@@ -4,10 +4,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkApiWriteAccess, API_WRITE_POLICY, resolveWriteTier } from "./authz/api-write-policy";
 import { ALL_ORG_ROLES } from "./authz/roles";
+import { EDGE_EXTRA_ROUTES } from "../../scripts/vercel-route-inventory.mjs";
 import { GENERATED_PATH, INVENTORY_PATH, lf, render, ROUTES_PATH, validateRoutes } from "../../scripts/projexa-api-edge.mjs";
 import * as generated from "../../ai-os/audit37/projexa-api/policy.generated";
 import { REQUESTS } from "./projexa-api-parity-cases";
-import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ORIGINS, PX_EDGE_ROUTES, PX_EDGE_SHADOWS } from "./px-api";
+import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ORIGINS, PX_EDGE_EXTRA_ROUTES, PX_EDGE_ROUTES, PX_EDGE_SHADOWS } from "./px-api";
 
 // AUDIT-100 A2: the Supabase Edge Function `projexa-api` (compliance-tracker supabase/functions/projexa-api) enforces THIS repo's role policy
 // and answers only THIS repo's listed routes. Its table is generated here (scripts/projexa-api-edge.mjs) and copied byte for byte; these tests
@@ -108,6 +109,45 @@ describe("the route list (deny by default: only these are answered by the edge)"
     const fromSwitch = Object.fromEntries(Object.entries(PX_EDGE_ROUTES).map(([k, v]) => [k, [...v].sort()]));
     expect(fromSwitch).toEqual(fromFile);
     expect(generated.EDGE_ROUTES.map((r) => r.route).sort()).toEqual(Object.keys(fromFile).sort());
+  });
+});
+
+describe("G-09: new-organisation provisioning is answered by the function too (src/lib/px-api.ts PX_EDGE_EXTRA_ROUTES)", () => {
+  const seen: { url: string; init: RequestInit }[] = [];
+  const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => (seen.push({ url: String(url), init: init ?? {} }), new Response("{}"))) as typeof fetch;
+
+  test("the extra routes equal the inventory script's list and are not proxies of the generated table", () => {
+    expect(Object.keys(PX_EDGE_EXTRA_ROUTES).sort()).toEqual([...EDGE_EXTRA_ROUTES].sort());
+    for (const r of Object.keys(PX_EDGE_EXTRA_ROUTES)) expect(PX_EDGE_ROUTES[r]).toBeUndefined();
+  });
+
+  test("provision (POST) and repair (GET, POST) are edge routes; nothing else under /api/org is", () => {
+    expect(isEdgeRoute("POST", "/api/org/provision")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/org/provision")).toBe(false);
+    expect(isEdgeRoute("GET", "/api/org/repair")).toBe(true);
+    expect(isEdgeRoute("POST", "/api/org/repair")).toBe(true);
+    expect(isEdgeRoute("DELETE", "/api/org/repair")).toBe(false);
+    for (const p of ["/api/org/invites", "/api/org/invites/accept", "/api/org-members", "/api/organization"]) expect(isEdgeRoute("POST", p)).toBe(false);
+  });
+
+  test("the signed-in browser sends provision to the function with its bearer token and no cookie; the kill switch sends it same-origin", async () => {
+    seen.length = 0;
+    await pxApiFetch("/api/org/provision", { method: "POST", body: "{}" }, { fetchImpl, getAccessToken: async () => "tok-9", base: PX_API_EDGE_URL });
+    expect(seen[0]!.url).toBe(`${PX_API_EDGE_URL}/api/org/provision`);
+    expect(new Headers(seen[0]!.init.headers).get("authorization")).toBe("Bearer tok-9");
+    expect(seen[0]!.init.credentials).toBe("omit");
+    await pxApiFetch("/api/org/provision", { method: "POST", body: "{}" }, { fetchImpl, getAccessToken: async () => "tok-9", base: "" });
+    expect(seen[1]!.url).toBe("/api/org/provision");
+    await pxApiFetch("/api/org/provision", { method: "POST", body: "{}" }, { fetchImpl, getAccessToken: async () => null, base: PX_API_EDGE_URL });
+    expect(seen[2]!.url).toBe("/api/org/provision"); // no token in the browser: same origin, as for every route
+  });
+
+  test("signup and login call it through viaPxApi, never a bare fetch", () => {
+    for (const f of ["src/app/signup/page.tsx", "src/app/login/page.tsx"]) {
+      const src = readFileSync(join(import.meta.dir, "..", "..", f), "utf8");
+      expect(src).toContain('viaPxApi("/api/org/provision"');
+      expect(src).not.toMatch(/fetch\("\/api\/org\/provision"/);
+    }
   });
 });
 

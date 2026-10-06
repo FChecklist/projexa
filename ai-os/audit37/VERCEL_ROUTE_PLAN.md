@@ -95,9 +95,9 @@ BATCHES 2-4 (2026-10-06): all 106 plain proxies of the online screens moved the 
 the edge on the production origins. BATCH 5 (2026-10-06): 72 proxies that were plain in all but form (own role sets, the VERIDIAN root,
 empty / lenient / defaulted bodies, options in any order): 185 routes. BATCH 6 (2026-10-06): 32 proxies with their own validation,
 query rebuilding or answer reshaping, each statement ported as spec data and proven by the contract: 217 routes. **Vercel-served /api
-routes 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 80 (batch 7)** (`vercel_served_routes_budget`, may only go down).
+routes 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 92 (G-09) -> 78 (batch 7)** (`vercel_served_routes_budget`, may only go down).
 
-Remaining on Vercel after batch 6 (311 route files: 282 VERIDIAN proxies of which 217 moved; 65 proxies + 29 own-logic/Supabase = 94).
+Remaining on Vercel after batch 6 + G-09 (311 route files: 282 VERIDIAN proxies of which 217 moved, plus the 2 org provisioning routes moved by G-09; 63 proxies + 29 own-logic/Supabase = 92).
 `bun scripts/projexa-api-candidates.mjs` prints the reason per proxy. Each class needs a real port + parity, not a spec key:
 1. Binary / multipart (21): uploads (`/documents/:id/versions`, `/site-instructions` POST, `/projects/from-document`, `/scope/import`, `/schedule/import`, `/labour-roster/import`) and PDF / xlsx
    downloads and share links (`/attendance/summary/pdf`, `/attendance/summary/share`, `/moms/:id/pdf`, `/payroll/payslips/:id/pdf`,
@@ -105,7 +105,7 @@ Remaining on Vercel after batch 6 (311 route files: 282 VERIDIAN proxies of whic
    `/reports/:reportName/export` and `/share`, `/reports/budget-variance/export`, `/construction-materials/cost-report/export`): stream passthrough with
    the Next handlers' content-type / disposition / size fallbacks and the 30 s upload budget; parity with real small files incl. oversize
    and wrong type. The uploads of `/documents`, `/drawings` and `/permits` (POST) share a handler file with a cached list (class 2).
-2. [DONE in batch 7, 2026-10-06: 232 routes on the edge, Vercel-served 94 -> 80; the 12 write-invalidating ones through the browser's one call to the new `/api/cache/revalidate`, see A2_PROGRESS.md] Cross-request cache (15): `module-list-source` lists (`/documents`, `/drawings`, `/labour-roster`, `/materials/master`, `/meetings`,
+2. [DONE in batch 7, 2026-10-06: 232 proxies on the edge, Vercel-served 92 -> 78; the 12 write-invalidating ones through the browser's one call to the new `/api/cache/revalidate`, see A2_PROGRESS.md] Cross-request cache (15): `module-list-source` lists (`/documents`, `/drawings`, `/labour-roster`, `/materials/master`, `/meetings`,
    `/moms`, `/mood-boards`, `/permits`, `/scope`), `unstable_cache` (`/projects`, `/knowledge-base`, `/knowledge-base/:id`) and
    `createCachedVeridianGet` (`/cost-centers`, `/currencies`, `/fiscal-years`): a per-isolate Map with the same TTL and the same
    invalidation on the writes, parity with a fake clock.
@@ -116,8 +116,14 @@ Remaining on Vercel after batch 6 (311 route files: 282 VERIDIAN proxies of whic
    (trim + history default), `/attendance` (ISO date filter + ruleCode extra), `/work-progress` POST (ruleCode / missing answer),
    `/rfis` and `/punch-list` and `/submittals/:id` (notification-service), `/moms/:id/share-links` (origin env), `/pill-usage`,
    `/reports/:reportName` (templated fallback), `/capability-tree`, `/chain-options`, `/veridian-link` (redirect).
-5. Server-side only (5): `/ai/apply` (db), `/assistant` and `/org/provision` (Supabase server client), `/org/repair` (drizzle),
-   `/classify` (its own service message): stay until their own design step.
+5. Server-side only (3 left; 2 moved by G-09): `/ai/apply` (db), `/assistant` (Supabase server client), `/classify` (its own service message): stay until
+   their own design step. **`/org/provision` and `/org/repair` MOVED (AUDIT-100 G-09, 2026-10-06):** new-organisation provisioning runs inside the
+   `projexa-api` Edge Function (compliance-tracker `supabase/functions/projexa-api/org-provision.ts`): the VERIDIAN side is one SQL transaction
+   (`public.projexa_provision_org`, drizzle/0729), the organisation's VERIDIAN key lives on the compliance side (`compliance.projexa_org_credentials`,
+   RLS forced, service role through functions only), PROJEXA's own `organizations` / `memberships` are written with the caller's own token (RLS as before).
+   No platform application key, no database password and no Vercel invocation. Browser switch: `PX_EDGE_EXTRA_ROUTES` in `src/lib/px-api.ts` (same
+   kill switch as every other edge route); the Next routes stay as the same-origin fallback. Parity contract:
+   `ai-os/audit37/projexa-api/org-parity.golden.json` (recorded from these Next routes by `src/lib/org-provision-parity.test.ts`). Vercel-served routes: 94 -> 92.
 6. The 29 own-logic / Supabase routes STAY on Vercel by plan: the usage beacon (`/api/local-first/client-error`, `/prepare-report`), contact,
    e-mail (`/api/email/*`, digest), webhooks and Google Sheets (server secrets), AI chat (`/api/conversations*`), provisioning and invites
    (`/api/org/invites*`, `/api/org-members*`, `/api/organization*`), notifications / todos / search / preferences / work-progress photos

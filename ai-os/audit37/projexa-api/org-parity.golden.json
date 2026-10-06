@@ -1,0 +1,1133 @@
+{
+ "_about": "AUDIT-100 G-09 parity contract for /api/org/provision and /api/org/repair. Recorded from the REAL PROJEXA Next pipeline by src/lib/org-provision-parity.test.ts (projexa repo); replayed against the edge function by compliance-tracker src/lib/services/projexa-org-edge-parity.test.ts. Do not edit by hand.",
+ "identities": {
+  "owner": {
+   "sub": "00000000-0000-4000-8000-000000000001",
+   "email": "owner@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "owner"
+   }
+  },
+  "admin": {
+   "sub": "00000000-0000-4000-8000-000000000002",
+   "email": "admin@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "admin"
+   }
+  },
+  "pm": {
+   "sub": "00000000-0000-4000-8000-000000000003",
+   "email": "pm@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "pm"
+   }
+  },
+  "site_engineer": {
+   "sub": "00000000-0000-4000-8000-000000000004",
+   "email": "site@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "site_engineer"
+   }
+  },
+  "member": {
+   "sub": "00000000-0000-4000-8000-000000000005",
+   "email": "member@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "member"
+   }
+  },
+  "client_viewer": {
+   "sub": "00000000-0000-4000-8000-000000000006",
+   "email": null,
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": "client_viewer"
+   }
+  },
+  "no_org": {
+   "sub": "00000000-0000-4000-8000-000000000007",
+   "email": "nobody@a.test",
+   "membership": null
+  },
+  "wrong_org": {
+   "sub": "00000000-0000-4000-8000-000000000008",
+   "email": "pm@b.test",
+   "membership": {
+    "organization_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "role": "pm"
+   }
+  },
+  "membership_error": {
+   "sub": "00000000-0000-4000-8000-000000000009",
+   "email": "flaky@a.test",
+   "membership": "error"
+  },
+  "no_key": {
+   "sub": "00000000-0000-4000-8000-000000000010",
+   "email": "owner@c.test",
+   "membership": {
+    "organization_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "role": "owner"
+   }
+  },
+  "null_role": {
+   "sub": "00000000-0000-4000-8000-000000000011",
+   "email": "norole@a.test",
+   "membership": {
+    "organization_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "role": null
+   }
+  }
+ },
+ "org_a": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+ "new_org": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+ "veridian_new_org": "veridian-org-new",
+ "cases": [
+  {
+   "case": {
+    "name": "provision: signed out",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "signed_out"
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: signed out, no body",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "who": "signed_out"
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "orgName is required"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: no body",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "orgName is required"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: broken body",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "raw_body": "{nope",
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "orgName is required"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: empty orgName",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "   "
+    },
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "orgName is required"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: orgName not a string",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": 7
+    },
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 500,
+    "body": null,
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: new organisation",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "  Acme Builders Pvt. Ltd.  "
+    },
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 201,
+    "body": {
+     "organizationId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Acme Builders Pvt. Ltd.",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [
+      {
+       "name": "Acme Builders Pvt. Ltd.",
+       "slug_prefix": "acme-builders-pvt-ltd"
+      }
+     ],
+     "memberships_inserted": [
+      {
+       "user_id": "00000000-0000-4000-8000-000000000007",
+       "role": "owner",
+       "organization_is_new": true
+      }
+     ],
+     "credentials_stored": [
+      {
+       "organization": "new",
+       "veridian_org_id": "veridian-org-new"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: client_viewer already has a membership",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Gulf Fitout"
+    },
+    "who": "client_viewer",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "alreadyProvisioned": true,
+     "veridianConnected": false,
+     "repairRequired": true,
+     "repairPath": "/api/org/repair"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: already provisioned and connected",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "owner",
+    "world": {
+     "credentials": true
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "alreadyProvisioned": true,
+     "veridianConnected": true
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: already provisioned, credentials missing (repair required)",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "owner",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "alreadyProvisioned": true,
+     "veridianConnected": false,
+     "repairRequired": true,
+     "repairPath": "/api/org/repair"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: a member of any role is told the same",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "site_engineer",
+    "world": {
+     "credentials": true
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "alreadyProvisioned": true,
+     "veridianConnected": true
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: VERIDIAN answers 500",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "no_org",
+    "world": {
+     "veridian": {
+      "status": 500,
+      "error": "Failed to provision organisation"
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "Could not provision your PROJEXA workspace: Failed to provision organisation"
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Acme",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: VERIDIAN answers 400",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "no_org",
+    "world": {
+     "veridian": {
+      "status": 400,
+      "error": "customerOrgName is required"
+     }
+    }
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "Could not provision your PROJEXA workspace: customerOrgName is required"
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Acme",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: PROJEXA organizations insert fails",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "no_org",
+    "world": {
+     "org_insert": "error"
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "duplicate key value violates unique constraint \"organizations_slug_key\""
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Acme",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: PROJEXA memberships insert fails",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "no_org",
+    "world": {
+     "membership_insert": "error"
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "new row violates row-level security policy for table \"memberships\""
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Acme",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [
+      {
+       "name": "Acme",
+       "slug_prefix": "acme"
+      }
+     ],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: storing the credentials fails",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "no_org",
+    "world": {
+     "store": "error"
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "Your account was created but we couldn't finish connecting it to your workspace. Please contact support."
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Acme",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [
+      {
+       "name": "Acme",
+       "slug_prefix": "acme"
+      }
+     ],
+     "memberships_inserted": [
+      {
+       "user_id": "00000000-0000-4000-8000-000000000007",
+       "role": "owner",
+       "organization_is_new": true
+      }
+     ],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "provision: a failed membership read is not 'no membership'",
+    "method": "POST",
+    "path": "/api/org/provision",
+    "body": {
+     "orgName": "Acme"
+    },
+    "who": "membership_error"
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Could not verify organization membership, please retry"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: signed out",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "signed_out"
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: no organisation",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: member",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "member",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: pm",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "pm",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: null role",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "null_role",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: owner, connected",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": true
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "veridianConnected": true,
+     "repairAvailable": false
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair GET: admin, not connected",
+    "method": "GET",
+    "path": "/api/org/repair",
+    "who": "admin",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "veridianConnected": false,
+     "repairAvailable": true
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: signed out",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "signed_out"
+   },
+   "expect": {
+    "status": 401,
+    "body": {
+     "error": "Unauthorized"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: no organisation",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "no_org"
+   },
+   "expect": {
+    "status": 400,
+    "body": {
+     "error": "No organization"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: pm",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "pm",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: site_engineer",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "site_engineer",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: member",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "member",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: client_viewer",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "client_viewer",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: null role",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "null_role",
+    "world": {
+     "credentials": false
+    }
+   },
+   "expect": {
+    "status": 403,
+    "body": {
+     "error": "Forbidden: your role does not permit this action"
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: owner, already healthy",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": true
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "repaired": false,
+     "alreadyHealthy": true,
+     "message": "This workspace is already connected to PROJEXA. Nothing to repair."
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: admin repairs a broken workspace",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "admin",
+    "world": {
+     "credentials": false,
+     "org_country": "AE"
+    }
+   },
+   "expect": {
+    "status": 201,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "repaired": true
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Existing Org",
+       "country": "AE"
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": [
+      {
+       "organization": "existing",
+       "veridian_org_id": "veridian-org-new"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: owner repairs, organisation has no country",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": false,
+     "org_country": null
+    }
+   },
+   "expect": {
+    "status": 201,
+    "body": {
+     "organizationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+     "repaired": true
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Existing Org",
+       "country": null
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": [
+      {
+       "organization": "existing",
+       "veridian_org_id": "veridian-org-new"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: the organisation row is gone",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": false,
+     "org_read": "missing"
+    }
+   },
+   "expect": {
+    "status": 409,
+    "body": {
+     "error": "Your membership points at an organisation that no longer exists. This needs support, not a repair."
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: the organisation read fails",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": false,
+     "org_read": "error"
+    }
+   },
+   "expect": {
+    "status": 503,
+    "body": {
+     "error": "Could not read your organisation. Please retry."
+    },
+    "effects": {
+     "veridian_provisioned": [],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: VERIDIAN answers 500",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": false,
+     "veridian": {
+      "status": 500,
+      "error": "Failed to provision organisation"
+     }
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "Could not connect your PROJEXA workspace: Failed to provision organisation"
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Existing Org",
+       "country": "IN"
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: storing fails",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": false,
+     "store": "error"
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "We connected your workspace but couldn't save the connection. Please contact support."
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Existing Org",
+       "country": "IN"
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": []
+    }
+   }
+  },
+  {
+   "case": {
+    "name": "repair POST: stored but not readable back",
+    "method": "POST",
+    "path": "/api/org/repair",
+    "who": "owner",
+    "world": {
+     "credentials": false,
+     "store": "silent_noop"
+    }
+   },
+   "expect": {
+    "status": 500,
+    "body": {
+     "error": "We connected your workspace but couldn't confirm it. Please contact support."
+    },
+    "effects": {
+     "veridian_provisioned": [
+      {
+       "name": "Existing Org",
+       "country": "IN"
+      }
+     ],
+     "orgs_inserted": [],
+     "memberships_inserted": [],
+     "credentials_stored": [
+      {
+       "organization": "existing",
+       "veridian_org_id": "veridian-org-new"
+      }
+     ]
+    }
+   }
+  }
+ ]
+}
