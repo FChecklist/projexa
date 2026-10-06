@@ -82,6 +82,16 @@ describe("what the server says decides what the queue does", () => {
     }
   });
 
+  test("403 at the signing step (a read-only role) says so in plain words; the queue drops the job with that notice", async () => {
+    const { uploader } = rig(() => json(403, { error: "forbidden" }));
+    const err = (await uploader.upload(JOB, bytes()).catch((e) => e)) as UploadError;
+    expect([err.status, err.message]).toEqual([403, "Your role is not allowed to add files."]);
+    const queue = createFileQueue({ meta: new FakeMeta(), uploader, enqueueRecord: async () => {}, newId: () => "j", now: () => 1 });
+    await queue.add({ kind: "permit", projectId: JOB.projectId, fields: { name: "A" }, file: bytes(), fileName: "a.pdf" });
+    expect(await queue.flush()).toMatchObject({ dropped: 1, kept: 0 });
+    expect((await queue.notices())[0]!.message).toContain("Your role is not allowed to add files.");
+  });
+
   test("no session token: 401 without asking the server anything", async () => {
     const { uploader, calls } = rig(() => json(200, answer()), null);
     const err = await uploader.upload(JOB, bytes()).catch((e) => e);

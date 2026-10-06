@@ -80,6 +80,8 @@ export function createSignedUploader(deps: SignedUploaderDeps = {}): UploadPort 
     // A route that is not there (404/405: the upload service is not deployed yet, or this laptop is ahead of it) is "not available", never a refusal
     // of THIS file: the queue keeps everything and waits (501), it must not drop a person's file because of a missing route.
     if (res.status === 404 || res.status === 405) throw new UploadError(501, "File upload is not available yet.");
+    // 403 at the signing step is the person's ROLE (a read-only role may not add files), not something wrong with this file: say so plainly
+    if (res.status === 403) throw new UploadError(403, "Your role is not allowed to add files.");
     if (!res.ok) throw new UploadError(res.status, await words(res));
     let a: Partial<SignAnswer>;
     try {
