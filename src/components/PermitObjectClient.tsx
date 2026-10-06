@@ -128,7 +128,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   }, []);
 
   async function handleEdit() {
-    const res = await fetch("/api/screen-drafts", {
+    const res = await viaPxApi("/api/screen-drafts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ functionId: "permits.object", objectId: permitId, initialPayload: permit }),

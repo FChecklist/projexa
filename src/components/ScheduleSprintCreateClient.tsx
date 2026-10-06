@@ -9,6 +9,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { viaPxApi } from "@/lib/px-api";
 
 export default function ScheduleSprintCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -25,7 +26,7 @@ export default function ScheduleSprintCreateClient({ projectId }: { projectId: s
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/schedule/sprints", {
+      const res = await viaPxApi("/api/schedule/sprints", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, name: name.trim(), goal: goal.trim() || undefined, startDate: startDate || undefined, endDate: endDate || undefined }),
       });

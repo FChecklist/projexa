@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Plus, FileText, Search } from "lucide-react";
 import { errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 export type KbPage = { id: string; slug: string; title: string; content: string | null; version: number };
 
@@ -75,7 +76,7 @@ export default function KnowledgeBaseClient({
     if (!q.trim()) { load(); return; }
     setSearching(true);
     try {
-      const res = await fetch(`/api/knowledge-base/search?q=${encodeURIComponent(q)}`);
+      const res = await viaPxApi(`/api/knowledge-base/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Search failed");
       setPages(data.pages ?? []);

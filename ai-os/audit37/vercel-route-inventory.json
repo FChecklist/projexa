@@ -43,7 +43,7 @@
     ]
   },
   "shell_vercel_routes_budget": 1,
-  "vercel_served_routes_budget": 126,
+  "vercel_served_routes_budget": 94,
   "shell_api_references": [
     "/api/dashboard/project",
     "/api/documents/:id",
@@ -175,9 +175,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/attendance/summary/pdf",
@@ -273,9 +273,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/billing-claims/:id",
@@ -423,9 +423,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/construction-materials/cost-report/export",
@@ -561,9 +561,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/customers/:id/overview",
@@ -658,9 +658,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/discuss",
@@ -1270,9 +1270,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/kpi-entries",
@@ -1494,9 +1494,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/materials",
@@ -1871,9 +1871,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/org/invites",
@@ -2410,9 +2410,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/profit-and-loss",
@@ -2496,9 +2496,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/projects",
@@ -2571,9 +2571,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/punch-list",
@@ -2892,9 +2892,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/rfis",
@@ -3092,9 +3092,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/schedule/baselines/:id",
@@ -3141,9 +3141,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/schedule/sprints/:id",
@@ -3167,9 +3167,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/schedule/tasks",
@@ -3180,9 +3180,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/schedule/tasks/:id",
@@ -3231,9 +3231,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/scope",
@@ -3282,9 +3282,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/scope/:id/revisions",
@@ -3319,9 +3319,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/scope/categories/:id",
@@ -3332,9 +3332,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/scope/cost-visibility",
@@ -3345,9 +3345,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/scope/import",
@@ -3393,9 +3393,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/screen-drafts",
@@ -3406,9 +3406,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/screen-drafts/:id",
@@ -3544,9 +3544,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "legacy top bar task counter, called by the server-rendered pages. Not called by the on-laptop shell. Measured: once during the first install.",
-      "plan": "keep until the legacy pages are gone; not part of daily use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/tasks/:id",
@@ -3556,9 +3556,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/tax-templates",
@@ -3581,9 +3581,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/timesheets/:id",
@@ -3643,9 +3643,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/timesheets/submit-day",
@@ -3655,9 +3655,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/todos",
@@ -3745,9 +3745,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/vendors/:id/bank-accounts",
@@ -3834,9 +3834,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/wiki/:id",
@@ -3874,9 +3874,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/work-progress/activities",
@@ -3887,9 +3887,9 @@
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
-      "served_by": "vercel",
+      "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
-      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+      "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
     },
     {
       "route": "/api/work-progress/photos",
