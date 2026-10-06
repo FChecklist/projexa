@@ -95,7 +95,7 @@ BATCHES 2-4 (2026-10-06): all 106 plain proxies of the online screens moved the 
 the edge on the production origins. BATCH 5 (2026-10-06): 72 proxies that were plain in all but form (own role sets, the VERIDIAN root,
 empty / lenient / defaulted bodies, options in any order): 185 routes. BATCH 6 (2026-10-06): 32 proxies with their own validation,
 query rebuilding or answer reshaping, each statement ported as spec data and proven by the contract: 217 routes. **Vercel-served /api
-routes 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 80 (batch 7)** (`vercel_served_routes_budget`, may only go down).
+routes 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 80 (batch 7) -> 76 (batch 8)** (`vercel_served_routes_budget`, may only go down).
 
 Remaining on Vercel after batch 6 (311 route files: 282 VERIDIAN proxies of which 217 moved; 65 proxies + 29 own-logic/Supabase = 94).
 `bun scripts/projexa-api-candidates.mjs` prints the reason per proxy. Each class needs a real port + parity, not a spec key:
@@ -109,7 +109,7 @@ Remaining on Vercel after batch 6 (311 route files: 282 VERIDIAN proxies of whic
    `/moms`, `/mood-boards`, `/permits`, `/scope`), `unstable_cache` (`/projects`, `/knowledge-base`, `/knowledge-base/:id`) and
    `createCachedVeridianGet` (`/cost-centers`, `/currencies`, `/fiscal-years`): a per-isolate Map with the same TTL and the same
    invalidation on the writes, parity with a fake clock.
-3. Fan-out / composition (7): `/api/shell`, the four dashboard-hierarchy routes (`company-scope`), `/projects/:id/category-distribution`,
+3. [PARTLY DONE in batch 8: category-distribution (2 routes) and the company dashboard / departments moved; `/api/shell`, `/companies/:companyId/projects/:projectId` and `/api/work-progress/report` need their own design step, see A2_PROGRESS.md] Fan-out / composition (7): `/api/shell`, the four dashboard-hierarchy routes (`company-scope`), `/projects/:id/category-distribution`,
    `/work-progress/report`: same call order and error semantics.
 4. Own logic beyond a statement (17): `/scope/:id` (boq-helpers), `/scope/:id/revisions`, `/billing-claims/:id` (finance / decide action
    sets), `/projects/:id/approvals` (submission id + upstream status extra), `/organization/currency` (ISO code normalising), `/discuss`

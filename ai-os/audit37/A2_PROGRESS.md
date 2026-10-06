@@ -147,3 +147,21 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   non-form body swallowed, failures cached) and 14 Next / browser breaks (meetings / drawings / projects write stops clearing its cache, pm loses unit costs,
   BOQ check loosened, currencies TTL 30 s, permits all flag, documents default type, drawings kind dropped, knowledge-base title check dropped, browser table
   loses the /scope page, browser clears after a refused write, revalidate route clears any tag, route tier loosened only in the source).
+
+- BATCH 8 (2026-10-06, branches `a2-edge-batch8` / `px-edge-batch8`): 4 of the 7 "several calls combined" routes, 236 on the edge, Vercel-served 80 -> 76 (budget 76):
+  `/api/projects/:id/category-distribution` and the company-scoped `/api/dashboard-hierarchy/companies/:companyId/{dashboard,departments,projects/:projectId/category-distribution}`.
+  New spec keys: `category_distribution` (two reads in parallel, combined by the projexa repo's own pure builder `src/lib/category-distribution.ts`, COPIED BYTE FOR
+  BYTE to the function by `scripts/projexa-api-edge.mjs --write --ct`, checked by `--check-ct`; the first failing read in array order is the answer, a builder that
+  throws on a malformed answer is the handler's catch = the fallback 502, `boq_id` appends the optional `&boqId=`), `company_scope` (src/lib/company-scope.ts
+  requireCompanyScope: after the ordinary organisation step the person must be a member of THAT company, a second PostgREST read with the person's own token under RLS:
+  403 "Not a member of this company"; a failed read or a company id that is not a UUID is an unhandled throw = an empty 500; the COMPANY, not the oldest membership,
+  is the organisation whose key and answer are used: proven with an identity that is a member of two organisations) and `acting_user: "id_only"` (the company dashboard
+  names the acting user id without the e-mail). The recorder gained per-URL upstream answers (`paths`) and a database mock for the company membership.
+  Contract: 3923 cases + 7 sequences. SEEN TO FAIL (each reverted, byte-identical): 11 edge breaks (membership not required, works in the oldest organisation, a failed
+  lookup answered 403, e-mail sent with id-only, boqId dropped, first-failure order swapped, a builder throw answered 200, progress read asking the amounts URL, tampered
+  builder copy, wrong membership column, company taken from the oldest) and 6 Next / browser breaks (membership check dropped in requireCompanyScope, dashboard stops
+  naming the acting user, `format=legacy` dropped, builder share changed, departments path changed, a company route left out of the browser's list).
+  NOT MOVED, with the reason (stop-and-report cases of the brief): `/api/dashboard-hierarchy/companies/:companyId/projects/:projectId` (a four-way fan-out through
+  revenueForProjectInRange / expensesForProjectInRange / progressAsOf, paginated helpers of its own: porting them would be a second implementation of ~300 lines);
+  `/api/work-progress/report` (a 1004-line report builder, `src/lib/work-progress-report.ts`); `/api/shell` (PROJEXA's own Supabase session client, notifications,
+  the capability tree and currencies in one answer). Each needs its own design step, not a spec key.

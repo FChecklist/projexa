@@ -189,6 +189,24 @@ await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exce
   for (const who of ["owner", "client_viewer", "pm"]) for (const path of ["/api/currencies", "/api/cost-centers", "/api/fiscal-years"]) await probe("batch 7: cached read twice", who, sessions[who], "GET", path);
 }
 
+// batch 8: the company routes (a company named in the path, a second membership check) with the test organisation's own id, a company the person is not a
+// member of, and the category distribution (two reads combined) of a real project
+{
+  const mem = await (await retry(() => fetch(`${PROJEXA}/rest/v1/memberships?select=organization_id&limit=1`, { headers: { apikey: ANON, Authorization: `Bearer ${sessions.owner.access_token}` } }))).json();
+  const company = mem?.[0]?.organization_id;
+  if (!company) throw new Error("no membership for the test owner");
+  for (const who of ["owner", "client_viewer"]) {
+    await probe("batch 8: company dashboard", who, sessions[who], "GET", `/api/dashboard-hierarchy/companies/${company}/dashboard`);
+    await probe("batch 8: company dashboard with filters", who, sessions[who], "GET", `/api/dashboard-hierarchy/companies/${company}/dashboard?from=2026-01-01&to=2026-12-31`);
+    await probe("batch 8: company departments", who, sessions[who], "GET", `/api/dashboard-hierarchy/companies/${company}/departments`);
+    await probe("batch 8: company category distribution", who, sessions[who], "GET", `/api/dashboard-hierarchy/companies/${company}/projects/${projectId}/category-distribution`);
+    await probe("batch 8: project category distribution", who, sessions[who], "GET", `/api/projects/${projectId}/category-distribution`);
+  }
+  await probe("batch 8: not a member of this company", "owner", sessions.owner, "GET", `/api/dashboard-hierarchy/companies/${UNKNOWN}/dashboard`);
+  await probe("batch 8: a company id that is not a UUID", "owner", sessions.owner, "GET", "/api/dashboard-hierarchy/companies/not-a-uuid/departments");
+  await probe("batch 8: category distribution of an unknown project", "pm", sessions.pm, "GET", `/api/projects/${UNKNOWN}/category-distribution?boqId=${UNKNOWN}`);
+}
+
 // deny by default: a real Vercel route the edge does not answer; and (batch 5) a Vercel route that is a literal sibling of a dynamic edge route
 const notListed = await call(EDGE, "/api/shell", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });
 results.push({ label: "deny by default (/api/shell)", who: "owner", method: "GET", path: "/api/shell", edge: notListed.status, vercel: "-", same: notListed.status === 404 });
