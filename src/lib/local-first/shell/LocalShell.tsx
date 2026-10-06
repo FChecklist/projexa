@@ -118,7 +118,7 @@ export default function LocalShell() {
   // (server-step.ts othersEveryMs). Measured 2026-10-06: an edit made on laptop A reached laptop B's open project in ~50 s, but never within
   // 2 minutes for a project that was only opened from a link.
   useEffect(() => {
-    if (boot.status !== "ready") return;
+    if (boot.status !== "ready" || !location) return;
     const shown = chooseProject(boot.data.projects, new URLSearchParams(location.search).get("projectId"), remembered);
     if (!shown) return;
     try {
@@ -127,7 +127,7 @@ export default function LocalShell() {
     } catch {
       /* the choice just is not remembered */
     }
-  }, [boot, remembered]);
+  }, [boot, remembered, location]);
 
   // lf-e11: the person's OUTBOX resumes here too, as in the (app) shell (M24Shell). Changes made offline -- by the person's screens or by
   // their AI -- and then a reload or a page opened offline left their ops in IndexedDB with nothing to send them: the outbox was only
