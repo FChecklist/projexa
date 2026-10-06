@@ -247,6 +247,18 @@ export function isInstalled(progress: PrepareProgress): boolean {
   return need.every((id) => progress.steps.find((s) => s.id === id)?.state === "done");
 }
 
+/** After this many failed tries the browser itself is the reason (it cannot keep a worker); a retry will not change that. */
+export const ONLINE_ONLY_AFTER_ATTEMPTS = 3;
+
+/**
+ * True when the person must be let in online-only for this session: the worker step failed on every one of the first
+ * ONLINE_ONLY_AFTER_ATTEMPTS tries. Never marks the laptop as installed (that stays a real, verified install); the screen is simply not allowed
+ * to lock someone out of PROJEXA forever in a browser that cannot install it.
+ */
+export function shouldOpenOnlineOnly(failed: readonly string[], attemptNo: number): boolean {
+  return failed.includes("worker") && attemptNo + 1 >= ONLINE_ONLY_AFTER_ATTEMPTS;
+}
+
 /** Waits between quiet attempts to copy the projects: 15 s, 30 s, 60 s ... never more than 10 minutes. */
 export function quietRetryDelay(attempt: number): number {
   return Math.min(RETRY_AFTER_MS * 2 ** Math.max(0, attempt), 10 * 60_000);
@@ -349,6 +361,10 @@ export function WorkspacePrepare() {
       if (result.ready) announceShellReady();
       if (!result.ready && installed) {
         try { localStorage.setItem(readyKey(userId), String(Date.now())); } catch { /* ignore */ }
+        quietCopy(userId);
+      } else if (!result.ready && shouldOpenOnlineOnly(result.failed ?? [], attempt)) {
+        // This browser cannot install the worker: let the person in for this session (online, from the server), keep the install for next time.
+        close();
         quietCopy(userId);
       } else if (!result.ready) {
         timer = setTimeout(() => { started.current = false; setAttempt((n) => n + 1); }, RETRY_AFTER_MS);
