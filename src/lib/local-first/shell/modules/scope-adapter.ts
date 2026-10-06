@@ -46,6 +46,8 @@ export type ScopeObjectData =
       syncedAt: number | null;
       /** Ids of lines whose category edit is waiting to be sent. */
       waitingLineIds: string[];
+      /** G-14: edits the server refused because someone else changed the same field meanwhile; the person chooses (mine / theirs). */
+      conflicts?: { editId: string; lineId: string; mine: string | null; theirs: string | null }[];
     };
 
 /**
@@ -115,7 +117,8 @@ export async function loadScopeObject(
       createdAt: first.createdAt ?? "",
     };
     const mine = applyPendingEdits(orderLinesForBoq(own).map(toBoqLineItemRow), edits);
-    return { state: "local", boq, lines: mine, total: boqTotal(mine), syncedAt, waitingLineIds: edits.filter((e) => e.boqId === boqId).map((e) => e.lineId) };
+    return { state: "local", boq, lines: mine, total: boqTotal(mine), syncedAt, waitingLineIds: edits.filter((e) => e.boqId === boqId && !e.conflict).map((e) => e.lineId),
+      conflicts: edits.filter((e) => e.boqId === boqId && e.conflict).map((e) => ({ editId: e.id, lineId: e.lineId, mine: e.patch.category, theirs: e.conflict!.theirs })) };
   }
   return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };
 }

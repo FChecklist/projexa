@@ -81,7 +81,7 @@ describe("ScopeObjectScreen with a large BOQ", () => {
     const box = view.getAllByTestId("boq-line-category-input")[2] as HTMLInputElement;
     fireEvent.input(box, { target: { value: "  Concrete " } });
     fireEvent.click(view.getByTestId("boq-line-save")); // (Enter is driven in real Chromium by e2e/lf-lifecycle-large-project.spec.ts: this test environment cannot raise a real key event)
-    await waitFor(() => expect(enqueued).toEqual([{ lineId: "l2", boqId: "b1", projectId: "p1", patch: { category: "Concrete" } }]));
+    await waitFor(() => expect(enqueued).toEqual([{ lineId: "l2", boqId: "b1", projectId: "p1", patch: { category: "Concrete" }, base: { category: null } }]));
     await waitFor(() => expect(view.getByTestId("boq-local-note").textContent).toContain("Saved on this laptop"));
     // the draft is gone once it is kept on the laptop
     expect(view.queryAllByTestId("boq-line-save")).toHaveLength(0);
@@ -164,5 +164,32 @@ describe("ScopeObjectScreen windowing a 5,000-line BOQ", () => {
     const view = render(<ScopeObjectScreen shell={newShell()} params={{}} query={new URLSearchParams()} data={makeData(150)} />);
     expect(view.getAllByTestId("boq-local-line")).toHaveLength(150);
     expect(view.getByTestId("boq-local-table").getAttribute("data-windowed")).toBe("false");
+  });
+});
+
+describe("G-14: a conflict is shown in plain words and the person chooses", () => {
+  test("both values are shown, and Keep mine / Keep theirs call the writer with that edit and choice", async () => {
+    const data = { ...makeData(3), conflicts: [{ editId: "e1", lineId: "l1", mine: "CONF-B", theirs: "CONF-A" }] };
+    const resolved: Array<[string, string]> = [];
+    const shell = { ...newShell(), writer: { enqueue: async () => {}, resolveConflict: async (id: string, choice: string) => { resolved.push([id, choice]); }, flush: async () => ({ sent: 0, rejected: 0, kept: 0, stoppedBecause: "none" }) } } as unknown as ShellApi;
+    const { getAllByTestId, getByTestId } = render(<ScopeObjectScreen shell={shell} params={{}} query={new URLSearchParams()} data={data} />);
+    const panel = getByTestId("boq-line-conflict");
+    expect(panel.textContent).toContain("Someone else changed this to “CONF-A” while you changed it to “CONF-B”");
+    expect(getAllByTestId("boq-line-conflict")).toHaveLength(1); // only the conflicted line
+    fireEvent.click(getByTestId("boq-conflict-mine"));
+    await waitFor(() => expect(resolved).toEqual([["e1", "mine"]]));
+    fireEvent.click(getByTestId("boq-conflict-theirs"));
+    await waitFor(() => expect(resolved).toEqual([["e1", "mine"], ["e1", "theirs"]]));
+  });
+
+  test("a save passes what the person SAW as the base of the edit", async () => {
+    const data = makeData(3);
+    const shell = newShell();
+    const { getAllByTestId } = render(<ScopeObjectScreen shell={shell} params={{}} query={new URLSearchParams()} data={data} />);
+    const box = getAllByTestId("boq-line-category-input")[1] as HTMLInputElement;
+    fireEvent.input(box, { target: { value: "Civil" } });
+    fireEvent.click(getAllByTestId("boq-line-save")[0]!);
+    await waitFor(() => expect(enqueued).toHaveLength(1));
+    expect(enqueued[0]).toMatchObject({ lineId: "l1", patch: { category: "Civil" }, base: { category: null } });
   });
 });

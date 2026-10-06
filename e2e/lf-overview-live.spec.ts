@@ -87,7 +87,7 @@ test("a colleague's change brought by /changes updates the open dashboard withou
   await test.step("back online: the edit is sent exactly once and the dashboard says everything reached the server, without a reload", async () => {
     await goOnline(context, prepared)
     await expect.poll(() => world.patches.length, { timeout: 90_000, message: "the offline edit was never sent" }).toBe(1)
-    expect(world.patches[0]).toEqual({ path: "/api/scope/line-items/ov-line-1", body: { category: "Concrete" } })
+    expect(world.patches[0]).toEqual({ path: "/api/scope/line-items/ov-line-1", body: { category: "Concrete", expectedCategory: null } })
     await expect(page.getByTestId("overview-dashboard-waiting").locator("[data-state=none]")).toHaveText("Everything you did on this laptop has reached the server.", { timeout: 30_000 })
     expect(await sameDocument(page), "the page was reloaded").toBe(true)
     await page.waitForTimeout(1000)
