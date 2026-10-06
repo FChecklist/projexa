@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { viaPxApi } from "@/lib/px-api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,6 @@ import { CategoryDistributionCharts } from "@/components/CategoryDistributionCha
 import { currencyLabel, useCurrencies, type Currency } from "@/lib/currency";
 import { mayShowEmptyState, type PaneStatus } from "@/lib/pane-state";
 
-import { viaPxApi } from "@/lib/px-api";
 type Company = { id: string; name: string; slug: string; country: string | null; role: string };
 type Department = { id: string; name: string; memberCount: number };
 /** R67 E-37: why the companies list came back empty, from resolveHierarchyCompanies. */
@@ -69,7 +69,7 @@ type ReadResult<T> = { ok: true; data: T } | { ok: false; message: string };
 async function getJson<T>(url: string): Promise<ReadResult<T>> {
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await viaPxApi(url);
   } catch (err) {
     // A thrown fetch never reached the server at all. Saying "the request did
     // not complete" is true; saying "there are no companies" would not be.

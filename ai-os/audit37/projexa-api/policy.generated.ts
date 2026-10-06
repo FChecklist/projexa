@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "6357305dc97e5fc32975242cc4a78986cb048f4595078c722ada0d2e7434fe6d"
+export const SOURCE_SHA256 = "eced11dcad7cee554b8a9c4263ec4a2d39af594f370239014f8a8a6d096f97f7"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -233,7 +233,7 @@ export const DEFAULT_WRITE_TIER = "FIELD"
 export const MUTATING_METHODS: ReadonlySet<string> = new Set(["DELETE","PATCH","POST","PUT"])
 
 export type EdgeMethodSpec = {
-  upstream: string; acting_user?: "explicit" | "session" | "none"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;
+  upstream: string; acting_user?: "explicit" | "session" | "none" | "id_only"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;
   search_params?: string[]; body?: "json" | "json_lenient" | "empty" | "multipart"; body_actor_email?: "always"; error_style?: "veridian" | "plain"
   forward_search?: boolean; success_status?: 200 | 201; cache_control?: string
   root?: true; roles?: string; body_defaults?: Record<string, string>
@@ -245,6 +245,7 @@ export type EdgeMethodSpec = {
   cache_ttl?: number; search_param_defaults?: Record<string, { default: string; when: string }>; include_allow?: string[]
   response_redact?: { roles: string[]; list: string; set: Record<string, unknown> }; boq_create_verify?: true
   revalidate?: { tags: string[]; paths?: string[]; when?: "success" | "always" }
+  company_scope?: true; category_distribution?: { progress: string; boq_id?: true }
 }
 /** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */
 export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [
@@ -480,6 +481,10 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/knowledge-base/:id","methods":{"GET":{"upstream":"/knowledge-base/{id}","fallback":"Failed to load page"},"PATCH":{"upstream":"/knowledge-base/{id}","body":"json","fallback":"Failed to update knowledge base page","revalidate":{"tags":["knowledge-base"]}}}},
   {"route":"/api/projects","methods":{"GET":{"upstream":"/projects","response_pick":{"projects":[]},"fallback":"Failed to load projects"},"POST":{"upstream":"/projects","body":"json","success_status":201,"fallback":"Failed to create project","revalidate":{"tags":["projects"],"when":"always"}}}},
   {"route":"/api/scope","methods":{"GET":{"upstream":"/scope?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"include_allow":["variation","compare"],"fallback":"Failed to load scope of work"},"POST":{"upstream":"/scope","acting_user":"explicit","body":"json","invalid_body_error":"Request body must be valid JSON","boq_create_verify":true,"success_status":201,"fallback":"Failed to create BOQ","revalidate":{"tags":["module:scope"],"paths":["/scope"]}}}},
+  {"route":"/api/projects/:id/category-distribution","methods":{"GET":{"upstream":"/reports/category-boq-amounts?format=legacy&projectId={id}","category_distribution":{"progress":"/reports/category-progress?format=legacy&projectId={id}","boq_id":true},"error_style":"plain","fallback":"Failed to load category distribution"}}},
+  {"route":"/api/dashboard-hierarchy/companies/:companyId/dashboard","methods":{"GET":{"upstream":"/dashboard","acting_user":"id_only","company_scope":true,"search_params":["departmentId","from","to"],"search_params_omit_empty":true,"fallback":"Failed to load dashboard"}}},
+  {"route":"/api/dashboard-hierarchy/companies/:companyId/departments","methods":{"GET":{"upstream":"/hr/departments","company_scope":true,"fallback":"Failed to load departments"}}},
+  {"route":"/api/dashboard-hierarchy/companies/:companyId/projects/:projectId/category-distribution","methods":{"GET":{"upstream":"/reports/category-boq-amounts?format=legacy&projectId={projectId}","category_distribution":{"progress":"/reports/category-progress?format=legacy&projectId={projectId}"},"company_scope":true,"fallback":"Failed to load category distribution"}}},
 ]
 /** Next routes that stay on Vercel but win over an edge route for some path (a literal sibling of a dynamic edge route): 404 here. */
 export const SHADOW_ROUTES: ReadonlyArray<string> = ["/api/drawings/export","/api/labour-roster/import","/api/projects/from-document","/api/work-progress/photos","/api/work-progress/report"]
