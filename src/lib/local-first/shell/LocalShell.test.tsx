@@ -105,6 +105,16 @@ describe("the shell opens OFFLINE from the laptop's own copy", () => {
     expect(fetchCalls).toEqual([]); // not one request left the laptop
   });
 
+  test("a project opened from a link (?projectId=) becomes the person's open project, so the scheduler catches it up at once, not hourly", async () => {
+    await seedLaptop();
+    setOnline(false);
+    expect(localStorage.getItem("px-shell-project:u1")).toBeNull();
+    go("/local/scope?projectId=p1");
+    const { findByTestId } = render(<LocalShell />);
+    await findByTestId("scope-list");
+    await waitFor(() => expect(localStorage.getItem("px-shell-project:u1")).toBe("p1"));
+  });
+
   test("clicking a BOQ opens its screen without a page load; its lines and total come from the laptop; Back works", async () => {
     await seedLaptop();
     setOnline(false);

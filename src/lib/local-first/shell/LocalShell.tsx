@@ -113,6 +113,22 @@ export default function LocalShell() {
     }
   }, [userId]);
 
+  // The project ON SCREEN is the person's open project, however they got there (the switcher already writes it; a link with ?projectId= did not).
+  // The auto-sync scheduler reads the open project from this key and catches it up as soon as it moves; every other project waits up to an hour
+  // (server-step.ts othersEveryMs). Measured 2026-10-06: an edit made on laptop A reached laptop B's open project in ~50 s, but never within
+  // 2 minutes for a project that was only opened from a link.
+  useEffect(() => {
+    if (boot.status !== "ready" || !location) return;
+    const shown = chooseProject(boot.data.projects, new URLSearchParams(location.search).get("projectId"), remembered);
+    if (!shown) return;
+    try {
+      const key = selectedProjectKey(boot.data.userId);
+      if (localStorage.getItem(key) !== shown) localStorage.setItem(key, shown);
+    } catch {
+      /* the choice just is not remembered */
+    }
+  }, [boot, remembered, location]);
+
   // lf-e11: the person's OUTBOX resumes here too, as in the (app) shell (M24Shell). Changes made offline -- by the person's screens or by
   // their AI -- and then a reload or a page opened offline left their ops in IndexedDB with nothing to send them: the outbox was only
   // created by the next write, so its `online` handler never ran and the work stayed on the laptop after the connection came back.

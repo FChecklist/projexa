@@ -98,6 +98,8 @@ export type ReplicaOptions = {
   pageLimit?: number;
   /** Pulls in flight at once. */
   concurrency?: number;
+  /** The project the person is looking at (or opened last): a whole run copies it FIRST so it opens from the laptop while the rest follows. */
+  priorityProject?: () => string | null;
   /** Rows written per transaction; a yield follows every chunk. */
   chunkSize?: number;
   /** Safety stop for a service that never stops saying has_more. */
@@ -290,6 +292,19 @@ export function foreignOrg(data: unknown, orgId: string): boolean {
     if (typeof v === "string" && v !== orgId) return true;
   }
   return false;
+}
+
+/**
+ * The copy order of a first (whole) run: the person's current project first, every other project after it in the service's order.
+ * Without this the project they are looking at could be the LAST of ~20 to arrive (first install measured 2026-10-06: the biggest project
+ * holds most of the ~28,000 rows and came last), and its screens said "has not finished copying" for minutes.
+ */
+export function putFirst<T>(items: readonly T[], first: T | null | undefined): T[] {
+  if (first === null || first === undefined || !items.includes(first)) return [...items];
+  return [first, ...items.filter((x) => x !== first)];
+}
+function safePriority(get: (() => string | null) | undefined): string | null {
+  try { return get ? get() : null; } catch { return null; }
 }
 
 export function createReplica(options: ReplicaOptions): Replica {
@@ -709,7 +724,7 @@ export function createReplica(options: ReplicaOptions): Replica {
         }
       }
 
-      const targetProjects = wholeRun ? projectIds : projectIds.filter((id) => id === scope.projectId);
+      const targetProjects = wholeRun ? putFirst(projectIds, safePriority(options.priorityProject)) : projectIds.filter((id) => id === scope.projectId);
       const targetKinds = scope.kind ? kinds.filter((k) => k === scope.kind) : kinds;
       if (!wholeRun && targetProjects.length === 0) {
         // Asked for a project the service does not list: the person cannot read it, so nothing of it may stay here.
