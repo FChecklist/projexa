@@ -238,3 +238,78 @@ describe("when to try: no polling storm", () => {
     expect(timers).toEqual([]);
   });
 });
+
+// ─── G-14: two laptops edit the SAME field offline (measured 2026-10-06: the later write silently replaced the earlier one) ───────────
+describe("G-14: an edit carries the value the person saw, and a changed field is a conflict the person decides, never a silent overwrite", () => {
+  const withBase = (lineId: string, category: string | null, seen: string | null) => ({ ...edit(lineId, category), base: { category: seen } });
+  const CONFLICT = () => new Response(JSON.stringify({ error: "This line was changed by someone else.", conflict: "EDIT_CONFLICT", current: { category: "CONF-A" } }), { status: 409 });
+
+  test("the request carries expectedCategory = what the person saw (the OLD behaviour sent only the new value)", async () => {
+    const { writer, sent } = setup();
+    await writer.enqueue(withBase("l1", "CONF-B", null));
+    await writer.flush();
+    expect(sent[0]!.body).toEqual({ category: "CONF-B", expectedCategory: null });
+  });
+
+  test("an edit stored without a base (an older build) is still sent as before, without the check", async () => {
+    const { writer, sent } = setup();
+    await writer.enqueue(edit("l1", "Civil"));
+    await writer.flush();
+    expect(sent[0]!.body).toEqual({ category: "Civil" });
+  });
+
+  test("the first of several edits of a line keeps its base (what was SEEN before any of them)", async () => {
+    const { writer } = setup();
+    await writer.enqueue(withBase("l1", "X", "orig"));
+    await writer.enqueue(withBase("l1", "Y", "X")); // the second edit saw the first's overlay: it must not replace the base
+    expect((await writer.list())[0]).toMatchObject({ patch: { category: "Y" }, base: { category: "orig" } });
+  });
+
+  test("409 EDIT_CONFLICT keeps the edit, records what is stored now, leaves no refusal notice, and does NOT resend by itself", async () => {
+    let calls = 0;
+    const { writer, sent } = setup(() => { calls += 1; return CONFLICT(); });
+    await writer.enqueue(withBase("l1", "CONF-B", null));
+    const first = await writer.flush();
+    expect(first).toMatchObject({ sent: 0, rejected: 0, conflicts: 1 });
+    expect(await writer.notices()).toEqual([]);
+    expect((await writer.list())[0]).toMatchObject({ patch: { category: "CONF-B" }, conflict: { theirs: "CONF-A" } });
+    await writer.flush(); // the person has not chosen: nothing is sent again
+    expect(calls).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  test("Keep mine: sent again as based on THEIR value, so it replaces it on purpose; the server accepts it", async () => {
+    let first = true;
+    const { writer, sent } = setup(() => { if (first) { first = false; return CONFLICT(); } return new Response("{}", { status: 200 }); });
+    await writer.enqueue(withBase("l1", "CONF-B", null));
+    await writer.flush();
+    const [conflicted] = await writer.list();
+    await writer.resolveConflict(conflicted!.id, "mine");
+    expect((await writer.list())[0]).toMatchObject({ base: { category: "CONF-A" }, attempts: 0 });
+    expect((await writer.list())[0]!.conflict).toBeUndefined();
+    const again = await writer.flush();
+    expect(again.sent).toBe(1);
+    expect(sent[1]!.body).toEqual({ category: "CONF-B", expectedCategory: "CONF-A" });
+    expect(await writer.list()).toEqual([]);
+  });
+
+  test("Keep theirs: the edit is dropped and nothing more is sent", async () => {
+    const { writer, sent } = setup(() => CONFLICT());
+    await writer.enqueue(withBase("l1", "CONF-B", null));
+    await writer.flush();
+    const [conflicted] = await writer.list();
+    await writer.resolveConflict(conflicted!.id, "theirs");
+    expect(await writer.list()).toEqual([]);
+    await writer.flush();
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a 409 that is NOT an edit conflict is still a plain refusal (dropped, with its notice), as before", async () => {
+    const { writer } = setup(() => new Response(JSON.stringify({ error: "BOQ is locked" }), { status: 409 }));
+    await writer.enqueue(withBase("l1", "Z", null));
+    const r = await writer.flush();
+    expect(r.rejected).toBe(1);
+    expect(await writer.list()).toEqual([]);
+    expect((await writer.notices())[0]!.message).toBe("BOQ is locked");
+  });
+});
