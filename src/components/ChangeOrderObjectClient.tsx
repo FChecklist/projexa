@@ -106,7 +106,7 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/change-orders/${changeOrderId}`, {
+      const res = await viaPxApi(`/api/change-orders/${changeOrderId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "submit", signers: [{ name: signerName, email: signerEmail }] }),
       });

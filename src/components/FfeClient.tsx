@@ -11,6 +11,7 @@ import { Loader2, Plus } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import DataLoadError from "@/components/DataLoadError";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type FfeItem = {
   id: string; itemName: string; roomOrArea: string | null; category: string; quantity: number;
@@ -65,7 +66,7 @@ export default function FfeClient({ projectId }: { projectId: string }) {
     const next = STATUSES[STATUSES.indexOf(item.status) + 1];
     if (!next) return;
     try {
-      const res = await fetch(`/api/ffe/${item.id}`, {
+      const res = await viaPxApi(`/api/ffe/${item.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next }),
       });

@@ -42,6 +42,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
 import { normaliseDrawingStatus, statusPresentation, type DrawingStatus } from "@/lib/drawing-status";
+import { viaPxApi } from "@/lib/px-api";
 
 export type Drawing = {
   id: string;
@@ -181,7 +182,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
     if (!d || !name.trim() || saving) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/drawings/${drawingId}`, {
+      const res = await viaPxApi(`/api/drawings/${drawingId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), discipline: discipline.trim() || null }),
@@ -217,8 +218,8 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       // is the records-management act on the shared documents route, unchanged.
       const res =
         action === "Remove"
-          ? await fetch(`/api/drawings/${drawingId}`, { method: "DELETE" })
-          : await fetch(`/api/documents/${drawingId}/dispose`, { method: "POST" });
+          ? await viaPxApi(`/api/drawings/${drawingId}`, { method: "DELETE" })
+          : await viaPxApi(`/api/documents/${drawingId}/dispose`, { method: "POST" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessages([{ level: "error", text: body.error ?? `Couldn't ${action.toLowerCase()} this drawing (HTTP ${res.status})` }]);

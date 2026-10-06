@@ -92,7 +92,7 @@ export default function SalesOrdersClient() {
 
   async function updateStatus(order: SalesOrder, status: string) {
     try {
-      const res = await fetch(`/api/sales-orders/${order.id}`, {
+      const res = await viaPxApi(`/api/sales-orders/${order.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error); }

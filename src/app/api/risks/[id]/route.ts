@@ -14,7 +14,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest, { 
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/risks/${id}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/risks/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load risk");
@@ -27,7 +27,7 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/risks/${id}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    const data = await callVeridian(`/risks/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update risk");

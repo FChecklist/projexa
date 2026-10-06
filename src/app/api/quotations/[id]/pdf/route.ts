@@ -18,7 +18,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest, { 
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const upstream = await callVeridianRaw(`/quotations/${id}/pdf`, { organizationId: ctx.organizationId! });
+    const upstream = await callVeridianRaw(`/quotations/${encodeURIComponent(id)}/pdf`, { organizationId: ctx.organizationId! });
     const pdfBuffer = await upstream.arrayBuffer();
     return new NextResponse(pdfBuffer, {
       status: 200,

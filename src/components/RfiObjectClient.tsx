@@ -18,6 +18,7 @@ import { answerRfiLocally, localBaseVersion } from "@/lib/local-first/local-writ
 import { useLocalWrites } from "@/lib/local-first/use-local-writes";
 import { useDraft } from "@/lib/local-first/outbox-drafts";
 import { PendingSyncMarker } from "@/components/PendingSyncMarker";
+import { viaPxApi } from "@/lib/px-api";
 
 type Rfi = {
   id: string; projectId: string; number: number; subject: string; question: string; status: string;
@@ -74,7 +75,7 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
         return;
       }
       if (result && !result.queued) refused = result.refused;
-      const res = await fetch(`/api/rfis/${rfiId}`, {
+      const res = await viaPxApi(`/api/rfis/${rfiId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "answer", answer: answerText }),
       });
@@ -94,7 +95,7 @@ export default function RfiObjectClient({ rfiId }: { rfiId: string }) {
   async function closeRfi() {
     setBusy("close");
     try {
-      const res = await fetch(`/api/rfis/${rfiId}`, {
+      const res = await viaPxApi(`/api/rfis/${rfiId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "close" }),
       });

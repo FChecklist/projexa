@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type SalesOrderItem = { id: string; description: string; quantity: string; rate: string; amount: string; deliveredQuantity: string };
 type SalesOrder = {
@@ -77,7 +78,7 @@ export default function SalesOrderObjectClient({ salesOrderId }: { salesOrderId:
   async function updateStatus(status: string) {
     setStatusBusy(true);
     try {
-      const res = await fetch(`/api/sales-orders/${salesOrderId}`, {
+      const res = await viaPxApi(`/api/sales-orders/${salesOrderId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       const data = await res.json().catch(() => null);

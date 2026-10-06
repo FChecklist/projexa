@@ -12,7 +12,7 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/access-review/certifications/${id}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    const data = await callVeridian(`/access-review/certifications/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to record certification decision");

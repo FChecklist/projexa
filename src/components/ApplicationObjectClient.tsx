@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserCheck } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDateTime } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type Application = {
   id: string; jobOpeningId: string; candidateId: string; stage: string; rejectedReason: string | null;
@@ -91,7 +92,7 @@ export default function ApplicationObjectClient({ applicationId }: { application
   async function moveStage(toStage: string) {
     setStageBusy(true);
     try {
-      const res = await fetch(`/api/recruitment/applications/${applicationId}/stage`, {
+      const res = await viaPxApi(`/api/recruitment/applications/${applicationId}/stage`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stage: toStage,
@@ -114,7 +115,7 @@ export default function ApplicationObjectClient({ applicationId }: { application
     if (!ivInterviewerId || !ivRoundName.trim() || !ivScheduledAt) { toast.error("Interviewer, round name, and date/time are required"); return; }
     setIvSubmitting(true);
     try {
-      const res = await fetch(`/api/recruitment/applications/${applicationId}/interviews`, {
+      const res = await viaPxApi(`/api/recruitment/applications/${applicationId}/interviews`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interviewerId: ivInterviewerId, roundName: ivRoundName, scheduledAt: ivScheduledAt }),
       });
@@ -134,7 +135,7 @@ export default function ApplicationObjectClient({ applicationId }: { application
     if (!feedbackTargetId) return;
     setFbSubmitting(true);
     try {
-      const res = await fetch(`/api/recruitment/interviews/${feedbackTargetId}/feedback`, {
+      const res = await viaPxApi(`/api/recruitment/interviews/${feedbackTargetId}/feedback`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rating: Number(fbRating), recommendation: fbRecommendation, feedback: fbNotes || undefined }),
       });
@@ -154,7 +155,7 @@ export default function ApplicationObjectClient({ applicationId }: { application
     if (!hireEmployeeProfileId) return;
     setHireSubmitting(true);
     try {
-      const res = await fetch(`/api/recruitment/applications/${applicationId}/hire`, {
+      const res = await viaPxApi(`/api/recruitment/applications/${applicationId}/hire`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeProfileId: hireEmployeeProfileId }),
       });

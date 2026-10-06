@@ -27,6 +27,7 @@ import { useOrgRole } from "@/hooks/use-org-role";
 import { formatDate } from "@/lib/format-date";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { type Company } from "@/components/company-scope";
+import { viaPxApi } from "@/lib/px-api";
 
 type Employee = {
   id: string; name: string; email: string; role: string; departmentId: string | null; reportingToId: string | null;
@@ -97,7 +98,7 @@ export default function EmployeeObjectClient({ employeeId }: { employeeId: strin
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch(`/api/employees/${employeeId}`, {
+      const res = await viaPxApi(`/api/employees/${employeeId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeCode: employeeCode || undefined, jobTitle: jobTitle || undefined, employmentType,

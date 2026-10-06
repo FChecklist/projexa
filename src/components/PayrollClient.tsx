@@ -180,7 +180,7 @@ export default function PayrollClient({ initialTab }: { initialTab?: string }) {
   async function processRun(id: string) {
     setProcessingId(id);
     try {
-      const res = await fetch(`/api/payroll/runs/${id}/process`, { method: "POST" });
+      const res = await viaPxApi(`/api/payroll/runs/${id}/process`, { method: "POST" });
       if (!res.ok) { const err = await res.json().catch(() => null); throw new Error(err?.error); }
       const data = await res.json();
       toast.success(`Processed -- ${data.payslipCount ?? 0} payslip(s) generated`);
@@ -196,7 +196,7 @@ export default function PayrollClient({ initialTab }: { initialTab?: string }) {
     if (!assignEmployeeId) return;
     setAssignSubmitting(true);
     try {
-      const res = await fetch(`/api/payroll/employees/${assignEmployeeId}/income-tax-slab`, {
+      const res = await viaPxApi(`/api/payroll/employees/${assignEmployeeId}/income-tax-slab`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slabId: assignSlabId || undefined }),
       });

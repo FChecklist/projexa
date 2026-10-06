@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type KpiDefinition = { id: string; projectId: string | null; metricName: string; targetValue: string | null; unit: string | null; period: string };
 type KpiEntry = { id: string; period: string; actualValue: string; approvalStatus: string; filledById: string; createdAt: string };
@@ -62,7 +63,7 @@ export default function KpiObjectClient({ definitionId }: { definitionId: string
     if (!entryPeriod.trim() || actualValue === "") { toast.error("Period and actual value are required"); return; }
     setEntrySubmitting(true);
     try {
-      const res = await fetch("/api/kpi-entries", {
+      const res = await viaPxApi("/api/kpi-entries", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ kpiDefinitionId: definitionId, period: entryPeriod, actualValue: Number(actualValue) }),
       });
@@ -81,7 +82,7 @@ export default function KpiObjectClient({ definitionId }: { definitionId: string
   async function approveEntry(entryId: string) {
     setApprovingId(entryId);
     try {
-      const res = await fetch(`/api/kpi-entries/${entryId}/approve`, { method: "POST" });
+      const res = await viaPxApi(`/api/kpi-entries/${entryId}/approve`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to approve entry");
       toast.success("Entry approved");

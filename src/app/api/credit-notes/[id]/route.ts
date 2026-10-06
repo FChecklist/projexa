@@ -11,7 +11,7 @@ export const GET = withTiming("GET", async function GET(_request: Request, { par
   if (ctx.response) return ctx.response;
   try {
     const { id } = await params;
-    const data = await callVeridian(`/credit-notes/${id}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/credit-notes/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load credit note");

@@ -12,7 +12,7 @@ export const POST = withTiming("POST", async function POST(request: NextRequest,
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/quotations/${id}/convert`, { organizationId: ctx.organizationId!, method: "POST", body });
+    const data = await callVeridian(`/quotations/${encodeURIComponent(id)}/convert`, { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
   } catch (err) {
     return veridianErrorResponse(err, "Failed to convert quotation to a sales order");

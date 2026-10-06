@@ -13,7 +13,7 @@ export const GET = withTiming("GET", async function GET(_request: NextRequest, {
   if (ctx.response) return ctx.response;
   try {
     const { id } = await params;
-    const data = await callVeridian(`/quotations/${id}`, { organizationId: ctx.organizationId! });
+    const data = await callVeridian(`/quotations/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId! });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to load quotation");
@@ -26,7 +26,7 @@ export const PATCH = withTiming("PATCH", async function PATCH(request: NextReque
   const { id } = await params;
   const body = await request.json();
   try {
-    const data = await callVeridian(`/quotations/${id}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
+    const data = await callVeridian(`/quotations/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH", body });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update quotation");

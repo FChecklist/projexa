@@ -333,7 +333,7 @@ export default function MoMObjectClient({
     if (!draft.title.trim() || !draft.scheduledAt) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/moms/${meetingId}`, {
+      const res = await viaPxApi(`/api/moms/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(meetingPatchBody(draft)),
       });
@@ -375,7 +375,7 @@ export default function MoMObjectClient({
     if (retryRef.current.timer) { clearTimeout(retryRef.current.timer); retryRef.current.timer = null; }
     setMinutesState({ status: "saving" });
     try {
-      const res = await fetch(`/api/moms/${meetingId}`, {
+      const res = await viaPxApi(`/api/moms/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ minutes: text }),
       });
@@ -423,7 +423,7 @@ export default function MoMObjectClient({
     setConfirming(null);
     setPublishing(true);
     try {
-      const res = await fetch(`/api/moms/${meetingId}`, {
+      const res = await viaPxApi(`/api/moms/${meetingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "publish" }),
       });
@@ -443,7 +443,7 @@ export default function MoMObjectClient({
     setConfirming(null);
     setBusy("delete");
     try {
-      const res = await fetch(`/api/moms/${meetingId}`, { method: "DELETE" });
+      const res = await viaPxApi(`/api/moms/${meetingId}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Couldn't delete this meeting");
       // The confirmation belongs where the user lands, not on a screen that is
@@ -459,7 +459,7 @@ export default function MoMObjectClient({
   async function generateSummary() {
     setBusy("ai");
     try {
-      const res = await fetch(`/api/moms/${meetingId}/generate-intelligence`, { method: "POST" });
+      const res = await viaPxApi(`/api/moms/${meetingId}/generate-intelligence`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to generate AI summary");
       clearNote("ai");
@@ -492,7 +492,7 @@ export default function MoMObjectClient({
     setActionAttempted(false);
     setBusy("action");
     try {
-      const res = await fetch(`/api/moms/${meetingId}/action-items`, {
+      const res = await viaPxApi(`/api/moms/${meetingId}/action-items`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: actionTitle.trim(), assigneeUserId: actionAssignee!.id, dueDate: actionDueDate || undefined }),
       });

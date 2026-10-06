@@ -22,6 +22,7 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type PunchItem = {
   id: string; projectId: string; number: number; description: string; location: string | null; trade: string | null;
@@ -50,7 +51,7 @@ export default function PunchListObjectClient({ itemId }: { itemId: string }) {
   async function transition(action: "ready" | "verify") {
     setBusy(action);
     try {
-      const res = await fetch(`/api/punch-list/${itemId}`, {
+      const res = await viaPxApi(`/api/punch-list/${itemId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });

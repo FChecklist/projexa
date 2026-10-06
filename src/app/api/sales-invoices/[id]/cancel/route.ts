@@ -11,7 +11,7 @@ export const POST = withTiming("POST", async function POST(_request: Request, { 
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/sales-invoices/${id}/cancel`, { organizationId: ctx.organizationId!, method: "POST" });
+    const data = await callVeridian(`/sales-invoices/${encodeURIComponent(id)}/cancel`, { organizationId: ctx.organizationId!, method: "POST" });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to cancel invoice");

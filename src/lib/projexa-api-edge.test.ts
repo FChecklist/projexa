@@ -7,7 +7,7 @@ import { ALL_ORG_ROLES } from "./authz/roles";
 import { GENERATED_PATH, INVENTORY_PATH, lf, render, ROUTES_PATH, validateRoutes } from "../../scripts/projexa-api-edge.mjs";
 import * as generated from "../../ai-os/audit37/projexa-api/policy.generated";
 import { REQUESTS } from "./projexa-api-parity-cases";
-import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ORIGINS, PX_EDGE_ROUTES } from "./px-api";
+import { isEdgeRoute, pxApiBase, pxApiFetch, PX_API_DEFAULT_BASE, PX_API_EDGE_URL, PX_EDGE_ORIGINS, PX_EDGE_ROUTES, PX_EDGE_SHADOWS } from "./px-api";
 
 // AUDIT-100 A2: the Supabase Edge Function `projexa-api` (compliance-tracker supabase/functions/projexa-api) enforces THIS repo's role policy
 // and answers only THIS repo's listed routes. Its table is generated here (scripts/projexa-api-edge.mjs) and copied byte for byte; these tests
@@ -79,6 +79,18 @@ describe("the route list (deny by default: only these are answered by the edge)"
 
   test("the parity contract covers every route and method the edge answers (an uncovered route cannot be added)", () => {
     for (const r of routesFile().routes) for (const m of Object.keys(r.methods)) expect(REQUESTS.some((q) => q.route === r.route && q.method === m), `${m} ${r.route}`).toBe(true);
+  });
+
+  test("batch 5: the browser switch's shadow list is the generated one; a literal Vercel sibling of a dynamic edge route stays same-origin", () => {
+    expect([...PX_EDGE_SHADOWS].sort()).toEqual([...generated.SHADOW_ROUTES].sort());
+    expect(isEdgeRoute("GET", "/api/drawings/export?projectId=p-1")).toBe(false);
+    expect(isEdgeRoute("GET", "/api/materials/master")).toBe(false);
+    expect(isEdgeRoute("POST", "/api/timesheets/review-day")).toBe(false);
+    expect(isEdgeRoute("GET", "/api/drawings/d-1")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/materials/issues?projectId=p")).toBe(true);
+    expect(isEdgeRoute("GET", "/api/materials/m-1")).toBe(true);
+    // a literal edge route without the method is NOT answered as the dynamic one either (Next answers 405 for it)
+    expect(isEdgeRoute("GET", "/api/leads/bulk-reassign")).toBe(false);
   });
 
   test("the browser switch's route list is the edge's route list", () => {
