@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2 } from "lucide-react";
 
+import { viaPxApi } from "@/lib/px-api";
 type Project = { id: string; name: string };
 
 // Lets the user pick which project the 17 project-scoped pages (RFIs,
@@ -23,7 +24,7 @@ export function ProjectSwitcher({ pathname, projectId }: { pathname: string; pro
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/projects")
+    viaPxApi("/api/projects")
       .then((res) => (res.ok ? res.json() : { projects: [] }))
       .then((data: { projects?: Project[] }) => {
         if (!cancelled) setProjects(data.projects ?? []);

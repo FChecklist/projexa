@@ -99,6 +99,9 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   // "approve VO-014" approves nothing. Same tier as /assistant and /tasks
   // for the same reason: any member may ask what would happen, and what they
   // are actually allowed to RUN is re-checked at execution.
+  // AUDIT-100 A2 batch 7: clears the page-side list caches after a write that the Supabase Edge Function answered (src/app/api/cache/revalidate/route.ts).
+  // Every signed-in role: it clears only the allow-listed entries a save already clears, and holds nothing a role could not read.
+  "/cache/revalidate": "ANY_ROLE",
   "/classify": "ANY_MEMBER",
   "/companies": "ORG_ADMIN",
   "/compliance-register": "ORG_ADMIN",

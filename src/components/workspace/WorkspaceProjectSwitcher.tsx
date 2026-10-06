@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2 } from "lucide-react";
 
+import { viaPxApi } from "@/lib/px-api";
 type Project = { id: string; name: string };
 
 // Same data source and same visual language as ProjectSwitcher.tsx (the
@@ -18,7 +19,7 @@ export function WorkspaceProjectSwitcher({ projectId, initialProjects }: { proje
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/projects")
+    viaPxApi("/api/projects")
       .then((res) => (res.ok ? res.json() : { projects: initialProjects }))
       .then((data: { projects?: Project[] }) => {
         if (!cancelled && Array.isArray(data.projects) && data.projects.length > 0) setProjects(data.projects);

@@ -123,6 +123,31 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   trade, categories incl. inactive, the reshaped projects overview, plus every earlier probe): `evidence/a2-batch6-live-smoke-2026-10-06.txt`.
   Only then does the client PR (#403) merge. ROLLBACK: revert #403 first, then redeploy compliance-tracker dbcc1947 (the 185-route table).
 
+- BATCH 7 (2026-10-06, branch `a2-edge-batch7` here, `px-edge-batch7` in compliance-tracker): the 15 "cache" routes, 232 proxies on the edge (234 with G-09's two org routes), Vercel-served 92 -> 78
+  (budget 78; +1 new Vercel route, see below). Cost centers, currencies and fiscal years (a 60 s per-organisation cache, the call made with NO acting
+  person), documents / drawings / permits (list + multipart upload), labour roster, materials master (unit cost hidden from site_engineer and
+  client_viewer), meetings, minutes, mood boards, knowledge base (+ :id), projects, BOQ list + create (with the create's own check of what came back).
+  WHAT THE REAL HANDLERS REVEALED (the plan called these 15 "a cache in the handler"; only 3 are): the 12 others cache NOTHING in the route; their writes
+  call revalidateTag / revalidatePath to clear the SERVER-RENDERED PAGE's 30 s list cache, which lives in Vercel's data cache and cannot be reached from a
+  Supabase function. Design: the edge answers the write; the browser then asks ONE small Vercel route (`POST /api/cache/revalidate`, signed-in, allow-listed to
+  exactly those tags and the /scope page) to clear the same entries, bounded to 2.5 s and never failing the write (`revalidate` in projexa-api-routes.json,
+  `PX_EDGE_REVALIDATE` in px-api.ts). The recorder now captures what each real handler cleared (`revalidated`); projexa tests prove the browser's table
+  equals it in both directions (every cleared entry is listed, every listed write cleared exactly its entries on success, "always" for /api/projects,
+  which clears before it calls the backend). New spec keys: `cache_ttl` + `acting_user: "none"`, `body: "multipart"`, `search_param_defaults`,
+  `include_allow`, `response_redact`, `boq_create_verify`, `revalidate`. Parity contract 3794 cases + 7 SEQUENCES (a cache that starts empty, a moving clock:
+  one upstream read serves every role for 60 s, per organisation and per path, a failed read is never kept). Edge-only behaviour (the real cache serves
+  the stale answer once after the TTL; the isolate refetches, never older than the TTL; the 20 MB upload ceiling; the 256-entry bound) is tested apart.
+  FOUND AND FIXED (real, since batch 1): a body that is not JSON on a route whose handler reads `await request.json()` outside its try (almost all, the
+  first route of the contract included) is an unhandled throw = an EMPTY 500 on Next; the edge answered 400 {"error":"Invalid JSON body"}. A non-JSON body is
+  now recorded for EVERY route that reads one (+173 cases); the edge answers the empty 500, and 5 routes whose handler catches it (`/api/permits/:id`,
+  `/api/drawings/:id`, `/api/moms/:id`, `/api/moms/:id/action-items`, `/api/screen-drafts/:id` PATCH/POST) got `body_in_try`. 10 direct fetch() sites -> viaPxApi.
+  SEEN TO FAIL (each reverted, file byte-identical after, C:/ct/mutate-result-*-b7.json): 17 edge breaks (TTL never expires, key without the organisation,
+  cache never read, acting person always sent, upload form dropped, JSON content type on an upload, default entity type, include not allow-listed,
+  redaction for every role / setting nothing, BOQ one missing line / blank id accepted, friendly 400 again, no upload ceiling, entity type without an entity,
+  non-form body swallowed, failures cached) and 14 Next / browser breaks (meetings / drawings / projects write stops clearing its cache, pm loses unit costs,
+  BOQ check loosened, currencies TTL 30 s, permits all flag, documents default type, drawings kind dropped, knowledge-base title check dropped, browser table
+  loses the /scope page, browser clears after a refused write, revalidate route clears any tag, route tier loosened only in the source).
+
 ## G-09: new-organisation provisioning inside the edge function (2026-10-06)
 
 WHAT. `POST /api/org/provision` and `GET|POST /api/org/repair` are answered by `projexa-api` (compliance-tracker #2100, merged 79226210; function
@@ -143,3 +168,15 @@ setting: owner), so Vercel routes read the legacy table; set `PX_MIRROR_LEGACY_C
 ROLLBACK: set `PX_API_EDGE_ENABLED` false (or build with `NEXT_PUBLIC_PX_API_BASE=""`) so signup/login use the Vercel routes again; redeploy projexa-api v6
 source (compliance-tracker 3 commits before 79226210); `drizzle/down/0729_projexa_org_credentials_and_provision.down.sql` only after confirming the
 legacy table has every org you need (it does: untouched).
+
+- BATCH 7 LIVE (2026-10-06): compliance-tracker #2105 merged; `projexa-api` deployed from a clean checkout of main with the CLI recipe (supabase-go via
+  SUPABASE_GO_BINARY): `/_policy` SOURCE_SHA256 6357305dc97e... = this repo's generated file. LIVE SMOKE (test org, sessions by admin magic link): 410 of 410 probes
+  identical edge vs Vercel (every batch-7 GET as owner and client_viewer, the three cached reads as three roles, validation 400s, role refusals of the uploads / project /
+  BOQ creates, document filters, BOQ includes, unit costs hidden from client_viewer): `evidence/a2-batch7-live-smoke-2026-10-06.txt`. LIVE WRITES through the function
+  (`evidence/a2-batch7-live-writes-2026-10-06.txt`): a multipart document upload with a real file 201 and found in the list, an external-URL document 201, a 3 MB
+  upload 201 (Vercel's old ceiling was 4.5 MB), a knowledge page create 201 / title check 400 / edit 200 / read back edited, an invalid JSON body = the empty 500.
+  NOT PROVEN LIVE: the mood-board create returned 400 from the backend for the test body I sent (validation, same body shape not reproduced; covered by the contract);
+  the 413 ceiling (a client cannot set Content-Length; the gateway answered 400): unit-proven only. Test rows left in the E2E test organisation, tagged `a2b7-<ts>`:
+  3 documents and 1 knowledge page (no API retires them, and a hard delete was not mine to run): the owner or a later session may remove them.
+  ROLLBACK: revert the client PR (#407) first, then redeploy the previous good function commit (79226210, v7).
+

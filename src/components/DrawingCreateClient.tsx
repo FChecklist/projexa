@@ -37,6 +37,7 @@ import {
 } from "@/lib/file-limits";
 import { CREATE_STATUS_OPTIONS, DEFAULT_DRAWING_STATUS, type DrawingStatus } from "@/lib/drawing-status";
 
+import { viaPxApi } from "@/lib/px-api";
 export type DrawingKind = "dwg" | "3d_walkthrough";
 
 /**
@@ -272,7 +273,7 @@ export default function DrawingCreateClient({
   async function loadProjects(): Promise<void> {
     setRetrying(true);
     try {
-      const res = await fetch("/api/projects");
+      const res = await viaPxApi("/api/projects");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setLoadError(body.error ?? `Couldn't load your project list (HTTP ${res.status})`);

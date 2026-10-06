@@ -49,7 +49,7 @@
       "batch": 1,
       "methods": {
         "GET": { "upstream": "/permits/{id}", "fallback": "Failed to load permit" },
-        "PATCH": { "upstream": "/permits/{id}", "body": "json", "body_actor_email": "always", "fallback": "Failed to update permit" },
+        "PATCH": { "upstream": "/permits/{id}", "body": "json", "body_in_try": true, "body_actor_email": "always", "fallback": "Failed to update permit" },
         "DELETE": { "upstream": "/permits/{id}", "fallback": "Failed to delete permit" }
       }
     },
@@ -890,7 +890,7 @@
       "batch": 5,
       "methods": {
         "GET": { "upstream": "/drawings/{id}", "error_style": "plain", "fallback": "Failed to load this drawing" },
-        "PATCH": { "upstream": "/drawings/{id}", "body": "json", "error_style": "plain", "fallback": "Failed to update this drawing" },
+        "PATCH": { "upstream": "/drawings/{id}", "body": "json", "body_in_try": true, "error_style": "plain", "fallback": "Failed to update this drawing" },
         "DELETE": { "upstream": "/drawings/{id}", "error_style": "plain", "fallback": "Failed to remove this drawing" }
       }
     },
@@ -1022,7 +1022,7 @@
       "batch": 5,
       "methods": {
         "GET": { "upstream": "/veri-meetings/{id}", "fallback": "Failed to load meeting" },
-        "PATCH": { "upstream": "/veri-meetings/{id}", "body": "json", "fallback": "Failed to update meeting" },
+        "PATCH": { "upstream": "/veri-meetings/{id}", "body": "json", "body_in_try": true, "fallback": "Failed to update meeting" },
         "DELETE": { "upstream": "/veri-meetings/{id}", "fallback": "Failed to delete meeting" }
       }
     },
@@ -1030,7 +1030,7 @@
       "route": "/api/moms/:id/action-items",
       "batch": 5,
       "methods": {
-        "POST": { "upstream": "/veri-meetings/{id}/action-items", "body": "json", "success_status": 201, "fallback": "Failed to add action item" }
+        "POST": { "upstream": "/veri-meetings/{id}/action-items", "body": "json", "body_in_try": true, "success_status": 201, "fallback": "Failed to add action item" }
       }
     },
     {
@@ -1302,7 +1302,7 @@
       "route": "/api/screen-drafts/:id",
       "batch": 5,
       "methods": {
-        "PATCH": { "upstream": "/screen-drafts/{id}", "body": "json", "body_actor_email": "always", "fallback": "Failed to autosave draft" },
+        "PATCH": { "upstream": "/screen-drafts/{id}", "body": "json", "body_in_try": true, "body_actor_email": "always", "fallback": "Failed to autosave draft" },
         "DELETE": { "upstream": "/screen-drafts/{id}", "body": "empty", "body_actor_email": "always", "fallback": "Failed to discard draft" }
       }
     },
@@ -1634,6 +1634,123 @@
         "GET": { "upstream": "/customers/{id}", "fallback": "Failed to load customer" },
         "PATCH": { "upstream": "/customers/{id}", "body": "json", "fallback": "Failed to update customer" },
         "DELETE": { "upstream": "/customers/{id}", "upstream_method": "PATCH", "body_const": {"isActive": false}, "response_wrap": {"with": {"deactivated": true}, "params": ["id"], "into": "customer"}, "fallback": "Failed to deactivate customer" }
+      }
+    },
+    {
+      "route": "/api/cost-centers",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/cost-centers", "acting_user": "none", "cache_ttl": 60, "fallback": "Failed to load cost centers" }
+      }
+    },
+    {
+      "route": "/api/currencies",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/currencies", "acting_user": "none", "cache_ttl": 60, "fallback": "Failed to load currencies" }
+      }
+    },
+    {
+      "route": "/api/fiscal-years",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/fiscal-years", "acting_user": "none", "cache_ttl": 60, "fallback": "Failed to load fiscal years" }
+      }
+    },
+    {
+      "route": "/api/documents",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/documents", "root": true, "required_query_any": {"params": ["linkedEntityId","projectScopeId"],"error": "linkedEntityId or projectScopeId query param is required"}, "search_params": ["linkedEntityType","linkedEntityId","projectScopeId","category"], "search_param_defaults": {"linkedEntityType": {"default": "project","when": "linkedEntityId"}}, "fallback": "Failed to load documents" },
+        "POST": { "upstream": "/documents", "root": true, "body": "multipart", "timeout_ms": 30000, "success_status": 201, "fallback": "Failed to upload document", "revalidate": {"tags": ["module:documents"]} }
+      }
+    },
+    {
+      "route": "/api/drawings",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/drawings", "required_query": {"projectId": "projectId query param is required"}, "search_params": ["projectId","kind","discipline","status"], "fallback": "Failed to load drawings" },
+        "POST": { "upstream": "/drawings", "body": "multipart", "timeout_ms": 30000, "success_status": 201, "fallback": "Failed to create drawing", "revalidate": {"tags": ["module:drawings"]} }
+      }
+    },
+    {
+      "route": "/api/permits",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/permits", "search_params": ["withinDays","projectId"], "search_params_omit_empty": true, "query_flags": {"all": "true"}, "fallback": "Failed to load permits" },
+        "POST": { "upstream": "/permits", "body": "multipart", "timeout_ms": 30000, "success_status": 201, "fallback": "Failed to create permit", "revalidate": {"tags": ["module:permits"]} }
+      }
+    },
+    {
+      "route": "/api/labour-roster",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/construction/labour-roster?projectId={query:projectId}", "root": true, "required_query": {"projectId": "projectId query param is required"}, "fallback": "Failed to load labour roster" },
+        "POST": { "upstream": "/construction/labour-roster", "root": true, "body": "json", "success_status": 201, "fallback": "Failed to add worker", "revalidate": {"tags": ["module:manpower"]} }
+      }
+    },
+    {
+      "route": "/api/materials/master",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/construction/materials?projectId={query:projectId}", "root": true, "required_query": {"projectId": "projectId query param is required"}, "response_redact": {"roles": ["site_engineer","client_viewer"],"list": "materials","set": {"unitCost": null}}, "fallback": "Failed to load material master" },
+        "POST": { "upstream": "/construction/materials", "root": true, "body": "json", "success_status": 201, "fallback": "Failed to create material", "revalidate": {"tags": ["module:materials"]} }
+      }
+    },
+    {
+      "route": "/api/meetings",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/meetings?projectId={query:projectId}", "required_query": {"projectId": "projectId query param is required"}, "fallback": "Failed to load meetings" },
+        "POST": { "upstream": "/meetings", "body": "json", "success_status": 201, "fallback": "Failed to create meeting", "revalidate": {"tags": ["module:meetings"]} }
+      }
+    },
+    {
+      "route": "/api/moms",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/veri-meetings", "optional_query": ["projectId"], "fallback": "Failed to load meetings" },
+        "POST": { "upstream": "/veri-meetings", "body": "json", "body_in_try": true, "success_status": 201, "fallback": "Failed to create meeting", "revalidate": {"tags": ["module:moms"]} }
+      }
+    },
+    {
+      "route": "/api/mood-boards",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/mood-boards?projectId={query:projectId}", "required_query": {"projectId": "projectId query param is required"}, "fallback": "Failed to load mood boards" },
+        "POST": { "upstream": "/mood-boards", "body": "json", "success_status": 201, "fallback": "Failed to create mood board", "revalidate": {"tags": ["module:mood-boards"]} }
+      }
+    },
+    {
+      "route": "/api/knowledge-base",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/knowledge-base", "fallback": "Failed to load knowledge base pages" },
+        "POST": { "upstream": "/knowledge-base", "body": "json", "body_required": [{"fields": ["title"],"error": "title is required"}], "success_status": 201, "fallback": "Failed to create knowledge base page", "revalidate": {"tags": ["knowledge-base"]} }
+      }
+    },
+    {
+      "route": "/api/knowledge-base/:id",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/knowledge-base/{id}", "fallback": "Failed to load page" },
+        "PATCH": { "upstream": "/knowledge-base/{id}", "body": "json", "fallback": "Failed to update knowledge base page", "revalidate": {"tags": ["knowledge-base"]} }
+      }
+    },
+    {
+      "route": "/api/projects",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/projects", "response_pick": {"projects": []}, "fallback": "Failed to load projects" },
+        "POST": { "upstream": "/projects", "body": "json", "success_status": 201, "fallback": "Failed to create project", "revalidate": {"tags": ["projects"],"when": "always"} }
+      }
+    },
+    {
+      "route": "/api/scope",
+      "batch": 7,
+      "methods": {
+        "GET": { "upstream": "/scope?projectId={query:projectId}", "required_query": {"projectId": "projectId query param is required"}, "include_allow": ["variation","compare"], "fallback": "Failed to load scope of work" },
+        "POST": { "upstream": "/scope", "acting_user": "explicit", "body": "json", "invalid_body_error": "Request body must be valid JSON", "boq_create_verify": true, "success_status": 201, "fallback": "Failed to create BOQ", "revalidate": {"tags": ["module:scope"],"paths": ["/scope"]} }
       }
     }
   ]
