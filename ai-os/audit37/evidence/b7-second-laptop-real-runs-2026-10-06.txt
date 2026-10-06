@@ -1,0 +1,63 @@
+AUDIT-100 B7 (second-laptop leg): by-hand REAL-BACKEND runs of e2e/audit37-real-b7-writeback.spec.ts, 2026-10-06
+Rig: local production build of origin/main 5b25d795 (next build --webpack + scripts/make-release.mjs), next start :3101, Microsoft Edge (channel msedge, no --disable-web-security: :3101 is an allowed origin), real projexa-sync, real Supabase, E2E test org. Secrets, links and test-account details removed.
+Run 1 = spec as on main. Run 2 = spec with the hook-timeout fix + serialized first copies (this PR).
+
+== RUN 1 (01:35:35Z-01:42:58Z UTC)
+Running 4 tests using 1 worker
+  x  1 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:63:5 › B7: an RFI made online on laptop A lands in...
+  -  2 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:77:5 › B7: an edit (an answer) made on laptop A la...
+  -  3 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:91:5 › B18 + B28: made offline it waits and the se...
+  -  4 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:124:5 › B7/B28: laptop B's own copy gets the new R...
+  1) [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:63:5 › B7: an RFI made online on laptop A lands in S...
+    Error: laptop B never finished its first copy
+    laptop B never finished its first copy
+    expect(received).toBeGreaterThan(expected)
+    Expected: > 0
+    Received:   0
+    Call Log:
+    - Test timeout of 1500000ms exceeded
+      27 |   // ... and has FINISHED its first whole copy (sync:last), so what A does below is really a LATER change....
+      28 |   // org's first copy is ~600 requests per laptop and can outlast the whole file; a change made during it ...
+    > 29 |   await expect.poll(() => countMeta(B.page, "sync:last"), { timeout: 900_000, message: "laptop B never fin...
+         |                                                                                                           ...
+      30 |   // BREAK-TEST SWITCH (R74-RULING-03 (c)): AUDIT100_BREAK=push refuses every push of laptop A to the real...
+      31 |   if (process.env.AUDIT100_BREAK === "push") await A.context.route(/projexa-sync\/push/, (r) => r.abort("c...
+      32 | });
+        at C:\ct\px-b7r\e2e\audit37-real-b7-writeback.spec.ts:29:132
+  1 failed
+    [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:63:5 › B7: an RFI made online on laptop A lands in Su...
+  3 did not run
+== RUN 2 (01:47:09Z-02:00:08Z UTC)
+Running 4 tests using 1 worker
+[WebServer] [veridian] VERIDIAN request timed out after 8000ms: <url>
+[WebServer] [veridian] VERIDIAN request timed out after 8000ms: <url>
+[WebServer] [veridian] VERIDIAN request timed out after 8000ms: <url>
+[WebServer] [veridian] VERIDIAN request timed out after 8000ms: <url>
+[WebServer] [veridian] VERIDIAN request timed out after 8000ms: <url>
+[WebServer] [veridian] VERIDIAN request timed out after 8000ms: <url>
+[WebServer] [supabase] getClaims() failed once, retrying: fetch failed
+[WebServer] [middleware] getClaims() failed: fetch failed
+  x  1 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:69:5 › B7: an RFI made online on laptop A lands in...
+  -  2 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:83:5 › B7: an edit (an answer) made on laptop A la...
+  -  3 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:97:5 › B18 + B28: made offline it waits and the se...
+  -  4 [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:130:5 › B7/B28: laptop B's own copy gets the new R...
+  1) [audit37-real-edge] › e2e\audit37-real-b7-writeback.spec.ts:69:5 › B7: an RFI made online on laptop A lands in S...
+    Error: no sync:done marker: the real data never reached the laptop
+    no sync:done marker: the real data never reached the laptop
+    expect(received).toBeGreaterThan(expected)
+    Expected: > 0
+    Received:   0
+    Call Log:
+    - Timeout 300000ms exceeded while waiting on the predicate
+       at support\real-backend.ts:29
+      27 |   await expect
+      28 |     .poll(() => countMeta(page, "sync:done:"), { timeout: 300_000, message: "no sync:done marker: the real...
+    > 29 |     .toBeGreaterThan(0);
+         |      ^
+      30 | }
+      31 |
+      32 | export async function localDbNames(page: Page): Promise<string[]> {
+        at loginAndPrepare (C:\ct\px-b7r\e2e\support\real-backend.ts:29:6)
+        at openLaptop (C:\ct\px-b7r\e2e\support\real-backend.ts:96:3)
+        at C:\ct\px-b7r\e2e\audit37-real-b7-writeback.spec.ts:29:7
+... more matches
