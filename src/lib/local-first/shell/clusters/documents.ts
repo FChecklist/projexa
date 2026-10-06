@@ -28,9 +28,18 @@ function serverOnlyRoute(pattern: string, title: string, reason: string): ShellR
 }
 
 export const ROUTES: readonly ShellRoute[] = [
-  serverOnlyRoute("/permits/new", "New permit", "Recording a permit uploads its PDF, so it needs a connection."),
-  serverOnlyRoute("/drawings/new", "New drawing", "Adding a drawing uploads its file, so it needs a connection."),
-  serverOnlyRoute("/documents/upload", "Upload document", "Uploading a document needs a connection."),
+  defineShellRoute({
+    pattern: "/permits/new", title: "New permit",
+    load: () => import("../modules/PermitNewScreen"), adapter: (shell, _params, query) => loadPermitsList(shell.data, shell.projectId, query.get("withinDays")),
+  }),
+  defineShellRoute({
+    pattern: "/drawings/new", title: "New drawing",
+    load: () => import("../modules/DrawingNewScreen"), adapter: (shell) => loadDrawingsList(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/documents/upload", title: "Upload document",
+    load: () => import("../modules/DocumentNewScreen"), adapter: (shell) => loadDocumentsList(shell.data, shell.projectId),
+  }),
   serverOnlyRoute("/moms/new", "New meeting", "A new meeting is created on the server (its number and attendees come from there), so it needs a connection."),
   defineShellRoute({
     pattern: "/permits",

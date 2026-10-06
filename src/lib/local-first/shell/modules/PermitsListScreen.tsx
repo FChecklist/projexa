@@ -9,6 +9,8 @@ import { permitStatus } from "@/components/permit-status";
 import type { ShellScreenProps } from "../types";
 import type { PermitsListData } from "./permits-adapter";
 import { CopyNote, NOT_SYNCED, NO_PROJECT, OnlineOnly, StateMessage, Waiting, dateText, projectQuery } from "./DocumentsShared";
+import { FilesWaiting } from "./FilesWaiting";
+import { withProject } from "./DeliveryParts";
 
 export default function PermitsListScreen({ shell, data }: ShellScreenProps<PermitsListData>) {
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
@@ -58,7 +60,8 @@ export default function PermitsListScreen({ shell, data }: ShellScreenProps<Perm
           </Table>
         </div>
       )}
-      <OnlineOnly>Recording a new permit needs a connection (the permit PDF is uploaded with it).</OnlineOnly>
+      <OnlineOnly>You can record a new permit here without a connection: the permit is kept on this laptop and its PDF is sent when you are connected. <a className="text-px-ink underline underline-offset-2" href={withProject("/permits/new", data.state === "local" ? data.projectId : null)}>New permit</a></OnlineOnly>
+      <FilesWaiting shell={shell} kinds={["permit"]} projectId={data.state === "local" ? data.projectId : null} tick={data} />
     </section>
   );
 }

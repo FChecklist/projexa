@@ -97,8 +97,14 @@ test("documents: the four lists and their objects open offline from the laptop, 
     await noCrash(page)
   })
 
-  await test.step("the create screens need the server: a calm sentence offline, never a crash", async () => {
-    for (const path of ["/permits/new", "/drawings/new", "/documents/upload", "/moms/new"]) {
+  await test.step("G-15: permit, drawing and document are added on the laptop (the file waits); a new meeting still needs the server: a calm sentence offline, never a crash", async () => {
+    for (const [path, form] of [["/permits/new", "permit-new-form"], ["/drawings/new", "drawing-new-form"], ["/documents/upload", "document-new-form"]] as const) {
+      await openLocal(page, path)
+      await expect(page.getByTestId(form), `${path} did not open its form on the laptop`).toBeVisible()
+      await expect(page.getByTestId("documents-server-only")).toHaveCount(0)
+      await noCrash(page)
+    }
+    for (const path of ["/moms/new"]) {
       await openLocal(page, path)
       await expect(page.getByTestId("documents-server-only"), `${path} did not explain itself offline`).toBeVisible()
       await noCrash(page)
@@ -113,12 +119,18 @@ test("documents: the four lists and their objects open offline from the laptop, 
   await goOnline(context, p)
   expectCleanConsole(p.console)
 
-  await test.step("online, a create screen falls through to the server's own page (never read as the permit whose id is 'new')", async () => {
-    await openLocal(page, "/permits/new", { leavesTheShell: true })
-    await expect(page).toHaveURL(/\/permits\/new\?(.*&)?px-server=1/, { timeout: 30_000 })
+  await test.step("online, a create screen that is still the server's falls through to its own page (never read as the meeting whose id is 'new')", async () => {
+    await openLocal(page, "/moms/new", { leavesTheShell: true })
+    await expect(page).toHaveURL(/\/moms\/new\?(.*&)?px-server=1/, { timeout: 30_000 })
     expect(new URL(page.url()).searchParams.get("projectId")).toBe(PROJECT_ID)
-    expect(new URL(page.url()).pathname).toBe("/permits/new")
+    expect(new URL(page.url()).pathname).toBe("/moms/new")
     await expect(page.getByTestId("local-shell")).toHaveCount(0)
+  })
+
+  await test.step("G-15: online, the permit form stays on the laptop (its file is sent by the laptop, not by a server page)", async () => {
+    await openLocal(page, "/permits/new")
+    await expect(page.getByTestId("permit-new-form")).toBeVisible()
+    expect(page.url()).not.toContain("px-server=1")
   })
 })
 

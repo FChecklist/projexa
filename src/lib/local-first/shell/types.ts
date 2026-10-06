@@ -3,6 +3,7 @@
 import type { ComponentType } from "react";
 import type { Connectivity } from "../connectivity";
 import type { ShellData } from "./context";
+import type { FileQueue } from "./file-queue";
 import type { ShellWriter } from "./pending-edits";
 
 /** What the shell offers a screen (and its data adapter). Everything here is local to this laptop. */
@@ -14,6 +15,8 @@ export type ShellApi = {
   setProjectId(id: string): void;
   /** Writes go through this: kept on the laptop at once, sent when the laptop can reach the server. */
   writer: ShellWriter;
+  /** Files waiting to be sent (permits, drawings, documents): kept on the laptop, uploaded first and the record queued after. */
+  files: FileQueue;
   /** Moves to another screen without a page load. Accepts the app's own paths (/scope/abc). */
   navigate(href: string, options?: { replace?: boolean }): void;
   connectivity: Connectivity;

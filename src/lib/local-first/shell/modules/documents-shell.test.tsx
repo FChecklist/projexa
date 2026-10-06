@@ -157,9 +157,9 @@ describe("with NO network, every screen of the cluster opens from the laptop's o
 
     go("/local/permits/new?projectId=p1");
     const second = render(<LocalShell />);
-    const note = await second.findByTestId("documents-server-only");
-    expect(note.getAttribute("data-online")).toBe("0");
-    expect(note.textContent).toContain("needs a connection");
+    // G-15: the create path is a real form on the laptop now (the file waits on the laptop), never the server-only note, never 'permit not found'
+    await second.findByTestId("permit-new-form");
+    expect(second.queryByTestId("documents-server-only")).toBeNull();
     expect(document.querySelector('[data-testid="permit-object"]')).toBeNull();
     expect(fetchCalls).toEqual([]);
   });
@@ -248,5 +248,82 @@ describe("who sees what", () => {
     const list = await findByTestId("documents-list");
     expect(list.getAttribute("data-state")).toBe("not_synced");
     expect(list.textContent).not.toContain("Signed contract");
+  });
+});
+
+
+describe("G-15: a permit, a drawing and a document are added OFFLINE with their file kept on the laptop", () => {
+  const pick = (input: HTMLElement, name = "scan.pdf") => fireEvent.change(input, { target: { files: [new File(["%PDF-1.4 hello"], name, { type: "application/pdf" })] } });
+  const storedJobs = async () => {
+    const db = await openLocalDb(idb, localDbNameFor("u1"));
+    try {
+      return (await db.getMeta<{ kind: string; projectId: string; fileName: string; state: string; fields: Record<string, unknown> }[]>("shell:file-jobs")) ?? [];
+    } finally {
+      db.close();
+    }
+  };
+
+  test("permit: the form checks the fields, keeps the file and the fields, shows 'File waiting to upload', sends nothing, queues no record yet", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/permits/new?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId, getAllByTestId } = render(<LocalShell />);
+    await findByTestId("permit-new-form");
+    fireEvent.input(getByLabelText("Name"), { target: { value: "Fit-out permit" } });
+    fireEvent.input(getByLabelText("Permit number"), { target: { value: "FP-1" } });
+    fireEvent.input(getByLabelText("Issued by"), { target: { value: "Municipality" } });
+    fireEvent.submit(getByTestId("permit-new-form")); // no expiry date, no file
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("0"));
+    expect(await storedJobs()).toEqual([]);
+
+    fireEvent.input(getByLabelText("Expiry date"), { target: { value: "2027-01-31" } });
+    pick(getByLabelText("File"));
+    fireEvent.submit(getByTestId("permit-new-form"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    await waitFor(() => expect(getAllByTestId("files-waiting-item")).toHaveLength(1));
+    expect(getByTestId("files-waiting-item").textContent).toContain("File waiting to upload");
+    expect(getByTestId("files-waiting-item").textContent).toContain("Fit-out permit");
+    const jobs = await storedJobs();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ kind: "permit", projectId: "p1", fileName: "scan.pdf", state: "waiting", fields: { name: "Fit-out permit", permitNumber: "FP-1", permitAuthority: "Municipality", expiryDate: "2027-01-31" } });
+    expect(await documentsWriteDeps.outbox!.listPending()).toEqual([]); // the record waits for its file
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("drawing and document: same two steps; the document form offers the app's categories", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/drawings/new?projectId=p1");
+    const d = render(<LocalShell />);
+    await d.findByTestId("drawing-new-form");
+    fireEvent.input(d.getByLabelText("Name"), { target: { value: "AR-101 plan" } });
+    fireEvent.input(d.getByLabelText("Drawing number (optional)"), { target: { value: "AR-101" } });
+    pick(d.getByLabelText("File"), "ar101.pdf");
+    fireEvent.submit(d.getByTestId("drawing-new-form"));
+    await waitFor(() => expect(d.getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    cleanup();
+
+    go("/local/documents/upload?projectId=p1");
+    const u = render(<LocalShell />);
+    await u.findByTestId("document-new-form");
+    expect([...(u.getByLabelText("Category") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["", "permit", "drawing", "contract", "certificate", "license", "site_photo", "email", "other"]);
+    fireEvent.input(u.getByLabelText("Name"), { target: { value: "Site plan" } });
+    fireEvent.change(u.getByLabelText("Category"), { target: { value: "drawing" } });
+    pick(u.getByLabelText("File"), "plan.pdf");
+    fireEvent.submit(u.getByTestId("document-new-form"));
+    await waitFor(() => expect(u.getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
+    const jobs = await storedJobs();
+    expect(jobs.map((j) => [j.kind, j.fileName])).toEqual([["drawing", "ar101.pdf"], ["document", "plan.pdf"]]);
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("the list pages offer the add link and show the waiting files; a read-only role gets the read-only note", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/permits?projectId=p1");
+    const l = render(<LocalShell />);
+    await l.findByTestId("permits-list");
+    expect(l.getByTestId("doc-online-only").textContent).toContain("without a connection");
+    expect(l.container.querySelector('a[href*="/permits/new"]')).not.toBeNull();
   });
 });
