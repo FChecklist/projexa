@@ -37,11 +37,11 @@ type Net = { mode: "up" | "down" | "offline" };
  */
 async function reloadAgain(page: Page): Promise<void> {
   try {
-    await reloadAgain(page);
+    await page.reload();
   } catch (err) {
     if (!/ERR_ABORTED|frame was detached/.test(String(err))) throw err;
     await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-    await reloadAgain(page);
+    await page.reload();
   }
 }
 
