@@ -172,11 +172,29 @@ await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exce
   await probe("batch 6: projects overview (reshaped)", "client_viewer", sessions.client_viewer, "GET", "/api/projects/overview");
 }
 
+// batch 7: refusals and validation that answer before anything is written, the reads with their query forms, a cached read as two roles
+{
+  await probe("batch 7: document upload refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/documents", { name: "a2 smoke (never written)" });
+  await probe("batch 7: drawing upload refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/drawings", { name: "a2 smoke (never written)" });
+  await probe("batch 7: project create refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/projects", { name: "a2 smoke (never written)" });
+  await probe("batch 7: BOQ create refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/scope", { title: "a2 smoke (never written)", lineItems: [] });
+  await probe("batch 7: knowledge page without a title (validation)", "pm", sessions.pm, "POST", "/api/knowledge-base", { body: "a2 smoke (never written)" });
+  await probe("batch 7: documents without a scope (validation)", "pm", sessions.pm, "GET", "/api/documents");
+  await probe("batch 7: documents by project scope + category", "owner", sessions.owner, "GET", `/api/documents?projectScopeId=${projectId}&category=other`);
+  await probe("batch 7: drawings with filters", "owner", sessions.owner, "GET", `/api/drawings?projectId=${projectId}&kind=plan&status=issued`);
+  await probe("batch 7: permits within 30 days, all", "owner", sessions.owner, "GET", `/api/permits?withinDays=30&projectId=${projectId}&all=true`);
+  await probe("batch 7: BOQ list with includes", "owner", sessions.owner, "GET", `/api/scope?projectId=${projectId}&include=compare,variation,bogus`);
+  await probe("batch 7: minutes without a project", "pm", sessions.pm, "GET", "/api/moms");
+  await probe("batch 7: material master as site-facing viewer (unit costs hidden)", "client_viewer", sessions.client_viewer, "GET", `/api/materials/master?projectId=${projectId}`);
+  for (const who of ["owner", "client_viewer", "pm"]) for (const path of ["/api/currencies", "/api/cost-centers", "/api/fiscal-years"]) await probe("batch 7: cached read twice", who, sessions[who], "GET", path);
+}
+
 // deny by default: a real Vercel route the edge does not answer; and (batch 5) a Vercel route that is a literal sibling of a dynamic edge route
 const notListed = await call(EDGE, "/api/shell", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });
 results.push({ label: "deny by default (/api/shell)", who: "owner", method: "GET", path: "/api/shell", edge: notListed.status, vercel: "-", same: notListed.status === 404 });
-const shadow = await call(EDGE, "/api/materials/master", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });
-results.push({ label: "batch 5: shadowed literal route (/api/materials/master) is not answered as /api/materials/:id", who: "owner", method: "GET", path: "/api/materials/master", edge: shadow.status, vercel: "-", same: shadow.status === 404 });
+// batch 7: /api/materials/master is an edge route itself now (no projectId: the handler's own 400)
+const master = await call(EDGE, "/api/materials/master", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });
+results.push({ label: "batch 7: /api/materials/master is answered by the edge (400 without projectId)", who: "owner", method: "GET", path: "/api/materials/master", edge: master.status, vercel: "-", same: master.status === 400 });
 
 console.table(results);
 const bad = results.filter((r) => !r.same).length;

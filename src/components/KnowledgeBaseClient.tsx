@@ -54,7 +54,7 @@ export default function KnowledgeBaseClient({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/knowledge-base");
+      const res = await viaPxApi("/api/knowledge-base");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load knowledge base");
       setPages(data.pages ?? []);

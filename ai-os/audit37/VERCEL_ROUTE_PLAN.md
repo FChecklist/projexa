@@ -95,7 +95,7 @@ BATCHES 2-4 (2026-10-06): all 106 plain proxies of the online screens moved the 
 the edge on the production origins. BATCH 5 (2026-10-06): 72 proxies that were plain in all but form (own role sets, the VERIDIAN root,
 empty / lenient / defaulted bodies, options in any order): 185 routes. BATCH 6 (2026-10-06): 32 proxies with their own validation,
 query rebuilding or answer reshaping, each statement ported as spec data and proven by the contract: 217 routes. **Vercel-served /api
-routes 304 -> 264 -> 231 -> 198 -> 126 -> 94** (`vercel_served_routes_budget`, may only go down).
+routes 304 -> 264 -> 231 -> 198 -> 126 -> 94 -> 92 (G-09) -> 78 (batch 7)** (`vercel_served_routes_budget`, may only go down).
 
 Remaining on Vercel after batch 6 + G-09 (311 route files: 282 VERIDIAN proxies of which 217 moved, plus the 2 org provisioning routes moved by G-09; 63 proxies + 29 own-logic/Supabase = 92).
 `bun scripts/projexa-api-candidates.mjs` prints the reason per proxy. Each class needs a real port + parity, not a spec key:
@@ -105,7 +105,7 @@ Remaining on Vercel after batch 6 + G-09 (311 route files: 282 VERIDIAN proxies 
    `/reports/:reportName/export` and `/share`, `/reports/budget-variance/export`, `/construction-materials/cost-report/export`): stream passthrough with
    the Next handlers' content-type / disposition / size fallbacks and the 30 s upload budget; parity with real small files incl. oversize
    and wrong type. The uploads of `/documents`, `/drawings` and `/permits` (POST) share a handler file with a cached list (class 2).
-2. Cross-request cache (15): `module-list-source` lists (`/documents`, `/drawings`, `/labour-roster`, `/materials/master`, `/meetings`,
+2. [DONE in batch 7, 2026-10-06: 232 proxies on the edge, Vercel-served 92 -> 78; the 12 write-invalidating ones through the browser's one call to the new `/api/cache/revalidate`, see A2_PROGRESS.md] Cross-request cache (15): `module-list-source` lists (`/documents`, `/drawings`, `/labour-roster`, `/materials/master`, `/meetings`,
    `/moms`, `/mood-boards`, `/permits`, `/scope`), `unstable_cache` (`/projects`, `/knowledge-base`, `/knowledge-base/:id`) and
    `createCachedVeridianGet` (`/cost-centers`, `/currencies`, `/fiscal-years`): a per-isolate Map with the same TTL and the same
    invalidation on the writes, parity with a fake clock.

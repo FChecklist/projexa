@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildCases, IDENTITIES, ORG_KEYS, REQUESTS, type Outcome, type ParityCase, type UpstreamCall, type Who } from "./projexa-api-parity-cases";
+import { buildCases, buildSequences, IDENTITIES, ORG_KEYS, REQUESTS, type Outcome, type ParityCase, type RecordedForm, type Sequence, type UpstreamCall, type Who } from "./projexa-api-parity-cases";
 
 // AUDIT-100 A2, the Next half of the PARITY CONTRACT with the Supabase Edge Function `projexa-api` (compliance-tracker
 // supabase/functions/projexa-api). Every case of projexa-api-parity-cases.ts runs through the REAL pipeline a browser's /api call meets on
@@ -33,6 +33,16 @@ const wirePath = (url: string) => {
 
 let current: ParityCase | null = null;
 let calls: UpstreamCall[] = [];
+
+/** What an upload sends upstream, as the contract records it (names, text, and each file's name / type / size / text, in order). */
+async function recordForm(form: FormData): Promise<RecordedForm> {
+  const out: RecordedForm["multipart"] = [];
+  for (const [name, value] of form.entries()) {
+    if (typeof value === "string") out.push([name, value]);
+    else out.push([name, { file: { name: value.name, type: value.type, size: value.size, text: await value.text() } }]);
+  }
+  return { multipart: out };
+}
 
 const identity = () => (current && current.who !== "signed_out" ? IDENTITIES[current.who as Exclude<Who, "signed_out">] : null);
 
@@ -81,6 +91,31 @@ mock.module("@/lib/db", () => ({
   },
 }));
 
+// AUDIT-100 A2 batch 7: next/cache outside a Next server. revalidateTag / revalidatePath are RECORDED (what the real handler clears; the edge cannot, the
+// browser asks Vercel to: projexa-api-routes.json `revalidate`), and unstable_cache is a model of the real one: ONE store shared by every "request", keyed
+// like Next keys it (next/dist/server/web/spec-extension/unstable-cache.js: the callback source + the key parts, then the JSON of the arguments), an entry
+// fresh for `revalidate` seconds of a clock the sequences move, a throw never stored. The stale step is NOT modelled (real Next serves the stale answer once
+// and refreshes in the background): no recorded case reaches it.
+export const clock = { now: 0 };
+const cacheStore = new Map<string, { at: number; value: unknown }>();
+let revalidated: { tags: string[]; paths: string[] } = { tags: [], paths: [] };
+mock.module("next/cache", () => ({
+  unstable_cache: <A extends unknown[], R>(cb: (...args: A) => Promise<R>, keyParts: string[] = [], options: { revalidate?: number | false } = {}) => {
+    const fixedKey = `${cb.toString()}-${keyParts.join(",")}`;
+    return async (...args: A): Promise<R> => {
+      const key = `${fixedKey}-${JSON.stringify(args)}`;
+      const hit = cacheStore.get(key);
+      const ttl = typeof options.revalidate === "number" ? options.revalidate * 1000 : Infinity;
+      if (hit && clock.now - hit.at < ttl) return hit.value as R;
+      const value = await cb(...args);
+      cacheStore.set(key, { at: clock.now, value });
+      return value;
+    };
+  },
+  revalidateTag: (tag: string) => void revalidated.tags.push(tag),
+  revalidatePath: (path: string) => void revalidated.paths.push(path),
+}));
+
 const realFetch = globalThis.fetch;
 beforeAll(() => {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -95,7 +130,7 @@ beforeAll(() => {
       acting_user: h.get("x-acting-user"),
       acting_email: h.get("x-acting-user-email"),
       content_type: h.get("content-type"),
-      body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body instanceof FormData ? await recordForm(init.body) : null,
     });
     const u = current!.upstream;
     if (u.kind === "refused") throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }) });
@@ -127,20 +162,32 @@ const routeOf = (path: string) => {
 type Handler = (req: Request, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
 /** The Vercel pipeline: middleware first (a non-"next" answer ends the request), then the route handler. */
-export async function runNext(c: ParityCase): Promise<Outcome> {
-  current = c;
+/** The request a browser sends for a case: JSON, a raw text body with its content type, or a multipart form (no content type written by hand). */
+function requestInit(c: Pick<ParityCase, "method" | "body" | "raw_body" | "content_type" | "multipart">): { method: string; headers: Record<string, string>; body: BodyInit | undefined } {
+  if (c.multipart) {
+    const form = new FormData();
+    for (const [k, v] of c.multipart.fields) form.append(k, v);
+    for (const f of c.multipart.files ?? []) form.append(f.field, new File([f.content], f.name, { type: f.type }));
+    return { method: c.method, headers: {}, body: form };
+  }
+  const sent = c.raw_body !== undefined ? c.raw_body : c.body === undefined ? undefined : JSON.stringify(c.body);
+  return { method: c.method, headers: sent === undefined ? {} : { "content-type": c.content_type ?? "application/json" }, body: sent };
+}
+
+export async function runNext(c: Pick<ParityCase, "name" | "method" | "path" | "body" | "raw_body" | "content_type" | "multipart" | "who" | "upstream">): Promise<Outcome> {
+  current = c as ParityCase;
   calls = [];
+  revalidated = { tags: [], paths: [] };
   const { NextRequest } = await import("next/server");
   const { middleware } = await import("@/middleware");
   const url = `http://localhost:3100${c.path}`;
-  const sent = c.raw_body !== undefined ? c.raw_body : c.body === undefined ? undefined : JSON.stringify(c.body);
-  const init = { method: c.method, headers: sent === undefined ? {} : { "content-type": "application/json" }, body: sent };
-  let res: Response = await middleware(new NextRequest(url, init));
+  // a multipart body can be read once: the middleware and the handler each get their own copy of the form
+  let res: Response = await middleware(new NextRequest(url, requestInit(c)));
   if (res.headers.get("x-middleware-next") === "1") {
     const { route, params } = routeOf(c.path);
     const mod = (await import(`@/app${route.replace(/:(\w+)/g, "[$1]")}/route`)) as Record<string, Handler>;
     try {
-      res = await mod[c.method]!(new NextRequest(url, init), { params: Promise.resolve(params) });
+      res = await mod[c.method]!(new NextRequest(url, requestInit(c)), { params: Promise.resolve(params) });
     } catch {
       // AUDIT-100 A2 batch 6: a handler that THROWS (a field read on a JSON-null body: `null.projectId`) is rendered by Next as an empty
       // 500 (withTiming rethrows; next/dist/build/templates/app-route.js: `new Response(null, { status: 500 })`). The edge answers the same.
@@ -155,22 +202,45 @@ export async function runNext(c: ParityCase): Promise<Outcome> {
     body = { __not_json__: text.slice(0, 80) };
   }
   const cc = res.headers.get("cache-control");
-  return { status: res.status, body, retry_after: res.headers.get("retry-after"), upstream_calls: calls, ...(cc && cc !== "no-store" ? { cache_control: cc } : {}) };
+  const cleared = revalidated.tags.length || revalidated.paths.length ? { revalidated: { tags: [...revalidated.tags], paths: [...revalidated.paths] } } : {};
+  return { status: res.status, body, retry_after: res.headers.get("retry-after"), upstream_calls: calls, ...(cc && cc !== "no-store" ? { cache_control: cc } : {}), ...cleared };
+}
+
+/** A sequence: one cache that starts empty, the clock moving before each step. */
+export async function runNextSequence(seq: Sequence): Promise<Outcome[]> {
+  cacheStore.clear();
+  clock.now = 0;
+  const out: Outcome[] = [];
+  for (const [i, step] of seq.steps.entries()) {
+    clock.now += step.advance_ms ?? 0;
+    out.push(await runNext({ name: `${seq.name} #${i + 1}`, ...step }));
+  }
+  return out;
 }
 
 describe("projexa-api parity contract: the Next pipeline (AUDIT-100 A2)", () => {
   test("every golden case: the Next pipeline answers exactly the recorded contract", async () => {
     const cases = buildCases();
     const outcomes: { case: ParityCase; expect: Outcome }[] = [];
-    for (const c of cases) outcomes.push({ case: c, expect: await runNext(c) });
-    const golden = { _about: "AUDIT-100 A2 parity contract. Recorded from the REAL PROJEXA Next pipeline by src/lib/projexa-api-parity.test.ts (projexa repo); replayed against the edge function by compliance-tracker src/lib/services/projexa-api-edge-parity.test.ts. Do not edit by hand.", identities: IDENTITIES, org_keys: ORG_KEYS, upstream_base: BASE, cases: outcomes };
+    for (const c of cases) {
+      cacheStore.clear();
+      clock.now = 0;
+      outcomes.push({ case: c, expect: await runNext(c) });
+    }
+    const sequences: { sequence: Sequence; expect: Outcome[] }[] = [];
+    for (const sequence of buildSequences()) sequences.push({ sequence, expect: await runNextSequence(sequence) });
+    const golden = { _about: "AUDIT-100 A2 parity contract. Recorded from the REAL PROJEXA Next pipeline by src/lib/projexa-api-parity.test.ts (projexa repo); replayed against the edge function by compliance-tracker src/lib/services/projexa-api-edge-parity.test.ts. Do not edit by hand.", identities: IDENTITIES, org_keys: ORG_KEYS, upstream_base: BASE, cases: outcomes, sequences };
     if (process.env.UPDATE_PARITY_GOLDEN === "1") writeFileSync(GOLDEN_PATH, JSON.stringify(golden, null, 1) + "\n");
     const committed = JSON.parse(readFileSync(GOLDEN_PATH, "utf8"));
     expect(committed.cases.length).toBe(outcomes.length);
     for (let i = 0; i < outcomes.length; i++) {
       expect({ name: outcomes[i]!.case.name, ...outcomes[i]!.expect }).toEqual({ name: committed.cases[i].case.name, ...committed.cases[i].expect });
     }
-  }, 120_000);
+    expect(committed.sequences.length).toBe(sequences.length);
+    for (let i = 0; i < sequences.length; i++) {
+      expect({ name: sequences[i]!.sequence.name, steps: sequences[i]!.expect }).toEqual({ name: committed.sequences[i].sequence.name, steps: committed.sequences[i].expect });
+    }
+  }, 240_000);
 
   test("the contract is not vacuous: it covers every role tier deciding a write both ways, and real upstream calls", async () => {
     const committed = JSON.parse(readFileSync(GOLDEN_PATH, "utf8")) as { cases: { case: ParityCase; expect: Outcome }[] };

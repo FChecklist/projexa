@@ -11,6 +11,7 @@
 // close_out_2026_07_15 for the gap history.
 import { useEffect, useState } from "react";
 
+import { viaPxApi } from "@/lib/px-api";
 export type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
 
 // R51 go-to-market (requirement R-62, "Dashboard and other screens show AED";
@@ -117,7 +118,7 @@ function writeCachedCurrencies(currencies: Currency[]): void {
 
 function loadCurrenciesResult(): Promise<CurrenciesLoadResult> {
   if (!currenciesPromise) {
-    currenciesPromise = fetch("/api/currencies")
+    currenciesPromise = viaPxApi("/api/currencies")
       .then((r) => r.json())
       .then((d) => {
         const currencies: Currency[] = d.currencies ?? [];

@@ -53,7 +53,7 @@ export default function SalesQuotationCreateClient() {
         if (sole) setCustomerId((prev) => prev || sole);
       })
       .catch(() => {});
-    fetch("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {});
+    viaPxApi("/api/projects").then((r) => r.json()).then((d) => setProjects(d.projects ?? [])).catch(() => {});
     fetchJson<{ companies?: Company[] }>("/api/companies").then((d) => setCompanies(d.companies ?? [])).catch(() => {});
   }, []);
 
