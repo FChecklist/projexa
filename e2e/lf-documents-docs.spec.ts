@@ -97,12 +97,16 @@ test("documents: the four lists and their objects open offline from the laptop, 
     await noCrash(page)
   })
 
-  await test.step("the create screens need the server: a calm sentence offline, never a crash", async () => {
-    for (const path of ["/permits/new", "/drawings/new", "/documents/upload", "/moms/new"]) {
+  await test.step("the file-upload create screens need the server: a calm sentence offline, never a crash", async () => {
+    for (const path of ["/permits/new", "/drawings/new", "/documents/upload"]) {
       await openLocal(page, path)
       await expect(page.getByTestId("documents-server-only"), `${path} did not explain itself offline`).toBeVisible()
       await noCrash(page)
     }
+    // G-15: a new meeting no longer needs the server: the form opens on the laptop (proven end to end in documents-writes.test.ts)
+    await openLocal(page, "/moms/new")
+    await expect(page.getByTestId("mom-new-form")).toBeVisible()
+    await noCrash(page)
     // leave it before the connection returns: online, a create screen hands itself over to the server (tested below), which would race
     // the next navigation of this test
     await openLocal(page, "/documents")

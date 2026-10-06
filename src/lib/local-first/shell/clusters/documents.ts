@@ -31,7 +31,12 @@ export const ROUTES: readonly ShellRoute[] = [
   serverOnlyRoute("/permits/new", "New permit", "Recording a permit uploads its PDF, so it needs a connection."),
   serverOnlyRoute("/drawings/new", "New drawing", "Adding a drawing uploads its file, so it needs a connection."),
   serverOnlyRoute("/documents/upload", "Upload document", "Uploading a document needs a connection."),
-  serverOnlyRoute("/moms/new", "New meeting", "A new meeting is created on the server (its number and attendees come from there), so it needs a connection."),
+  defineShellRoute({
+    pattern: "/moms/new",
+    title: "New meeting",
+    load: () => import("../modules/MomNewScreen"),
+    adapter: (shell) => loadMomsList(shell.data, shell.projectId),
+  }),
   defineShellRoute({
     pattern: "/permits",
     title: "Permits",
