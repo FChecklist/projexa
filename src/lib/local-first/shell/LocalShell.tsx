@@ -281,12 +281,14 @@ export default function LocalShell() {
   useEffect(() => {
     if (connectivity === "online") {
       schedulerRef.current?.nudge({ immediate: true });
+      fileSchedulerRef.current?.nudge({ immediate: true });
       outboxRef.current?.nudge();
     }
   }, [connectivity]);
   useEffect(() => {
     const onFocus = () => {
       schedulerRef.current?.nudge({ immediate: true });
+      fileSchedulerRef.current?.nudge({ immediate: true });
       outboxRef.current?.nudge();
     };
     window.addEventListener("focus", onFocus);
