@@ -84,3 +84,10 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   Inventory: 185 routes `edge:projexa-api`; Vercel-served 198 -> 126 (budget 126). SEEN TO FAIL (each reverted, diff clean): edge roles
   check removed (8 null_role cases), root ignored (88), first-match routing (21), lenient read strict (8), defaults over the caller (1),
   shadow list ignored (1 edge, 1 client); Next side: `requireRole` dropped in /api/change-orders POST (recorder: null_role 403 -> 201).
+- BATCH 5 LIVE (2026-10-06): compliance-tracker #2091 merged (dbcc1947); `projexa-api` deployed from a clean checkout of it with the CLI
+  recipe: version 5, ACTIVE; `/_policy` SOURCE_SHA256 da9014b5... = this repo's generated file, 185 routes. LIVE SMOKE (test org, sessions
+  by admin magic link, nothing written): 286 of 286 probes identical edge vs Vercel (167 x 200 incl. every batch-5 GET as owner and as
+  client_viewer, among them the 16 root routes; 108 x 404 unknown ids; 7 x 403 role refusals incl. the own-role change-order create and
+  the root KPI entry; 400; 401; deny by default; the shadowed /api/materials/master is 404 on the edge; policy hash):
+  `evidence/a2-batch5-live-smoke-2026-10-06.txt`. Only then does the client PR (#401) merge. ROLLBACK: revert #401 first, then redeploy
+  compliance-tracker b94b0e32 (the v3/v4 113-route table); the Next handlers stay as the same-origin fallback.
