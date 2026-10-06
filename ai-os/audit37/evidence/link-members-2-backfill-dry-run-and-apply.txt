@@ -1,0 +1,147 @@
+AUDIT-100 link-invited-members backfill: node scripts/ops/link-unlinked-members.mjs (dry run), 2026-10-06, live PROJEXA + VERIDIAN projects
+
+DRY RUN (read-only) -- PROJEXA members vs VERIDIAN users
+
+Acme Test Construction  [TEST]: 1 members  {"unlinked_email_row_other_identity":1}
+    314f3b8a  owner -> admin  unlinked_email_row_other_identity
+Al Maha Skyline Contracting & Interiors LLC: 50 members  {"unlinked_email_row_other_identity":50}
+    ed427549  admin -> admin  unlinked_email_row_other_identity
+    efa16773  owner -> admin  unlinked_email_row_other_identity
+    d218df9a  admin -> admin  unlinked_email_row_other_identity
+    ab49979b  admin -> admin  unlinked_email_row_other_identity
+    10d22855  member -> member  unlinked_email_row_other_identity
+    120b8ca1  member -> member  unlinked_email_row_other_identity
+    5e61f657  admin -> admin  unlinked_email_row_other_identity
+    c363cbb2  member -> member  unlinked_email_row_other_identity
+    c5ff7de1  member -> member  unlinked_email_row_other_identity
+    5792c807  admin -> admin  unlinked_email_row_other_identity
+    b17ba42d  admin -> admin  unlinked_email_row_other_identity
+    8a4bb23a  member -> member  unlinked_email_row_other_identity
+    ca24ab3c  member -> member  unlinked_email_row_other_identity
+    4c63b4a6  member -> member  unlinked_email_row_other_identity
+    6f9ef72f  admin -> admin  unlinked_email_row_other_identity
+    8161deff  member -> member  unlinked_email_row_other_identity
+    e07f0e1f  admin -> admin  unlinked_email_row_other_identity
+    6dd6b5e4  admin -> admin  unlinked_email_row_other_identity
+    c856acf8  admin -> admin  unlinked_email_row_other_identity
+    03d54679  admin -> admin  unlinked_email_row_other_identity
+    4fc04c4d  member -> member  unlinked_email_row_other_identity
+    24e0f39d  member -> member  unlinked_email_row_other_identity
+    97a8b54c  member -> member  unlinked_email_row_other_identity
+    77848355  member -> member  unlinked_email_row_other_identity
+    b8eeafdb  member -> member  unlinked_email_row_other_identity
+    821849ab  member -> member  unlinked_email_row_other_identity
+    d189615c  member -> member  unlinked_email_row_other_identity
+    e2f5df25  member -> member  unlinked_email_row_other_identity
+    0751233a  member -> member  unlinked_email_row_other_identity
+    0eca9bf4  member -> member  unlinked_email_row_other_identity
+    151b3df2  member -> member  unlinked_email_row_other_identity
+    947bb12e  member -> member  unlinked_email_row_other_identity
+    60a56c0a  member -> member  unlinked_email_row_other_identity
+    e04f18c2  member -> member  unlinked_email_row_other_identity
+    e5ef6860  member -> member  unlinked_email_row_other_identity
+    2817f51b  member -> member  unlinked_email_row_other_identity
+    756f631b  member -> member  unlinked_email_row_other_identity
+    1edede7e  member -> member  unlinked_email_row_other_identity
+    90cfe763  member -> member  unlinked_email_row_other_identity
+    9c8e0475  member -> member  unlinked_email_row_other_identity
+    c6fbe78f  member -> member  unlinked_email_row_other_identity
+    22708092  member -> member  unlinked_email_row_other_identity
+    dccde176  member -> member  unlinked_email_row_other_identity
+    da0e4815  member -> member  unlinked_email_row_other_identity
+    94c456cb  member -> member  unlinked_email_row_other_identity
+    5f068abe  member -> member  unlinked_email_row_other_identity
+    2b4ff985  member -> member  unlinked_email_row_other_identity
+    271ff68c  member -> member  unlinked_email_row_other_identity
+    1b543d18  member -> member  unlinked_email_row_other_identity
+    bde8d8e5  member -> member  unlinked_email_row_other_identity
+Cobalt Fitout FZE: 1 members  {"unlinked_would_create":1}
+    200978d2  admin -> admin  unlinked_would_create
+Demo Organization  [TEST]: 9 members  {"unlinked_no_veridian_org":9}
+    9546a410  owner -> admin  unlinked_no_veridian_org
+    d5c4f80f  member -> member  unlinked_no_veridian_org
+    3dfe08d7  member -> member  unlinked_no_veridian_org
+    7b04bdcc  owner -> admin  unlinked_no_veridian_org
+    17d0c20b  admin -> admin  unlinked_no_veridian_org
+    94969fac  member -> member  unlinked_no_veridian_org
+    44488dc8  client_viewer -> client_viewer  unlinked_no_veridian_org
+    dfe3aa0c  site_engineer -> member  unlinked_no_veridian_org
+    78f86c04  pm -> manager  unlinked_no_veridian_org
+Meridian Construction Group  [TEST]: 11 members  {"linked":11}
+Meridian Interiors LLC: 3 members  {"unlinked_would_create":3}
+    a44dca71  pm -> manager  unlinked_would_create
+    053646e1  admin -> admin  unlinked_would_create
+    50868339  site_engineer -> member  unlinked_would_create
+Meridian Skyline Group: 21 members  {"unlinked_email_row_other_identity":21}
+    c4346fdd  member -> member  unlinked_email_row_other_identity
+    23ca8656  member -> member  unlinked_email_row_other_identity
+    50c63509  member -> member  unlinked_email_row_other_identity
+    d2827312  member -> member  unlinked_email_row_other_identity
+    772e0029  member -> member  unlinked_email_row_other_identity
+    67ab984e  member -> member  unlinked_email_row_other_identity
+    d5459071  member -> member  unlinked_email_row_other_identity
+    de48c740  member -> member  unlinked_email_row_other_identity
+    60c6a488  member -> member  unlinked_email_row_other_identity
+    50355ef2  admin -> admin  unlinked_email_row_other_identity
+    4465561d  member -> member  unlinked_email_row_other_identity
+    91f1dddc  admin -> admin  unlinked_email_row_other_identity
+    1dff6dc6  member -> member  unlinked_email_row_other_identity
+    5b07e50a  admin -> admin  unlinked_email_row_other_identity
+    d6b09cb6  admin -> admin  unlinked_email_row_other_identity
+    1aaa06bb  member -> member  unlinked_email_row_other_identity
+    16a328e3  admin -> admin  unlinked_email_row_other_identity
+    a6a821a9  member -> member  unlinked_email_row_other_identity
+    4f59e613  admin -> admin  unlinked_email_row_other_identity
+    6a862e83  admin -> admin  unlinked_email_row_other_identity
+    21dea813  owner -> admin  unlinked_email_row_other_identity
+Platform Test Org Alpha  [TEST]: 1 members  {"unlinked_email_row_other_identity":1}
+    a2f0c839  owner -> admin  unlinked_email_row_other_identity
+R48 Retest No-Credentials Org: 1 members  {"unlinked_no_veridian_org":1}
+    bca87b9e  owner -> admin  unlinked_no_veridian_org
+R74-TEST-Projexa-Tenant-A  [TEST]: 3 members  {"unlinked_email_row_other_identity":3}
+    793ff75e  site_engineer -> member  unlinked_email_row_other_identity
+    912a3a0f  owner -> admin  unlinked_email_row_other_identity
+    9f865087  pm -> manager  unlinked_email_row_other_identity
+R74-TEST-Projexa-Tenant-B  [TEST]: 3 members  {"unlinked_email_row_other_identity":3}
+    49f2dc4e  pm -> manager  unlinked_email_row_other_identity
+    d532ce4f  owner -> admin  unlinked_email_row_other_identity
+    e006676c  site_engineer -> member  unlinked_email_row_other_identity
+Skyline Builders: 1 members  {"unlinked_email_row_other_identity":1}
+    a12fbc92  owner -> admin  unlinked_email_row_other_identity
+Skyline Builders (PROJEXA Demo)  [TEST]: 5 members  {"unlinked_email_row_other_identity":5}
+    ea476b2a  owner -> admin  unlinked_email_row_other_identity
+    9b13865a  member -> member  unlinked_email_row_other_identity
+    e71fa303  owner -> admin  unlinked_email_row_other_identity
+    083ac023  pm -> manager  unlinked_email_row_other_identity
+    e8520457  site_engineer -> member  unlinked_email_row_other_identity
+
+TOTAL {"members":110,"linked":11,"unlinked":99,"unlinked_test":22,"unlinked_real":77}
+
+Dry run: nothing was written. --apply links the unlinked members of the [TEST] organisations only.
+
+=== then --apply (test organisations only):
+Applying to 22 member(s) of test organisations:
+    Acme Test Construction  314f3b8a  owner -> email_taken
+    Demo Organization  9546a410  owner -> not_eligible
+    Demo Organization  d5c4f80f  member -> not_eligible
+    Demo Organization  3dfe08d7  member -> not_eligible
+    Demo Organization  7b04bdcc  owner -> not_eligible
+    Demo Organization  17d0c20b  admin -> not_eligible
+    Demo Organization  94969fac  member -> not_eligible
+    Demo Organization  44488dc8  client_viewer -> not_eligible
+    Demo Organization  dfe3aa0c  site_engineer -> not_eligible
+    Demo Organization  78f86c04  pm -> not_eligible
+    Platform Test Org Alpha  a2f0c839  owner -> email_taken
+    R74-TEST-Projexa-Tenant-A  793ff75e  site_engineer -> email_taken
+    R74-TEST-Projexa-Tenant-A  912a3a0f  owner -> email_taken
+    R74-TEST-Projexa-Tenant-A  9f865087  pm -> email_taken
+    R74-TEST-Projexa-Tenant-B  49f2dc4e  pm -> email_taken
+    R74-TEST-Projexa-Tenant-B  d532ce4f  owner -> email_taken
+    R74-TEST-Projexa-Tenant-B  e006676c  site_engineer -> email_taken
+    Skyline Builders (PROJEXA Demo)  ea476b2a  owner -> email_taken
+    Skyline Builders (PROJEXA Demo)  9b13865a  member -> email_taken
+    Skyline Builders (PROJEXA Demo)  e71fa303  owner -> email_taken
+    Skyline Builders (PROJEXA Demo)  083ac023  pm -> email_taken
+    Skyline Builders (PROJEXA Demo)  e8520457  site_engineer -> email_taken
+
+APPLIED {"email_taken":13,"not_eligible":9}

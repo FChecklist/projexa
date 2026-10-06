@@ -1,0 +1,42 @@
+AUDIT-100 link-invited-members: real-backend run of e2e/audit37-real-invite-links-members.spec.ts, 2026-10-06
+Local production build of branch audit100/link-invited-members (next build --webpack + make-release, next start :3156), Microsoft Edge (--disable-web-security, see the README),
+real PROJEXA Supabase project, projexa-api deployed from compliance-tracker main 49eff0a5, real ai-work-link, real VERIDIAN database. No RESEND_API_KEY: no e-mail sent.
+
+Running 9 tests using 1 worker
+  ok 1 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:220:5 › the org owner invites a pm, a site...
+[link-members] pm: VERIDIAN role manager, welcome link level 1
+  ok 2 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:239:7 › pm accepts in the browser and is l...
+[link-members] site_engineer: VERIDIAN role member, welcome link level 1
+  ok 3 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:239:7 › site_engineer accepts in the brows...
+[link-members] client_viewer: VERIDIAN role client_viewer, welcome link level 0
+  ok 4 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:239:7 › client_viewer accepts in the brows...
+  ok 5 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:261:7 › pm: the in-app "AI prompt" (Copy A...
+  ok 6 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:261:7 › site_engineer: the in-app "AI prom...
+[link-members] client_viewer write through its link: 403 FUNCTION_NOT_ON_LINK
+  ok 7 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:271:5 › client_viewer: the button is repla...
+  ok 8 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:294:5 › a member who joined BEFORE the fix...
+[link-members cleanup] run muvwfbdfbap3:
+  - VERIDIAN: revoke every link of the run's users
+  - VERIDIAN: delete the run's links that were never used
+  - VERIDIAN compliance.projects of the run's org (none expected)
+  - VERIDIAN compliance.users of the run's org
+  - VERIDIAN compliance.api_keys 58be92d9-317b-4b5f-ad52-7d9fc6fcefde
+  - VERIDIAN compliance.organisations ce9bb982-e7ec-44f2-bd77-03ba1466d3cb
+  - PROJEXA organization 0f703bfb-63a3-4332-ac3c-6c11651fb896 (+ memberships, org_invites, veridian_credentials: ON D...
+  - PROJEXA security_audit_log rows of the throwaway accounts
+  - PROJEXA auth user owner 2806f853-c670-496a-ba0d-82b4beb2d821 (+ profile)
+  - PROJEXA auth user pm 78fb3b21-3852-447d-bcc3-69ccdcc61727 (+ profile)
+  - PROJEXA auth user se a62955b5-2a23-4d93-b0a2-50510b6d5bbf (+ profile)
+  - PROJEXA auth user cv a2e5b1d0-3403-4bef-b447-c5794e92e5c5 (+ profile)
+  - PROJEXA auth user legacy ab611334-cf8c-48e8-b0f9-abc2efdedc1c (+ profile)
+  left behind: {"organizations":0,"credentials":0,"profiles":0,"memberships":0,"veridian":0,"retainedRevokedLinks":1}
+  ok 9 [audit37-real-edge] › e2e\audit37-real-invite-links-members.spec.ts:306:5 › idempotent: /link-member again ans...
+  9 passed (1.4m)
+
+Server log lines of the accept route (outcome only):
+[WebServer] [invite-accept] member link: linked (created)
+[WebServer] [email] RESEND_API_KEY not set -- email skipped: Welcome to <the run org> on PROJEXA
+[WebServer] [invite-accept] member link: linked (created)
+[WebServer] [email] RESEND_API_KEY not set -- email skipped: Welcome to <the run org> on PROJEXA
+[WebServer] [invite-accept] member link: linked (created)
+[WebServer] [email] RESEND_API_KEY not set -- email skipped: Welcome to <the run org> on PROJEXA
