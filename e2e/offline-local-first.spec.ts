@@ -30,6 +30,21 @@ const OTHER_BOQ_ID = "lf-boq-mep";
 
 type Net = { mode: "up" | "down" | "offline" };
 
+/**
+ * A reload while the service worker is taking control of the page can be aborted by the browser itself (net::ERR_ABORTED, "frame was
+ * detached"): a different test of this file failed on each CI run (R1+R10, then R2, 2026-10-06) at exactly this step while 90 others passed.
+ * Nothing about the app is under test here, so the reload is simply asked again, once.
+ */
+async function reloadAgain(page: Page): Promise<void> {
+  try {
+    await reloadAgain(page);
+  } catch (err) {
+    if (!/ERR_ABORTED|frame was detached/.test(String(err))) throw err;
+    await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+    await reloadAgain(page);
+  }
+}
+
 function line(n: number, boqId: string, boqTitle: string, boqVersion: number, boqStatus: string): FixtureLine {
   return {
     id: `lf-line-${n}`, boqId, boqTitle, boqVersion, boqStatus, parentLineItemId: null, activityId: null, itemCode: `CH-${n}`, category: "",
@@ -195,7 +210,7 @@ async function prepareLaptop(page: Page, context: BrowserContext, net: Net) {
   });
 
   await test.step("the page is controlled by the service worker (reload once, online)", async () => {
-    await page.reload();
+    await reloadAgain(page);
     await expect
       .poll(() => evalSettled(page, () => Boolean(navigator.serviceWorker.controller)), { message: "the service worker does not control the page" })
       .toBe(true);
@@ -251,7 +266,7 @@ test("R1: with NO internet the app opens from the laptop, shows the BOQ from the
   });
 
   await test.step("offline: a reload still opens it (the service worker serves the cached shell)", async () => {
-    await page.reload();
+    await reloadAgain(page);
     await expect(page.getByTestId("scope-list-row").filter({ hasText: BOQ_TITLE })).toHaveCount(1);
   });
 
@@ -274,7 +289,7 @@ test("R1: with NO internet the app opens from the laptop, shows the BOQ from the
     // the outcome PERSISTED: read back from IndexedDB, not from the screen
     expect(await personMeta(page, session.userId, "shell:edits")).toEqual([expect.objectContaining({ lineId: "lf-line-1", patch: { category: "Steel" } })]);
     // and it survives a reload
-    await page.reload();
+    await reloadAgain(page);
     await expect(page.getByTestId("boq-line-waiting")).toHaveText("Waiting to sync");
     await expect(page.getByTestId("boq-line-category-input").first()).toHaveValue("Steel");
   });
@@ -350,7 +365,7 @@ test("R10: the app asks the browser to keep its storage, and puts the release ba
   await test.step("the release cache is deleted (as a browser under storage pressure would) and a reload, online, installs it again", async () => {
     await evalSettled(page, async () => { for (const name of await caches.keys()) if (name.startsWith("px-release-")) await caches.delete(name); });
     expect(await evalSettled(page, async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).length)).toBe(0);
-    await page.reload();
+    await reloadAgain(page);
     await expect
       .poll(() => evalSettled(page, async () => (await caches.keys()).filter((n) => n.startsWith("px-release-")).length), { timeout: 240_000, message: "the missing release was not silently installed again" })
       .toBe(1);
