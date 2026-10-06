@@ -122,3 +122,28 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   non-object progress edit, vendor / customer deactivate refusal and unknown id, timesheets without project or issue, manpower with a
   trade, categories incl. inactive, the reshaped projects overview, plus every earlier probe): `evidence/a2-batch6-live-smoke-2026-10-06.txt`.
   Only then does the client PR (#403) merge. ROLLBACK: revert #403 first, then redeploy compliance-tracker dbcc1947 (the 185-route table).
+
+- BATCH 7 (2026-10-06, branch `a2-edge-batch7` here, `px-edge-batch7` in compliance-tracker): the 15 "cache" routes, 232 on the edge, Vercel-served 94 -> 80
+  (budget 80; +1 new Vercel route, see below). Cost centers, currencies and fiscal years (a 60 s per-organisation cache, the call made with NO acting
+  person), documents / drawings / permits (list + multipart upload), labour roster, materials master (unit cost hidden from site_engineer and
+  client_viewer), meetings, minutes, mood boards, knowledge base (+ :id), projects, BOQ list + create (with the create's own check of what came back).
+  WHAT THE REAL HANDLERS REVEALED (the plan called these 15 "a cache in the handler"; only 3 are): the 12 others cache NOTHING in the route; their writes
+  call revalidateTag / revalidatePath to clear the SERVER-RENDERED PAGE's 30 s list cache, which lives in Vercel's data cache and cannot be reached from a
+  Supabase function. Design: the edge answers the write; the browser then asks ONE small Vercel route (`POST /api/cache/revalidate`, signed-in, allow-listed to
+  exactly those tags and the /scope page) to clear the same entries, bounded to 2.5 s and never failing the write (`revalidate` in projexa-api-routes.json,
+  `PX_EDGE_REVALIDATE` in px-api.ts). The recorder now captures what each real handler cleared (`revalidated`); projexa tests prove the browser's table
+  equals it in both directions (every cleared entry is listed, every listed write cleared exactly its entries on success, "always" for /api/projects,
+  which clears before it calls the backend). New spec keys: `cache_ttl` + `acting_user: "none"`, `body: "multipart"`, `search_param_defaults`,
+  `include_allow`, `response_redact`, `boq_create_verify`, `revalidate`. Parity contract 3794 cases + 7 SEQUENCES (a cache that starts empty, a moving clock:
+  one upstream read serves every role for 60 s, per organisation and per path, a failed read is never kept). Edge-only behaviour (the real cache serves
+  the stale answer once after the TTL; the isolate refetches, never older than the TTL; the 20 MB upload ceiling; the 256-entry bound) is tested apart.
+  FOUND AND FIXED (real, since batch 1): a body that is not JSON on a route whose handler reads `await request.json()` outside its try (almost all, the
+  first route of the contract included) is an unhandled throw = an EMPTY 500 on Next; the edge answered 400 {"error":"Invalid JSON body"}. A non-JSON body is
+  now recorded for EVERY route that reads one (+173 cases); the edge answers the empty 500, and 5 routes whose handler catches it (`/api/permits/:id`,
+  `/api/drawings/:id`, `/api/moms/:id`, `/api/moms/:id/action-items`, `/api/screen-drafts/:id` PATCH/POST) got `body_in_try`. 10 direct fetch() sites -> viaPxApi.
+  SEEN TO FAIL (each reverted, file byte-identical after, C:/ct/mutate-result-*-b7.json): 17 edge breaks (TTL never expires, key without the organisation,
+  cache never read, acting person always sent, upload form dropped, JSON content type on an upload, default entity type, include not allow-listed,
+  redaction for every role / setting nothing, BOQ one missing line / blank id accepted, friendly 400 again, no upload ceiling, entity type without an entity,
+  non-form body swallowed, failures cached) and 14 Next / browser breaks (meetings / drawings / projects write stops clearing its cache, pm loses unit costs,
+  BOQ check loosened, currencies TTL 30 s, permits all flag, documents default type, drawings kind dropped, knowledge-base title check dropped, browser table
+  loses the /scope page, browser clears after a refused write, revalidate route clears any tag, route tier loosened only in the source).
