@@ -115,3 +115,10 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   dropped in /api/wiki POST (the recorder failed each time). The contract also caught a real spec mistake before commit (the cost-floor
   message taken from a code comment, not the handler's answer).
 
+- BATCH 6 LIVE (2026-10-06): compliance-tracker #2093 merged (94647af1); `projexa-api` deployed from a clean checkout of it with the
+  CLI recipe: version 6, ACTIVE; `/_policy` SOURCE_SHA256 e2e44a25... = this repo's generated file, 217 routes. LIVE SMOKE (test org,
+  sessions by admin magic link, nothing written): 359 of 359 probes identical edge vs Vercel (every batch-6 GET as owner and as
+  client_viewer, validation 400s on wiki / sprint / task / submit-day / review-day, the baseline own role set, the cost floor, a
+  non-object progress edit, vendor / customer deactivate refusal and unknown id, timesheets without project or issue, manpower with a
+  trade, categories incl. inactive, the reshaped projects overview, plus every earlier probe): `evidence/a2-batch6-live-smoke-2026-10-06.txt`.
+  Only then does the client PR (#403) merge. ROLLBACK: revert #403 first, then redeploy compliance-tracker dbcc1947 (the 185-route table).
