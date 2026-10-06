@@ -40,7 +40,12 @@ export const ROUTES: readonly ShellRoute[] = [
     pattern: "/documents/upload", title: "Upload document",
     load: () => import("../modules/DocumentNewScreen"), adapter: (shell) => loadDocumentsList(shell.data, shell.projectId),
   }),
-  serverOnlyRoute("/moms/new", "New meeting", "A new meeting is created on the server (its number and attendees come from there), so it needs a connection."),
+  defineShellRoute({
+    pattern: "/moms/new",
+    title: "New meeting",
+    load: () => import("../modules/MomNewScreen"),
+    adapter: (shell) => loadMomsList(shell.data, shell.projectId),
+  }),
   defineShellRoute({
     pattern: "/permits",
     title: "Permits",
