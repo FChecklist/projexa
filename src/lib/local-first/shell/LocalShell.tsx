@@ -26,6 +26,9 @@ import { BOQ_LINES_KIND } from "../boq-local";
 import { chooseProject, noteShownProject, readShellData, selectedProjectKey, type ShellData } from "./context";
 import { LOCAL_DATA_CHANGED_EVENT } from "../peer/status";
 import { serverPageUrl, type ShellLocation } from "./paths";
+import { createFileQueue, type FileQueue } from "./file-queue";
+import { createSignedUploader } from "./upload-client";
+import { enqueueFileRecord } from "./modules/file-writes";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
 import { findShellRoute, navRoutes } from "./route-table";
 import { interceptLinkClick, useShellLocation } from "./router";
@@ -213,6 +216,43 @@ export default function LocalShell() {
     };
   }, [writer, boot, refresh]);
 
+  // Files waiting to be sent (G-15: a permit, drawing or document is a record AND a file): the bytes and the typed fields are kept on the
+  // laptop; a flush uploads first, then puts the record in the outbox. Same moments to try as the edits above (start, online, after an add).
+  const fileSchedulerRef = useRef<ReturnType<typeof createFlushScheduler> | null>(null);
+  const files = useMemo<FileQueue | null>(() => {
+    if (boot.status !== "ready") return null;
+    const data = boot.data;
+    const base = createFileQueue({
+      meta: personMetaStore(data.userId, data.idb),
+      uploader: createSignedUploader(),
+      enqueueRecord: (job) => enqueueFileRecord(data, job),
+    });
+    return {
+      ...base,
+      async add(input) {
+        const job = await base.add(input);
+        if (job) fileSchedulerRef.current?.nudge();
+        return job;
+      },
+    };
+  }, [boot]);
+
+  useEffect(() => {
+    if (!files || boot.status !== "ready") return;
+    const send = async (): Promise<FlushResult> => {
+      const r = await files.flush();
+      if (r.queued > 0 || r.dropped > 0) refresh();
+      return { sent: r.uploaded + r.queued, rejected: r.dropped, kept: r.kept, stoppedBecause: r.stoppedBecause === "not_configured" ? "server" : r.stoppedBecause };
+    };
+    const scheduler = createFlushScheduler({ writer: { list: files.list, flush: send }, isOnline: () => getConnectivity() === "online" });
+    fileSchedulerRef.current = scheduler;
+    scheduler.nudge();
+    return () => {
+      scheduler.stop();
+      fileSchedulerRef.current = null;
+    };
+  }, [files, boot, refresh]);
+
   // The person's outbox (every screen's writes but the BOQ edit queue above): started as soon as the shell knows who they are, so what
   // a reload left waiting is sent when the laptop is back online (shell-outbox.ts says why this was missing).
   const outboxRef = useRef<ShellOutbox<Outbox> | null>(null);
@@ -317,6 +357,7 @@ export default function LocalShell() {
       refresh();
     },
     writer: writer!,
+    files: files!,
     navigate,
     connectivity,
     refresh,

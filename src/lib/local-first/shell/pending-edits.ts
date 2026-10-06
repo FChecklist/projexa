@@ -182,7 +182,8 @@ export function applyPendingEdits<T extends { id: string; category?: string | nu
 // ─── when to try ────────────────────────────────────────────────────────────────────────────────
 
 export type FlushSchedulerDeps = {
-  writer: Pick<ShellWriter, "flush" | "list">;
+  /** Anything with a list of what waits and a flush: the BOQ edit queue, or the file queue (shell/file-queue.ts). */
+  writer: { list: () => Promise<unknown[]>; flush: () => Promise<FlushResult> };
   isOnline: () => boolean;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;

@@ -9,6 +9,8 @@ import { statusText } from "@/lib/drawing-status";
 import type { ShellScreenProps } from "../types";
 import type { DrawingsListData } from "./drawings-adapter";
 import { CopyNote, NOT_SYNCED, NO_PROJECT, OnlineOnly, StateMessage, Waiting, dateText, projectQuery } from "./DocumentsShared";
+import { FilesWaiting } from "./FilesWaiting";
+import { withProject } from "./DeliveryParts";
 
 export default function DrawingsListScreen({ shell, data }: ShellScreenProps<DrawingsListData>) {
   const [currentOnly, setCurrentOnly] = useState(true);
@@ -63,7 +65,8 @@ export default function DrawingsListScreen({ shell, data }: ShellScreenProps<Dra
           </Table>
         </div>
       )}
-      <OnlineOnly>Adding a drawing and the register export need a connection.</OnlineOnly>
+      <OnlineOnly>You can add a drawing here without a connection: it is kept on this laptop and its file is sent when you are connected. <a className="text-px-ink underline underline-offset-2" href={withProject("/drawings/new", data.state === "local" ? data.projectId : null)}>New drawing</a> The register export needs a connection.</OnlineOnly>
+      <FilesWaiting shell={shell} kinds={["drawing"]} projectId={data.state === "local" ? data.projectId : null} tick={data} />
     </section>
   );
 }

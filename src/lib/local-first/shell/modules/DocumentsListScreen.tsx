@@ -9,6 +9,8 @@ import type { ShellScreenProps } from "../types";
 import type { DocumentsListData } from "./documents-adapter";
 import { pruneKeptFiles } from "./documents-file-prune";
 import { CopyNote, NOT_SYNCED, NO_PROJECT, OnlineOnly, StateMessage, Waiting, dateText, projectQuery, sizeText } from "./DocumentsShared";
+import { FilesWaiting } from "./FilesWaiting";
+import { withProject } from "./DeliveryParts";
 
 export default function DocumentsListScreen({ shell, data }: ShellScreenProps<DocumentsListData>) {
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
@@ -59,7 +61,8 @@ export default function DocumentsListScreen({ shell, data }: ShellScreenProps<Do
           </Table>
         </div>
       )}
-      <OnlineOnly>Uploading a document, and the &quot;Relates to&quot; column, need a connection.</OnlineOnly>
+      <OnlineOnly>You can add a document here without a connection: it is kept on this laptop and its file is sent when you are connected. <a className="text-px-ink underline underline-offset-2" href={withProject("/documents/upload", data.state === "local" ? data.projectId : null)}>Upload a document</a> The &quot;Relates to&quot; column needs a connection.</OnlineOnly>
+      <FilesWaiting shell={shell} kinds={["document"]} projectId={data.state === "local" ? data.projectId : null} tick={data} />
     </section>
   );
 }
