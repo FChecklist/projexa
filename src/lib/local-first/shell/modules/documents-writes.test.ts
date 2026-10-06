@@ -4,8 +4,8 @@ import { createFakeSyncServer, type FakeSyncServer } from "../../__fixtures__/fa
 import { localDbNameFor, openLocalDb } from "../../local-db";
 import { createOutbox, type Outbox } from "../../outbox";
 import { createReplica } from "../../replica";
-import { amendMinutesOffline, canProposeEdits, editDocumentDetailsOffline } from "./documents-writes";
-import { loadMomObject } from "./moms-adapter";
+import { amendMinutesOffline, canProposeEdits, createMomOffline, editDocumentDetailsOffline } from "./documents-writes";
+import { loadMomObject, loadMomsList } from "./moms-adapter";
 import { loadDocumentObject } from "./documents-adapter";
 import { docRow, momRow, shellData } from "./documents-test-fixtures";
 
@@ -152,4 +152,53 @@ test("the laptop database is this person's own: the queued op lives in projexa-l
   const db = await openLocalDb(r.idb as never, localDbNameFor("u1"));
   expect((await db.listOps()).map((o) => o.functionId)).toEqual(["update_mom_minutes"]);
   db.close();
+});
+
+describe("a new meeting offline (create_mom, G-15)", () => {
+  const input = { projectId: "p1", title: "  Site meeting ", scheduledAt: "2026-10-12T10:30", meetingType: "site", attendees: ["Asha", " Ravi ", ""], agenda: ["Slab", "Safety"], minutes: " Pour agreed. " };
+
+  test("kept on the laptop at once as a waiting row; nothing sent until a flush; then ONE create_mom op with the registry's params", async () => {
+    const r = await rig();
+    r.server.registerFunction("create_mom", ({ params }) => ({ ok: true, kind: "meeting_minutes", id: "srv-1", data: { id: "srv-1", title: params.title, status: "draft", meeting_type: params.meetingType, scheduled_at: params.scheduledAt, minutes: params.minutes, attendee_count: (params.attendees as string[]).length } }));
+    const data = shellData(r.idb as never);
+    const result = await createMomOffline(data, input, { outbox: r.outbox, newId: () => "t1" });
+    expect(result).toEqual({ ok: true, opId: "op-1" });
+    expect(pushed(r)).toEqual([]);
+
+    const shown = await loadMomsList(data, "p1");
+    if (shown.state !== "local") throw new Error("unreachable");
+    const mine = shown.rows.find((m) => m.id === "local-t1");
+    expect(mine).toMatchObject({ title: "Site meeting", status: "draft", attendeeCount: 2, waiting: true, minutes: "Pour agreed." });
+
+    await r.outbox.flush();
+    expect(pushed(r)[0]).toMatchObject({
+      function_id: "create_mom", project_id: "p1",
+      params: { projectId: "p1", title: "Site meeting", scheduledAt: new Date("2026-10-12T10:30").toISOString(), meetingType: "site", attendees: ["Asha", "Ravi"], agenda: ["Slab", "Safety"], minutes: "Pour agreed." },
+    });
+  });
+
+  test("only what the person gave is sent (a bare meeting has no attendees, agenda, type or minutes keys)", async () => {
+    const r = await rig();
+    const result = await createMomOffline(shellData(r.idb as never), { projectId: "p1", title: "Quick sync", scheduledAt: "2026-10-12T09:00" }, { outbox: r.outbox });
+    expect(result.ok).toBe(true);
+    await r.outbox.flush();
+    expect(Object.keys((pushed(r)[0]!.params) as object).sort()).toEqual(["projectId", "scheduledAt", "title"]);
+  });
+
+  test("refused in words, nothing queued: no title, a bad date, an over-long attendee, a read-only role, another project/organisation", async () => {
+    const r = await rig();
+    const data = shellData(r.idb as never);
+    const bad = [
+      createMomOffline(data, { ...input, title: "   " }, { outbox: r.outbox }),
+      createMomOffline(data, { ...input, scheduledAt: "" }, { outbox: r.outbox }),
+      createMomOffline(data, { ...input, scheduledAt: "not a date" }, { outbox: r.outbox }),
+      createMomOffline(data, { ...input, attendees: ["x".repeat(201)] }, { outbox: r.outbox }),
+      createMomOffline(shellData(r.idb as never, "u1", "orgA", "viewer"), input, { outbox: r.outbox }),
+      createMomOffline(data, { ...input, projectId: "p2" }, { outbox: r.outbox }),
+      createMomOffline(shellData(r.idb as never, "u1", "orgB"), input, { outbox: r.outbox }),
+      createMomOffline(shellData(r.idb as never, "u2"), input, { outbox: r.outbox }),
+    ];
+    for (const res of await Promise.all(bad)) expect(res.ok).toBe(false);
+    expect(r.enqueued()).toBe(0);
+  });
 });

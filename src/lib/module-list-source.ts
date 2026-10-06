@@ -581,6 +581,6 @@ export const fetchMaterialMasterList = createModuleList(
 // statement upstream, so asking for both costs what asking for either costs.
 export const fetchScopeList = createModuleList(
   MODULE_TAGS.scope,
-  (projectId) => `/scope?projectId=${q(projectId)}&include=variation,compare`,
+  (projectId) => `/scope?projectId=${q(projectId)}&include=variation,compare,headers`,
   (p) => p.boqs as unknown[] | undefined
 );

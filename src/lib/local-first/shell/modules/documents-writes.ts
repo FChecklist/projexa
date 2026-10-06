@@ -157,3 +157,73 @@ export async function editDocumentDetailsOffline(
     return { ok: false, message: "This change could not be kept on this laptop. Nothing was lost on the server; try again." };
   }
 }
+
+// ─── create_mom (a new meeting with its minutes) ─────────────────────────────
+
+export type CreateMomInput = {
+  projectId: string;
+  title: string;
+  /** Local date and time as the person typed it (YYYY-MM-DDTHH:mm), sent to the server as an instant. */
+  scheduledAt: string;
+  meetingType?: string | null;
+  attendees?: readonly string[];
+  agenda?: readonly string[];
+  minutes?: string | null;
+};
+
+/** Trimmed, blanks dropped, at most 50 entries; null when one entry is longer than the server accepts (200 letters). */
+const cleanList = (items: readonly string[] | undefined): string[] | null => {
+  const list = (items ?? []).map((s) => (typeof s === "string" ? s.trim() : "")).filter(Boolean).slice(0, 50);
+  return list.every((s) => s.length <= 200) ? list : null;
+};
+
+/**
+ * A new meeting is kept on the laptop at once (a row of its own, "waiting") and created by the server through create_mom when connected.
+ * The meeting's number and who may see it are the server's. Attendees are names (create_mom takes a list of names).
+ */
+export async function createMomOffline(data: ShellData, input: CreateMomInput, deps: { outbox?: OutboxPort; newId?: () => string } = {}): Promise<WriteResult> {
+  if (!canProposeEdits(data.role)) return { ok: false, message: "Your role can read these minutes but not add a meeting." };
+  const title = input.title.trim();
+  if (!title || title.length > 300) return { ok: false, message: "Give the meeting a title (up to 300 letters)." };
+  const when = Date.parse(input.scheduledAt);
+  if (!input.scheduledAt || Number.isNaN(when)) return { ok: false, message: "Choose the date and time of the meeting." };
+  const attendees = cleanList(input.attendees);
+  const agenda = cleanList(input.agenda);
+  if (attendees === null || agenda === null) return { ok: false, message: "Each attendee and each agenda line must be short (up to 200 letters)." };
+  const meetingType = (input.meetingType ?? "").trim() || undefined;
+  const minutes = (input.minutes ?? "").trim() || undefined;
+  if (minutes && minutes.length > 20000) return { ok: false, message: "The minutes are too long to keep here (up to 20,000 letters)." };
+  const iso = new Date(when).toISOString();
+  try {
+    const idb = data.idb ?? (typeof indexedDB === "undefined" ? undefined : indexedDB);
+    if (!idb || !data.orgId) return { ok: false, message: NOT_HERE };
+    const db = await openLocalDb(idb, localDbNameFor(data.userId));
+    try {
+      const manifest = await db.getMeta<StoredManifest | null>(MANIFEST_KEY);
+      if (!manifest || manifest.userId !== data.userId || manifest.orgId !== data.orgId || !manifest.projectIds.includes(input.projectId)) return { ok: false, message: NOT_HERE };
+    } finally {
+      db.close();
+    }
+    const outbox = deps.outbox ?? (await defaultOutbox(data.userId));
+    const tempId = `local-${(deps.newId ?? (() => crypto.randomUUID()))()}`;
+    const { opId } = await outbox.enqueue({
+      functionId: "create_mom",
+      projectId: input.projectId,
+      params: {
+        projectId: input.projectId, title, scheduledAt: iso,
+        ...(meetingType ? { meetingType } : {}), ...(attendees.length ? { attendees } : {}), ...(agenda.length ? { agenda } : {}), ...(minutes ? { minutes } : {}),
+      },
+      label: "New meeting",
+      creates: { kind: MEETING_MINUTES_KIND, id: tempId },
+      optimistic: async (tx) => {
+        await tx.putRecord({
+          id: `${MEETING_MINUTES_KIND}:${tempId}`, type: MEETING_MINUTES_KIND, orgId: data.orgId!, projectId: input.projectId,
+          data: { id: tempId, title, meeting_type: meetingType ?? "team", scheduled_at: iso, status: "draft", published_at: null, agenda, minutes: minutes ?? null, attendee_count: attendees.length },
+        });
+      },
+    });
+    return { ok: true, opId };
+  } catch {
+    return { ok: false, message: "This meeting could not be kept on this laptop. Nothing was lost on the server; try again." };
+  }
+}

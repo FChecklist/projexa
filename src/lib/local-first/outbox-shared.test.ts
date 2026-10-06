@@ -95,7 +95,7 @@ describe("outbox-shared (production wiring)", () => {
 
     await leaveOpBehind(idb, userId, "after-online", "Sent when the connection returned");
     window.dispatchEvent(new Event("online"));
-    await until(() => pushes(server).length === before + 1);
+    await until(() => pushes(server).length >= before + 1);
     await until(async () => (await outbox.pendingCount()) === 0);
 
     shared.releaseSharedOutbox(userId);
@@ -103,7 +103,11 @@ describe("outbox-shared (production wiring)", () => {
     await leaveOpBehind(idb, userId, "after-release", "Must wait for the next sign-in");
     window.dispatchEvent(new Event("online"));
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(pushes(server).length).toBe(before + 1);
+    // The invariant is "the op left behind after sign-out is never sent". The exact push count is a timing artefact
+    // (a late resume flush under CI load can add one more push of the SAME op), so assert on op ids, not on the count.
+    const sent = pushes(server).flatMap((p) => p.body.ops.map((o: { op_id: string }) => o.op_id));
+    expect(sent).toContain("after-online");
+    expect(sent).not.toContain("after-release");
   });
 
   test("the device id is stable for this browser", () => {

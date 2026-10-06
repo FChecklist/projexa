@@ -45,7 +45,10 @@ export const ROUTES: readonly ShellRoute[] = [
     pattern: "/labour/attendance/:date", title: "Attendance sheet",
     load: () => import("../modules/LabourAttendanceSheetScreen"), adapter: (shell, params) => loadAttendanceSheet(shell.data, shell.projectId, params.date!),
   }),
-  serverOnly("/labour/new", "Adding a worker"),
+  defineShellRoute({
+    pattern: "/labour/new", title: "Add a worker",
+    load: () => import("../modules/LabourWorkerNewScreen"), adapter: (shell) => loadLabour(shell.data, shell.projectId, localDay()),
+  }),
   serverOnly("/labour/import", "Importing a roster"),
 
   // Materials (?tab=master | receipts | issues | cost-report)
@@ -69,7 +72,10 @@ export const ROUTES: readonly ShellRoute[] = [
     pattern: "/materials/issues/new", title: "Issue material",
     load: () => import("../modules/MaterialIssueNewScreen"), adapter: (shell) => loadMaterials(shell.data, shell.projectId),
   }),
-  serverOnly("/materials/new", "Adding a material"),
+  defineShellRoute({
+    pattern: "/materials/new", title: "Add a material",
+    load: () => import("../modules/MaterialNewScreen"), adapter: (shell) => loadMaterials(shell.data, shell.projectId),
+  }),
 
   // Schedule (?tab=timeline | milestones | board | sprints | timesheet)
   defineShellRoute({
@@ -80,5 +86,8 @@ export const ROUTES: readonly ShellRoute[] = [
     pattern: "/schedule/tasks/:id", title: "Task",
     load: () => import("../modules/ScheduleTaskScreen"), adapter: (shell, params, query) => loadScheduleTask(shell.data, params.id!, query.get("projectId"), localDay()),
   }),
-  serverOnly("/schedule/tasks/new", "Adding a task"),
+  defineShellRoute({
+    pattern: "/schedule/tasks/new", title: "Add a task",
+    load: () => import("../modules/ScheduleTaskNewScreen"), adapter: (shell) => loadSchedule(shell.data, shell.projectId, localDay()),
+  }),
 ];

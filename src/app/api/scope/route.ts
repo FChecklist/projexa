@@ -20,7 +20,7 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
   // set rather than passed through, so this proxy can never put an arbitrary
   // string into the upstream URL.
   const requested = new Set((request.nextUrl.searchParams.get("include") ?? "").split(",").map((s) => s.trim()));
-  const allowed = ["variation", "compare"].filter((value) => requested.has(value));
+  const allowed = ["variation", "compare", "headers"].filter((value) => requested.has(value));
   const include = allowed.length > 0 ? `&include=${allowed.join(",")}` : "";
   try {
     const data = await callVeridian(`/scope?projectId=${encodeURIComponent(projectId)}${include}`, { organizationId: ctx.organizationId! });

@@ -36,12 +36,17 @@ type Net = { mode: "up" | "down" | "offline" };
  * Nothing about the app is under test here, so the reload is simply asked again, once.
  */
 async function reloadAgain(page: Page): Promise<void> {
-  try {
-    await page.reload();
-  } catch (err) {
-    if (!/ERR_ABORTED|frame was detached|Not attached to an active page|Target (page, context or browser )?has been closed/.test(String(err))) throw err;
-    await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-    await page.reload();
+  // Up to 5 tries: the page can be swapped out more than once while the worker takes control (CI run 2026-10-06 failed R10 after the single retry).
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      if (attempt % 2 === 0) await page.goto(page.url(), { waitUntil: "domcontentloaded" });
+      else await page.reload();
+      return;
+    } catch (err) {
+      if (attempt >= 5 || !/ERR_ABORTED|frame was detached|Not attached to an active page|Target (page, context or browser )?has been closed/.test(String(err))) throw err;
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+      await page.waitForTimeout(500);
+    }
   }
 }
 

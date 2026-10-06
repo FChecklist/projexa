@@ -165390,6 +165390,159 @@
   },
   {
    "case": {
+    "name": "GET /api/scope?projectId=p-1&include=headers",
+    "method": "GET",
+    "path": "/api/scope?projectId=p-1&include=headers",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/scope?projectId=p-1&include=headers",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/scope?projectId=p-1&include=variation,compare,headers",
+    "method": "GET",
+    "path": "/api/scope?projectId=p-1&include=variation,compare,headers",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/scope?projectId=p-1&include=variation,compare,headers",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
+    "name": "GET /api/scope?projectId=p-1&include=%20headers%20",
+    "method": "GET",
+    "path": "/api/scope?projectId=p-1&include=%20headers%20",
+    "who": "pm",
+    "upstream": {
+     "kind": "json",
+     "status": 200,
+     "body": {
+      "ok": true,
+      "figures": {
+       "contractValue": "1000.00",
+       "percentByValue": 42
+      },
+      "rows": [
+       {
+        "id": "r1"
+       }
+      ]
+     }
+    }
+   },
+   "expect": {
+    "status": 200,
+    "body": {
+     "ok": true,
+     "figures": {
+      "contractValue": "1000.00",
+      "percentByValue": 42
+     },
+     "rows": [
+      {
+       "id": "r1"
+      }
+     ]
+    },
+    "retry_after": null,
+    "upstream_calls": [
+     {
+      "method": "GET",
+      "path": "/scope?projectId=p-1&include=headers",
+      "authorization": "Bearer key-org-a",
+      "acting_user": "00000000-0000-4000-8000-000000000003",
+      "acting_email": "pm@a.test",
+      "content_type": null,
+      "body": null
+     }
+    ]
+   }
+  },
+  {
+   "case": {
     "name": "GET /api/scope?projectId=p-1&include=%20variation%20,%20compare%20",
     "method": "GET",
     "path": "/api/scope?projectId=p-1&include=%20variation%20,%20compare%20",

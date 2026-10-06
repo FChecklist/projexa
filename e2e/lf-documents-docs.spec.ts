@@ -97,18 +97,17 @@ test("documents: the four lists and their objects open offline from the laptop, 
     await noCrash(page)
   })
 
-  await test.step("G-15: permit, drawing and document are added on the laptop (the file waits); a new meeting still needs the server: a calm sentence offline, never a crash", async () => {
+  await test.step("G-15: permit, drawing and document are added on the laptop (the file waits); a new meeting is also added on the laptop", async () => {
     for (const [path, form] of [["/permits/new", "permit-new-form"], ["/drawings/new", "drawing-new-form"], ["/documents/upload", "document-new-form"]] as const) {
       await openLocal(page, path)
       await expect(page.getByTestId(form), `${path} did not open its form on the laptop`).toBeVisible()
       await expect(page.getByTestId("documents-server-only")).toHaveCount(0)
       await noCrash(page)
     }
-    for (const path of ["/moms/new"]) {
-      await openLocal(page, path)
-      await expect(page.getByTestId("documents-server-only"), `${path} did not explain itself offline`).toBeVisible()
-      await noCrash(page)
-    }
+    // G-15: a new meeting no longer needs the server: the form opens on the laptop (proven end to end in documents-writes.test.ts)
+    await openLocal(page, "/moms/new")
+    await expect(page.getByTestId("mom-new-form")).toBeVisible()
+    await noCrash(page)
     // leave it before the connection returns: online, a create screen hands itself over to the server (tested below), which would race
     // the next navigation of this test
     await openLocal(page, "/documents")
@@ -119,12 +118,11 @@ test("documents: the four lists and their objects open offline from the laptop, 
   await goOnline(context, p)
   expectCleanConsole(p.console)
 
-  await test.step("online, a create screen that is still the server's falls through to its own page (never read as the meeting whose id is 'new')", async () => {
-    await openLocal(page, "/moms/new", { leavesTheShell: true })
-    await expect(page).toHaveURL(/\/moms\/new\?(.*&)?px-server=1/, { timeout: 30_000 })
-    expect(new URL(page.url()).searchParams.get("projectId")).toBe(PROJECT_ID)
-    expect(new URL(page.url()).pathname).toBe("/moms/new")
-    await expect(page.getByTestId("local-shell")).toHaveCount(0)
+  await test.step("G-15: online, the new-meeting form stays on the laptop too (no create screen of this cluster is the server's any more; '/moms/new' is never read as the meeting whose id is 'new')", async () => {
+    await openLocal(page, "/moms/new")
+    await expect(page.getByTestId("mom-new-form")).toBeVisible()
+    expect(page.url()).not.toContain("px-server=1")
+    expect(new URL(page.url()).pathname).toBe("/local/moms/new")
   })
 
   await test.step("G-15: online, the permit form stays on the laptop (its file is sent by the laptop, not by a server page)", async () => {

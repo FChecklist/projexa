@@ -250,3 +250,82 @@ export function refusalText(reason: WriteRefusal): string {
       return "This could not be kept on the laptop. Nothing was saved; please try again.";
   }
 }
+
+// ─── add_roster_entry (a new worker) ─────────────────────────────────────────
+
+export type AddWorkerInput = { projectId: string; name: string; trade?: string | null; dailyRate: number; employeeCode?: string | null };
+
+/** A worker is added on the laptop at once and sent through add_roster_entry when connected (the server may refuse, e.g. a duplicate code). */
+export async function addWorkerOffline(data: ShellData, input: AddWorkerInput, access: DeliveryWriteAccess = {}): Promise<WriteResult> {
+  const name = optText(input.name);
+  if (!name || name.length > 200) return refuse("invalid");
+  if (typeof input.dailyRate !== "number" || !Number.isFinite(input.dailyRate) || input.dailyRate < 0) return refuse("invalid");
+  const ctx = await context(data, input.projectId, access);
+  if (!ctx) return refuse("not_on_laptop");
+  const trade = optText(input.trade);
+  const employeeCode = optText(input.employeeCode);
+  return enqueueCreate(ctx, {
+    functionId: "add_roster_entry",
+    projectId: input.projectId,
+    kind: DELIVERY_KINDS.roster,
+    label: "New worker",
+    params: { projectId: input.projectId, name, dailyRate: input.dailyRate, ...(trade ? { trade } : {}), ...(employeeCode ? { employeeCode } : {}) },
+    row: (id) => ({ id, name, trade: trade ?? null, employee_code: employeeCode ?? null, daily_rate: input.dailyRate, is_active: true }),
+  });
+}
+
+// ─── create_material (a new material) ────────────────────────────────────────
+
+export type CreateMaterialInput = { projectId: string; name: string; unit: string; spec?: string | null; unitCost?: number | null; reorderLevel?: number | null };
+
+export async function createMaterialOffline(data: ShellData, input: CreateMaterialInput, access: DeliveryWriteAccess = {}): Promise<WriteResult> {
+  const name = optText(input.name);
+  const unit = optText(input.unit);
+  if (!name || name.length > 200 || !unit || unit.length > 30) return refuse("invalid");
+  const nonNegative = (v: number | null | undefined) => v === undefined || v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0);
+  if (!nonNegative(input.unitCost) || !nonNegative(input.reorderLevel)) return refuse("invalid");
+  const ctx = await context(data, input.projectId, access);
+  if (!ctx) return refuse("not_on_laptop");
+  const spec = optText(input.spec);
+  const unitCost = typeof input.unitCost === "number" ? input.unitCost : undefined;
+  const reorderLevel = typeof input.reorderLevel === "number" ? input.reorderLevel : undefined;
+  return enqueueCreate(ctx, {
+    functionId: "create_material",
+    projectId: input.projectId,
+    kind: DELIVERY_KINDS.materials,
+    label: "New material",
+    params: { projectId: input.projectId, name, unit, ...(spec ? { spec } : {}), ...(unitCost !== undefined ? { unitCost } : {}), ...(reorderLevel !== undefined ? { reorderLevel } : {}) },
+    row: (id) => ({ id, name, unit, spec: spec ?? null, unit_cost: unitCost ?? null, reorder_level: reorderLevel ?? null, is_active: true }),
+  });
+}
+
+// ─── create_schedule_task (a new task) ───────────────────────────────────────
+
+export const TASK_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type CreateTaskInput = { projectId: string; title: string; startDate: string; dueDate?: string | null; durationDays?: number | null; description?: string | null; priority?: string | null };
+
+export async function createTaskOffline(data: ShellData, input: CreateTaskInput, access: DeliveryWriteAccess = {}): Promise<WriteResult> {
+  const title = optText(input.title);
+  if (!title || title.length > 300 || !isDate(input.startDate)) return refuse("invalid");
+  const dueDate = optText(input.dueDate);
+  if (dueDate && (!isDate(dueDate) || dueDate < input.startDate)) return refuse("invalid");
+  if (input.durationDays !== undefined && input.durationDays !== null && !(Number.isInteger(input.durationDays) && input.durationDays > 0 && input.durationDays <= 3650)) return refuse("invalid");
+  const priority = optText(input.priority);
+  if (priority && !(TASK_PRIORITIES as readonly string[]).includes(priority)) return refuse("invalid");
+  const ctx = await context(data, input.projectId, access);
+  if (!ctx) return refuse("not_on_laptop");
+  const description = optText(input.description);
+  const durationDays = typeof input.durationDays === "number" ? input.durationDays : undefined;
+  return enqueueCreate(ctx, {
+    functionId: "create_schedule_task",
+    projectId: input.projectId,
+    kind: DELIVERY_KINDS.tasks,
+    label: "New task",
+    params: {
+      projectId: input.projectId, title, startDate: input.startDate,
+      ...(dueDate ? { dueDate } : {}), ...(durationDays !== undefined ? { durationDays } : {}), ...(description ? { description } : {}), ...(priority ? { priority } : {}),
+    },
+    // number, status and completion are the server's: the optimistic row says null, as for the other writers
+    row: (id) => ({ id, number: null, title, priority: priority ?? null, status_id: null, start_date: input.startDate, due_date: dueDate ?? null, completion_percentage: null, description: description ?? null }),
+  });
+}

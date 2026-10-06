@@ -17,7 +17,7 @@ import { describe, expect, test } from "bun:test";
 import { IDBFactory } from "fake-indexeddb";
 import registry from "../../ai/function-registry.json";
 import type { EnqueueInput, Outbox } from "../../outbox";
-import { markAttendanceOffline, recordIssueOffline, recordProgressOffline, recordReceiptOffline, type WriteResult } from "./delivery-writes";
+import { addWorkerOffline, createMaterialOffline, createTaskOffline, markAttendanceOffline, recordIssueOffline, recordProgressOffline, recordReceiptOffline, type WriteResult } from "./delivery-writes";
 import { deliveryShellData, seedDelivery } from "./delivery-test-seed";
 
 type Fn = { function_id: string; kind: string; link_level: number | null; excluded_reason: string | null; declared_params: string[]; required_params: { name: string; any_of: string[] }[] };
@@ -41,6 +41,10 @@ async function captureAll(): Promise<Array<{ input: EnqueueInput; result: WriteR
     await markAttendanceOffline(data, { projectId: "p1", rosterId: "w1", date: "2026-10-02", status: "half_day", hours: 4 }, access),
     await recordReceiptOffline(data, { projectId: "p1", materialId: "m1", quantity: 10, receivedDate: "2026-10-02", reference: "DN-1", notes: "dry" }, access),
     await recordIssueOffline(data, { projectId: "p1", materialId: "m1", quantity: 2, issuedDate: "2026-10-02", boqLineItemId: "l1", issuedTo: "Crew A", note: "wall 3" }, access),
+    // the three creates that used to need a connection (G-15)
+    await addWorkerOffline(data, { projectId: "p1", name: "A. Worker", trade: "Mason", dailyRate: 800, employeeCode: "E-9" }, access),
+    await createMaterialOffline(data, { projectId: "p1", name: "Sand, fine", unit: "cum", spec: "Zone II", unitCost: 1800, reorderLevel: 5 }, access),
+    await createTaskOffline(data, { projectId: "p1", title: "Pour slab", startDate: "2026-10-05", dueDate: "2026-10-09", durationDays: 3, description: "Level 2", priority: "high" }, access),
   ];
   return results.map((result, i) => ({ result, input: captured[i]! }));
 }
@@ -48,8 +52,8 @@ async function captureAll(): Promise<Array<{ input: EnqueueInput; result: WriteR
 describe("every delivery write matches the real registry", () => {
   test("each writer queues exactly one op (nothing refused in this seeded project)", async () => {
     const all = await captureAll();
-    expect(all.map((c) => c.result.queued)).toEqual([true, true, true, true, true]);
-    expect(all.map((c) => c.input.functionId)).toEqual(["record_work_progress", "record_work_progress", "record_attendance", "record_material_receipt", "record_material_issue"]);
+    expect(all.map((c) => c.result.queued)).toEqual([true, true, true, true, true, true, true, true]);
+    expect(all.map((c) => c.input.functionId)).toEqual(["record_work_progress", "record_work_progress", "record_attendance", "record_material_receipt", "record_material_issue", "add_roster_entry", "create_material", "create_schedule_task"]);
   });
 
   test("the function id is a write the server accepts on push (link level set, not excluded)", async () => {
@@ -80,6 +84,9 @@ describe("every delivery write matches the real registry", () => {
       ["record_attendance", ["date", "hours", "projectId", "rosterId", "status"]],
       ["record_material_receipt", ["materialId", "notes", "projectId", "quantity", "receivedDate", "reference"]],
       ["record_material_issue", ["boqLineItemId", "issuedDate", "issuedTo", "materialId", "note", "projectId", "quantity"]],
+      ["add_roster_entry", ["dailyRate", "employeeCode", "name", "projectId", "trade"]],
+      ["create_material", ["name", "projectId", "reorderLevel", "spec", "unit", "unitCost"]],
+      ["create_schedule_task", ["description", "dueDate", "durationDays", "priority", "projectId", "startDate", "title"]],
     ]);
   });
 });
