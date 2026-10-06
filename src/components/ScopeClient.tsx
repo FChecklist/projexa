@@ -297,7 +297,7 @@ export default function ScopeClient({
     setStartedAt(Date.now());
     setReadError(null);
     try {
-      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}&include=variation`, {
+      const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}&include=variation,headers`, {
         signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS),
       });
       if (signal?.aborted) return;

@@ -655,7 +655,7 @@ export function buildCases(): ParityCase[] {
     add(`GET /api/permits${q || " without a query"}`, "GET", `/api/permits${q}`, "pm");
   }
   // scope: only variation / compare are forwarded (whitespace trimmed, any order, once), the rest is dropped
-  for (const inc of ["", "&include=", "&include=variation", "&include=compare", "&include=compare,variation", "&include=%20variation%20,%20compare%20", "&include=bogus", "&include=variation,variation,bogus", "&include=VARIATION", "&include=variation%2Ccompare"]) {
+  for (const inc of ["", "&include=", "&include=variation", "&include=compare", "&include=compare,variation", "&include=headers", "&include=variation,compare,headers", "&include=%20headers%20", "&include=%20variation%20,%20compare%20", "&include=bogus", "&include=variation,variation,bogus", "&include=VARIATION", "&include=variation%2Ccompare"]) {
     add(`GET /api/scope?projectId=p-1${inc}`, "GET", `/api/scope?projectId=p-1${inc}`, "pm");
   }
   add("GET /api/scope without projectId", "GET", "/api/scope", "pm");

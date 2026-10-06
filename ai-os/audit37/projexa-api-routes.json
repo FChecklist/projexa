@@ -1749,7 +1749,7 @@
       "route": "/api/scope",
       "batch": 7,
       "methods": {
-        "GET": { "upstream": "/scope?projectId={query:projectId}", "required_query": {"projectId": "projectId query param is required"}, "include_allow": ["variation","compare"], "fallback": "Failed to load scope of work" },
+        "GET": { "upstream": "/scope?projectId={query:projectId}", "required_query": {"projectId": "projectId query param is required"}, "include_allow": ["variation","compare","headers"], "fallback": "Failed to load scope of work" },
         "POST": { "upstream": "/scope", "acting_user": "explicit", "body": "json", "invalid_body_error": "Request body must be valid JSON", "boq_create_verify": true, "success_status": 201, "fallback": "Failed to create BOQ", "revalidate": {"tags": ["module:scope"],"paths": ["/scope"]} }
       }
     }

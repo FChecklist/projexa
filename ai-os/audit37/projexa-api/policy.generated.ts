@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "6357305dc97e5fc32975242cc4a78986cb048f4595078c722ada0d2e7434fe6d"
+export const SOURCE_SHA256 = "2cc7cd519b6a5e5aff53895c07bb77e6456ad94198b0fb24cb719ffb7e09e302"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -479,7 +479,7 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/knowledge-base","methods":{"GET":{"upstream":"/knowledge-base","fallback":"Failed to load knowledge base pages"},"POST":{"upstream":"/knowledge-base","body":"json","body_required":[{"fields":["title"],"error":"title is required"}],"success_status":201,"fallback":"Failed to create knowledge base page","revalidate":{"tags":["knowledge-base"]}}}},
   {"route":"/api/knowledge-base/:id","methods":{"GET":{"upstream":"/knowledge-base/{id}","fallback":"Failed to load page"},"PATCH":{"upstream":"/knowledge-base/{id}","body":"json","fallback":"Failed to update knowledge base page","revalidate":{"tags":["knowledge-base"]}}}},
   {"route":"/api/projects","methods":{"GET":{"upstream":"/projects","response_pick":{"projects":[]},"fallback":"Failed to load projects"},"POST":{"upstream":"/projects","body":"json","success_status":201,"fallback":"Failed to create project","revalidate":{"tags":["projects"],"when":"always"}}}},
-  {"route":"/api/scope","methods":{"GET":{"upstream":"/scope?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"include_allow":["variation","compare"],"fallback":"Failed to load scope of work"},"POST":{"upstream":"/scope","acting_user":"explicit","body":"json","invalid_body_error":"Request body must be valid JSON","boq_create_verify":true,"success_status":201,"fallback":"Failed to create BOQ","revalidate":{"tags":["module:scope"],"paths":["/scope"]}}}},
+  {"route":"/api/scope","methods":{"GET":{"upstream":"/scope?projectId={query:projectId}","required_query":{"projectId":"projectId query param is required"},"include_allow":["variation","compare","headers"],"fallback":"Failed to load scope of work"},"POST":{"upstream":"/scope","acting_user":"explicit","body":"json","invalid_body_error":"Request body must be valid JSON","boq_create_verify":true,"success_status":201,"fallback":"Failed to create BOQ","revalidate":{"tags":["module:scope"],"paths":["/scope"]}}}},
 ]
 /** Next routes that stay on Vercel but win over an edge route for some path (a literal sibling of a dynamic edge route): 404 here. */
 export const SHADOW_ROUTES: ReadonlyArray<string> = ["/api/drawings/export","/api/labour-roster/import","/api/projects/from-document","/api/work-progress/photos","/api/work-progress/report"]
