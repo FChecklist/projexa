@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { viaPxApi } from "@/lib/px-api";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -62,7 +63,7 @@ export default function SignupPage() {
     // endpoint uses must never reach the browser, and provisioning a real
     // VERIDIAN tenant is not something the client should be able to trigger
     // or retry arbitrarily.
-    const res = await fetch("/api/org/provision", {
+    const res = await viaPxApi("/api/org/provision", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgName }),

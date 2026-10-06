@@ -1,0 +1,16 @@
+documents_upload_file {"status":201,"id":"yes"}
+documents_list_has_it {"status":200,"found":true}
+documents_upload_external_url {"status":201}
+mood_board_create {"status":400}
+mood_board_list_has_it {"status":200,"found":false}
+kb_without_title {"status":400,"body":{"error":"title is required"}}
+kb_create {"status":201}
+kb_edit {"status":200}
+kb_read_back_edited {"status":200,"edited":true}
+invalid_json_body {"status":500,"empty":true}
+oversize_upload {"status":400}
+documents_upload_3mb {"status":201}
+cleanup_document_dispose {"status":404}
+cleanup_document_dispose {"status":404}
+cleanup_document_dispose {"status":404}
+created_ids {"documents":3,"boards":0,"kb_pages":1}

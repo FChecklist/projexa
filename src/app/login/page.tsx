@@ -12,6 +12,7 @@ import { createIdentityStore } from "@/lib/local-first/identity";
 import { openDeviceMeta } from "@/lib/local-first/device-meta";
 import { rememberPinAfterOnlineLogin, unlockOffline } from "@/lib/local-first/offline-pin";
 import { safeRedirectPath } from "@/lib/safe-redirect";
+import { viaPxApi } from "@/lib/px-api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -61,7 +62,7 @@ export default function LoginPage() {
     if (!existing) {
       const pendingOrgName = window.localStorage.getItem("projexa_pending_org_name");
       if (pendingOrgName) {
-        const res = await fetch("/api/org/provision", {
+        const res = await viaPxApi("/api/org/provision", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orgName: pendingOrgName }),

@@ -123,8 +123,8 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   trade, categories incl. inactive, the reshaped projects overview, plus every earlier probe): `evidence/a2-batch6-live-smoke-2026-10-06.txt`.
   Only then does the client PR (#403) merge. ROLLBACK: revert #403 first, then redeploy compliance-tracker dbcc1947 (the 185-route table).
 
-- BATCH 7 (2026-10-06, branch `a2-edge-batch7` here, `px-edge-batch7` in compliance-tracker): the 15 "cache" routes, 232 on the edge, Vercel-served 94 -> 80
-  (budget 80; +1 new Vercel route, see below). Cost centers, currencies and fiscal years (a 60 s per-organisation cache, the call made with NO acting
+- BATCH 7 (2026-10-06, branch `a2-edge-batch7` here, `px-edge-batch7` in compliance-tracker): the 15 "cache" routes, 232 proxies on the edge (234 with G-09's two org routes), Vercel-served 92 -> 78
+  (budget 78; +1 new Vercel route, see below). Cost centers, currencies and fiscal years (a 60 s per-organisation cache, the call made with NO acting
   person), documents / drawings / permits (list + multipart upload), labour roster, materials master (unit cost hidden from site_engineer and
   client_viewer), meetings, minutes, mood boards, knowledge base (+ :id), projects, BOQ list + create (with the create's own check of what came back).
   WHAT THE REAL HANDLERS REVEALED (the plan called these 15 "a cache in the handler"; only 3 are): the 12 others cache NOTHING in the route; their writes
@@ -148,7 +148,40 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   BOQ check loosened, currencies TTL 30 s, permits all flag, documents default type, drawings kind dropped, knowledge-base title check dropped, browser table
   loses the /scope page, browser clears after a refused write, revalidate route clears any tag, route tier loosened only in the source).
 
-- BATCH 8 (2026-10-06, branches `a2-edge-batch8` / `px-edge-batch8`): 4 of the 7 "several calls combined" routes, 236 on the edge, Vercel-served 80 -> 76 (budget 76):
+## G-09: new-organisation provisioning inside the edge function (2026-10-06)
+
+WHAT. `POST /api/org/provision` and `GET|POST /api/org/repair` are answered by `projexa-api` (compliance-tracker #2100, merged 79226210; function
+version 7). The VERIDIAN side is one SQL transaction (`public.projexa_provision_org`, drizzle/0729); the organisation's VERIDIAN key lives on the
+compliance side (`compliance.projexa_org_credentials`, RLS forced, no grants, service role only through functions); PROJEXA's `organizations` and
+`memberships` rows are written with the caller's own token. No platform key, no database password, no key on any laptop, no Vercel invocation.
+PROVEN: pglite SQL test (all-or-nothing, grants, idempotent file, down file); edge replay of 39 scenarios recorded from these Next routes through the
+real pipeline (`ai-os/audit37/projexa-api/org-parity.golden.json`); 3 planted mutations each failed the replay and were reverted; live smoke with a
+throwaway user: signed out 401, empty name 400, new org 201, again 200 alreadyProvisioned, a proxied call with the new org's key 200, repair GET, repair when
+healthy, PROJEXA rows with the caller's token, anon cannot call any of the functions (401), a stranded org gets the AR-04 refusal (500) then repair 201 and
+the proxied call works again; everything cleaned up in both projects (`evidence/g09-live-smoke-2026-10-06.txt`).
+BACKFILL (PM-approved, run after the smoke): 13 live credentials copied, verified by sha256 comparison, none printed; 1 dead legacy row (the G-04 orphan, its
+VERIDIAN org no longer exists) refused by the SQL; the legacy table is untouched (it is also still written for new orgs while the function's
+`PX_MIRROR_LEGACY_CREDENTIALS` is not "false", so routes that still run on Vercel keep working).
+NOT PROVEN / OPEN: a browser sign-up through the real UI on projexa-ai.com (the e2e needs the production origin and a signed-in browser; the function call
+itself is proven with a real token); the Vercel-side reader switch (`VERIDIAN_CREDENTIALS_SUPABASE_URL` / `_SERVICE_ROLE_KEY`) is not configured (that is a Vercel
+setting: owner), so Vercel routes read the legacy table; set `PX_MIRROR_LEGACY_CREDENTIALS=false` only after that. The Next routes remain as the kill-switched fallback.
+ROLLBACK: set `PX_API_EDGE_ENABLED` false (or build with `NEXT_PUBLIC_PX_API_BASE=""`) so signup/login use the Vercel routes again; redeploy projexa-api v6
+source (compliance-tracker 3 commits before 79226210); `drizzle/down/0729_projexa_org_credentials_and_provision.down.sql` only after confirming the
+legacy table has every org you need (it does: untouched).
+
+- BATCH 7 LIVE (2026-10-06): compliance-tracker #2105 merged; `projexa-api` deployed from a clean checkout of main with the CLI recipe (supabase-go via
+  SUPABASE_GO_BINARY): `/_policy` SOURCE_SHA256 6357305dc97e... = this repo's generated file. LIVE SMOKE (test org, sessions by admin magic link): 410 of 410 probes
+  identical edge vs Vercel (every batch-7 GET as owner and client_viewer, the three cached reads as three roles, validation 400s, role refusals of the uploads / project /
+  BOQ creates, document filters, BOQ includes, unit costs hidden from client_viewer): `evidence/a2-batch7-live-smoke-2026-10-06.txt`. LIVE WRITES through the function
+  (`evidence/a2-batch7-live-writes-2026-10-06.txt`): a multipart document upload with a real file 201 and found in the list, an external-URL document 201, a 3 MB
+  upload 201 (Vercel's old ceiling was 4.5 MB), a knowledge page create 201 / title check 400 / edit 200 / read back edited, an invalid JSON body = the empty 500.
+  NOT PROVEN LIVE: the mood-board create returned 400 from the backend for the test body I sent (validation, same body shape not reproduced; covered by the contract);
+  the 413 ceiling (a client cannot set Content-Length; the gateway answered 400): unit-proven only. Test rows left in the E2E test organisation, tagged `a2b7-<ts>`:
+  3 documents and 1 knowledge page (no API retires them, and a hard delete was not mine to run): the owner or a later session may remove them.
+  ROLLBACK: revert the client PR (#407) first, then redeploy the previous good function commit (79226210, v7).
+
+
+- BATCH 8 (2026-10-06, branches `a2-edge-batch8` / `px-edge-batch8`): 4 of the 7 "several calls combined" routes, 236 proxies on the edge (238 with G-09's two org routes), Vercel-served 78 -> 74 (budget 74):
   `/api/projects/:id/category-distribution` and the company-scoped `/api/dashboard-hierarchy/companies/:companyId/{dashboard,departments,projects/:projectId/category-distribution}`.
   New spec keys: `category_distribution` (two reads in parallel, combined by the projexa repo's own pure builder `src/lib/category-distribution.ts`, COPIED BYTE FOR
   BYTE to the function by `scripts/projexa-api-edge.mjs --write --ct`, checked by `--check-ct`; the first failing read in array order is the answer, a builder that

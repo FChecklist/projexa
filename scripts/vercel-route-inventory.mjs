@@ -17,8 +17,12 @@ export const INVENTORY_PATH = join(ROOT, "ai-os", "audit37", "vercel-route-inven
 export const EDGE_ROUTES_PATH = join(ROOT, "ai-os", "audit37", "projexa-api-routes.json");
 export const EDGE_SERVED = "edge:projexa-api";
 const EDGE_PLAN = "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted";
+/** AUDIT-100 G-09: routes the function answers that are NOT proxies of projexa-api-routes.json (new-organisation provisioning and its repair run inside the
+ *  function, supabase/functions/projexa-api/org-provision.ts). Held equal to PX_EDGE_EXTRA_ROUTES (src/lib/px-api.ts) by src/lib/px-api.test.ts. */
+export const EDGE_EXTRA_ROUTES = ["/api/org/provision", "/api/org/repair"];
 function edgeRoutes() {
-  return existsSync(EDGE_ROUTES_PATH) ? JSON.parse(readFileSync(EDGE_ROUTES_PATH, "utf8")).routes.map((r) => r.route) : [];
+  const proxies = existsSync(EDGE_ROUTES_PATH) ? JSON.parse(readFileSync(EDGE_ROUTES_PATH, "utf8")).routes.map((r) => r.route) : [];
+  return [...proxies, ...EDGE_EXTRA_ROUTES];
 }
 const API_DIR = join(ROOT, "src", "app", "api");
 const SHELL_DIRS = [join(ROOT, "src", "lib", "local-first"), join(ROOT, "src", "app", "local")];
