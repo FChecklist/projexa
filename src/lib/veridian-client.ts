@@ -511,7 +511,38 @@ function describeErrorChain(err: unknown): string {
 // DB-connectivity error here (e.g. DATABASE_URL not yet configured -- see
 // src/lib/db/index.ts) must not take down every request; it should just mean
 // "couldn't resolve a per-org key this time," same as "no row yet."
+//
+// AUDIT-100 G-09: the SOURCE OF TRUTH is now the compliance-side table compliance.projexa_org_credentials, read through public.projexa_org_credential_get
+// (service role, drizzle/0729 in compliance-tracker). Organisations opened through the edge function (supabase/functions/projexa-api/org-provision.ts) are
+// written there and, while PX_MIRROR_LEGACY_CREDENTIALS is not "false", also mirrored to this file's legacy table, so this reader needs no new secret to keep
+// working: it asks the compliance side first ONLY when VERIDIAN_CREDENTIALS_SUPABASE_URL + VERIDIAN_CREDENTIALS_SERVICE_ROLE_KEY are configured, and
+// otherwise (or when that table has no row for the organisation) falls back to public.veridian_credentials exactly as before.
+export async function readComplianceCredentialKey(
+  organizationId: string,
+  env: { url?: string; key?: string; fetchImpl?: typeof fetch } = {}
+): Promise<string | null> {
+  const url = (env.url ?? process.env.VERIDIAN_CREDENTIALS_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  const key = env.key ?? process.env.VERIDIAN_CREDENTIALS_SERVICE_ROLE_KEY ?? "";
+  if (!url || !key) return null;
+  try {
+    const res = await (env.fetchImpl ?? fetch)(`${url}/rest/v1/rpc/projexa_org_credential_get`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_projexa_org_id: organizationId }),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as unknown;
+    const row = (Array.isArray(rows) ? rows[0] : rows) as { api_key?: unknown } | null | undefined;
+    return typeof row?.api_key === "string" && row.api_key ? row.api_key : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getVeridianApiKey(organizationId: string): Promise<string | null> {
+  const fromCompliance = await readComplianceCredentialKey(organizationId);
+  if (fromCompliance) return fromCompliance;
   try {
     const [row] = await db
       .select({ apiKey: veridianCredentials.veridianApiKey })

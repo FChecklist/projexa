@@ -122,3 +122,24 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   non-object progress edit, vendor / customer deactivate refusal and unknown id, timesheets without project or issue, manpower with a
   trade, categories incl. inactive, the reshaped projects overview, plus every earlier probe): `evidence/a2-batch6-live-smoke-2026-10-06.txt`.
   Only then does the client PR (#403) merge. ROLLBACK: revert #403 first, then redeploy compliance-tracker dbcc1947 (the 185-route table).
+
+## G-09: new-organisation provisioning inside the edge function (2026-10-06)
+
+WHAT. `POST /api/org/provision` and `GET|POST /api/org/repair` are answered by `projexa-api` (compliance-tracker #2100, merged 79226210; function
+version 7). The VERIDIAN side is one SQL transaction (`public.projexa_provision_org`, drizzle/0729); the organisation's VERIDIAN key lives on the
+compliance side (`compliance.projexa_org_credentials`, RLS forced, no grants, service role only through functions); PROJEXA's `organizations` and
+`memberships` rows are written with the caller's own token. No platform key, no database password, no key on any laptop, no Vercel invocation.
+PROVEN: pglite SQL test (all-or-nothing, grants, idempotent file, down file); edge replay of 39 scenarios recorded from these Next routes through the
+real pipeline (`ai-os/audit37/projexa-api/org-parity.golden.json`); 3 planted mutations each failed the replay and were reverted; live smoke with a
+throwaway user: signed out 401, empty name 400, new org 201, again 200 alreadyProvisioned, a proxied call with the new org's key 200, repair GET, repair when
+healthy, PROJEXA rows with the caller's token, anon cannot call any of the functions (401), a stranded org gets the AR-04 refusal (500) then repair 201 and
+the proxied call works again; everything cleaned up in both projects (`evidence/g09-live-smoke-2026-10-06.txt`).
+BACKFILL (PM-approved, run after the smoke): 13 live credentials copied, verified by sha256 comparison, none printed; 1 dead legacy row (the G-04 orphan, its
+VERIDIAN org no longer exists) refused by the SQL; the legacy table is untouched (it is also still written for new orgs while the function's
+`PX_MIRROR_LEGACY_CREDENTIALS` is not "false", so routes that still run on Vercel keep working).
+NOT PROVEN / OPEN: a browser sign-up through the real UI on projexa-ai.com (the e2e needs the production origin and a signed-in browser; the function call
+itself is proven with a real token); the Vercel-side reader switch (`VERIDIAN_CREDENTIALS_SUPABASE_URL` / `_SERVICE_ROLE_KEY`) is not configured (that is a Vercel
+setting: owner), so Vercel routes read the legacy table; set `PX_MIRROR_LEGACY_CREDENTIALS=false` only after that. The Next routes remain as the kill-switched fallback.
+ROLLBACK: set `PX_API_EDGE_ENABLED` false (or build with `NEXT_PUBLIC_PX_API_BASE=""`) so signup/login use the Vercel routes again; redeploy projexa-api v6
+source (compliance-tracker 3 commits before 79226210); `drizzle/down/0729_projexa_org_credentials_and_provision.down.sql` only after confirming the
+legacy table has every org you need (it does: untouched).
