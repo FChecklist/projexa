@@ -14,6 +14,10 @@
 // edit), and, since AUDIT-100 A2 batch 2, src/lib/fetch-json.ts / src/lib/use-submit.ts and the online screens' direct calls of the batch-2
 // routes (fetch -> viaPxApi). src/lib/projexa-api-edge.test.ts holds the list equal to ai-os/audit37/projexa-api-routes.json.
 
+import { PX_EDGE_REVALIDATE, PX_REVALIDATABLE } from "@/lib/px-api-revalidate-table";
+export { PX_EDGE_REVALIDATE, PX_REVALIDATABLE };
+export type { PxRevalidate } from "@/lib/px-api-revalidate-table";
+
 export const PX_API_EDGE_URL = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-api";
 
 /**
@@ -265,31 +269,6 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "/api/scope": ["GET", "POST"],
 };
 
-/** AUDIT-100 A2 batch 7: the page-side cache entries a write clears. The Next write handlers call revalidateTag / revalidatePath so a new row shows at
- *  once on the server-rendered list; a function on Supabase cannot, so after the edge answered a write the browser asks Vercel's one small route
- *  (src/app/api/cache/revalidate/route.ts) to clear the same entries. Equal to `revalidate` in ai-os/audit37/projexa-api-routes.json, which
- *  src/lib/projexa-api-edge.test.ts holds equal to what the REAL Next handlers cleared in the recorded parity contract. `when`: "success" (a 2xx
- *  answer, the default) or "always" (the handler clears before it calls the backend: /api/projects). */
-export type PxRevalidate = { tags: readonly string[]; paths?: readonly string[]; when?: "success" | "always" };
-export const PX_EDGE_REVALIDATE: Readonly<Record<string, PxRevalidate>> = {
-  "POST /api/documents": { tags: ["module:documents"] },
-  "POST /api/drawings": { tags: ["module:drawings"] },
-  "POST /api/permits": { tags: ["module:permits"] },
-  "POST /api/labour-roster": { tags: ["module:manpower"] },
-  "POST /api/materials/master": { tags: ["module:materials"] },
-  "POST /api/meetings": { tags: ["module:meetings"] },
-  "POST /api/moms": { tags: ["module:moms"] },
-  "POST /api/mood-boards": { tags: ["module:mood-boards"] },
-  "POST /api/knowledge-base": { tags: ["knowledge-base"] },
-  "PATCH /api/knowledge-base/:id": { tags: ["knowledge-base"] },
-  "POST /api/projects": { tags: ["projects"], when: "always" },
-  "POST /api/scope": { tags: ["module:scope"], paths: ["/scope"] },
-};
-/** What /api/cache/revalidate will clear: the union of the table above (nothing else). */
-export const PX_REVALIDATABLE: { tags: readonly string[]; paths: readonly string[] } = {
-  tags: [...new Set(Object.values(PX_EDGE_REVALIDATE).flatMap((r) => r.tags))],
-  paths: [...new Set(Object.values(PX_EDGE_REVALIDATE).flatMap((r) => r.paths ?? []))],
-};
 /** How long a write waits for Vercel to clear the page-side entries before it returns anyway (the write itself already succeeded). */
 export const PX_REVALIDATE_WAIT_MS = 2_500;
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { withTiming } from "@/lib/with-timing";
-import { PX_REVALIDATABLE } from "@/lib/px-api";
+import { PX_REVALIDATABLE } from "@/lib/px-api-revalidate-table";
 
 // AUDIT-100 A2 batch 7: the one small Vercel route left for the writes that moved to the Supabase Edge Function `projexa-api`.
 //
