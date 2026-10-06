@@ -19,7 +19,13 @@ let B: { context: BrowserContext; page: Page };
 let P: string;
 
 test.beforeAll(async ({ browser }) => {
+  // A hook does NOT inherit the file-level test.setTimeout above: without this line it ran under the config's 420 s and was cut at ~7 min
+  // (2026-10-06 real run, trace: hook 11 s -> 432 s) while its own 900 s wait below was still polling. The timeout must be set inside the hook.
+  test.setTimeout(1_800_000);
   A = await openLaptop(browser, "finance");
+  // ... and the two first copies run one after the other, not at once: together (~200 requests/min against the live service) the pulls of
+  // both laptops slowed to 6-15 s and timed out at minute 5 of that run, so neither copy could end clean. One copy at a time = ~100/min.
+  await expect.poll(() => countMeta(A.page, "sync:last"), { timeout: 900_000, message: "laptop A never finished its first copy" }).toBeGreaterThan(0);
   B = await openLaptop(browser, "ceo");
   P = await projectId(A.context);
   // laptop B has the project open (as its person would) from before any change below is made, and is left alone from here on
