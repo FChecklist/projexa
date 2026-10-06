@@ -261,6 +261,16 @@ export const PX_EDGE_SHADOWS: readonly string[] = [
   "/api/work-progress/report",
 ];
 
+/**
+ * AUDIT-100 G-09: routes the function answers that are NOT /api proxies of the inventory (so they are not in PX_EDGE_ROUTES, which is held equal to
+ * ai-os/audit37/projexa-api-routes.json): new-organisation provisioning and its repair run inside the function (supabase/functions/projexa-api/org-provision.ts).
+ * Same switch (PX_API_EDGE_ENABLED / NEXT_PUBLIC_PX_API_BASE=""), so the Vercel routes /api/org/provision and /api/org/repair stay as the kill-switched fallback.
+ */
+export const PX_EDGE_EXTRA_ROUTES: Readonly<Record<string, readonly string[]>> = {
+  "/api/org/provision": ["POST"],
+  "/api/org/repair": ["GET", "POST"],
+};
+
 function currentOrigin(): string | null {
   return typeof window !== "undefined" && window.location ? window.location.origin : null;
 }
@@ -285,6 +295,7 @@ export function isEdgeRoute(method: string, path: string): boolean {
     if (!best || rank > best.rank) best = { rank, methods };
   };
   for (const [route, methods] of Object.entries(PX_EDGE_ROUTES)) consider(route, methods);
+  for (const [route, methods] of Object.entries(PX_EDGE_EXTRA_ROUTES)) consider(route, methods);
   for (const route of PX_EDGE_SHADOWS) consider(route, null);
   const found = best as { rank: string; methods: readonly string[] | null } | null;
   return !!found?.methods?.includes(method.toUpperCase());
