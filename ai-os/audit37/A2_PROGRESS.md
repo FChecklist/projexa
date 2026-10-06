@@ -168,3 +168,15 @@ setting: owner), so Vercel routes read the legacy table; set `PX_MIRROR_LEGACY_C
 ROLLBACK: set `PX_API_EDGE_ENABLED` false (or build with `NEXT_PUBLIC_PX_API_BASE=""`) so signup/login use the Vercel routes again; redeploy projexa-api v6
 source (compliance-tracker 3 commits before 79226210); `drizzle/down/0729_projexa_org_credentials_and_provision.down.sql` only after confirming the
 legacy table has every org you need (it does: untouched).
+
+- BATCH 7 LIVE (2026-10-06): compliance-tracker #2105 merged; `projexa-api` deployed from a clean checkout of main with the CLI recipe (supabase-go via
+  SUPABASE_GO_BINARY): `/_policy` SOURCE_SHA256 6357305dc97e... = this repo's generated file. LIVE SMOKE (test org, sessions by admin magic link): 410 of 410 probes
+  identical edge vs Vercel (every batch-7 GET as owner and client_viewer, the three cached reads as three roles, validation 400s, role refusals of the uploads / project /
+  BOQ creates, document filters, BOQ includes, unit costs hidden from client_viewer): `evidence/a2-batch7-live-smoke-2026-10-06.txt`. LIVE WRITES through the function
+  (`evidence/a2-batch7-live-writes-2026-10-06.txt`): a multipart document upload with a real file 201 and found in the list, an external-URL document 201, a 3 MB
+  upload 201 (Vercel's old ceiling was 4.5 MB), a knowledge page create 201 / title check 400 / edit 200 / read back edited, an invalid JSON body = the empty 500.
+  NOT PROVEN LIVE: the mood-board create returned 400 from the backend for the test body I sent (validation, same body shape not reproduced; covered by the contract);
+  the 413 ceiling (a client cannot set Content-Length; the gateway answered 400): unit-proven only. Test rows left in the E2E test organisation, tagged `a2b7-<ts>`:
+  3 documents and 1 knowledge page (no API retires them, and a hard delete was not mine to run): the owner or a later session may remove them.
+  ROLLBACK: revert the client PR (#407) first, then redeploy the previous good function commit (79226210, v7).
+
