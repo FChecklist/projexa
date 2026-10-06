@@ -13,6 +13,7 @@
 // WHAT THIS FILE NEVER DOES WITH THE FILE. The bytes go into one FormData for the one POST and are hashed in the browser; they are not
 // written to storage, a URL, a log line or an error message. Only the hash, the name and the state ever leave this module as data.
 import { MB, checkFile, type AttachPolicy } from "@/lib/attachments"
+import { viaPxApi } from "@/lib/px-api";
 
 export const FROM_DOCUMENT_URL = "/api/projects/from-document"
 
@@ -298,7 +299,7 @@ export type ProductOption = { id: string; name: string }
 
 /** The organisation's products, from this app's own proxy (the same read as the product picker of /projects/new). */
 export async function loadProductOptions(): Promise<ProductOption[]> {
-  const res = await fetch("/api/products", { cache: "no-store" })
+  const res = await viaPxApi("/api/products", { cache: "no-store" })
   if (!res.ok) throw new Error(`products: HTTP ${res.status}`)
   const body: unknown = await res.json().catch(() => null)
   const list = isObject(body) ? body.products : null

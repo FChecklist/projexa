@@ -30,7 +30,11 @@ export const CT_RELATIVE = join("supabase", "functions", "projexa-api", "policy.
 export const GOLDEN_PATH = join(ROOT, "ai-os", "audit37", "projexa-api", "parity.golden.json");
 export const CT_GOLDEN_RELATIVE = join("supabase", "functions", "projexa-api", "parity.golden.json");
 
-const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style", "forward_search", "success_status", "cache_control", "root", "roles", "body_defaults"]);
+const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style", "forward_search", "success_status", "cache_control", "root", "roles", "body_defaults",
+  // AUDIT-100 A2 batch 6: body validation / reshaping, query rebuilding, response reshaping (each one a port of a handler statement)
+  "body_required", "body_pick", "body_object_error", "invalid_body_error", "body_in_try", "body_reject_if", "body_const", "upstream_method",
+  "optional_query", "query_flags", "search_params_omit_empty", "forward_query_normalized", "required_query_any", "roles_also", "response_pick",
+  "response_wrap"]);
 /** Route-level keys of projexa-api-routes.json the function does not read (they steer the browser switch and the inventory, not the edge). */
 const ROUTE_KEYS = new Set(["route", "methods", "batch"]);
 
@@ -63,6 +67,26 @@ export function validateRoutes(spec, inventory) {
       if (m.body !== undefined && !["json", "json_lenient", "empty"].includes(m.body)) problems.push(`${entry.route} ${method}: body must be json, json_lenient or empty`);
       if (m.body_defaults !== undefined && (!["json", "json_lenient"].includes(m.body) || typeof m.body_defaults !== "object" || Object.values(m.body_defaults).some((v) => typeof v !== "string"))) problems.push(`${entry.route} ${method}: body_defaults is an object of strings, only on a forwarded body`);
       if (m.body_actor_email !== undefined && (m.body_actor_email !== "always" || m.body === undefined)) problems.push(`${entry.route} ${method}: body_actor_email "always" needs a body`);
+      // AUDIT-100 A2 batch 6
+      const isStrArr = (v) => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && /^\w+$/.test(x));
+      const readsBody = ["json", "json_lenient"].includes(m.body);
+      if (m.body_required !== undefined && (!readsBody || !Array.isArray(m.body_required) || !m.body_required.every((c) => isStrArr(c.fields) && typeof c.error === "string" && Object.keys(c).length === 2))) problems.push(`${entry.route} ${method}: body_required is [{ fields, error }] on a read body`);
+      if (m.body_pick !== undefined && (!readsBody || !isStrArr(m.body_pick))) problems.push(`${entry.route} ${method}: body_pick is a list of field names on a read body`);
+      if (m.body_object_error !== undefined && (m.body !== "json_lenient" || typeof m.body_object_error !== "string")) problems.push(`${entry.route} ${method}: body_object_error is a message on a json_lenient body (request.json().catch(() => null))`);
+      if (m.invalid_body_error !== undefined && (m.body !== "json" || typeof m.invalid_body_error !== "string" || m.body_in_try)) problems.push(`${entry.route} ${method}: invalid_body_error is a message on a strict json body`);
+      if (m.body_in_try !== undefined && (m.body_in_try !== true || m.body !== "json")) problems.push(`${entry.route} ${method}: body_in_try is true on a strict json body`);
+      if (m.body_reject_if !== undefined && (!readsBody || !Array.isArray(m.body_reject_if) || !m.body_reject_if.every((r) => r && typeof r.error === "string" && r.match && typeof r.match === "object" && Object.keys(r.match).length > 0 && Object.values(r.match).every((v) => v === null || ["string", "number", "boolean"].includes(typeof v))))) problems.push(`${entry.route} ${method}: body_reject_if is [{ match: { field: primitive }, error }] on a read body`);
+      if (m.body_const !== undefined && (m.body !== undefined || typeof m.body_const !== "object" || m.body_const === null || Array.isArray(m.body_const))) problems.push(`${entry.route} ${method}: body_const is a constant object, without body`);
+      if (m.upstream_method !== undefined && !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(m.upstream_method)) problems.push(`${entry.route} ${method}: upstream_method is an HTTP method`);
+      if (m.optional_query !== undefined && !isStrArr(m.optional_query)) problems.push(`${entry.route} ${method}: optional_query is a list of query names`);
+      if (m.query_flags !== undefined && (typeof m.query_flags !== "object" || !Object.values(m.query_flags).every((v) => typeof v === "string" && v.length > 0))) problems.push(`${entry.route} ${method}: query_flags is { name: value }`);
+      if (m.search_params_omit_empty !== undefined && (m.search_params_omit_empty !== true || !m.search_params)) problems.push(`${entry.route} ${method}: search_params_omit_empty is true with search_params`);
+      if (m.forward_query_normalized !== undefined && (m.forward_query_normalized !== true || m.forward_search || m.search_params)) problems.push(`${entry.route} ${method}: forward_query_normalized is true, without forward_search / search_params`);
+      if (m.required_query_any !== undefined && (!isStrArr(m.required_query_any?.params) || typeof m.required_query_any.error !== "string")) problems.push(`${entry.route} ${method}: required_query_any is { params, error }`);
+      if (m.roles_also !== undefined && (m.roles === undefined || !isStrArr(m.roles_also))) problems.push(`${entry.route} ${method}: roles_also adds roles to a roles set`);
+      if (m.response_pick !== undefined && (typeof m.response_pick !== "object" || m.response_pick === null || !Object.keys(m.response_pick).length)) problems.push(`${entry.route} ${method}: response_pick is { field: default }`);
+      if (m.response_wrap !== undefined && (typeof m.response_wrap?.into !== "string" || typeof m.response_wrap.with !== "object" || !Array.isArray(m.response_wrap.params) || m.response_wrap.params.some((p) => !entry.route.includes(`:${p}`)))) problems.push(`${entry.route} ${method}: response_wrap is { with, params (path parameters), into }`);
+      if (m.response_pick !== undefined && m.response_wrap !== undefined) problems.push(`${entry.route} ${method}: response_pick and response_wrap are exclusive`);
     }
     for (const k of Object.keys(entry)) if (!ROUTE_KEYS.has(k)) problems.push(`${entry.route}: unknown route key ${k}`);
     if (entry.batch !== undefined && !(Number.isInteger(entry.batch) && entry.batch >= 1)) problems.push(`${entry.route}: batch must be a positive integer`);
@@ -136,6 +160,11 @@ export function render(data = sourceData()) {
   lines.push("  search_params?: string[]; body?: \"json\" | \"json_lenient\" | \"empty\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
   lines.push("  forward_search?: boolean; success_status?: 200 | 201; cache_control?: string");
   lines.push("  root?: true; roles?: string; body_defaults?: Record<string, string>");
+  lines.push("  body_required?: { fields: string[]; error: string }[]; body_pick?: string[]; body_object_error?: string; invalid_body_error?: string; body_in_try?: true");
+  lines.push("  body_reject_if?: { match: Record<string, string | number | boolean | null>; error: string }[]; body_const?: Record<string, unknown>; upstream_method?: string");
+  lines.push("  optional_query?: string[]; query_flags?: Record<string, string>; search_params_omit_empty?: true; forward_query_normalized?: true");
+  lines.push("  required_query_any?: { params: string[]; error: string }; roles_also?: string[]; response_pick?: Record<string, unknown>");
+  lines.push("  response_wrap?: { with: Record<string, unknown>; params: string[]; into: string }");
   lines.push("}");
   lines.push("/** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */");
   lines.push("export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [");

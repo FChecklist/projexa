@@ -138,7 +138,8 @@ await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exce
     let path = r.route.replace(/:\w+/g, UNKNOWN);
     // every required query key: the real project for projectId, an unknown id for any other (kpiDefinitionId: the backend's empty list / 404)
     if (get.required_query) path += "?" + Object.keys(get.required_query).map((k) => `${k}=${k === "projectId" ? projectId : UNKNOWN}`).join("&");
-    else if (get.forward_search) path += "?limit=5";
+    else if (get.required_query_any) path += `?${get.required_query_any.params[0]}=${projectId}`; // batch 6 (timesheets: projectId or issueId)
+    else if (get.forward_search || get.forward_query_normalized) path += "?limit=5";
     for (const who of ["owner", "client_viewer"]) await probe(`batch ${r.batch} read ${r.route}`, who, sessions[who], "GET", path);
   }
   // writes the role gate refuses before any handler runs (nothing is written): client_viewer creating a vendor, pm starting a payroll run
@@ -152,6 +153,23 @@ await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exce
   await probe("batch 5: timesheet approve, unknown id", "pm", sessions.pm, "POST", `/api/timesheets/${UNKNOWN}/approve`);
   await probe("batch 5: PO submit, unknown id (empty body)", "owner", sessions.owner, "POST", `/api/procurement/purchase-orders/${UNKNOWN}/submit`, {});
   await probe("batch 5: material receipt (root), unknown id", "pm", sessions.pm, "GET", `/api/materials/${UNKNOWN}`);
+  // batch 6: the handlers' own checks answer before anything is written (validation 400s, the cost floor, an own role set, the JSON body
+  // object check), role refusals by the gate, the reshaped reads with a real project, and a read with an optional query
+  await probe("batch 6: wiki page without a title (validation)", "pm", sessions.pm, "POST", "/api/wiki", { projectId });
+  await probe("batch 6: sprint without a name (validation)", "pm", sessions.pm, "POST", "/api/schedule/sprints", { projectId });
+  await probe("batch 6: task without startDate (second check)", "pm", sessions.pm, "POST", "/api/schedule/tasks", { projectId, title: "a2 smoke (never written)" });
+  await probe("batch 6: submit-day without spentOn (validation)", "pm", sessions.pm, "POST", "/api/timesheets/submit-day", { projectId });
+  await probe("batch 6: review-day without a decision (validation)", "pm", sessions.pm, "POST", "/api/timesheets/review-day", { projectId, spentOn: "2099-01-01" });
+  await probe("batch 6: baseline refused by its own role set", "client_viewer", sessions.client_viewer, "POST", "/api/schedule/baselines", { projectId, name: "a2 smoke (never written)" });
+  await probe("batch 6: client_viewer cost floor (or the gate)", "owner", sessions.owner, "PATCH", "/api/scope/cost-visibility", { role: "client_viewer", canSeeCost: true });
+  await probe("batch 6: progress entry edit, not a JSON object", "pm", sessions.pm, "PATCH", `/api/work-progress/${UNKNOWN}`, 5);
+  await probe("batch 6: vendor deactivate refused by role", "client_viewer", sessions.client_viewer, "DELETE", `/api/vendors/${UNKNOWN}`);
+  await probe("batch 6: customer deactivate, unknown id", "owner", sessions.owner, "DELETE", `/api/customers/${UNKNOWN}`);
+  await probe("batch 6: billing milestone refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/billing-claims", { projectId });
+  await probe("batch 6: timesheets without a project or issue", "pm", sessions.pm, "GET", "/api/timesheets");
+  await probe("batch 6: manpower cost with a trade", "owner", sessions.owner, "GET", `/api/manpower-cost-report?projectId=${projectId}&trade=Mason%20%26%20helper`);
+  await probe("batch 6: BOQ categories incl. inactive", "owner", sessions.owner, "GET", "/api/scope/categories?includeInactive=1");
+  await probe("batch 6: projects overview (reshaped)", "client_viewer", sessions.client_viewer, "GET", "/api/projects/overview");
 }
 
 // deny by default: a real Vercel route the edge does not answer; and (batch 5) a Vercel route that is a literal sibling of a dynamic edge route

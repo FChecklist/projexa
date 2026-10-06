@@ -305,7 +305,7 @@ function ProjectReportsPanel({
   // simply offers "All" and nothing else.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/scope/categories")
+    viaPxApi("/api/scope/categories")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("categories"))))
       .then((d) => { if (!cancelled) setCategories(Array.isArray(d.categories) ? d.categories : []); })
       .catch(() => { if (!cancelled) setCategories([]); });

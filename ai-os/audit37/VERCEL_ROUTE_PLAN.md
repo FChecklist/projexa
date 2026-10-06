@@ -93,33 +93,36 @@ The Supabase Edge Function `projexa-api` (compliance-tracker `supabase/functions
 
 BATCHES 2-4 (2026-10-06): all 106 plain proxies of the online screens moved the same way (A2_PROGRESS.md): 113 routes answered by
 the edge on the production origins. BATCH 5 (2026-10-06): 72 proxies that were plain in all but form (own role sets, the VERIDIAN root,
-empty / lenient / defaulted bodies, options in any order): 185 routes. **Vercel-served /api routes 304 -> 264 -> 231 -> 198 -> 126**
-(`vercel_served_routes_budget`, may only go down).
+empty / lenient / defaulted bodies, options in any order): 185 routes. BATCH 6 (2026-10-06): 32 proxies with their own validation,
+query rebuilding or answer reshaping, each statement ported as spec data and proven by the contract: 217 routes. **Vercel-served /api
+routes 304 -> 264 -> 231 -> 198 -> 126 -> 94** (`vercel_served_routes_budget`, may only go down).
 
-Remaining on Vercel, measured 2026-10-06 on this tree (311 route files: 282 VERIDIAN proxies of which 185 moved; 97 proxies + 29
-own-logic/Supabase = 126). `bun scripts/projexa-api-candidates.mjs` prints the exact reason per proxy; by class (each needs its own port +
-parity, not a new spec key):
-1. Binary / multipart (21): uploads (`/api/documents` POST, `/documents/:id/versions`, `/drawings`, `/permits`, `/site-instructions`,
-   `/projects/from-document`, `/scope/import`, `/schedule/import`, `/labour-roster/import`) and PDF/xlsx downloads (`/attendance/summary/pdf`,
-   `/moms/:id/pdf`, `/payroll/payslips/:id/pdf`, `/quotations/:id/pdf`, `/shared/mom/:token/pdf`, `/work-progress/report/pdf|xlsx`,
-   `/drawings/export`, `/scope/import/template`, `/reports/:reportName/export`, `/reports/budget-variance/export`,
-   `/construction-materials/cost-report/export`): stream passthrough in the function with the Next handlers' content-type / disposition
-   fallbacks and the 30 s upload budget; parity with real small files.
-2. Body validation / shaping (17): required-field checks then a picked body (`/timesheets/submit-day`, `/review-day`, `/rfis`, `/tasks`,
-   `/schedule/*`, `/wiki`, `/work-progress/:id`, `/submittals/:id` (+ a notification), `/discuss`, `/classify`, `/pill-usage`, ...).
-   Note: `!body.x` on a JSON null body THROWS in Next (500); a port must reproduce that, so each needs its own parity set.
-3. Query shaping (12): optional query keys rebuilt with URLSearchParams (`/design-materials`, `/project-budgets/:id/variance`,
-   `/reports/:reportName` (+ a templated fallback message), `/reports/portfolio/budget-vs-actual`, `/scope/lines`, `/scope/categories`, ...).
-4. Response reshaping / own URL (13): `/customers/:id` and `/vendors/:id` DELETE answer `{ deactivated, id, ... }`; `/products`,
-   `/projects/overview`, `/tasks/:id` pick fields; the four share-link routes build a URL from the request origin.
-5. Cached (10) and fan-out (5): a cross-request cache (`module-list-source`, `unstable_cache`) or `Promise.all` composition (`/api/shell`,
-   dashboard-hierarchy, category distribution, `/work-progress/report`): port one by one; the cache as a per-isolate Map with the same TTL,
-   parity-tested with a fake clock.
-6. Own role + more logic (6), other own logic (6), extra error fields (4: `conflicts[]`, `ruleCode`/`missing`), Supabase/DB direct (3).
-7. The 29 own-logic / Supabase routes STAY on Vercel by plan: the usage beacon (`/api/local-first/client-error`, `/prepare-report`), shell
-   bootstrap, e-mail (`/api/email/*`, digest), webhooks and Google Sheets (server secrets), AI chat (`/api/conversations*`), provisioning and
-   invites (`/api/org/*`, `/api/org-members*`), notifications / todos / search / preferences (PROJEXA's own Supabase tables).
-8. Delete a Next handler only when no caller needs the same-origin fallback (kill switch) any more.
+Remaining on Vercel after batch 6 (311 route files: 282 VERIDIAN proxies of which 217 moved; 65 proxies + 29 own-logic/Supabase = 94).
+`bun scripts/projexa-api-candidates.mjs` prints the reason per proxy. Each class needs a real port + parity, not a spec key:
+1. Binary / multipart (21): uploads (`/documents/:id/versions`, `/site-instructions` POST, `/projects/from-document`, `/scope/import`, `/schedule/import`, `/labour-roster/import`) and PDF / xlsx
+   downloads and share links (`/attendance/summary/pdf`, `/attendance/summary/share`, `/moms/:id/pdf`, `/payroll/payslips/:id/pdf`,
+   `/quotations/:id/pdf`, `/shared/mom/:token/pdf`, `/work-progress/report/pdf|xlsx|share`, `/drawings/export`, `/scope/import/template`,
+   `/reports/:reportName/export` and `/share`, `/reports/budget-variance/export`, `/construction-materials/cost-report/export`): stream passthrough with
+   the Next handlers' content-type / disposition / size fallbacks and the 30 s upload budget; parity with real small files incl. oversize
+   and wrong type. The uploads of `/documents`, `/drawings` and `/permits` (POST) share a handler file with a cached list (class 2).
+2. Cross-request cache (15): `module-list-source` lists (`/documents`, `/drawings`, `/labour-roster`, `/materials/master`, `/meetings`,
+   `/moms`, `/mood-boards`, `/permits`, `/scope`), `unstable_cache` (`/projects`, `/knowledge-base`, `/knowledge-base/:id`) and
+   `createCachedVeridianGet` (`/cost-centers`, `/currencies`, `/fiscal-years`): a per-isolate Map with the same TTL and the same
+   invalidation on the writes, parity with a fake clock.
+3. Fan-out / composition (7): `/api/shell`, the four dashboard-hierarchy routes (`company-scope`), `/projects/:id/category-distribution`,
+   `/work-progress/report`: same call order and error semantics.
+4. Own logic beyond a statement (17): `/scope/:id` (boq-helpers), `/scope/:id/revisions`, `/billing-claims/:id` (finance / decide action
+   sets), `/projects/:id/approvals` (submission id + upstream status extra), `/organization/currency` (ISO code normalising), `/discuss`
+   (trim + history default), `/attendance` (ISO date filter + ruleCode extra), `/work-progress` POST (ruleCode / missing answer),
+   `/rfis` and `/punch-list` and `/submittals/:id` (notification-service), `/moms/:id/share-links` (origin env), `/pill-usage`,
+   `/reports/:reportName` (templated fallback), `/capability-tree`, `/chain-options`, `/veridian-link` (redirect).
+5. Server-side only (5): `/ai/apply` (db), `/assistant` and `/org/provision` (Supabase server client), `/org/repair` (drizzle),
+   `/classify` (its own service message): stay until their own design step.
+6. The 29 own-logic / Supabase routes STAY on Vercel by plan: the usage beacon (`/api/local-first/client-error`, `/prepare-report`), contact,
+   e-mail (`/api/email/*`, digest), webhooks and Google Sheets (server secrets), AI chat (`/api/conversations*`), provisioning and invites
+   (`/api/org/invites*`, `/api/org-members*`, `/api/organization*`), notifications / todos / search / preferences / work-progress photos
+   (PROJEXA's own Supabase tables), the company list of dashboard-hierarchy.
+7. Delete a Next handler only when no caller needs the same-origin fallback (kill switch) any more.
 
 ## 7. Steps 1 and 1b, done 2026-10-05 (AUDIT-100 A3; B20 closed with them)
 

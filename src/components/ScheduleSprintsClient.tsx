@@ -53,7 +53,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
     setStartedAt(Date.now());
     setError(null);
     try {
-      const res = await fetch(`/api/schedule/sprints?projectId=${encodeURIComponent(projectId)}`);
+      const res = await viaPxApi(`/api/schedule/sprints?projectId=${encodeURIComponent(projectId)}`);
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         setError({ status: res.status, message: typeof data?.error === "string" ? data.error : null });

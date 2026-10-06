@@ -20,6 +20,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { NO_CATEGORY_CHIP_LABEL } from "@/lib/boq-helpers";
+import { viaPxApi } from "@/lib/px-api";
 
 export type BoqCategory = { id: string; name: string; isActive: boolean };
 
@@ -41,7 +42,7 @@ export function useBoqCategories() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/scope/categories")
+    viaPxApi("/api/scope/categories")
       // R67 D-03 / D-71: the STATUS is read before the body. This chain used
       // to go straight to `.then((r) => r.json())` and infer failure from the
       // body's own shape (`d.error || !Array.isArray(d.categories)`), which

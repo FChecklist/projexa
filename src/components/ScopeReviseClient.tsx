@@ -24,6 +24,7 @@ import {
   TITLE_REQUIRED_MESSAGE, emptyLine, toDrafts, collectLines, missingBoqFields, toPayloadLineItems,
 } from "@/lib/boq-helpers";
 import { useBoqCategories } from "@/components/BoqCategorySelect";
+import { viaPxApi } from "@/lib/px-api";
 
 export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   const router = useRouter();
@@ -50,7 +51,7 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   async function registerCategory(name: string) {
     addLocal(name);
     try {
-      const res = await fetch("/api/scope/categories", {
+      const res = await viaPxApi("/api/scope/categories", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });

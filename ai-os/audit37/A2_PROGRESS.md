@@ -91,3 +91,27 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   the root KPI entry; 400; 401; deny by default; the shadowed /api/materials/master is 404 on the edge; policy hash):
   `evidence/a2-batch5-live-smoke-2026-10-06.txt`. Only then does the client PR (#401) merge. ROLLBACK: revert #401 first, then redeploy
   compliance-tracker b94b0e32 (the v3/v4 113-route table); the Next handlers stay as the same-origin fallback.
+- BATCH 6 (2026-10-06, branch `audit100/a2-batch-6` in both repos): 32 more routes (54 route+methods), the proxies with their OWN
+  statements, each statement ported as spec data (generator + edge handler) and proven by the recorded contract: body validation
+  (`body_required`, in the handler's order; `body_object_error`; `invalid_body_error`; `body_in_try`; `body_reject_if` = the client_viewer
+  cost floor), body reshaping (`body_pick`, `body_const` + `upstream_method` for the vendor / customer deactivate = an upstream PATCH),
+  query rebuilding (`optional_query` with encodeURIComponent and "?" / "&", `query_flags`, `search_params_omit_empty`,
+  `forward_query_normalized`, `required_query_any`), `roles_also` (billing milestones: PM_OR_ABOVE + member) and answer reshaping
+  (`response_pick` `{ k: data.k ?? [] }`, `response_wrap` `{ deactivated, id, vendor }`). Routes: schedule baselines / sprints / sprint
+  issues / tasks / workload, wiki, work-progress activities and entry, timesheets (+ submit-day, review-day), tasks (+ :id), attendance
+  summary, billing claims, material cost report (root), knowledge-base search, manpower cost, org users, budget variance, portfolio
+  budget-vs-actual, BOQ compare / categories (+ :id) / lines / cost visibility (root), screen drafts, design materials, products, projects
+  overview, vendor / customer :id. A JSON-null body where the handler reads a field THROWS in Next: next/dist/build/templates/app-route.js
+  answers `new Response(null, { status: 500 })`; the recorder models exactly that and the edge answers the same empty 500 (parity, not a
+  documented difference). Parity 3101 cases (the 2358 unchanged): good / missing / empty / 0 / false / JSON-null / array / number /
+  broken bodies, every query form with and without its values, reshaped answers incl. a JSON-null and a number answer, the new forms under
+  the upstream's failures. 20 more direct fetch() sites in 14 files -> viaPxApi. Shadows now: /api/work-progress/photos and /report
+  (literal siblings of the new /api/work-progress/:id); review-day, /scope/categories/:id and /projects/overview are edge routes
+  themselves (a method they lack is 405 on both sides). Inventory: 217 routes `edge:projexa-api`; Vercel-served 126 -> 94 (budget 94).
+  SEEN TO FAIL (each reverted, handler byte-identical after): edge body_required removed (82 cases), body_pick ignored (21), JSON-null not
+  an empty 500 (10), optional_query with URLSearchParams encoding (33), body_reject_if ignored (1), response_pick default dropped (17),
+  own role check off (12), search_params "?" always (3), upstream_method ignored (17), body_object_error ignored (12), body_in_try as 400
+  (2), forward_query_normalized byte for byte (7); Next side: requireRole dropped in /api/schedule/baselines POST and the title check
+  dropped in /api/wiki POST (the recorder failed each time). The contract also caught a real spec mistake before commit (the cost-floor
+  message taken from a code comment, not the handler's answer).
+

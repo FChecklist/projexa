@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from "react";
 import SearchSelect, { type SearchSelectOption } from "@/components/SearchSelect";
 import { toSearchOptions, type BoqLineOption } from "@/lib/boq-line-options";
+import { viaPxApi } from "@/lib/px-api";
 
 const DEBOUNCE_MS = 200;
 
@@ -50,7 +51,7 @@ export default function BoqLinePicker({
       const params = new URLSearchParams({ projectId });
       if (query) params.set("q", query);
       if (boqId) params.set("boqId", boqId);
-      fetch(`/api/scope/lines?${params.toString()}`)
+      viaPxApi(`/api/scope/lines?${params.toString()}`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error("BOQ lines unavailable"))))
         .then((data: { lines?: BoqLineOption[] }) => {
           if (cancelled) return;
