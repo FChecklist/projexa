@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { FileText } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type PayslipLine = { id: string; label: string; lineType: "earning" | "deduction"; amount: string };
 type PayslipDetail = {
@@ -47,7 +48,7 @@ export default function PayslipObjectClient({ runId, payslipId }: { runId: strin
   async function saveTds() {
     setBusy("tds");
     try {
-      const res = await fetch(`/api/payroll/payslips/${payslipId}/tds`, {
+      const res = await viaPxApi(`/api/payroll/payslips/${payslipId}/tds`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tdsAmount: Number(tdsAmount) }),
       });
@@ -65,7 +66,7 @@ export default function PayslipObjectClient({ runId, payslipId }: { runId: strin
   async function finalize() {
     setBusy("finalize");
     try {
-      const res = await fetch(`/api/payroll/payslips/${payslipId}/finalize`, { method: "POST" });
+      const res = await viaPxApi(`/api/payroll/payslips/${payslipId}/finalize`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to finalize payslip");
       toast.success("Payslip finalized");

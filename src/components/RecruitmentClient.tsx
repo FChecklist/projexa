@@ -12,6 +12,7 @@ import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { Loader2, Plus } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import DataLoadError from "@/components/DataLoadError";
+import { viaPxApi } from "@/lib/px-api";
 
 // Real-screen conversion (2026-08-30): the "New Job Opening"/"Add
 // Candidate"/"New Application" Dialog popups are gone -- each routes to a
@@ -78,7 +79,7 @@ export default function RecruitmentClient({ initialTab }: { initialTab?: string 
   async function updateOpeningStatus(id: string, status: string) {
     setStatusBusyId(id);
     try {
-      const res = await fetch(`/api/recruitment/job-openings/${id}/status`, {
+      const res = await viaPxApi(`/api/recruitment/job-openings/${id}/status`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });

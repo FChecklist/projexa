@@ -11,7 +11,7 @@ export const POST = withTiming("POST", async function POST(_request: Request, { 
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/credit-notes/${id}/submit`, { organizationId: ctx.organizationId!, method: "POST" });
+    const data = await callVeridian(`/credit-notes/${encodeURIComponent(id)}/submit`, { organizationId: ctx.organizationId!, method: "POST" });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to submit credit note");

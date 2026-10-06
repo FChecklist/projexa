@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Send } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type Requisition = {
   id: string; requisitionNumber: number; purpose: string | null; status: string; postingDate: string;
@@ -50,7 +51,7 @@ export default function RequisitionObjectClient({ requisitionId }: { requisition
   async function submit() {
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/procurement/requisitions/${requisitionId}/submit`, { method: "POST" });
+      const res = await viaPxApi(`/api/procurement/requisitions/${requisitionId}/submit`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to submit requisition");
       toast.success("Requisition submitted");

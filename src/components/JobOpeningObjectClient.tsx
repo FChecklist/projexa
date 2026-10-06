@@ -14,6 +14,7 @@ import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { viaPxApi } from "@/lib/px-api";
 
 type JobOpening = { id: string; title: string; departmentId: string | null; jobDescription: string | null; employmentType: string; numPositions: number; status: string };
 type Department = { id: string; name: string };
@@ -46,7 +47,7 @@ export default function JobOpeningObjectClient({ openingId }: { openingId: strin
   async function changeStatus(status: string) {
     setStatusBusy(true);
     try {
-      const res = await fetch(`/api/recruitment/job-openings/${openingId}/status`, {
+      const res = await viaPxApi(`/api/recruitment/job-openings/${openingId}/status`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       const data = await res.json().catch(() => null);

@@ -11,7 +11,7 @@ export const POST = withTiming("POST", async function POST(request: NextRequest,
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/procurement/requisitions/${id}/submit`, { organizationId: ctx.organizationId!, method: "POST", body: {} });
+    const data = await callVeridian(`/procurement/requisitions/${encodeURIComponent(id)}/submit`, { organizationId: ctx.organizationId!, method: "POST", body: {} });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to submit purchase requisition");

@@ -44,7 +44,7 @@ const BEACON = "POST /api/local-first/client-error"
 // this rig runs on localhost, where the switch keeps them same-origin, so the rig still SEES them as /api calls. What production sends to Vercel is
 // therefore the rig's /api calls minus the edge-served routes, and that must stay inside daily_use_api_allowlist_production (the beacon only).
 // Batches 2-4 (2026-10-06) moved 106 online-screen routes (not shell-reachable): the shell walk's numbers are unchanged; the count of /api
-// routes still answered by Vercel (304 -> 264 -> 231 -> 198) is held by src/lib/vercel-route-inventory.test.ts (vercel_served_routes_budget).
+// routes still answered by Vercel (304 -> 264 -> 231 -> 198 -> 126) is held by src/lib/vercel-route-inventory.test.ts (vercel_served_routes_budget).
 const EDGE_SERVED = inventory.routes.filter((r) => r.served_by === "edge:projexa-api").map((r) => norm(r.route))
 function productionVercelViolations(seen: Seen[]): string[] {
   const onVercel = Object.keys(apiRoutes(leftTheLaptop(seen))).filter((k) => !EDGE_SERVED.includes(norm(k.split(" ")[1]!)))

@@ -136,7 +136,8 @@ await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exce
     const get = r.methods.GET;
     if (!get) continue;
     let path = r.route.replace(/:\w+/g, UNKNOWN);
-    if (get.required_query) path += `?projectId=${projectId}`;
+    // every required query key: the real project for projectId, an unknown id for any other (kpiDefinitionId: the backend's empty list / 404)
+    if (get.required_query) path += "?" + Object.keys(get.required_query).map((k) => `${k}=${k === "projectId" ? projectId : UNKNOWN}`).join("&");
     else if (get.forward_search) path += "?limit=5";
     for (const who of ["owner", "client_viewer"]) await probe(`batch ${r.batch} read ${r.route}`, who, sessions[who], "GET", path);
   }
@@ -144,11 +145,20 @@ await probe("signed out", "nobody", { access_token: "x.y.z" }, "GET", `/api/exce
   await probe("batch 2: create vendor refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/vendors", { vendorName: "a2 smoke (never written)" });
   await probe("batch 2: payroll run refused by role", "pm", sessions.pm, "POST", "/api/payroll/runs", { period: "2099-01" });
   await probe("batch 2: policy edit refused by role", "client_viewer", sessions.client_viewer, "PATCH", `/api/policies/${UNKNOWN}`, { title: "x" });
+  // batch 5: an own-role write, a root (/api/v1/construction) write, both refused before any handler runs; writes on an unknown id (the
+  // backend answers 404 before writing)
+  await probe("batch 5: change order create refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/change-orders", { projectId, title: "a2 smoke (never written)" });
+  await probe("batch 5: KPI entry (root) refused by role", "client_viewer", sessions.client_viewer, "POST", "/api/kpi-entries", { kpiDefinitionId: UNKNOWN });
+  await probe("batch 5: timesheet approve, unknown id", "pm", sessions.pm, "POST", `/api/timesheets/${UNKNOWN}/approve`);
+  await probe("batch 5: PO submit, unknown id (empty body)", "owner", sessions.owner, "POST", `/api/procurement/purchase-orders/${UNKNOWN}/submit`, {});
+  await probe("batch 5: material receipt (root), unknown id", "pm", sessions.pm, "GET", `/api/materials/${UNKNOWN}`);
 }
 
-// deny by default: a real Vercel route the edge does not answer
+// deny by default: a real Vercel route the edge does not answer; and (batch 5) a Vercel route that is a literal sibling of a dynamic edge route
 const notListed = await call(EDGE, "/api/shell", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });
 results.push({ label: "deny by default (/api/shell)", who: "owner", method: "GET", path: "/api/shell", edge: notListed.status, vercel: "-", same: notListed.status === 404 });
+const shadow = await call(EDGE, "/api/materials/master", { headers: { Authorization: `Bearer ${sessions.owner.access_token}` } });
+results.push({ label: "batch 5: shadowed literal route (/api/materials/master) is not answered as /api/materials/:id", who: "owner", method: "GET", path: "/api/materials/master", edge: shadow.status, vercel: "-", same: shadow.status === 404 });
 
 console.table(results);
 const bad = results.filter((r) => !r.same).length;

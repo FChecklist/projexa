@@ -92,20 +92,34 @@ The Supabase Edge Function `projexa-api` (compliance-tracker `supabase/functions
 `src/lib/px-api.ts`; the Next handlers stay as the same-origin fallback. Shell-reachable routes answered by Vercel: 8 -> 1 (the beacon).
 
 BATCHES 2-4 (2026-10-06): all 106 plain proxies of the online screens moved the same way (A2_PROGRESS.md): 113 routes answered by
-the edge on the production origins; **Vercel-served /api routes 304 -> 264 -> 231 -> 198** (`vercel_served_routes_budget`, may only go down).
+the edge on the production origins. BATCH 5 (2026-10-06): 72 proxies that were plain in all but form (own role sets, the VERIDIAN root,
+empty / lenient / defaulted bodies, options in any order): 185 routes. **Vercel-served /api routes 304 -> 264 -> 231 -> 198 -> 126**
+(`vercel_served_routes_budget`, may only go down).
 
-Remaining, in order (measured 2026-10-06 on this tree; 311 route files: 282 VERIDIAN proxies of which 113 moved, 17 own logic, 12 Supabase):
-1. No PLAIN proxy is left (`bun scripts/projexa-api-candidates.mjs` prints the reason each of the other 169 proxies is not plain). The
-   recipe for every later batch: routes json + parity `REQUESTS`, record, regenerate, compliance-tracker PR, DEPLOY, live smoke, THEN the
-   client list here and its direct `fetch()` callers -> `viaPxApi`.
-2. The generator needs three more spec keys before the rest can move: `root` (20 routes call `/api/v1/*` outside `/projexa`), an
-   `error_extra` field list (3 routes forward a named upstream field, e.g. `conflicts[]`), and per-method role sets for the 21 routes with their
-   own `requireRole()` beyond the write table.
-3. Multi-call / cached proxies (9 with `Promise.all` fan-out, 14 with a cross-request cache): need their composition ported, one by one.
-4. Binary / multipart (11: uploads, PDF/xlsx downloads, BOQ import): stream passthrough in the function; the 30 s upload budget.
-5. The 17 own-logic and 12 Supabase routes (beacon, shell bootstrap, email/webhooks with server secrets, Google Sheets, AI chat, provisioning):
-   stay on Vercel until each has its own reason to move; the beacon could fold into projexa-sync /prepare.
-6. Delete a Next handler only when no caller needs the same-origin fallback (kill switch) any more.
+Remaining on Vercel, measured 2026-10-06 on this tree (311 route files: 282 VERIDIAN proxies of which 185 moved; 97 proxies + 29
+own-logic/Supabase = 126). `bun scripts/projexa-api-candidates.mjs` prints the exact reason per proxy; by class (each needs its own port +
+parity, not a new spec key):
+1. Binary / multipart (21): uploads (`/api/documents` POST, `/documents/:id/versions`, `/drawings`, `/permits`, `/site-instructions`,
+   `/projects/from-document`, `/scope/import`, `/schedule/import`, `/labour-roster/import`) and PDF/xlsx downloads (`/attendance/summary/pdf`,
+   `/moms/:id/pdf`, `/payroll/payslips/:id/pdf`, `/quotations/:id/pdf`, `/shared/mom/:token/pdf`, `/work-progress/report/pdf|xlsx`,
+   `/drawings/export`, `/scope/import/template`, `/reports/:reportName/export`, `/reports/budget-variance/export`,
+   `/construction-materials/cost-report/export`): stream passthrough in the function with the Next handlers' content-type / disposition
+   fallbacks and the 30 s upload budget; parity with real small files.
+2. Body validation / shaping (17): required-field checks then a picked body (`/timesheets/submit-day`, `/review-day`, `/rfis`, `/tasks`,
+   `/schedule/*`, `/wiki`, `/work-progress/:id`, `/submittals/:id` (+ a notification), `/discuss`, `/classify`, `/pill-usage`, ...).
+   Note: `!body.x` on a JSON null body THROWS in Next (500); a port must reproduce that, so each needs its own parity set.
+3. Query shaping (12): optional query keys rebuilt with URLSearchParams (`/design-materials`, `/project-budgets/:id/variance`,
+   `/reports/:reportName` (+ a templated fallback message), `/reports/portfolio/budget-vs-actual`, `/scope/lines`, `/scope/categories`, ...).
+4. Response reshaping / own URL (13): `/customers/:id` and `/vendors/:id` DELETE answer `{ deactivated, id, ... }`; `/products`,
+   `/projects/overview`, `/tasks/:id` pick fields; the four share-link routes build a URL from the request origin.
+5. Cached (10) and fan-out (5): a cross-request cache (`module-list-source`, `unstable_cache`) or `Promise.all` composition (`/api/shell`,
+   dashboard-hierarchy, category distribution, `/work-progress/report`): port one by one; the cache as a per-isolate Map with the same TTL,
+   parity-tested with a fake clock.
+6. Own role + more logic (6), other own logic (6), extra error fields (4: `conflicts[]`, `ruleCode`/`missing`), Supabase/DB direct (3).
+7. The 29 own-logic / Supabase routes STAY on Vercel by plan: the usage beacon (`/api/local-first/client-error`, `/prepare-report`), shell
+   bootstrap, e-mail (`/api/email/*`, digest), webhooks and Google Sheets (server secrets), AI chat (`/api/conversations*`), provisioning and
+   invites (`/api/org/*`, `/api/org-members*`), notifications / todos / search / preferences (PROJEXA's own Supabase tables).
+8. Delete a Next handler only when no caller needs the same-origin fallback (kill switch) any more.
 
 ## 7. Steps 1 and 1b, done 2026-10-05 (AUDIT-100 A3; B20 closed with them)
 

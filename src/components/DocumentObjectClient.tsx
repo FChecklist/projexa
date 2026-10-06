@@ -197,7 +197,7 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
   async function handleDispose() {
     setDisposing(true);
     try {
-      const res = await fetch(`/api/documents/${documentId}/dispose`, { method: "POST" });
+      const res = await viaPxApi(`/api/documents/${documentId}/dispose`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to dispose document");
       setMessages([{ level: "success", text: `${doc?.name ?? "Document"} disposed` }]);

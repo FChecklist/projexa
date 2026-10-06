@@ -30,7 +30,7 @@ export const CT_RELATIVE = join("supabase", "functions", "projexa-api", "policy.
 export const GOLDEN_PATH = join(ROOT, "ai-os", "audit37", "projexa-api", "parity.golden.json");
 export const CT_GOLDEN_RELATIVE = join("supabase", "functions", "projexa-api", "parity.golden.json");
 
-const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style", "forward_search", "success_status", "cache_control"]);
+const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_query", "timeout_ms", "search_params", "body", "body_actor_email", "error_style", "forward_search", "success_status", "cache_control", "root", "roles", "body_defaults"]);
 /** Route-level keys of projexa-api-routes.json the function does not read (they steer the browser switch and the inventory, not the edge). */
 const ROUTE_KEYS = new Set(["route", "methods", "batch"]);
 
@@ -57,6 +57,12 @@ export function validateRoutes(spec, inventory) {
       if (m.success_status !== undefined && ![200, 201].includes(m.success_status)) problems.push(`${entry.route} ${method}: success_status must be 200 or 201`);
       if (m.cache_control !== undefined && !/^private, max-age=\d+$/.test(m.cache_control)) problems.push(`${entry.route} ${method}: cache_control must be "private, max-age=<n>" (never a shared cache: the rows are the org's own)`);
       if (m.forward_search && m.search_params) problems.push(`${entry.route} ${method}: forward_search and search_params are exclusive`);
+      // AUDIT-100 A2 batch 5: the handler's own role set, the VERIDIAN root (/api/v1 instead of /api/v1/projexa), and the body forms
+      if (m.roles !== undefined && !Object.prototype.hasOwnProperty.call(ROLE_GROUPS, m.roles)) problems.push(`${entry.route} ${method}: roles must name a ROLE_GROUPS group (src/lib/authz/roles.ts)`);
+      if (m.root !== undefined && m.root !== true) problems.push(`${entry.route} ${method}: root is true or absent`);
+      if (m.body !== undefined && !["json", "json_lenient", "empty"].includes(m.body)) problems.push(`${entry.route} ${method}: body must be json, json_lenient or empty`);
+      if (m.body_defaults !== undefined && (!["json", "json_lenient"].includes(m.body) || typeof m.body_defaults !== "object" || Object.values(m.body_defaults).some((v) => typeof v !== "string"))) problems.push(`${entry.route} ${method}: body_defaults is an object of strings, only on a forwarded body`);
+      if (m.body_actor_email !== undefined && (m.body_actor_email !== "always" || m.body === undefined)) problems.push(`${entry.route} ${method}: body_actor_email "always" needs a body`);
     }
     for (const k of Object.keys(entry)) if (!ROUTE_KEYS.has(k)) problems.push(`${entry.route}: unknown route key ${k}`);
     if (entry.batch !== undefined && !(Number.isInteger(entry.batch) && entry.batch >= 1)) problems.push(`${entry.route}: batch must be a positive integer`);
@@ -67,6 +73,25 @@ export function validateRoutes(spec, inventory) {
 
 function edgeRoutes(spec) {
   return (spec.routes ?? []).map((r) => ({ route: r.route, methods: r.methods }));
+}
+
+const literalRank = (route) => route.split("/").filter(Boolean).map((p) => (p.startsWith(":") ? "0" : "1")).join("");
+/** AUDIT-100 A2 batch 5: the Next routes NOT on the edge that win over an edge route for some concrete path (the App Router prefers a literal
+ *  segment: GET /api/drawings/export is that route, not /api/drawings/:id with id "export"). The function answers 404 for such a path and the
+ *  browser switch keeps it same-origin, so a literal sibling that stays on Vercel is never answered as the dynamic edge route. */
+export function shadowRoutes(spec, inventory) {
+  const edge = new Set((spec.routes ?? []).map((r) => r.route));
+  const out = new Set();
+  for (const s of inventory.routes ?? []) {
+    if (edge.has(s.route)) continue;
+    const sp = s.route.split("/").filter(Boolean);
+    for (const e of edge) {
+      const ep = e.split("/").filter(Boolean);
+      if (ep.length !== sp.length) continue;
+      if (ep.every((p, i) => p.startsWith(":") || sp[i].startsWith(":") || p === sp[i]) && literalRank(s.route) > literalRank(e)) out.add(s.route);
+    }
+  }
+  return [...out].sort();
 }
 
 export function sourceData() {
@@ -80,6 +105,7 @@ export function sourceData() {
     defaultTier: DEFAULT_WRITE_TIER,
     mutatingMethods: [...MUTATING_METHODS].sort(),
     edgeRoutes: edgeRoutes(spec),
+    shadowRoutes: shadowRoutes(spec, inventory),
   };
 }
 
@@ -107,17 +133,20 @@ export function render(data = sourceData()) {
   lines.push("");
   lines.push("export type EdgeMethodSpec = {");
   lines.push("  upstream: string; acting_user?: \"explicit\" | \"session\"; fallback: string; required_query?: Record<string, string>; timeout_ms?: number;");
-  lines.push("  search_params?: string[]; body?: \"json\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
+  lines.push("  search_params?: string[]; body?: \"json\" | \"json_lenient\" | \"empty\"; body_actor_email?: \"always\"; error_style?: \"veridian\" | \"plain\"");
   lines.push("  forward_search?: boolean; success_status?: 200 | 201; cache_control?: string");
+  lines.push("  root?: true; roles?: string; body_defaults?: Record<string, string>");
   lines.push("}");
   lines.push("/** DENY BY DEFAULT: the only routes the function answers. Generated from ai-os/audit37/projexa-api-routes.json. */");
   lines.push("export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Record<string, EdgeMethodSpec>> }> = [");
   for (const r of data.edgeRoutes) lines.push(`  ${j(r)},`);
   lines.push("]");
+  lines.push("/** Next routes that stay on Vercel but win over an edge route for some path (a literal sibling of a dynamic edge route): 404 here. */");
+  lines.push(`export const SHADOW_ROUTES: ReadonlyArray<string> = ${j(data.shadowRoutes)}`);
   lines.push("");
   lines.push("/** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */");
   lines.push("export function sourceData() {");
-  lines.push("  return { roleGroups: ROLE_GROUPS, policy: API_WRITE_POLICY, defaultTier: DEFAULT_WRITE_TIER, mutatingMethods: [...MUTATING_METHODS], edgeRoutes: EDGE_ROUTES }");
+  lines.push("  return { roleGroups: ROLE_GROUPS, policy: API_WRITE_POLICY, defaultTier: DEFAULT_WRITE_TIER, mutatingMethods: [...MUTATING_METHODS], edgeRoutes: EDGE_ROUTES, shadowRoutes: SHADOW_ROUTES }");
   lines.push("}");
   lines.push("");
   lines.push(PORTED_DECISION);

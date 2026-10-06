@@ -67,3 +67,20 @@ Branch `audit100/a2-edge-proxy` in both repos (PROJEXA and compliance-tracker).
   refusals; 400; 401; deny by default; policy hash): `evidence/a2-batches2-4-live-smoke-2026-10-06.txt`. Only then does this PR (the
   client list for batches 3+4) merge. ROLLBACK: revert the client PR(s) first, then redeploy the previous good function commit
   (3bb2d06d = v2 table, e5f3471a = v1 table); the Next handlers stay as the same-origin fallback throughout.
+- BATCH 5 (2026-10-06, branch `audit100/a2-batch-5` in both repos): 72 more routes (110 route+methods), the proxies that were plain in all
+  but FORM. `scripts/projexa-api-candidates.mjs` had a whitespace bug (a `const { id } = await params` taken out before the try left two
+  spaces, so 36 truly plain routes were reported "not plain") and read the callVeridian options only in one fixed order; it now parses them
+  key by key. New spec keys (generator + edge handler): `roles` (the handler's own `requireRole(ctx, ROLE_GROUPS.X)`, 8 routes), `root`
+  (veridian-client `root: true`, /api/v1/construction/..., 16 routes), `body` `json_lenient` / `empty`, `body_defaults`. Parity 2358 cases
+  (the 1422 unchanged), incl. a `null_role` identity (passes the write gate, refused only by the own role check: every own role set equals
+  its route's write tier today, so it is the one case that tells them apart), empty / broken / JSON-null bodies, path-walking ids.
+  FOUND AND FIXED (real): (1) 35 Next handler sites put a path parameter RAW into the upstream path (`/policies/${id}`), so `..%2F` in an
+  id walked the VERIDIAN path with the org's key (e.g. `/api/sales-invoices/..%2F..%2Fx/submit` POSTed to another upstream path); 16 of
+  them were already on the edge (which always encoded, a documented difference). All now `encodeURIComponent`; the deriver refuses a raw
+  one. (2) Route precedence: the edge and the browser switch took the FIRST matching pattern, so `/api/materials/issues` would have been
+  `/api/materials/:id` and GET `/api/drawings/export` (an xlsx download that stays on Vercel) the JSON route `/api/drawings/:id`. Both now
+  resolve like the App Router (literal beats dynamic) and the generated `SHADOW_ROUTES` (8 Vercel routes that are literal siblings of a
+  dynamic edge route) are 404 on the edge and same-origin in the browser. 56 more direct fetch() sites in 33 components -> viaPxApi.
+  Inventory: 185 routes `edge:projexa-api`; Vercel-served 198 -> 126 (budget 126). SEEN TO FAIL (each reverted, diff clean): edge roles
+  check removed (8 null_role cases), root ignored (88), first-match routing (21), lenient read strict (8), defaults over the caller (1),
+  shadow list ignored (1 edge, 1 client); Next side: `requireRole` dropped in /api/change-orders POST (recorder: null_role 403 -> 201).

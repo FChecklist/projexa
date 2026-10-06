@@ -69,7 +69,7 @@ export default function SalesQuotationObjectClient({ quotationId }: { quotationI
   async function transition(status: string) {
     setBusy(`status-${status}`);
     try {
-      const res = await fetch(`/api/quotations/${quotationId}`, {
+      const res = await viaPxApi(`/api/quotations/${quotationId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       });
       const data = await res.json().catch(() => null);
@@ -86,7 +86,7 @@ export default function SalesQuotationObjectClient({ quotationId }: { quotationI
   async function createRevision() {
     setBusy("revision");
     try {
-      const res = await fetch(`/api/quotations/${quotationId}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const res = await viaPxApi(`/api/quotations/${quotationId}/revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to create revision");
       toast.success(`Revision v${(quotation?.version ?? 1) + 1} created`);

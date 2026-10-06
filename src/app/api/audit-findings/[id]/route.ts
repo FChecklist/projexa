@@ -11,7 +11,7 @@ export const PATCH = withTiming("PATCH", async function PATCH(_request: Request,
   if (ctx.response) return ctx.response;
   const { id } = await params;
   try {
-    const data = await callVeridian(`/audit-findings/${id}`, { organizationId: ctx.organizationId!, method: "PATCH" });
+    const data = await callVeridian(`/audit-findings/${encodeURIComponent(id)}`, { organizationId: ctx.organizationId!, method: "PATCH" });
     return NextResponse.json(data);
   } catch (err) {
     return veridianErrorResponse(err, "Failed to update audit finding");

@@ -22,6 +22,7 @@ import { Send } from "lucide-react";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 type Rfq = {
   id: string; rfqNumber: number; status: string; postingDate: string;
@@ -64,7 +65,7 @@ export default function RfqObjectClient({ rfqId }: { rfqId: string }) {
   async function send() {
     setSending(true);
     try {
-      const res = await fetch(`/api/procurement/rfqs/${rfqId}/send`, { method: "POST" });
+      const res = await viaPxApi(`/api/procurement/rfqs/${rfqId}/send`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to send RFQ");
       toast.success("RFQ sent to suppliers");

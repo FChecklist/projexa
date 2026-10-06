@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { PlayCircle, FileDown } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDateTime } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -62,7 +63,7 @@ export default function PayrollRunObjectClient({ runId }: { runId: string }) {
   async function process() {
     setProcessing(true);
     try {
-      const res = await fetch(`/api/payroll/runs/${runId}/process`, { method: "POST" });
+      const res = await viaPxApi(`/api/payroll/runs/${runId}/process`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to process payroll run");
       toast.success(`Processed -- ${data.payslipCount ?? 0} payslip(s) generated`);
