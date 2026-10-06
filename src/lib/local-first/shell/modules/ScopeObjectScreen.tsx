@@ -112,7 +112,8 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     setSaving(lineId);
     try {
       // base = what the person SAW in this box before changing it (G-14); the writer keeps the first base of a line with edits already waiting
-      const seen = d.lines.find((l) => l.id === lineId)?.category ?? null;
+      const seenRaw = d.lines.find((l) => l.id === lineId)?.category ?? null;
+      const seen = seenRaw !== null && seenRaw.trim() === "" ? null : seenRaw; // blank and "no category" are the same thing
       await sh.writer.enqueue({ lineId, boqId: boq.id, projectId: boq.projectId, patch: { category: raw.trim() === "" ? null : raw.trim() }, base: { category: seen } });
       setDrafts((cur) => {
         const next = { ...cur };

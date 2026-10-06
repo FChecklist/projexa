@@ -282,7 +282,7 @@ test("R1: with NO internet the app opens from the laptop, shows the BOQ from the
   await test.step("back online: it syncs by itself, once, as the person's intent only", async () => {
     await goOnline(context, net, app);
     await expect.poll(() => patches.length, { timeout: 90_000, message: "the offline edit was never sent after the laptop came back online" }).toBe(1);
-    expect(patches[0]).toEqual({ path: "/api/scope/line-items/lf-line-1", body: { category: "Steel" } });
+    expect(patches[0]).toEqual({ path: "/api/scope/line-items/lf-line-1", body: { category: "Steel", expectedCategory: null } });
     await expect(page.getByTestId("boq-line-waiting")).toHaveCount(0, { timeout: 30_000 });
     await expect.poll(() => personMeta(page, session.userId, "shell:edits"), { message: "the sent edit is still stored as waiting" }).toEqual([]);
   });
@@ -313,7 +313,7 @@ test("R2: with internet but OUR server down (sync service and /api refused) the 
     setNetwork(net, app, "up");
     await evalSettled(page, () => window.dispatchEvent(new Event("focus")));
     await expect.poll(() => patches.length, { timeout: 90_000, message: "the edit was never sent after the server came back" }).toBe(1);
-    expect(patches[0]).toEqual({ path: "/api/scope/line-items/lf-line-2", body: { category: "Civil" } });
+    expect(patches[0]).toEqual({ path: "/api/scope/line-items/lf-line-2", body: { category: "Civil", expectedCategory: null } });
     await expect.poll(() => personMeta(page, session.userId, "shell:edits")).toEqual([]);
   });
 });
