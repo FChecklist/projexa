@@ -18,14 +18,14 @@ export function ConnectAuthorizeClient({ payload }: { payload: string }) {
 
   if (!request) {
     return (
-      <main className="mx-auto max-w-md p-6" data-testid="connect-invalid">
+      <div className="mx-auto max-w-md p-6" data-testid="connect-invalid">
         <Card>
           <CardHeader>
             <CardTitle>This sign-in request is not valid</CardTitle>
           </CardHeader>
           <CardContent>Close this window and start again from your AI tool.</CardContent>
         </Card>
-      </main>
+      </div>
     );
   }
 
@@ -51,7 +51,7 @@ export function ConnectAuthorizeClient({ payload }: { payload: string }) {
   }
 
   return (
-    <main className="mx-auto max-w-md p-6" data-testid="connect-authorize">
+    <div className="mx-auto max-w-md p-6" data-testid="connect-authorize">
       <Card>
         <CardHeader>
           <CardTitle>Let {request.clientName} use PROJEXA as you?</CardTitle>
@@ -81,6 +81,6 @@ export function ConnectAuthorizeClient({ payload }: { payload: string }) {
           </div>
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }
