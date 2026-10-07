@@ -3,61 +3,117 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Add PROJEXA to your AI</title>
+<title>Use your AI with PROJEXA</title>
 <style>
-  body { font: 17px/1.55 system-ui, sans-serif; max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; color: #1b2430; background: #fffdf9; }
-  h1 { font-size: 1.7rem; margin-bottom: .2rem; }
-  h2 { font-size: 1.2rem; margin-top: 2rem; }
-  code, .addr { background: #eef3f2; padding: .15rem .4rem; border-radius: 4px; word-break: break-all; }
-  .addr { display: block; padding: .7rem .8rem; margin: .6rem 0; font-size: .95rem; user-select: all; }
-  .note { background: #fff3e2; border-left: 4px solid #f5820a; padding: .6rem .9rem; margin: 1rem 0; }
-  ol li { margin: .35rem 0; }
+  :root { --ink:#1b2430; --muted:#4a5666; --line:#d9dee4; --bg:#fffdf9; --teal:#0b6b5f; --saffron:#a55300; --card:#f4f7f7; }
+  * { box-sizing: border-box; }
+  body { font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 44rem; margin: 0 auto; padding: 1.5rem 1rem 5rem; color: var(--ink); background: var(--bg); }
+  h1 { font-size: 1.8rem; line-height: 1.2; margin: .2rem 0 .4rem; }
+  h2 { font-size: 1.3rem; margin: 2.4rem 0 .6rem; padding-top: 1.2rem; border-top: 2px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 1.6rem 0 .4rem; }
+  p, li { margin: .45rem 0; }
+  .lead { color: var(--muted); font-size: 1.05rem; }
+  .pick { display: grid; gap: .8rem; margin: 1.2rem 0; }
+  .pick a { display: block; text-decoration: none; color: inherit; border: 2px solid var(--line); border-radius: 10px; padding: .9rem 1rem; background: var(--card); }
+  .pick a b { display: block; font-size: 1.1rem; color: var(--teal); }
+  .tag { display: inline-block; font-size: .8rem; padding: .05rem .5rem; border-radius: 99px; background: var(--teal); color: #fff; margin-left: .4rem; vertical-align: middle; }
+  ol.steps { padding-left: 0; counter-reset: s; list-style: none; }
+  ol.steps > li { counter-increment: s; position: relative; padding: .55rem .8rem .55rem 3rem; margin: .5rem 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: .8rem; top: .5rem; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--teal); color: #fff; text-align: center; font-weight: 600; line-height: 1.7rem; }
+  code, .addr { background: #eaf0ef; padding: .12rem .4rem; border-radius: 4px; word-break: break-all; }
+  .addr { display: block; padding: .7rem .8rem; margin: .6rem 0; font-size: .95rem; user-select: all; border: 1px dashed var(--teal); }
+  .note { background: #fff3e2; border-left: 4px solid var(--saffron); padding: .6rem .9rem; margin: 1rem 0; }
+  .good { background: #e8f5ef; border-left: 4px solid var(--teal); padding: .6rem .9rem; margin: 1rem 0; }
+  details { border: 1px solid var(--line); border-radius: 10px; padding: .4rem .9rem; margin: .6rem 0; background: #fff; }
+  summary { cursor: pointer; font-weight: 600; padding: .3rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  td, th { border: 1px solid var(--line); padding: .45rem .6rem; text-align: left; vertical-align: top; }
+  th { background: var(--card); }
 </style>
 </head>
 <body>
-<h1>Add PROJEXA to your AI</h1>
-<p>Use ChatGPT, Claude or Gemini to work on your PROJEXA projects. You do it once. After that you just talk to your AI.</p>
+<h1>Use your AI with PROJEXA</h1>
+<p class="lead">Let Claude or ChatGPT read your projects, build reports and prepare changes for you. You set it up once. After that you just talk to your AI.</p>
 
-<h2>Step 1: copy this address</h2>
+<div class="pick">
+  <a href="#claude"><b>Claude <span class="tag">recommended</span></b>Add PROJEXA once. Claude then works on its own: it looks things up, runs reports and can make changes for you. Works on the free plan.</a>
+  <a href="#chatgpt"><b>ChatGPT</b>Nothing to install: copy one prompt from PROJEXA and paste it. ChatGPT reads your projects and answers; for any change it gives you a link to tap.</a>
+</div>
+<p>Either way: your AI sees only what your own role allows, never more. You can switch it off at any time (see the end of each part).</p>
+
+<h2 id="claude">A. Claude (recommended)</h2>
+<p>You add PROJEXA to Claude as a <b>connector</b>. This takes about two minutes. You need a Claude account (free is enough) and your PROJEXA login.</p>
+
+<h3>Step 1. Copy this address</h3>
 <span class="addr">https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-oauth/mcp</span>
 
-<h2>Step 2: paste it into your AI</h2>
-
-<h3>Claude</h3>
-<ol>
-  <li>Open Claude and go to <b>Settings</b>, then <b>Connectors</b>.</li>
-  <li>Click <b>Add custom connector</b>.</li>
-  <li>Type the name <code>PROJEXA</code> and paste the address from Step 1. Click <b>Add</b>.</li>
-  <li>Click <b>Connect</b>. A PROJEXA page opens. Sign in if asked, then click <b>Allow</b>.</li>
+<h3>Step 2. Add it in Claude</h3>
+<ol class="steps">
+  <li>Open <b>claude.ai</b> and sign in. Click your name or initials, then <b>Settings</b>.</li>
+  <li>Open <b>Connectors</b>.</li>
+  <li>Click <b>Add custom connector</b>. Type the name <code>PROJEXA</code>, paste the address from Step 1, and click <b>Add</b>.</li>
+  <li>Click <b>Connect</b> next to PROJEXA. A PROJEXA page opens.</li>
+  <li>On that page, <b>sign in to PROJEXA</b> if it asks. You will then see: <i>"Let Claude use PROJEXA as you?"</i></li>
+  <li>Click <b>Allow</b>. (Leave the small box ticked off unless you want Claude to make changes without asking you each time.) You are sent back to Claude and PROJEXA shows as connected.</li>
 </ol>
+<div class="note"><b>Using Claude for a team (Team or Enterprise plan)?</b> The Claude owner adds the connector once in <b>Admin settings, Connectors</b>. Then each person opens Settings, Connectors, and clicks <b>Connect</b> next to PROJEXA, and clicks Allow.</div>
 
-<h3>ChatGPT</h3>
-<ol>
-  <li>Open ChatGPT, then <b>Settings</b>, then <b>Apps</b> (or <b>Connectors</b>).</li>
-  <li>Turn on <b>Developer mode</b> if it asks (some plans need it for your own connector).</li>
-  <li>Click <b>Create</b> or <b>Add</b>, name it <code>PROJEXA</code>, and paste the address from Step 1.</li>
-  <li>Choose <b>OAuth</b> / sign in when asked. A PROJEXA page opens. Click <b>Allow</b>.</li>
+<h3>Step 3. Use it</h3>
+<ol class="steps">
+  <li>Start a new chat. Next to the message box, open the tools or <b>+</b> menu and make sure <b>PROJEXA</b> is switched on.</li>
+  <li>Type: <code>Using PROJEXA, list my projects and tell me what needs my attention.</code></li>
+  <li>Claude may ask permission before it uses a tool. Choose <b>Allow</b>. For reading, <b>Always allow</b> is fine. Keep asking for anything that changes or removes data.</li>
 </ol>
+<div class="good"><b>A good first answer</b> shows your projects as a numbered list, then a menu of areas (where things stand, scope of work and BOQ, work progress, budget, billing, change orders, manpower, schedule, timesheets, documents, projects). Every answer ends with three lines: <i>DONE</i> (what it read or did), <i>NEXT</i> (your options) and <i>ASK</i> (what it needs from you).</div>
 
-<h3>Gemini</h3>
-<ol>
-  <li>Open Gemini, then <b>Settings</b>, then <b>Connected apps</b> (or your company's Gemini admin page).</li>
-  <li>Add a custom MCP server and paste the address from Step 1.</li>
-  <li>When it asks you to sign in, a PROJEXA page opens. Click <b>Allow</b>.</li>
+<h3>What Claude can do</h3>
+<table>
+  <tr><th>You ask</th><th>What happens</th></tr>
+  <tr><td>Reports, status, problem check</td><td>Runs them straight away and explains the result in plain words. It never invents figures: it quotes what PROJEXA returns.</td></tr>
+  <tr><td>Add or edit something (a task, progress, a document link, a meeting)</td><td>Done straight away only if you allowed that on the Allow page. Otherwise Claude prepares it and gives you a confirm link to tap.</td></tr>
+  <tr><td>Delete or cancel something, or larger actions (a BOQ, a change order, a new project)</td><td>It shows you exactly what will go, and waits for your tap.</td></tr>
+  <tr><td>Upload a file, save a PDF, share to WhatsApp</td><td>These stay with you, in PROJEXA. Claude cannot send files. Upload the file in PROJEXA, then ask Claude to record it.</td></tr>
+</table>
+
+<details><summary>Something is not working</summary>
+  <p><b>I do not see "Add custom connector".</b> Custom connectors depend on your Claude plan and app version. Make sure you are on claude.ai (the web) and signed in. On a Team or Enterprise plan, ask your Claude owner to add it first.</p>
+  <p><b>"Could not connect" or the PROJEXA page does not open.</b> Check the address has no spaces or missing letters. Allow pop-ups for claude.ai. Sign in to PROJEXA in the same browser first (open projexa-ai.com), then press Connect again.</p>
+  <p><b>Claude does not use PROJEXA in my chat.</b> Open the tools or + menu in that chat and switch PROJEXA on. Then ask again and mention PROJEXA: "Using PROJEXA, ...".</p>
+  <p><b>Claude says my connection expired.</b> The connection lasts 30 days. Press <b>Connect</b> next to PROJEXA in Settings, Connectors, and click Allow again.</p>
+  <p><b>It says "that function is not available" or "no projects".</b> Your role may not allow it. Ask your PROJEXA admin.</p>
+</details>
+
+<h3>Switch it off</h3>
+<p>In Claude: Settings, Connectors, PROJEXA, then <b>Remove</b> (or Disconnect). In PROJEXA: open your AI link settings and revoke the link named <b>Claude (sign-in)</b>. It stops working at once.</p>
+
+<h2 id="chatgpt">B. ChatGPT</h2>
+<p>This uses one prompt that you copy from PROJEXA. There is nothing to install. ChatGPT reads your projects from the page that prompt points to. It can answer questions and build reports. For a change, it gives you a link and you tap <b>Confirm</b>.</p>
+
+<ol class="steps">
+  <li>Sign in to PROJEXA (projexa-ai.com). Click the <b>Connect</b> button at the top and then <b>Prompt copied</b>. The whole message is now on your clipboard.</li>
+  <li>Open <b>chatgpt.com</b> and start a <b>new chat</b>. Switch <b>Search</b> on (in the tools or + menu next to the message box). ChatGPT only opens web addresses when Search is on.</li>
+  <li>Paste the message and press Enter. Do not add anything else and do not paste anything again later.</li>
+  <li>ChatGPT shows your projects as a numbered list. Type a project number, then ask for what you need.</li>
 </ol>
-<p class="note">Menu names change often. If you do not see one of these words, look for "connector", "app" or "MCP". Your company's admin may have to switch it on first.</p>
+<div class="good"><b>A good first answer</b> shows your projects numbered, a menu of areas, and ends with <i>DONE</i>, <i>NEXT</i> and <i>ASK</i>. Ask next, for example: <code>Show me the Scope of work and BOQ of Project 15.</code> or <code>Check this project for problems.</code></div>
 
-<h2>What your AI can do</h2>
-<ul>
-  <li>Read your projects and records, and prepare changes. <b>By default you confirm each change</b> inside PROJEXA. On the Allow page you can tick a box to let it make changes directly instead.</li>
-  <li>It sees only what your own role allows, never more.</li>
-  <li>The connection lasts 30 days. Then your AI will ask you to Allow again.</li>
-</ul>
+<h3>Making a change with ChatGPT</h3>
+<ol class="steps">
+  <li>Ask in plain words, for example <code>Record 10% progress on item EX-01.</code></li>
+  <li>ChatGPT shows you what it will do and gives you one link on its own line.</li>
+  <li>Click the link. A PROJEXA page shows the change in plain words (and, for a deletion, exactly what will be removed). Tap <b>Confirm</b>.</li>
+  <li>Tell ChatGPT it is done, and it checks.</li>
+</ol>
+<div class="note">Treat the message you copied like a password: it lets an AI act as you, within your role. Use it only in your own chat, never in a shared chat or team workspace.</div>
 
-<h2>Try it</h2>
-<p>Ask your AI: <i>"Using PROJEXA, list my projects and tell me what needs my attention."</i></p>
+<details><summary>Something is not working</summary>
+  <p><b>ChatGPT says it cannot open the address.</b> Check that Search is on and that you started a <b>new chat</b>. Paste the message again as the first message. The address must be at the very end.</p>
+  <p><b>It lists projects but cannot show details.</b> This used to happen when it tried to open a second address. If it happens, say: <code>Everything is on the page I gave you. Read it again and answer from it.</code></p>
+  <p><b>It says the link has expired.</b> Links last a few days. Go back to PROJEXA, press Connect and Prompt copied again, and start a new chat.</p>
+  <p><b>I want it to make changes without tapping each time.</b> Use Claude with the connector (part A) and tick the box on the Allow page. ChatGPT's free and Plus plans cannot add a connector.</p>
+</details>
 
-<h2>Switch it off</h2>
-<p>Open PROJEXA, go to your AI link settings, and revoke the link named after your AI. It stops working at once.</p>
+<h3>Switch it off</h3>
+<p>Open your AI link settings in PROJEXA and revoke the link. The pasted message stops working at once.</p>
 </body>
 </html>
