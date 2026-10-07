@@ -13,6 +13,8 @@ export function ConnectAuthorizeClient({ payload }: { payload: string }) {
   const request = useMemo(() => decodeConsentPayload(payload), [payload]);
   const [phase, setPhase] = useState<Phase>("ask");
   const [message, setMessage] = useState("");
+  // Default: the AI prepares changes and the person confirms each one in PROJEXA (level 0). Direct changes are an explicit opt-in (level 1).
+  const [direct, setDirect] = useState(false);
 
   if (!request) {
     return (
@@ -31,7 +33,7 @@ export function ConnectAuthorizeClient({ payload }: { payload: string }) {
     if (!request) return;
     setPhase("working");
     try {
-      const minted = await getAwlClient().mintUserLink({ days: LINK_DAYS, label: `${request.clientName} (sign-in)` });
+      const minted = await getAwlClient().mintUserLink({ days: LINK_DAYS, label: `${request.clientName} (sign-in)`, level: direct ? 1 : 0 });
       const token = tokenFromLink(minted.link);
       if (!token) throw new Error("The link could not be read.");
       const res = await fetch(`${OAUTH_BASE}/approve`, {
@@ -56,10 +58,14 @@ export function ConnectAuthorizeClient({ payload }: { payload: string }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <ul className="list-disc space-y-1 pl-5 text-sm">
-            <li>It can read your projects and records, and draft changes. You confirm every change in PROJEXA.</li>
+            <li>It can read your projects and records, and prepare changes for you. Unless you tick the box below, you confirm each change in PROJEXA before it happens.</li>
             <li>It sees only what your own role allows, never more.</li>
             <li>It works for {LINK_DAYS} days. You can switch it off any time from your AI link settings.</li>
           </ul>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={direct} onChange={(e) => setDirect(e.target.checked)} disabled={phase === "working"} data-testid="connect-direct" />
+            <span>Also let it make changes directly, without asking me each time (add, edit and delete, within my role).</span>
+          </label>
           {phase === "error" && (
             <p role="alert" className="text-sm text-red-600" data-testid="connect-error">
               {message}

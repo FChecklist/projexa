@@ -119,7 +119,7 @@ export type AwlClient = {
   newProject: (input: { days: AwlDays }) => Promise<AwlMinted>
   /** A USER-WIDE link: not tied to one project. Pasted into an outside AI, it lists all the person's projects (plus "Report on all" and
    *  "Create New Project") and works in whichever one they choose. Always Read-and-draft (level 0); takes no project. */
-  mintUserLink: (input: { days: AwlDays; label?: string }) => Promise<AwlMinted>
+  mintUserLink: (input: { days: AwlDays; label?: string; level?: AwlLevel }) => Promise<AwlMinted>
   /** Every link of the person (GET /links with no project). Optional so the screens' test fakes need not grow it; the real client has it.
    *  Used by the invite welcome e-mail (AUDIT-100 B55) to leave a person's existing link for all projects alone. */
   listAllLinks?: () => Promise<AwlLinkRow[]>
@@ -281,7 +281,7 @@ export function createAwlClient(deps: AwlDeps): AwlClient {
     },
     async mintUserLink(input) {
       const label = input.label?.trim()
-      return parseMinted(await send("POST", "/user-link", { days: input.days, ...(label ? { label } : {}) }), false)
+      return parseMinted(await send("POST", "/user-link", { days: input.days, ...(label ? { label } : {}), ...(input.level === undefined ? {} : { level: input.level }) }), false)
     },
   }
 }

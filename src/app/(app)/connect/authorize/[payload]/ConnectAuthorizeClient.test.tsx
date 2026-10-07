@@ -9,10 +9,10 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 const TOKEN = `pxa_${"cd34".repeat(16)}`;
-const mintCalls: Array<{ days: number; label?: string }> = [];
+const mintCalls: Array<{ days: number; label?: string; level?: number }> = [];
 mock.module("@/lib/ai-work-link-client", () => ({
   getAwlClient: () => ({
-    mintUserLink: async (input: { days: number; label?: string }) => {
+    mintUserLink: async (input: { days: number; label?: string; level?: number }) => {
       mintCalls.push(input);
       return { link: `https://x.supabase.co/functions/v1/ai-work-link/${TOKEN}` };
     },
@@ -52,16 +52,26 @@ describe("the consent screen", () => {
   test("asks one plain question, in the AI tool's own name", () => {
     render(<ConnectAuthorizeClient payload={payload(REQUEST)} />);
     expect(screen.getByText("Let Claude use PROJEXA as you?")).toBeTruthy();
-    expect(screen.getByText(/You confirm every change/)).toBeTruthy();
+    expect(screen.getByText(/you confirm each change in PROJEXA/)).toBeTruthy();
+    expect((screen.getByTestId("connect-direct") as HTMLInputElement).checked).toBe(false);
   });
 
-  test("Allow mints a 30-day link, sends only the token to the service, then goes where the service says", async () => {
+  test("Allow mints a 30-day level-0 link (the person confirms each change), sends only the token to the service, then goes where the service says", async () => {
     answer(200, { redirect: "https://claude.ai/api/mcp/auth_callback?code=abc&state=st" });
     render(<ConnectAuthorizeClient payload={payload(REQUEST)} />);
     fireEvent.click(screen.getByTestId("connect-allow"));
     await waitFor(() => expect(nav).toEqual(["https://claude.ai/api/mcp/auth_callback?code=abc&state=st"]));
-    expect(mintCalls).toEqual([{ days: 30, label: "Claude (sign-in)" }]);
+    expect(mintCalls).toEqual([{ days: 30, label: "Claude (sign-in)", level: 0 }]);
     expect(approveBody).toEqual({ client_id: REQUEST.c, redirect_uri: REQUEST.r, code_challenge: CHALLENGE, state: "st", link_token: TOKEN });
+  });
+
+  test("ticking the box is the only way to ask for direct changes (level 1)", async () => {
+    answer(200, { redirect: "https://claude.ai/api/mcp/auth_callback?code=abc&state=st" });
+    render(<ConnectAuthorizeClient payload={payload(REQUEST)} />);
+    fireEvent.click(screen.getByTestId("connect-direct"));
+    fireEvent.click(screen.getByTestId("connect-allow"));
+    await waitFor(() => expect(nav.length).toBe(1));
+    expect(mintCalls).toEqual([{ days: 30, label: "Claude (sign-in)", level: 1 }]);
   });
 
   test("a refusal by the service stays on the page and says why; nothing is followed", async () => {
