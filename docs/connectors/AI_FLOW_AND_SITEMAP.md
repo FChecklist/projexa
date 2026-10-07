@@ -50,27 +50,16 @@ Marked: **Read** (see it), **Change** (add or edit, follows rule 6), **Not yet**
 
 The live function list backs each line (94 functions: 23 reads, 34 direct changes, 37 changes that become drafts). The AI is shown only what its person's role allows.
 
-## 5. Gaps between this plan and what exists today
+## 5. Gaps (corrected after the audit)
 
-| Gap | Today | Fix |
-|---|---|---|
-| Delete | Only one delete is reachable (`void_material_receipt`). The guide says "deletes included". The backend already has 9 more (change order cancel, attendance, BOQ, BOQ category, meeting, progress entry, saved view, time entry), not exposed. | Expose them as delete changes behind rule 6; correct the guide wording first. |
-| Edit | 10 edit functions. Many records can be created but not edited. | Add an edit per record type, each backed by a tested service function. |
-| New project | The "New project with my AI" action makes an empty project and a level 0 link. | Make it a menu option the AI can run end to end. |
-| Default permission | Links made from the app button are made at the highest level the role allows (direct changes). | Default to ask-first; direct only by the person's own switch. |
-| Menu in every answer | Each page has data but no fixed DONE / NEXT / ASK ending. | Add it to every read, every change result and every tool result. |
-| Guide size | 35 KB, 12 sections, 11 rules. | A short first page (who, the rules, snapshot, menu); each option carries only what it needs. |
-| Gemini | Reads failed in our measurement; likely our `nosnippet` header. | One-header test, then decide. |
-| Connector how-to | Missing from the manual. | Done this session in the setup page and the sign-in layer; add a short section to the manual. |
+The first version of this section claimed deletes, edits and "create project" were missing. The audit showed they exist (141 usable functions, all 10 deletes, create_project); that earlier list came from a demo link whose function list was frozen at 94 when it was made. The real gaps were in the guide, and they are now fixed: it contradicted itself about asking permission, had no menu, no fixed ending and no recipes. The remaining open items are in `AI_SITEMAP_SUMEET_111.md`, section 5.
 
-## 6. Build order
+## 6. Build order (status)
 
-1. Correct the guide and make ask-first the default (small, removes a wrong promise).
-2. The DONE / NEXT / ASK ending and the menu, in the guide, `/workspace`, tool results and the confirm page.
-3. Edit coverage, then the nine deletes, each with real tests and the tick-box confirmation.
-4. New project end to end.
-5. One confirm page for several changes at once.
-6. Real runs: Claude connector, ChatGPT typed-address, Gemini after the header test. These need the owner's accounts and are the proof the AI really behaves.
+1. Guide made level-aware, menu and DONE / NEXT / ASK ending on the first page, recipe cards (section M), fuller connector instructions: **done** (compliance-tracker, branch `feat/ai-flow-sumeet`).
+2. The confirm page already takes up to 20 changes in one link, with a code check and delete flagging: **already existed**.
+3. Defaults: the OAuth consent page asks first by default; the app button keeps its existing two-layer safety (adds and edits direct, deletes and big actions wait for the person unless their own switch is on).
+4. Real runs on Claude, ChatGPT and a reader AI with the Sumeet requirements as the script: **needs the owner's accounts**.
 
 ## 7. PROJEXA is a SaaS product that runs on each user's own computer: what that means for the AI
 
