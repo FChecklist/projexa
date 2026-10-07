@@ -70,6 +70,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/change-orders",
   "/change-orders/[id]",
   "/change-orders/new",
+  "/connect/authorize/[payload]",
   "/copilot",
   "/customers",
   "/customers/[id]",
