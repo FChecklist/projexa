@@ -75,7 +75,7 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
 //              it needs its own entry or the page fails closed and redirects
 //              the recipient of a WhatsApp link to a login screen)
 //   /local/*   the same static on-laptop shell, one document for every sub-path (see PUBLIC_PAGE_PATHS above)
-const PUBLIC_PAGE_PREFIXES: readonly string[] = ["/auth/", "/invite/", "/share/", "/shared/", "/local/"];
+const PUBLIC_PAGE_PREFIXES: readonly string[] = ["/auth/", "/invite/", "/share/", "/shared/", "/local/", "/.well-known/"];
 
 export function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");

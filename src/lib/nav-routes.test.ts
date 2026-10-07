@@ -206,6 +206,8 @@ describe("AppSidebar's declared nav entries (R-81 regression guard)", () => {
 // WHY, which makes the next omission a deliberate decision instead of an
 // oversight nobody notices for months.
 const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
+  // "Sign in with PROJEXA" consent page (AI connectors): an AI tool sends the person here; it is never a place to navigate to.
+  "/connect/authorize/[payload]",
   // Public and auth surfaces -- outside the authenticated app shell entirely,
   // so a sidebar entry would be meaningless.
   "/",
