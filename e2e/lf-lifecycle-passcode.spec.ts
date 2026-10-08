@@ -1,16 +1,16 @@
-import { test, expect, type Browser, type BrowserContext, type Page, type Request } from "@playwright/test";
-import { APP_ORIGIN, stubAppApis } from "./support/boq-local";
+import { test, expect, type BrowserContext, type Request } from "@playwright/test";
+import { stubAppApis } from "./support/boq-local";
 import { fixtureOf, makePerson, newWorld, releaseCaches, stubSyncService } from "./support/lf-lifecycle-stub";
+import { STUB_CODE } from "./support/sign-in";
 
-// AUDIT-100 A17, A22, A23: the passcode sign-in and its recovery, in real Chromium, production build, local Auth stand-in
-// (e2e/support/fake-supabase-server.mjs). No e-mail is ever sent: the Auth calls the page makes are answered inside the browser (page.route),
-// so what is proven is what OUR pages do with them -- which calls they make, in what order, and what the person sees. That an e-mail with the
-// link and the 6 digits really arrives stays an owner step (BLOCKED-OWNER in AUDIT_100_CHECKLIST A17).
-//   A22  daily sign-in is e-mail + 6-digit passcode and nothing else: no e-mail-sending Auth call (recover / otp / resend) is made.
-//   A23  from the sign-in page to an installed workspace takes ONE click (the sign-in button); the install screen has no button to press.
-//   A17  forgot passcode: the request carries the address and comes back through /auth/callback; on ANOTHER browser profile the link does not
-//        sign anyone in by itself, it asks for the address and the 6 digits, refuses a wrong code, accepts the right one, and lets the person
-//        choose a new 6-digit passcode (exactly 6 digits; the new one reaches the Auth service).
+// P1 (replaces AUDIT-100 A17/A22/A23's passcode specs): sign-in is the e-mail and the 6-digit code that was e-mailed, in real Chromium, production
+// build, local Auth stand-in (e2e/support/fake-supabase-server.mjs). No e-mail is ever sent: the Auth calls the page makes are answered inside the
+// browser (page.route), so what is proven is what OUR pages do with them -- which calls they make, in what order, and what the person sees. That an
+// e-mail with the 6 digits really arrives stays an owner step.
+//   A22  the Auth calls of a sign-in are "send the code" (/otp) and "check the code" (/verify): no password grant, no recover, no resend.
+//   A23  from the sign-in page to an installed workspace needs no click beyond the code; the install screen has no button to press.
+//   A17  there is no password to forget: /forgot-password, /reset-password and an old reset link on /auth/callback all land on /login (the last two
+//        with one plain sentence) and make NO Auth call; on /login a wrong code is refused in plain words, the right one signs in.
 
 const STUB = `http://localhost:${Number(process.env.BOQ_LOCAL_SUPABASE_PORT ?? 54399)}`;
 
@@ -48,25 +48,25 @@ async function watchAuth(context: BrowserContext, answer: (req: Request, path: s
   return calls;
 }
 
-const EMAIL_SENDING = /^\/(recover|otp|resend|magiclink)$/;
+const OTP = /^\/(otp|verify)$/;
+const NOT_THE_CODE_FLOW = /^\/(recover|resend|magiclink)$/;
 
-test("A22 + A23: daily sign-in is the address and 6 digits, one click, no e-mail; the workspace then installs by itself", async ({ page, context }) => {
-  const A = makePerson("pcode", "lf-org-1", "Passcode Tower", "Passcode - Structure");
+test("A22 + A23: sign-in is the address and the e-mailed 6 digits; the workspace then installs by itself", async ({ page, context }) => {
+  const A = makePerson("pcode", "lf-org-1", "Code Tower", "Code - Structure");
   const made = await madeSession("pcode-daily@example.invalid");
   A.email = made.email;
   const world = newWorld();
   await stubSyncService(context, world);
   world.persons.set(made.userId, A);
-  const calls = await watchAuth(context, (_r, path) => (path === "/token" ? { status: 200, body: made.session } : null));
+  const calls = await watchAuth(context, (_r, path) => (path === "/otp" ? { status: 200, body: {} } : path === "/verify" ? { status: 200, body: made.session } : null));
   await stubAppApis(page, fixtureOf(A), { userId: made.userId, email: made.email, accessToken: made.accessToken, cookieName: "", cookieValue: "" } as never);
 
-  let clicks = 0;
   await page.goto("/login");
   await page.locator("#email").fill(made.email);
-  await page.locator("#password").fill("123456");
   const started = Date.now();
-  clicks += 1;
   await page.locator('button[type="submit"]').click();
+  await expect(page.locator("#code")).toBeVisible({ timeout: 30_000 });
+  await page.locator("#code").fill(STUB_CODE); // the sixth digit submits by itself
   await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 });
   // the install screen, when it shows, is only a sentence and a percentage: nothing to click
   const dialog = page.getByTestId("workspace-prepare");
@@ -76,74 +76,46 @@ test("A22 + A23: daily sign-in is the address and 6 digits, one click, no e-mail
   await expect.poll(() => releaseCaches(page), { timeout: 120_000 }).toHaveLength(1);
   const ms = Date.now() - started;
 
-  console.log(`A23 sign-in click to installed workspace: ${ms} ms with ${clicks} click(s); auth calls: ${JSON.stringify(calls.map((c) => c.path))}`);
-  expect(clicks).toBeLessThanOrEqual(2);
-  expect(calls.map((c) => c.path)).toContain("/token");
-  expect(calls.filter((c) => EMAIL_SENDING.test(c.path)), "an ordinary sign-in must not send any e-mail").toEqual([]);
-  expect(calls.find((c) => c.path === "/token")?.body).toMatchObject({ email: made.email, password: "123456" });
+  console.log(`A23 send-code click to installed workspace: ${ms} ms; auth calls: ${JSON.stringify(calls.map((c) => c.path))}`);
+  expect(calls.filter((c) => OTP.test(c.path)).map((c) => c.path).slice(0, 2)).toEqual(["/otp", "/verify"]);
+  expect(calls.filter((c) => NOT_THE_CODE_FLOW.test(c.path)), "a code sign-in sends nothing but the code").toEqual([]);
+  expect(calls.find((c) => c.path === "/otp")?.body).toMatchObject({ email: made.email, create_user: true });
+  expect(calls.find((c) => c.path === "/verify")?.body).toMatchObject({ email: made.email, token: STUB_CODE });
 });
 
-test("A17 (this browser): forgot passcode asks for the reset e-mail, which comes back through /auth/callback", async ({ page, context }) => {
-  const calls = await watchAuth(context, (_r, path) => (path === "/recover" ? { status: 200, body: {} } : null));
-  await page.goto("/forgot-password");
-  await page.locator("#email").fill("nobody-here@example.invalid");
+test("A17 (P1): a wrong code is refused in plain words and costs nothing; the right one then signs in", async ({ page, context }) => {
+  const made = await madeSession("pcode-wrong@example.invalid");
+  const calls = await watchAuth(context, (req, path) => {
+    if (path === "/otp") return { status: 200, body: {} };
+    if (path === "/verify") {
+      const b = req.postDataJSON() as { token?: string };
+      return b.token === STUB_CODE ? { status: 200, body: made.session } : { status: 403, body: { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" } };
+    }
+    return null;
+  });
+  await page.goto("/login");
+  await page.locator("#email").fill(made.email);
   await page.locator('button[type="submit"]').click();
-  await expect(page.getByRole("status")).toBeVisible();
-  const recover = calls.find((c) => c.path === "/recover");
-  expect(recover?.body).toMatchObject({ email: "nobody-here@example.invalid" });
-  const sent = await page.evaluate(() => localStorage.getItem("projexa_recovery_email"));
-  expect(sent, "this browser remembers it asked, so its own link signs in directly").toBe("nobody-here@example.invalid");
-  const recoverUrls = await page.evaluate(() => performance.getEntriesByType("resource").map((e) => e.name).filter((n) => n.includes("/auth/v1/recover")));
-  expect(decodeURIComponent(recoverUrls[0] ?? "")).toContain(`${APP_ORIGIN}/auth/callback?redirectTo=/reset-password`);
+  await page.locator("#code").fill("111111");
+  await expect(page.locator("p[role=alert]")).toContainText(/code/i);
+  expect(new URL(page.url()).pathname, "a wrong code must not sign anyone in").toBe("/login");
+  expect(calls.some((c) => c.path === "/verify")).toBe(true);
+  await expect(page.locator("#code")).toHaveValue("");
+  await page.locator("#code").fill(STUB_CODE);
+  await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 });
 });
 
-async function newProfile(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ baseURL: APP_ORIGIN });
-  return { context, page: await context.newPage() };
-}
-
-test("A17 (another browser profile): the link asks for the address and the 6 digits, refuses a wrong code, accepts the right one, and sets a new 6-digit passcode", async ({ browser }) => {
-  const made = await madeSession("pcode-reset@example.invalid");
-  const { context, page } = await newProfile(browser);
-  try {
-    const calls = await watchAuth(context, (req, path) => {
-      if (path === "/verify") {
-        const b = req.postDataJSON() as { token?: string; email?: string; type?: string };
-        return b.token === "654321" && b.email === made.email && b.type === "recovery"
-          ? { status: 200, body: made.session }
-          : { status: 403, body: { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" } };
-      }
-      if (path === "/user") return { status: 200, body: made.session.user };
-      return null;
-    });
-    await page.goto("/auth/callback?token_hash=abc123&type=recovery&redirectTo=/reset-password");
-    await expect(page.getByRole("heading", { name: "Confirm it is you" })).toBeVisible();
-    expect(calls.filter((c) => c.path === "/verify"), "the link must not sign anyone in by itself on a machine that did not ask").toEqual([]);
-
-    await page.getByPlaceholder("Email").fill(made.email);
-    await page.getByPlaceholder("6-digit code").fill("111111");
-    await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page.locator("p[role=alert]")).toContainText(/invalid|expired/i);
-    expect(new URL(page.url()).pathname).toBe("/auth/callback");
-
-    await page.getByPlaceholder("6-digit code").fill("654321");
-    await page.getByRole("button", { name: "Continue" }).click();
-    await page.waitForURL((u) => u.pathname === "/reset-password", { timeout: 30_000 });
-
-    await expect(page.locator("#password")).toHaveAttribute("maxlength", "6");
-    await page.locator("#password").fill("12345");
-    await page.locator("#confirm").fill("12345");
-    await page.locator('button[type="submit"]').click();
-    await expect(page.locator("p[role=alert]")).toBeVisible();
-    expect(calls.filter((c) => c.path === "/user" && c.method === "PUT"), "a 5-digit passcode never reaches the Auth service").toEqual([]);
-
-    await page.locator("#password").fill("246810");
-    await page.locator("#confirm").fill("246810");
-    await page.locator('button[type="submit"]').click();
-    await expect.poll(() => calls.filter((c) => c.path === "/user" && c.method === "PUT").length, { timeout: 30_000 }).toBe(1);
-    expect(calls.find((c) => c.path === "/user" && c.method === "PUT")?.body).toMatchObject({ password: "246810" });
-    expect(calls.filter((c) => c.path === "/verify").at(-1)?.body).toMatchObject({ email: made.email, token: "654321", type: "recovery" });
-  } finally {
-    await context.close();
-  }
+test("A17 (P1): there is no password to forget: the old pages land on /login and make no Auth call", async ({ page, context }) => {
+  const calls = await watchAuth(context, () => null);
+  await page.goto("/forgot-password");
+  expect(new URL(page.url()).pathname).toBe("/login");
+  await page.goto("/reset-password");
+  await expect(page).toHaveURL(/\/login\?notice=no-password/);
+  await expect(page.getByTestId("login-notice")).toContainText("no longer uses a password");
+  // an old reset e-mail link, in the query-string form and in the fragment form
+  await page.goto("/auth/callback?token_hash=abc123&type=recovery&redirectTo=/reset-password");
+  await expect(page).toHaveURL(/\/login\?notice=no-password/, { timeout: 30_000 });
+  await page.goto("/auth/callback#access_token=a&refresh_token=b&type=recovery");
+  await expect(page).toHaveURL(/\/login\?notice=no-password/, { timeout: 30_000 });
+  expect(calls.filter((c) => c.path === "/verify" || c.path === "/recover" || c.method === "PUT"), "an old reset link must not sign anyone in or send anything").toEqual([]);
 });

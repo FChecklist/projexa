@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { signInByCode, realTestCode } from "./support/sign-in";
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 // AUDIT-100 (link-invited-members): EVERY MEMBER GETS THEIR OWN VERIDIAN USER, END TO END against the REAL backend
@@ -133,15 +134,13 @@ async function newLaptop(browser: Browser): Promise<{ context: BrowserContext; p
 }
 async function submitLogin(page: Page, who: Account, leaves: (u: URL) => boolean): Promise<void> {
   for (let attempt = 0; ; attempt++) {
-    await page.locator("#email").fill(who.email);
-    await page.locator("#password").fill(who.password);
-    await page.locator('button[type="submit"]').click();
     try {
-      await page.waitForURL(leaves, { timeout: 60_000 });
+      await signInByCode(page, who.email, { code: realTestCode, stayOnPage: true, leaves, timeoutMs: 60_000 });
       return;
     } catch (err) {
-      if (attempt >= 4 || !(await page.locator("form").innerText()).match(/fetch|network|timed? ?out/i)) throw err;
+      if (attempt >= 4 || !(await page.locator("form").innerText().catch(() => "")).match(/fetch|network|timed? ?out/i)) throw err;
       await page.waitForTimeout(5_000);
+      await page.reload();
     }
   }
 }

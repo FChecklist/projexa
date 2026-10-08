@@ -1,4 +1,5 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { signInByCode, realTestCode } from "./support/sign-in";
 
 // AUDIT-100 B6 ("an account gets its org attached without manual SQL") and B56 ("invite accept attaches the org and starts the install"),
 // END TO END against the REAL backend (see playwright.audit37-real.config.ts): a production build of PROJEXA served by `next start`, the real
@@ -76,15 +77,13 @@ async function newLaptop(browser: Browser, { localFirst }: { localFirst: boolean
 /** Fills and submits the real sign-in form that is already on screen; retries only when the form says the link to Supabase dropped. */
 async function submitLogin(page: Page, who: Account, leaves: RegExp | ((u: URL) => boolean)): Promise<void> {
   for (let attempt = 0; ; attempt++) {
-    await page.locator("#email").fill(who.email);
-    await page.locator("#password").fill(who.password);
-    await page.locator('button[type="submit"]').click();
     try {
-      await page.waitForURL(leaves, { timeout: 60_000 });
+      await signInByCode(page, who.email, { code: realTestCode, stayOnPage: true, leaves, timeoutMs: 60_000 });
       return;
     } catch (err) {
-      if (attempt >= 4 || !(await page.locator("form").innerText()).match(/fetch|network|timed? ?out/i)) throw err;
+      if (attempt >= 4 || !(await page.locator("form").innerText().catch(() => "")).match(/fetch|network|timed? ?out/i)) throw err;
       await page.waitForTimeout(5_000);
+      await page.reload();
     }
   }
 }

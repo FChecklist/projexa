@@ -8,7 +8,7 @@ import { join } from "node:path";
 const APP = join(import.meta.dir, "..");
 const files = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(join(dir, e.name)) : [join(dir, e.name)]));
-const sources = ["login", "signup", "forgot-password"].flatMap((d) => files(join(APP, d))).filter((f) => /\.tsx?$/.test(f) && !/\.test\./.test(f));
+const sources = ["login", "signup", "forgot-password", "reset-password", "auth"].flatMap((d) => files(join(APP, d))).filter((f) => /\.tsx?$/.test(f) && !/\.test\./.test(f));
 
 describe("P1 sign-in has no password", () => {
   test("no password field, signInWithPassword, signUp(password) or passcode logic in the sign-in pages", () => {
@@ -34,10 +34,20 @@ describe("P1 sign-in has no password", () => {
     expect(s).toContain("CODE_LENGTH");
   });
 
-  test("signup and forgot-password are redirects to the one door", () => {
+  test("signup and forgot-password are redirects to the one door; reset-password is one too, with its plain sentence", () => {
     for (const d of ["signup", "forgot-password"]) {
       const s = readFileSync(join(APP, d, "page.tsx"), "utf8");
       expect(s).toContain('redirect("/login")');
     }
+    expect(readFileSync(join(APP, "reset-password", "page.tsx"), "utf8")).toContain('redirect("/login?notice=no-password")');
+  });
+
+  test("the auth callback no longer offers a recovery code form or any password step", () => {
+    const s = readFileSync(join(APP, "auth", "callback", "page.tsx"), "utf8");
+    expect(s).not.toContain("Confirm it is you");
+    expect(s).not.toContain("isRequestingMachine");
+    expect(s).not.toContain("projexa_recovery_email");
+    expect(s).not.toMatch(/router\.replace\(["']\/reset-password/);
+    expect(s).toContain("no-password");
   });
 });

@@ -83,6 +83,7 @@
       "changeEmail": "Use a different email",
       "needConnection": "You need a connection for the first sign-in on this machine, because the code is sent by email.",
       "genericError": "Sign-in failed",
+    "noPassword": "PROJEXA no longer uses a password. Type your email and we will send you a 6-digit code.",
       "provisionError": "Failed to finish setting up your workspace"
     },
     "signup": {

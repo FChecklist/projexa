@@ -1,5 +1,6 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { USERS, type UserKey } from "./../users";
+import { signInByCode, realTestCode } from "./sign-in";
 
 // AUDIT-100 (B7, B8, B13, B17, B18, B20, B28): shared helpers for the specs that run against the REAL backend (production build of PROJEXA on
 // :3100 + the real projexa-sync service and the real PROJEXA Supabase project). Nothing here is stubbed. Accounts are the documented E2E test org
@@ -11,12 +12,8 @@ export const baseURL = `http://localhost:${process.env.AUDIT37_PORT ?? 3100}`;
 export async function loginAndPrepare(page: Page, who: UserKey): Promise<void> {
   // this development laptop's link to Supabase drops now and then ("Failed to fetch" under the form): ask again, like a person would
   for (let attempt = 0; ; attempt++) {
-    await page.goto("/login");
-    await page.locator("#email").fill(USERS[who].email);
-    await page.locator("#password").fill(USERS[who].password);
-    await page.locator('button[type="submit"]').click();
     try {
-      await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 }); // (a "Failed to fetch" under the form leaves the page on /login)
+      await signInByCode(page, USERS[who].email, { code: realTestCode, timeoutMs: 60_000 }); // (a "Failed to fetch" under the form leaves the page on /login)
       break;
     } catch (err) {
       if (attempt >= 5) throw err;

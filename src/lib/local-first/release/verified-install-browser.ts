@@ -2,6 +2,7 @@
 // as boot.ts's runLocalFirstBoot uses for its quiet install (same installer, registry client, device meta, service worker client); the
 // difference is only that this one is awaited by the screen and its failures are thrown, so the screen cannot reach 100% without it.
 
+import { takePrewarmedBundle } from "./prewarm";
 import { LOCAL_DB_VERSION } from "../local-db";
 import { deviceMetaStore, openDeviceMeta } from "../device-meta";
 import { createIdentityStore, getDurableIdentity } from "../identity";
@@ -74,6 +75,7 @@ export function browserVerifiedInstallDeps(personId: string | null, localFirstOn
             const reply = await sw.useRelease(version, personId, localFirstOn());
             if (!reply || !reply.ok) throw new Error(reply ? String(reply.error ?? "refused") : "the worker did not answer");
           },
+          takePrewarmedBundle,
           registry: async (wanted) => (await client.ensureRegistered(undefined, wanted))?.current ?? null,
           recordInstall: (record) => client.recordInstall(record),
         });

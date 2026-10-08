@@ -1,3 +1,6 @@
+// P1 (2026-10-08): sign-in is the e-mail and an e-mailed 6-digit code now; the specs get the code for these TEST accounts from e2e/support/sign-in.ts
+// (Supabase admin API). The shared password below is no longer typed anywhere; it remains only because the accounts were provisioned with it.
+//
 // Real seeded PROJEXA login accounts for "Meridian Construction Group (E2E
 // Test Org)", per PHASE1_SEED_REPORT.md section (c) and
 // scripts/phase1-provision-projexa-accounts.mjs. Password is shared across

@@ -118,7 +118,7 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/floor-plans",
   "/floor-plans/[id]",
   "/floor-plans/[id]/walkthrough",
-  // G-08: the password recovery route -- see nav-routes.test.ts for why
+  // P1: old password pages, now redirects onto /login -- see nav-routes.test.ts for why
   // neither page is in the sidebar.
   "/forgot-password",
   "/grc",

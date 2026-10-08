@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { STUB_CODE, stubAuthOtp } from "./support/sign-in"
 import { stubAppApis, STUB_PORT } from "./support/boq-local"
 import { dumpDb, fixtureOf, makePerson, newWorld, personDb, personMeta, releaseCaches, stubSyncService } from "./support/lf-lifecycle-stub"
 import { countByDest, leftTheLaptop, trackTraffic } from "./support/lf-vercel-budget"
@@ -8,7 +9,7 @@ import { countByDest, leftTheLaptop, trackTraffic } from "./support/lf-vercel-bu
 //
 //     bunx playwright test -c playwright.local-first.fast.config.ts lf-lifecycle-first-use
 //
-//   open the sign-in page -> type the email -> type the 6-digit passcode -> press Sign in   (the real login form, the real Auth client; only the Auth
+//   open the sign-in page -> type the email -> press Send me a code -> type the 6-digit code (it submits itself)   (the real login form, the real Auth client; only the Auth
 //   service is the local stand-in)  -> PROJEXA installs itself with NO further action  -> the person opens PROJEXA again (reload) and it comes from
 //   the laptop  -> Scope (BOQ) -> the BOQ  (the first useful screen: the lines on screen)  -> the network is cut, the person edits a line (it waits on the
 //   laptop)  -> the network is back and the edit reaches the server exactly once.
@@ -25,21 +26,20 @@ import { countByDest, leftTheLaptop, trackTraffic } from "./support/lf-vercel-bu
 // FIXED (AUDIT-100 A3, VERCEL_ROUTE_PLAN.md step 1): the first session used to stay on the legacy server-rendered pages (/dashboard) until the person
 // reloaded; now the page hands over to the shell on the laptop by itself once the install and the first copy are done (no action of the person).
 
-const PASSCODE = "493817" // six digits, a made-up value for the stand-in; the stand-in accepts any
 const SIGN_IN_TO_READY_BUDGET_MS = 90_000
 const ACTIONS_TO_FIRST_USEFUL_SCREEN_BUDGET = 6 // measured 6 since A3 step 1 (was 7: the person had to open PROJEXA again)
 const SETUP_ACTIONS_AFTER_SIGN_IN_BUDGET = 2 // target of the audit: under 2 clicks of set-up; measured 0
 
 type Step = { name: string; user: boolean; startedMs: number; ms: number }
 
-test("A19/A23: a new person signs in with the 6-digit passcode, PROJEXA installs itself with no set-up step, the BOQ opens from the laptop, an offline edit is sent once", async ({ page, context }) => {
+test("A19/A23: a new person signs in with the e-mailed 6-digit code, PROJEXA installs itself with no set-up step, the BOQ opens from the laptop, an offline edit is sent once", async ({ page, context }) => {
   test.setTimeout(420_000)
   const person = makePerson("fu", "lf-org-1", "First Use Tower", "First Use - Structure")
   person.email = "first-use@example.invalid"
   const world = newWorld()
   await stubSyncService(context, world)
 
-  // the Auth stand-in mints the person's session; the real login form's password grant is answered with it (the stand-in's own /token would
+  // the Auth stand-in mints the person's session; the real login form's code check (verifyOtp) is answered with it (the stand-in's own /token would
   // mint a different random person on every call, which the sync stub could not know)
   const made = (await (await fetch(`http://localhost:${STUB_PORT}/__session?email=${encodeURIComponent(person.email)}`)).json()) as { userId: string; cookieValue: string; accessToken: string; cookieName: string; email: string }
   const authSession = JSON.parse(Buffer.from(made.cookieValue.replace(/^base64-/, ""), "base64url").toString("utf8")) as unknown
@@ -47,11 +47,7 @@ test("A19/A23: a new person signs in with the 6-digit passcode, PROJEXA installs
   const app = await stubAppApis(page, fixtureOf(person), made)
   const patchBodies: string[] = []
   page.on("request", (r) => { if (r.method() === "PATCH" && /\/api\/scope\/line-items\//.test(r.url())) patchBodies.push(r.postData() ?? "") })
-  const grants: string[] = []
-  await context.route("**/auth/v1/token*", async (route) => {
-    grants.push(route.request().postData() ?? "")
-    await route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*", "content-type": "application/json" }, body: JSON.stringify(authSession) })
-  })
+  const auth = await stubAuthOtp(context, authSession)
   const traffic = trackTraffic(context)
 
   const steps: Step[] = []
@@ -64,12 +60,16 @@ test("A19/A23: a new person signs in with the 6-digit passcode, PROJEXA installs
 
   await act("open the sign-in page", () => page.goto("/login"))
   await act("type the email", () => page.locator("#email").fill(person.email))
-  await act("type the 6-digit passcode", () => page.locator("#password").fill(PASSCODE))
+  await act("press Send me a code", () => page.locator('button[type="submit"]').click())
+  await expect(page.locator("#code")).toBeVisible({ timeout: 30_000 })
+  expect(auth.otpRequests.length, "the real form never asked the Auth service for a code").toBe(1)
+  expect(JSON.parse(auth.otpRequests[0]!), "the code is asked for this e-mail address").toMatchObject({ email: person.email })
   const pressed = Date.now()
   const actionsBeforeInstall = userActions() + 1
-  await act("press Sign in", () => page.locator('button[type="submit"]').click())
-  expect(grants.length, "the real form never asked the Auth service").toBeGreaterThan(0)
-  expect(JSON.parse(grants[0]!), "the passcode is sent as the password, six digits").toMatchObject({ email: person.email, password: PASSCODE })
+  // the sixth digit submits by itself: typing the code is the last action
+  await act("type the 6-digit code from the e-mail", () => page.locator("#code").fill(STUB_CODE))
+  await expect.poll(() => auth.verifies.length, { timeout: 30_000, message: "the real form never checked the code with the Auth service" }).toBeGreaterThan(0)
+  expect(JSON.parse(auth.verifies[0]!), "the code is checked for this e-mail").toMatchObject({ email: person.email, token: STUB_CODE })
 
   await test.step("PROJEXA installs itself: no click, no choice, no extra screen to confirm (waiting is not an action)", async () => {
     await act("wait: PROJEXA is installed on this laptop", async () => {

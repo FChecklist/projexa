@@ -112,8 +112,9 @@ const MAIL_HOSTS = /(^|\.)(resend\.com|postmarkapp\.com|sendgrid\.net|mailgun\.(
 
 /**
  * True when a request is one that makes a mail go out: the Auth service's recover / OTP / magic-link / resend / signup / verify / email-change calls, any
- * /api or Edge Function route about mail, a mail provider's host, or a password grant that is really a one-time-code grant. A plain password grant
- * (POST /auth/v1/token?grant_type=password) and the session read (GET /auth/v1/user) are NOT mail.
+ * /api or Edge Function route about mail, a mail provider's host, or a token grant that is really a one-time-code grant. P1: the sign-in itself is
+ * ONE mail-sending call (POST /auth/v1/otp, "send the code"); a token refresh (grant_type=refresh_token) and the session read (GET /auth/v1/user)
+ * are NOT mail. The check of the code (POST /auth/v1/verify) is matched too, as before.
  */
 export function isMailSend(method: string, url: string, body: string | null = null): boolean {
   const u = new URL(url)

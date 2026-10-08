@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { createIdentityStore, getDurableIdentity, mirrorSession } from "@/lib/local-first/identity";
 import { openDeviceMeta } from "@/lib/local-first/device-meta";
+import { prewarmReleaseBundle } from "@/lib/local-first/release/prewarm";
 import { ensureServiceWorker } from "@/lib/local-first/release/sw-client";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 import { viaPxApi } from "@/lib/px-api";
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
   const submitting = useRef(false);
 
   const login = useMemo(() => {
@@ -35,8 +37,8 @@ export default function LoginPage() {
       storage: window.localStorage,
       now: Date.now,
       isOnline: () => navigator.onLine !== false,
-      // Only the public app shell (the service worker). The organisation's data is copied after sign-in by WorkspacePrepare, never before.
-      startShellInstall: () => ensureServiceWorker(),
+      // Only PUBLIC build files: the service worker and the verified release bundle bytes (release/prewarm.ts). The organisation's data is copied after sign-in by WorkspacePrepare, never before.
+      startShellInstall: () => Promise.all([ensureServiceWorker(), prewarmReleaseBundle()]),
       hasSavedIdentity: async () => Boolean(await getDurableIdentity(identityStore())),
       afterVerified: async () => {
         const { data } = await supabase.auth.getSession();
@@ -80,7 +82,11 @@ export default function LoginPage() {
     void login.start().then((s) => {
       if (!alive) return;
       if (s === "session") goIn();
-      else setStage(s === "form" ? "email" : "offline");
+      else {
+        // Old password-reset links land here with one plain sentence (there is no password any more).
+        if (new URLSearchParams(window.location.search).get("notice") === "no-password") setNotice(t("noPassword"));
+        setStage(s === "form" ? "email" : "offline");
+      }
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,6 +160,7 @@ export default function LoginPage() {
                 <Label htmlFor="email">{t("email")}</Label>
                 <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
               </div>
+              {notice && <p data-testid="login-notice" className="text-sm">{notice}</p>}
               <p className="text-sm text-px-muted">{t("intro")}</p>
               {error && <p role="alert" className="text-sm text-px-error">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading || stage === "checking"}>{loading ? t("submitting") : t("submit")}</Button>

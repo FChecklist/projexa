@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { signInByCode, realTestCode } from "./support/sign-in";
 import { USERS } from "./users";
 
 // AUDIT 37 point 7 against the REAL backend: two different people of the SAME organisation (two separate browser profiles = two laptops)
@@ -8,11 +9,7 @@ import { USERS } from "./users";
 async function laptop(browser: import("@playwright/test").Browser, who: keyof typeof USERS): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ serviceWorkers: "allow", baseURL: `http://localhost:${process.env.AUDIT37_PORT ?? 3100}` });
   const page = await context.newPage();
-  await page.goto("/login");
-  await page.locator("#email").fill(USERS[who].email);
-  await page.locator("#password").fill(USERS[who].password);
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(/\/(dashboard|local|scope|prepare)/, { timeout: 60_000 });
+  await signInByCode(page, USERS[who].email, { code: realTestCode, leaves: /\/(dashboard|local|scope|prepare)/ });
   await expect
     .poll(async () => page.evaluate(async () => (await indexedDB.databases()).filter((d) => d.name?.startsWith("projexa-local:")).length), { timeout: 300_000 })
     .toBeGreaterThan(0);

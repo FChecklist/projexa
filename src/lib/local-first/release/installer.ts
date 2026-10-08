@@ -119,6 +119,8 @@ export type InstallerDeps = {
   registry?: (wanted: { release_version: string; manifest_sha256: string }) => Promise<RegistryRelease | null>;
   /** POST /install; resolves false (never throws) when it could not be sent. */
   recordInstall?: (record: InstallRecord) => Promise<boolean>;
+  /** P1: a bundle already downloaded (and verified) before sign-in finished, for exactly this manifest, or null. Hashes are re-checked here. */
+  takePrewarmedBundle?: (manifest: ReleaseManifest) => Uint8Array | null;
 };
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -304,14 +306,17 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
       }
     } else {
       // 2a/3/4. the ONE bundle
-      let bundleRes: Response;
-      try {
-        bundleRes = await doFetch(where(`/${manifest.bundle.path}`), optsFor(`/${manifest.bundle.path}`));
-      } catch (err) {
-        throw new InstallError("bundle_unreachable", `The release bundle could not be fetched (${errText(err)}).`);
+      let bundleBytes: Uint8Array | null = deps.takePrewarmedBundle?.(manifest) ?? null;
+      if (!bundleBytes) {
+        let bundleRes: Response;
+        try {
+          bundleRes = await doFetch(where(`/${manifest.bundle.path}`), optsFor(`/${manifest.bundle.path}`));
+        } catch (err) {
+          throw new InstallError("bundle_unreachable", `The release bundle could not be fetched (${errText(err)}).`);
+        }
+        if (!bundleRes.ok) throw new InstallError("bundle_unreachable", `The release bundle answered ${bundleRes.status}.`);
+        bundleBytes = await bytesOf(bundleRes);
       }
-      if (!bundleRes.ok) throw new InstallError("bundle_unreachable", `The release bundle answered ${bundleRes.status}.`);
-      const bundleBytes = await bytesOf(bundleRes);
       if (bundleBytes.length !== manifest.bundle.size || (await sha256Hex(bundleBytes)) !== manifest.bundle.sha256) {
         throw new InstallError("bundle_hash", "The release bundle does not match the manifest (size or sha256).");
       }
