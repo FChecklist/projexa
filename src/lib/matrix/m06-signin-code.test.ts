@@ -198,3 +198,17 @@ describe("M06 sign-in by e-mailed code", () => {
     expect(pauseLeftMs(w.deps, "a@x.com")).toBe(0);
   });
 });
+
+// M06-28: the code box must let a formatted paste ("123 456", "123-456") reach cleanCodeInput whole. With maxLength equal to the code length the browser
+// truncates the paste to "123 45" before the page can clean it, and the person can never sign in by pasting. Found by e2e/matrix-100-browser.spec.ts B-09.
+import { readFileSync } from "node:fs";
+describe("M06 code box paste", () => {
+  test("M06-28 the code input's maxLength is larger than the code length", () => {
+    const src = readFileSync(new URL("../../app/login/page.tsx", import.meta.url), "utf8");
+    const m = /id="code"[^>]*maxLength=\{([^}]+)\}/.exec(src);
+    expect(m).not.toBeNull();
+    expect(m![1]).not.toBe("CODE_LENGTH");
+    expect(cleanCodeInput("123 456")).toBe("123456");
+    expect(cleanCodeInput("123-456")).toBe("123456");
+  });
+});

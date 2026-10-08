@@ -158,7 +158,7 @@ export default function LoginPage() {
               <p className="text-sm text-px-muted">{t("codeSent", { email })}</p>
               <div className="space-y-1.5">
                 <Label htmlFor="code">{t("code")}</Label>
-                <Input id="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={CODE_LENGTH} required autoFocus value={code} onChange={(e) => onCodeChange(e.target.value)} />
+                <Input id="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={CODE_LENGTH * 2} required autoFocus value={code} onChange={(e) => onCodeChange(e.target.value)} />
               </div>
               {error && <p role="alert" className="text-sm text-px-error">{error}</p>}
               <Button type="submit" className="w-full" disabled={loading || code.length !== CODE_LENGTH}>{loading ? t("submitting") : t("verify")}</Button>
