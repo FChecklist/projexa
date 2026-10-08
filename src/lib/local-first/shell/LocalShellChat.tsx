@@ -31,7 +31,7 @@ export function LocalShellChat({ userId, projectId, online, queue, send, enabled
   );
   const deps = useMemo<ChatDeps>(() => ({ online, queue: q, send: post, enabled }), [online, q, post, enabled]);
   const depsRef = useRef(deps);
-  depsRef.current = deps;
+  useEffect(() => { depsRef.current = deps; }); // not during render (react-hooks/refs)
 
   const show = (r: ChatResult) => {
     setError(null);
