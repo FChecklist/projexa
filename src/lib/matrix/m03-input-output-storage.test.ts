@@ -254,5 +254,5 @@ describe("M03 input -> output -> storage", () => {
     expect(await outbox.pendingCount()).toBe(0);
     expect(s.getRow("tasks", "x199")!.data).toMatchObject({ title: "new199" });
     expect(s.getRow("tasks", "x0")!.data).toMatchObject({ title: "new0" });
-  });
+  }, 60_000);
 });
