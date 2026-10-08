@@ -101,6 +101,8 @@ export function watchConsole(page: Page) {
     const text = msg.text()
     const where = msg.location()?.url ?? ""
     if (/favicon\.ico/.test(text) || /favicon\.ico/.test(where)) return
+    // an unsigned release (every test build) has no release.sig.json: the installer asks once and accepts the 404
+    if (/release\.sig\.json/.test(text) || /release\.sig\.json/.test(where)) return
     if (/^Failed to load resource: net::ERR_(INTERNET_DISCONNECTED|CONNECTION_REFUSED|FAILED)/.test(text)) return
     errors.push(`console.error: ${text}${where ? ` (${where})` : ""}`)
   })

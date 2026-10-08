@@ -114,13 +114,14 @@ const MAIL_HOSTS = /(^|\.)(resend\.com|postmarkapp\.com|sendgrid\.net|mailgun\.(
  * True when a request is one that makes a mail go out: the Auth service's recover / OTP / magic-link / resend / signup / verify / email-change calls, any
  * /api or Edge Function route about mail, a mail provider's host, or a token grant that is really a one-time-code grant. P1: the sign-in itself is
  * ONE mail-sending call (POST /auth/v1/otp, "send the code"); a token refresh (grant_type=refresh_token) and the session read (GET /auth/v1/user)
- * are NOT mail. The check of the code (POST /auth/v1/verify) is matched too, as before.
+ * are NOT mail. The check of a typed code (POST /auth/v1/verify) sends no mail and is NOT counted; a mailed link (GET /auth/v1/verify) is.
  */
 export function isMailSend(method: string, url: string, body: string | null = null): boolean {
   const u = new URL(url)
   if (MAIL_HOSTS.test(u.hostname)) return true
   const p = u.pathname
-  if (/^\/auth\/v1\/(recover|otp|magiclink|resend|signup|verify|invite)\/?$/.test(p)) return true
+  if (/^\/auth\/v1\/(recover|otp|magiclink|resend|signup|invite)\/?$/.test(p)) return true
+  if (/^\/auth\/v1\/verify\/?$/.test(p) && method === "GET") return true // a mailed link followed; the POST that checks a typed code sends no mail
   if (/^\/auth\/v1\/user\/?$/.test(p) && method !== "GET") return true // an email or password change: Auth mails the old and the new address
   if (/^\/auth\/v1\/token\/?$/.test(p)) {
     const grant = u.searchParams.get("grant_type")
