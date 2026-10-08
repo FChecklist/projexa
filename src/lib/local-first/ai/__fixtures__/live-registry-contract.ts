@@ -2,7 +2,7 @@
 // checkout instead. The live AI work link registry's function ids and, for every WRITE, the parameter names the real
 // pipeline declares and requires. Each line comment points at the write's own spec in compliance-tracker.
 //
-// Source: FChecklist/compliance-tracker@294f7ea433ecba6a85f9c7a98955c25cd3450ef3
+// Source: FChecklist/compliance-tracker@d3e996c49e234468b2a1748bf90d37742acd79cc
 //   supabase/functions/ai-work-link/function-registry.generated.json
 //   src/lib/pipeline/function-registry.ts
 
@@ -15,12 +15,12 @@ export type LiveWrite = {
   excluded: boolean;
 };
 
-export const LIVE_SOURCE_COMMIT = "294f7ea433ecba6a85f9c7a98955c25cd3450ef3";
+export const LIVE_SOURCE_COMMIT = "d3e996c49e234468b2a1748bf90d37742acd79cc";
 
-/** Every function id of the live registry (159 today: reads, asks, runs and writes). */
-export const LIVE_FUNCTION_IDS: readonly string[] = ["add_boq_lines","add_meeting_action_item","add_meeting_outcome","add_mood_board_item","add_room","add_roster_entry","add_sprint_task","answer_rfi","apply_boq_import","approve_kpi_entry","approve_timesheet","archive_project","archive_task","cancel_change_order","capture_artifact","capture_schedule_baseline","close_rfi","close_sprint","compare_boq_revisions","compare_schedule_baseline","create_activity","create_boq","create_boq_category","create_boq_revision","create_change_order","create_company","create_currency","create_customer","create_document","create_drawing","create_exchange_rate","create_ffe_item","create_floor_plan","create_material","create_meeting","create_milestone","create_mom","create_mood_board","create_permit","create_progress_category","create_progress_claim","create_project","create_punch_list_item","create_rfi","create_schedule_task","create_site_diary","create_site_instruction","create_sprint","create_submittal","create_vendor","create_wiki_page","delete_attendance","delete_boq","delete_boq_category","delete_meeting","delete_mom","delete_permit","delete_progress_entry","delete_time_entry","detect_construction_budget_schedule_risk","dispose_document","draft_progress_claim","generate_construction_progress_summary","get_billing_due_queue","get_boq_line_items","get_change_order","get_compliance_stats","get_construction_budget_status","get_construction_kpi_status","get_construction_project_dashboard","get_daily_progress_report","get_designer_timesheet_report","get_ffe_margin_summary","get_gantt_schedule","get_manpower_cost_report","get_material_cost_report","get_overdue_items","get_project_analysis","get_project_budget_variance","get_project_exceptions","get_project_schedule","get_sales_pipeline_overview","link_roster_employee","list_billing_claims","list_change_orders","list_compliance_items","list_customers","list_delayed_activities","list_departments","list_gst_import_batches","list_gst_returns","list_leads","list_milestones","list_notices","list_opportunities","list_organisation_records","list_over_budget_projects","list_sales_orders","mark_punch_item_ready","place_furniture","preview_boq_import","publish_mom","record_attendance","record_attendance_batch","record_customer_approval","record_customer_complaint","record_material_issue","record_material_receipt","record_timesheet","record_vendor_dispute","record_work_progress","reject_progress_claim","reject_timesheet","remove_mood_board_item","remove_placement","remove_room","remove_sprint_task","rename_boq_category","review_budget","review_submittal","run_named_report","seal_boq","set_progress_drawing","submit_boq_for_approval","submit_change_order_for_approval","submit_kpi_entry","submit_progress_claim","submit_timesheet","update_activity","update_attendance","update_boq","update_boq_line","update_boq_line_amounts","update_change_order","update_customer","update_document_metadata","update_ffe_status","update_floor_plan_status","update_line_item_budget","update_material","update_meeting","update_milestone","update_mom_details","update_mom_minutes","update_mood_board","update_permit","update_placement","update_progress_category","update_progress_entry","update_project","update_room","update_roster_entry","update_sprint","update_task","update_time_entry","update_vendor","update_wiki_page","verify_punch_item_closed","void_material_receipt"];
+/** Every function id of the live registry (160 today: reads, asks, runs and writes). */
+export const LIVE_FUNCTION_IDS: readonly string[] = ["add_boq_lines","add_meeting_action_item","add_meeting_outcome","add_mood_board_item","add_room","add_roster_entry","add_sprint_task","answer_rfi","apply_boq_import","approve_kpi_entry","approve_timesheet","archive_project","archive_task","cancel_change_order","capture_artifact","capture_schedule_baseline","close_rfi","close_sprint","compare_boq_revisions","compare_schedule_baseline","create_activity","create_boq","create_boq_category","create_boq_revision","create_change_order","create_company","create_currency","create_customer","create_document","create_drawing","create_exchange_rate","create_ffe_item","create_floor_plan","create_material","create_meeting","create_milestone","create_mom","create_mood_board","create_permit","create_progress_category","create_progress_claim","create_project","create_punch_list_item","create_rfi","create_schedule_task","create_site_diary","create_site_instruction","create_sprint","create_submittal","create_vendor","create_wiki_page","delete_attendance","delete_boq","delete_boq_category","delete_meeting","delete_mom","delete_permit","delete_progress_entry","delete_time_entry","detect_construction_budget_schedule_risk","dispose_document","draft_progress_claim","generate_construction_progress_summary","get_billing_due_queue","get_boq_line_items","get_change_order","get_compliance_stats","get_construction_budget_status","get_construction_kpi_status","get_construction_project_dashboard","get_daily_progress_report","get_designer_timesheet_report","get_ffe_margin_summary","get_gantt_schedule","get_manpower_cost_report","get_material_cost_report","get_overdue_items","get_project_analysis","get_project_budget_variance","get_project_exceptions","get_project_schedule","get_sales_pipeline_overview","link_roster_employee","list_billing_claims","list_change_orders","list_compliance_items","list_customers","list_delayed_activities","list_departments","list_gst_import_batches","list_gst_returns","list_leads","list_milestones","list_notices","list_opportunities","list_organisation_records","list_over_budget_projects","list_sales_orders","mark_punch_item_ready","place_furniture","preview_boq_import","publish_mom","record_attendance","record_attendance_batch","record_customer_approval","record_customer_complaint","record_material_issue","record_material_receipt","record_timesheet","record_vendor_dispute","record_work_progress","reject_progress_claim","reject_timesheet","remove_mood_board_item","remove_placement","remove_room","remove_sprint_task","rename_boq_category","review_budget","review_submittal","run_named_report","seal_boq","set_progress_drawing","submit_boq_for_approval","submit_change_order_for_approval","submit_kpi_entry","submit_progress_claim","submit_timesheet","update_activity","update_attendance","update_boq","update_boq_line","update_boq_line_amounts","update_change_order","update_customer","update_document_metadata","update_drawing","update_ffe_status","update_floor_plan_status","update_line_item_budget","update_material","update_meeting","update_milestone","update_mom_details","update_mom_minutes","update_mood_board","update_permit","update_placement","update_progress_category","update_progress_entry","update_project","update_room","update_roster_entry","update_sprint","update_task","update_time_entry","update_vendor","update_wiki_page","verify_punch_item_closed","void_material_receipt"];
 
-/** Every live WRITE (118 today), by id. */
+/** Every live WRITE (119 today), by id. */
 export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   // src/lib/pipeline/function-registry.ts:872
   "add_boq_lines": {"declared":["batchNo","boqId","lines","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"boqId","any_of":["boqId"]},{"name":"batchNo","any_of":["batchNo"]},{"name":"lines","any_of":["lines"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
@@ -44,11 +44,11 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "approve_kpi_entry": {"declared":["entryId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"entryId","any_of":["entryId"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:686
   "approve_timesheet": {"declared":["timeEntryId"],"required":[{"name":"timeEntryId","any_of":["timeEntryId"]}],"min_role_rank":3,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2414
+  // src/lib/pipeline/function-registry.ts:2435
   "archive_project": {"declared":["projectId","status"],"required":[{"name":"projectId","any_of":["projectId"]}],"min_role_rank":3,"money_sensitive":false,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2030
   "archive_task": {"declared":["isArchived","issueId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"issueId","any_of":["issueId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2472
+  // src/lib/pipeline/function-registry.ts:2493
   "cancel_change_order": {"declared":["changeOrderId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"changeOrderId","any_of":["changeOrderId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:743
   "capture_artifact": {"declared":["text","title"],"required":[{"name":"title","any_of":["title"]},{"name":"text","any_of":["text"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
@@ -62,23 +62,23 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "create_activity": {"declared":["categoryId","name","plannedQuantity","projectId","unit"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"name","any_of":["name"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:256
   "create_boq": {"declared":["idempotency_key","lineItems","projectId","title"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"title","any_of":["title"]},{"name":"idempotency_key","any_of":["idempotency_key"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2480
+  // src/lib/pipeline/function-registry.ts:2501
   "create_boq_category": {"declared":["name","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"name","any_of":["name"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:280
   "create_boq_revision": {"declared":["allowScopeReductionOverride","boqId","lineItems","projectId","sourceChangeOrderId","title"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"boqId","any_of":["boqId"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:430
   "create_change_order": {"declared":["costImpact","description","projectId","reason","scheduleImpactDays","title","trade"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"title","any_of":["title"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2497
+  // src/lib/pipeline/function-registry.ts:2518
   "create_company": {"declared":["abbr","companyName","country","dateOfIncorporation","isGroup","parentCompanyId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"companyName","any_of":["companyName"]}],"min_role_rank":3,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2500
+  // src/lib/pipeline/function-registry.ts:2521
   "create_currency": {"declared":["code","name","projectId","symbol"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"code","any_of":["code"]},{"name":"name","any_of":["name"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2491
+  // src/lib/pipeline/function-registry.ts:2512
   "create_customer": {"declared":["creditLimit","customerName","defaultPaymentTermsDays","gstin","pan","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"customerName","any_of":["customerName"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:302
   "create_document": {"declared":["category","expiryDate","externalUrl","name"],"required":[{"name":"name","any_of":["name"]},{"name":"category","any_of":["category"]},{"name":"externalUrl","any_of":["externalUrl"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:604
   "create_drawing": {"declared":["discipline","drawingNo","externalUrl","kind","name","projectId","rev","status"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"name","any_of":["name"]},{"name":"externalUrl","any_of":["externalUrl"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2502
+  // src/lib/pipeline/function-registry.ts:2523
   "create_exchange_rate": {"declared":["fromCurrencyId","projectId","rate","rateDate","toCurrencyId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"fromCurrencyId","any_of":["fromCurrencyId"]},{"name":"toCurrencyId","any_of":["toCurrencyId"]},{"name":"rate","any_of":["rate"]},{"name":"rateDate","any_of":["rateDate"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1843
   "create_ffe_item": {"declared":["category","depthCm","description","documentId","heightCm","itemName","leadTimeDays","projectId","quantity","roomOrArea","sku","unitCost","unitPrice","widthCm"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"itemName","any_of":["itemName"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
@@ -116,21 +116,21 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "create_sprint": {"declared":["endDate","goal","name","projectId","startDate"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"name","any_of":["name"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1026
   "create_submittal": {"declared":["dueDate","projectId","specSection","title","type"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"title","any_of":["title"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2485
+  // src/lib/pipeline/function-registry.ts:2506
   "create_vendor": {"declared":["creditLimit","defaultPaymentTermsDays","gst","pan","projectId","trade","vendorName","vendorType"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"vendorName","any_of":["vendorName"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1763
   "create_wiki_page": {"declared":["content","parentPageId","projectId","title"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"title","any_of":["title"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2467
+  // src/lib/pipeline/function-registry.ts:2488
   "delete_attendance": {"declared":["attendanceId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"attendanceId","any_of":["attendanceId"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1974
   "delete_boq": {"declared":["boqId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"boqId","any_of":["boqId"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2483
+  // src/lib/pipeline/function-registry.ts:2504
   "delete_boq_category": {"declared":["categoryId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"categoryId","any_of":["categoryId"]}],"min_role_rank":3,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2477
+  // src/lib/pipeline/function-registry.ts:2498
   "delete_meeting": {"declared":["meetingId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"meetingId","any_of":["meetingId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2202
   "delete_mom": {"declared":["meetingId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"meetingId","any_of":["meetingId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2401
+  // src/lib/pipeline/function-registry.ts:2422
   "delete_permit": {"declared":["permitId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"permitId","any_of":["permitId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2013
   "delete_progress_entry": {"declared":["entryId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"entryId","any_of":["entryId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
@@ -178,7 +178,7 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "remove_room": {"declared":["floorPlanId","projectId","roomId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"floorPlanId","any_of":["floorPlanId"]},{"name":"roomId","any_of":["roomId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2114
   "remove_sprint_task": {"declared":["issueId","projectId","sprintId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"sprintId","any_of":["sprintId"]},{"name":"issueId","any_of":["issueId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2481
+  // src/lib/pipeline/function-registry.ts:2502
   "rename_boq_category": {"declared":["categoryId","name","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"categoryId","any_of":["categoryId"]},{"name":"name","any_of":["name"]}],"min_role_rank":3,"money_sensitive":false,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1047
   "review_submittal": {"declared":["comments","projectId","status","submittalId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"submittalId","any_of":["submittalId"]},{"name":"status","any_of":["status"]}],"min_role_rank":3,"money_sensitive":false,"link_level":2,"excluded":false},
@@ -196,22 +196,24 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "submit_progress_claim": {"declared":["claimId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"claimId","any_of":["claimId"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:701
   "submit_timesheet": {"declared":["projectId","timeEntryId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"timeEntryId","any_of":["timeEntryId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2460
+  // src/lib/pipeline/function-registry.ts:2481
   "update_activity": {"declared":["activityId","categoryId","name","plannedQuantity","projectId","unit"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"activityId","any_of":["activityId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2464
+  // src/lib/pipeline/function-registry.ts:2485
   "update_attendance": {"declared":["attendanceId","hoursWorked","projectId","status"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"attendanceId","any_of":["attendanceId"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1960
   "update_boq": {"declared":["boqId","projectId","title"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"boqId","any_of":["boqId"]},{"name":"title","any_of":["title"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2474
+  // src/lib/pipeline/function-registry.ts:2495
   "update_boq_line": {"declared":["description","lineItemId","projectId","unit"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"lineItemId","any_of":["lineItemId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1991
   "update_boq_line_amounts": {"declared":["lineItemId","projectId","qtyContract","qtyProject","rateContract","rateProject"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"lineItemId","any_of":["lineItemId"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2469
+  // src/lib/pipeline/function-registry.ts:2490
   "update_change_order": {"declared":["changeOrderId","costImpact","description","projectId","reason","scheduleImpactDays","title","trade"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"changeOrderId","any_of":["changeOrderId"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2494
+  // src/lib/pipeline/function-registry.ts:2515
   "update_customer": {"declared":["creditLimit","customerId","customerName","defaultPaymentTermsDays","gstin","isActive","pan","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"customerId","any_of":["customerId"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1743
   "update_document_metadata": {"declared":["category","documentId","expiryDate","name","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"documentId","any_of":["documentId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
+  // src/lib/pipeline/function-registry.ts:2402
+  "update_drawing": {"declared":["category","discipline","drawingId","name","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"drawingId","any_of":["drawingId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1874
   "update_ffe_status": {"declared":["itemId","projectId","status"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"itemId","any_of":["itemId"]},{"name":"status","any_of":["status"]}],"min_role_rank":3,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2329
@@ -234,7 +236,7 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "update_permit": {"declared":["expiryDate","issueDate","name","notes","permitAuthority","permitId","permitNumber","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"permitId","any_of":["permitId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2293
   "update_placement": {"declared":["floorPlanId","placementId","projectId","roomId","rotationDeg","x","y"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"floorPlanId","any_of":["floorPlanId"]},{"name":"placementId","any_of":["placementId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2462
+  // src/lib/pipeline/function-registry.ts:2483
   "update_progress_category": {"declared":["categoryId","name","parentCategoryId","projectId"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"categoryId","any_of":["categoryId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1164
   "update_progress_entry": {"declared":["activityId","boqLineItemId","entryDate","entryId","percentComplete","projectId","quantityDone","remarks"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"entryId","any_of":["entryId"]}],"min_role_rank":2,"money_sensitive":true,"link_level":1,"excluded":false},
@@ -250,7 +252,7 @@ export const LIVE_WRITES: Readonly<Record<string, LiveWrite>> = {
   "update_task": {"declared":["assigneeIds","completionPercentage","description","dueDate","issueId","milestoneId","priority","projectId","startDate","statusId","title"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"issueId","any_of":["issueId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
   // src/lib/pipeline/function-registry.ts:2128
   "update_time_entry": {"declared":["activityType","comments","entryId","hours","issueId","projectId","spentOn"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"entryId","any_of":["entryId"]}],"min_role_rank":2,"money_sensitive":true,"link_level":1,"excluded":false},
-  // src/lib/pipeline/function-registry.ts:2488
+  // src/lib/pipeline/function-registry.ts:2509
   "update_vendor": {"declared":["creditLimit","defaultPaymentTermsDays","gst","isActive","pan","projectId","trade","vendorId","vendorName","vendorType"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"vendorId","any_of":["vendorId"]}],"min_role_rank":2,"money_sensitive":true,"link_level":2,"excluded":false},
   // src/lib/pipeline/function-registry.ts:1783
   "update_wiki_page": {"declared":["content","pageId","projectId","title"],"required":[{"name":"projectId","any_of":["projectId"]},{"name":"pageId","any_of":["pageId"]}],"min_role_rank":2,"money_sensitive":false,"link_level":1,"excluded":false},
