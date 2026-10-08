@@ -129,11 +129,10 @@ describe("record_work_progress", () => {
     expect(pushed(r)[0]).toMatchObject({ function_id: "record_work_progress", params: { projectId: "p1", boqLineItemId: "l1", quantityDone: 12, entryDate: "2026-10-02", remarks: "Grid B" } });
   });
 
-  test("with SEVERAL activities it is refused: the server would pick one the person did not choose", async () => {
+  test("with SEVERAL activities and NO activity chosen it is refused: the server would pick one the person did not choose", async () => {
     const r = await rig({ activities: 2 });
-    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 40, entryDate: "2026-10-02" }, r.access)).toEqual({ queued: false, reason: "several_activities" });
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 40, entryDate: "2026-10-02" }, r.access)).toEqual({ queued: false, reason: "no_activity_chosen" });
     expect(r.enqueued()).toBe(0);
-    expect(refusalText("several_activities")).toContain("more than one activity");
   });
 
   test("P2: with SEVERAL activities and a server that takes activityId, the chosen activity is kept AND sent", async () => {
@@ -156,13 +155,11 @@ describe("record_work_progress", () => {
     expect(refusalText("no_activity_chosen")).toBe("Choose which activity this work is for.");
   });
 
-  test("P2: with the REAL registry copy (no activityId declared today) a chosen activity is never sent, and several activities still refuse", async () => {
+  test("P2: with the REAL registry copy (activityId declared since 294f7ea4) a chosen activity is kept AND sent", async () => {
     const r = await rig({ activities: 2 });
-    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" }, r.access)).toEqual({ queued: false, reason: "several_activities" });
-    const one = await rig({ activities: 1 });
-    expect((await recordProgressOffline(one.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a1", percent: 40, entryDate: "2026-10-02" }, one.access)).queued).toBe(true);
-    await one.outbox.flush();
-    expect(pushed(one)[0]!.params).not.toHaveProperty("activityId");
+    expect((await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" }, r.access)).queued).toBe(true);
+    await r.outbox.flush();
+    expect(pushed(r)[0]!.params).toMatchObject({ activityId: "a2" });
   });
 
   test("a percent outside 0..100 or a missing line is refused", async () => {

@@ -1,6 +1,6 @@
 {
  "source": "FChecklist/compliance-tracker supabase/functions/ai-work-link/function-registry.generated.json",
- "source_commit": "d1119f6933912917d7195afaec99dbab31a48c6d",
+ "source_commit": "294f7ea433ecba6a85f9c7a98955c25cd3450ef3",
  "note": "Write functions only. Copied verbatim (selected fields). The server stays the authority on every push; this copy only lets the laptop refuse early in plain words. Refresh with scripts/vendor-ai-function-registry.mjs.",
  "functions": [
   {
@@ -2757,6 +2757,7 @@
    "money_sensitive": false,
    "excluded_reason": null,
    "declared_params": [
+    "activityId",
     "boqLineItemId",
     "entryDate",
     "itemCode",
@@ -2791,6 +2792,7 @@
     }
    ],
    "id_params": [
+    "activityId",
     "boqLineItemId"
    ]
   },
