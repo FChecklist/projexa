@@ -39,6 +39,9 @@ export type PeerNetworkOptions = {
   noPeerKinds?: () => readonly string[];
   /** Passed to every session: a row without the px3 view-class signature is refused (protocol.ts requirePx3). */
   requirePx3?: boolean;
+  /** Release relay (release/relay.ts), passed to every session. */
+  release?: import("../release/relay").ReleaseRelay;
+  onRelease?: (result: { accepted: boolean; reason?: string; version?: string }) => void;
   foreignOrg?: (data: unknown, org: string) => boolean;
   /** lf-e9: a peer failed hello (bad/expired/foreign token, another view class) and was dropped. Nothing of ours was sent to it. */
   onRefused?: (peerId: string, reason: HelloRefusal | "protocol") => void;
@@ -120,7 +123,7 @@ export function createPeerNetwork(o: PeerNetworkOptions): PeerNetwork {
         if (closed || entries.get(peerId) !== entry) { link.close(); return; }
         entry.session = createPeerSession({
           link, self, keys: o.keys, store: o.store, now: o.now, allowedKinds: o.allowedKinds, foreignOrg: o.foreignOrg,
-          noPeerKinds: o.noPeerKinds?.(), requirePx3: o.requirePx3,
+          noPeerKinds: o.noPeerKinds?.(), requirePx3: o.requirePx3, release: o.release, onRelease: o.onRelease,
           onRefused: (reason) => {
             done.refused[reason] = (done.refused[reason] ?? 0) + 1;
             o.onRefused?.(peerId, reason);

@@ -12,6 +12,14 @@
 //   sender      -> end   {project, kind}
 //   either      -> bye   {reason}                    then the link is closed
 //
+// RELEASE RELAY (P4, docs/local-first/RELEASE_RELAY.md; only when `options.release` is given, only after the hello verified):
+//   sender      -> rel_have  {version, manifest_sha256}   "I hold a verified, signed release" (announced once per session)
+//   receiver    -> rel_want  {manifest_sha256}            only if release.wants() says it is newer and signing keys are pinned
+//   sender      -> rel_start {manifest, signature, size, chunks}, then rel_chunk {i, b} x chunks   (or rel_none)
+// The receiver hands the reassembled package to release.accept(), which verifies the manifest digest, the pinned-key signature, that the
+// version is newer, and the bundle size/sha256/every file hash -- the download path's checks -- and only then parks it. Nothing unverified is ever
+// stored, installed or passed on; a peer that sends a bad package is dropped from the exchange, not trusted any less or more.
+//
 // Rules (each has a test in protocol.test.ts, and the first five a planted-bug check):
 //   * a hello is accepted only when the token verifies under a key we hold, is unexpired, and names the SAME org and the SAME
 //     view class as ours; anything else is a bye and NOTHING of ours is ever sent (have/items wait for a verified hello);
@@ -38,12 +46,17 @@ import { canonicalize, sha256Hex, verifyRow, verifyRowV3, verifyToken, type KeyR
 import type { PeerLink } from "./transport";
 import { ORG_PROJECT } from "../sync-client";
 import { NEVER_PEER_KINDS } from "../replica-org";
+import type { ReleaseRelay, RelayPackage } from "../release/relay";
+import { b64url, fromB64url } from "../../release-dist/signed-manifest";
 
 export const MAX_MESSAGE_BYTES = 512 * 1024;
 export const DEFAULT_BATCH_BYTES = 64 * 1024;
 export const KNOWN_PER_MESSAGE = 2000;
 /** lf-e9: how often a session asks for a lost hello again, and how often it answers such an ask (bounded: never a loop). */
 export const MAX_HELLO_RESENDS = 3;
+/** Release relay: raw bytes per `rel_chunk` (base64 of it plus the JSON frame stays far below MAX_MESSAGE_BYTES). */
+export const RELAY_CHUNK_BYTES = 192 * 1024;
+export const MAX_RELAY_BYTES = 32 * 1024 * 1024;
 
 export type PairSummary = { n: number; digest: string };
 export type ProjectSummary = Record<string, PairSummary>;
@@ -95,6 +108,10 @@ export type PeerSessionOptions = {
   requirePx3?: boolean;
   /** A data field naming another organisation (replica.ts foreignOrg). */
   foreignOrg?: (data: unknown, org: string) => boolean;
+  /** Release relay (release/relay.ts). Absent: the `rel_*` messages are ignored and none is sent. */
+  release?: ReleaseRelay;
+  /** Told the outcome of every package received from this peer. */
+  onRelease?: (result: { accepted: boolean; reason?: string; version?: string }) => void;
   onVerified?: (peer: PeerClaims) => void;
   onRefused?: (reason: HelloRefusal | "protocol") => void;
   onRows?: (accepted: number) => void;
@@ -121,7 +138,12 @@ type Msg =
   | { t: "items"; rows: SignedRow[] }
   | { t: "gone"; project: string; kind: string; ids: Array<[string, number | null]> }
   | { t: "end"; project: string; kind: string }
-  | { t: "bye"; reason: string };
+  | { t: "bye"; reason: string }
+  | { t: "rel_have"; version: string; manifest_sha256: string }
+  | { t: "rel_want"; manifest_sha256: string }
+  | { t: "rel_start"; manifest: unknown; signature: unknown; size: number; chunks: number }
+  | { t: "rel_chunk"; i: number; b: string }
+  | { t: "rel_none" };
 
 const byteLength = (s: string) => new TextEncoder().encode(s).length;
 
@@ -162,6 +184,11 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
   let helloResends = 0;
   // Messages are handled strictly one after another: a batch of rows is stored before the next message is looked at.
   let chain: Promise<void> = Promise.resolve();
+  // release relay state
+  let relayAsked: string | null = null;
+  let relayTried = false;
+  const relayServed = new Set<string>();
+  let assembly: { manifest: unknown; signature: unknown; size: number; chunks: number; next: number; parts: Uint8Array[]; got: number } | null = null;
 
   const send = (m: Msg) => {
     if (state === "closed" || !link.open) return;
@@ -227,6 +254,70 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     options.onVerified?.(peer);
     // when we had to ask for this hello, the peer's own `have` arrived before it and was dropped: ask it to send that again
     await sendHave(helloAsks > 0);
+    if (options.release) {
+      const offer = await options.release.offer().catch(() => null);
+      if (offer) send({ t: "rel_have", version: offer.version, manifest_sha256: offer.manifest_sha256 });
+    }
+  }
+
+  async function onRelHave(m: Extract<Msg, { t: "rel_have" }>) {
+    const rel = options.release;
+    if (!rel || relayTried || typeof m.version !== "string" || typeof m.manifest_sha256 !== "string") return;
+    if (!(await rel.wants({ version: m.version, manifest_sha256: m.manifest_sha256 }))) return;
+    relayTried = true; // one attempt per session: a peer cannot make us ask over and over
+    relayAsked = m.manifest_sha256;
+    send({ t: "rel_want", manifest_sha256: m.manifest_sha256 });
+  }
+
+  async function onRelWant(m: Extract<Msg, { t: "rel_want" }>) {
+    const rel = options.release;
+    if (!rel || typeof m.manifest_sha256 !== "string") return;
+    if (relayServed.has(m.manifest_sha256)) return; // each package at most once per session
+    relayServed.add(m.manifest_sha256);
+    const pkg: RelayPackage | null = await rel.serve(m.manifest_sha256).catch(() => null); // serve() verifies it again before it leaves
+    if (!pkg) return void send({ t: "rel_none" });
+    const chunks = Math.ceil(pkg.bundle.length / RELAY_CHUNK_BYTES);
+    send({ t: "rel_start", manifest: pkg.manifest, signature: pkg.signature, size: pkg.bundle.length, chunks });
+    for (let i = 0; i < chunks; i += 1) {
+      send({ t: "rel_chunk", i, b: b64url(pkg.bundle.subarray(i * RELAY_CHUNK_BYTES, (i + 1) * RELAY_CHUNK_BYTES)) });
+      if (i % 4 === 3) await new Promise<void>((r) => setTimeout(r, 0)); // let the link drain; never a burst of megabytes in one turn
+    }
+  }
+
+  function onRelStart(m: Extract<Msg, { t: "rel_start" }>) {
+    assembly = null;
+    if (!options.release || relayAsked === null) return; // we never asked: ignore
+    const manifest = m.manifest as { manifest_sha256?: unknown; bundle?: { size?: unknown } } | null;
+    const ok = Number.isInteger(m.size) && m.size > 0 && m.size <= MAX_RELAY_BYTES
+      && m.chunks === Math.ceil(m.size / RELAY_CHUNK_BYTES)
+      && manifest !== null && typeof manifest === "object" && manifest.manifest_sha256 === relayAsked && manifest.bundle?.size === m.size;
+    if (!ok) return void options.onRelease?.({ accepted: false, reason: "malformed" });
+    assembly = { manifest: m.manifest, signature: m.signature, size: m.size, chunks: m.chunks, next: 0, parts: [], got: 0 };
+  }
+
+  async function onRelChunk(m: Extract<Msg, { t: "rel_chunk" }>) {
+    const a = assembly;
+    if (!a || !options.release) return;
+    let bytes: Uint8Array;
+    try {
+      if (m.i !== a.next || typeof m.b !== "string") throw new Error("order");
+      bytes = fromB64url(m.b);
+      if (bytes.length > RELAY_CHUNK_BYTES || a.got + bytes.length > a.size) throw new Error("size");
+    } catch {
+      assembly = null;
+      return void options.onRelease?.({ accepted: false, reason: "malformed" });
+    }
+    a.parts.push(bytes);
+    a.got += bytes.length;
+    a.next += 1;
+    if (a.next < a.chunks) return;
+    assembly = null;
+    if (a.got !== a.size) return void options.onRelease?.({ accepted: false, reason: "malformed" });
+    const bundle = new Uint8Array(a.size);
+    let at = 0;
+    for (const part of a.parts) { bundle.set(part, at); at += part.length; }
+    const verdict = await options.release.accept({ manifest: a.manifest as RelayPackage["manifest"], signature: a.signature as RelayPackage["signature"], bundle });
+    options.onRelease?.(verdict.ok ? { accepted: true, version: (a.manifest as RelayPackage["manifest"]).release_version } : { accepted: false, reason: verdict.reason });
   }
 
   async function onHave(m: Extract<Msg, { t: "have" }>) {
@@ -354,6 +445,11 @@ export function createPeerSession(options: PeerSessionOptions): PeerSession {
     if (m.t === "want") return onWant(m);
     if (m.t === "items") return onItems(m);
     if (m.t === "gone") return onGone(m);
+    if (m.t === "rel_have") return onRelHave(m);
+    if (m.t === "rel_want") return onRelWant(m);
+    if (m.t === "rel_start") return onRelStart(m);
+    if (m.t === "rel_chunk") return onRelChunk(m);
+    if (m.t === "rel_none") { relayAsked = null; return; }
     if (m.t === "end") {
       pending.delete(`${m.project}|${m.kind}`);
       settle();

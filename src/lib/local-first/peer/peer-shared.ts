@@ -9,6 +9,10 @@ import { createClient } from "@/lib/supabase/client";
 import { reportClientError } from "../client-error-report";
 import { LOCAL_DB_VERSION, localDbNameFor, openLocalDb } from "../local-db";
 import { getDeviceId } from "../outbox-shared";
+import { deviceMetaStore } from "../device-meta";
+import { createReleaseRelay, RELEASE_RELAYED_EVENT } from "../release/relay";
+import { META_KEYS } from "../release/release-constants";
+import { PINNED_RELEASE_KEYS } from "../../release-dist/pinned-keys";
 import { foreignOrg } from "../replica";
 import { getSharedReplica } from "../replica-shared";
 import { activeProjectFor } from "../shell/context";
@@ -93,6 +97,18 @@ export function startPeerSync(userId: string): void {
       isVisible: () => document.visibilityState === "visible",
       isOnline: () => navigator.onLine !== false,
       foreignOrg,
+      // RELEASE RELAY (P4): hand a verified, signed release to a peer that has none newer, and take a newer one from a peer when the host is out
+      // of reach. Off unless this build pins a release-signing key (release/relay.ts says why: a peer is never trusted, the signature is).
+      ...(PINNED_RELEASE_KEYS.length > 0
+        ? {
+            release: createReleaseRelay({
+              meta: deviceMetaStore(),
+              keys: PINNED_RELEASE_KEYS,
+              installedVersion: async () => (await deviceMetaStore().getMeta<{ version?: string }>(META_KEYS.release).catch(() => undefined))?.version ?? null,
+            }),
+            onRelease: (r: { accepted: boolean }) => { if (r.accepted) window.dispatchEvent(new Event(RELEASE_RELAYED_EVENT)); },
+          }
+        : {}),
     });
     window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);

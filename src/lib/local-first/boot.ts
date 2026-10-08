@@ -40,6 +40,8 @@ import {
 import { createReleaseClient, type ReleaseClient } from "./release/release-client";
 import type { CacheStorageLike, InstalledRelease, MetaStore } from "./release/installer";
 import { META_KEYS } from "./release/release-constants";
+import { createReleaseRelay } from "./release/relay";
+import { PINNED_RELEASE_KEYS } from "../release-dist/pinned-keys";
 import { rememberRunningRelease } from "./release/running-release";
 import { createSwClient, ensureServiceWorker as registerWorker, type SwClient } from "./release/sw-client";
 import { refreshShellManifest } from "./shell/manifest-cache";
@@ -65,7 +67,7 @@ export type BootWiring = {
   fetchImpl?: typeof fetch;
   gunzip?: Parameters<typeof runLocalFirstBoot>[0]["gunzip"];
   /** Subscribes to browser events; returns the unsubscribe. */
-  listen: (type: "online" | "storage", fn: (event: any) => void) => () => void;
+  listen: (type: "online" | "storage" | "px-release-relayed", fn: (event: any) => void) => () => void;
   now?: () => number;
   /** Told the release this laptop has installed after every pass (X-Px-Client names it: release/running-release.ts). */
   rememberRelease?: (version: string | null) => void;
@@ -101,6 +103,12 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
     fetchImpl: wiring.fetchImpl,
     gunzip: wiring.gunzip,
     now: wiring.now,
+    // keeps a verified, signed release so this laptop can hand it to a peer (release/relay.ts); inert without a pinned key
+    relay: createReleaseRelay({
+      meta: wiring.deviceMeta,
+      keys: PINNED_RELEASE_KEYS,
+      installedVersion: async () => (await wiring.deviceMeta.getMeta<InstalledRelease>(META_KEYS.release).catch(() => undefined))?.version ?? null,
+    }),
   }).catch(() => null);
   // AUDIT-100 A3: the worker now serves the shell for this person (a release was installed, or its pointer was set again after a sign-in): a
   // server-rendered page that is open hands the person over to it (LocalShellHandoff) -- at the END of the pass, never before the data step below.
@@ -176,6 +184,11 @@ export function startBoot(wiring: BootWiring): BootHandle {
     if (stopped || clock() - lastPassAt < MIN_RERUN_MS) return;
     pass();
   });
+  // A peer handed over a verified newer release (peer/protocol.ts rel_*, release/relay.ts): install it now, with or without a network.
+  const stopRelayed = wiring.listen("px-release-relayed", () => {
+    if (stopped) return;
+    pass();
+  });
   // Another tab turned local-first mode on or off: tell the worker.
   const stopStorage = wiring.listen("storage", (event: { key?: string | null }) => {
     if (stopped || event?.key !== LOCAL_FIRST_FLAG) return;
@@ -187,6 +200,7 @@ export function startBoot(wiring: BootWiring): BootHandle {
       stopped = true;
       stopMirror();
       stopOnline();
+      stopRelayed();
       stopStorage();
     },
     settled: () => current.then(() => undefined),

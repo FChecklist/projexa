@@ -51,7 +51,14 @@ describe("GET /release/current", () => {
       current: { release_version: "2026.10.02-001", manifest_sha256: "a".repeat(64), built_at: "2026-10-02T09:30:00Z", files: [{ path: "_next/static/a.js", file_no: 4, file_version: 2, sha256: "b".repeat(64), size: 10 }] },
       min_compatible: "2026.09.01-001",
       registered: true,
+      origin: null,
     });
+  });
+
+  test("P4: the registry's advertised origin is read, and an absent one is null", () => {
+    expect(parseCurrentRelease({ current: null, registered: true, origin: "https://x.example/bucket" })?.origin).toBe("https://x.example/bucket");
+    expect(parseCurrentRelease({ current: null, registered: true })?.origin).toBeNull();
+    expect(parseCurrentRelease({ current: null, registered: true, origin: 7 })?.origin).toBeNull();
   });
 
   test("silent on every failure: no token, network error, 5xx, 404, non-JSON, wrong shape, timeout", async () => {
@@ -69,7 +76,7 @@ describe("GET /release/current", () => {
   });
 
   test("a registry with no current release yet is a valid answer", () => {
-    expect(parseCurrentRelease({ current: null, min_compatible: null, registered: false })).toEqual({ current: null, min_compatible: null, registered: false });
+    expect(parseCurrentRelease({ current: null, min_compatible: null, registered: false })).toEqual({ current: null, min_compatible: null, registered: false, origin: null });
   });
 });
 

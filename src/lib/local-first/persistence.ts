@@ -25,7 +25,10 @@ import {
   type InstallResult,
   type MetaStore,
 } from "./release/installer";
-import { META_KEYS, releaseCacheName } from "./release/release-constants";
+import { META_KEYS, normalizeStaticBase, releaseCacheName } from "./release/release-constants";
+import { RELAY_PENDING_KEY, type ReleaseRelay, type RelayPackage } from "./release/relay";
+import type { TrustedReleaseKey } from "../release-dist/signed-manifest";
+import { PINNED_RELEASE_KEYS } from "../release-dist/pinned-keys";
 import { withInstallLock } from "./release/install-lock";
 import type { ReleaseClient } from "./release/release-client";
 import { dropReleaseKeptForAnother, type SwClient } from "./release/sw-client";
@@ -239,7 +242,14 @@ export type BootDeps = {
   /** How long a "nothing changed" answer is trusted before the manifest is looked at again. */
   checkEveryMs?: number;
   random?: () => string;
+  /** Release signing keys this build pins (default: pinned-keys.ts). */
+  trustedKeys?: readonly TrustedReleaseKey[];
+  /** The release relay: a release installed from a verified download is kept so this laptop can hand it to peers (release/relay.ts). */
+  relay?: ReleaseRelay | null;
 };
+
+/** Failures that a retry would not fix: a relayed package that fails one of these is dropped instead of tried at every boot. */
+const PERMANENT_INSTALL_FAILURES = new Set(["manifest_invalid", "manifest_digest", "manifest_signature", "bundle_hash", "bundle_unreadable", "file_hash", "file_missing", "file_unexpected", "version_collision"]);
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const LAST_CHECK_KEY = "app:last-check";
@@ -263,6 +273,35 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
   // A release another person kept on this laptop at their sign-out is dropped first (sw-client.ts dropReleaseKeptForAnother).
   await dropReleaseKeptForAnother(deps.sw, deps.personId).catch(() => false);
   const online = deps.isOnline();
+  const keepForRelay = deps.relay ? async (k: { manifest: RelayPackage["manifest"]; signature: RelayPackage["signature"]; bundle: Uint8Array }) => { await deps.relay!.keep(k); } : undefined;
+
+  // A release a peer handed over (release/relay.ts) is installed first, with or without a network: it needs none. installRelease verifies it
+  // again exactly like a download (digest, pinned-key signature, bundle hash, every file hash), and the person's data is not touched.
+  const relayed = await deps.meta.getMeta<RelayPackage>(RELAY_PENDING_KEY).catch(() => undefined);
+  if (relayed) {
+    const deviceId = await getDeviceId(deps.meta, deps.random);
+    const registry = online ? deps.registry ?? null : null;
+    const result = await withInstallLock(() => installRelease({
+      caches,
+      meta: deps.meta,
+      now,
+      gunzip: deps.gunzip,
+      deviceId,
+      trustedKeys: deps.trustedKeys,
+      supplied: { manifest: relayed.manifest, signature: relayed.signature },
+      takePrewarmedBundle: (manifest) => (manifest.manifest_sha256 === relayed.manifest.manifest_sha256 ? relayed.bundle : null),
+      keepForRelay,
+      switchTo: async (version) => {
+        const reply = await deps.sw.useRelease(version, deps.personId, deps.localFirstOn());
+        if (!reply || !reply.ok) throw new Error(reply ? String(reply.error ?? "refused") : "the worker did not answer");
+      },
+      registry: registry ? async (wanted) => (await registry.ensureRegistered(undefined, wanted))?.current ?? null : undefined,
+      recordInstall: registry ? (record) => registry.recordInstall(record) : undefined,
+    }));
+    if (result.status !== "failed" || PERMANENT_INSTALL_FAILURES.has(result.reason)) await deps.meta.setMeta(RELAY_PENDING_KEY, null).catch(() => {});
+    if (result.status !== "failed") report.release = result;
+  }
+
   if (online) {
     const missing = await installedCacheMissing({ caches, meta: deps.meta });
     const installed = (await deps.meta.getMeta<InstalledRelease>(META_KEYS.release).catch(() => undefined)) ?? null;
@@ -271,7 +310,14 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
     if (due) {
       const deviceId = await getDeviceId(deps.meta, deps.random);
       const registry = deps.registry ?? null;
+      // WHERE the bytes come from: the registry may say so (projexa-sync PX_RELEASE_ORIGIN), but only a build that pins release-signing keys follows it,
+      // because then a wrong origin can withhold an update and nothing worse: the signature, the digest and every hash still have to verify.
+      const trusted = deps.trustedKeys ?? PINNED_RELEASE_KEYS;
+      const advertised = registry && trusted.length > 0 ? normalizeStaticBase((await registry.current().catch(() => null))?.origin) : "";
       report.release = await withInstallLock(() => installRelease({
+        ...(advertised ? { staticBase: advertised } : {}),
+        trustedKeys: deps.trustedKeys,
+        keepForRelay,
         fetchImpl: deps.fetchImpl,
         caches,
         meta: deps.meta,
