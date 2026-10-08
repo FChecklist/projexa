@@ -4,7 +4,8 @@
 //   markAttendanceOffline     record_attendance       {projectId, rosterId, date, status, hours?}
 //   recordIssueOffline        record_material_issue   {projectId, materialId, quantity, issuedDate, boqLineItemId?, issuedTo?, note?}
 //   recordReceiptOffline      record_material_receipt {projectId, materialId, quantity, receivedDate, reference?, notes?}  (NO unitCost)
-//   recordProgressOffline     record_work_progress    {projectId, boqLineItemId, quantityDone | percent, entryDate, remarks?}
+//   recordProgressOffline     record_work_progress    {projectId, boqLineItemId, quantityDone | percent, entryDate, remarks?, activityId?*}
+//                                                     * only once the registry DECLARES activityId for it (see "honest limit" below)
 //
 // Function ids and parameter names are the registry's (compliance-tracker supabase/functions/ai-work-link/
 // function-registry.generated.json). The laptop only PROPOSES: the server runs each function under the person's live role and decides.
@@ -25,8 +26,16 @@
 // the person made, so the entry would silently land on an activity they did not pick. This writer therefore REFUSES when the project
 // holds more than one activity (`several_activities`), and the screen says that the entry needs the server today. It accepts when the
 // project has exactly one activity (the server's choice is that one) or none (the server makes the default one, as online).
+//
+// P2 (2026-10-08): THE PICKER IS READY, THE SERVER IS NOT. The writer takes the activity the person chose (`activityId`) and
+// checks it against the project's activities on this laptop. It SENDS it, and stops refusing a project with several activities,
+// only when the registry copy (ai/function-registry.json) lists `activityId` among record_work_progress's declared_params. Today
+// it does not, and the AI work link DROPS an undeclared parameter without a word (reads.ts / the pipeline's coverage tests), so
+// sending it now would put the entry on the server's "first" activity while the laptop showed the chosen one -- the very silent
+// misfiling this refusal exists to prevent. When compliance-tracker's record_work_progress gains an `activityId` and the registry
+// copy is refreshed, the picker and the param switch on with no change here.
 
-import { rankOf } from "../../ai/registry";
+import { findFunction, rankOf } from "../../ai/registry";
 import { localDbNameFor, openLocalDb } from "../../local-db";
 import type { Outbox } from "../../outbox";
 import { MANIFEST_KEY, type StoredManifest } from "../../replica";
@@ -34,7 +43,22 @@ import type { ShellData } from "../context";
 import { DELIVERY_KINDS, parseActivity, parseBoqLineRef, parseMaterial, parseWorker, readKind } from "./delivery-local";
 
 /** Injected by tests; the screens pass nothing (the shared outbox of this person is used). */
-export type DeliveryWriteAccess = { outbox?: Outbox; newId?: () => string };
+export type DeliveryWriteAccess = {
+  outbox?: Outbox;
+  newId?: () => string;
+  /** Whether the registry declares `param` for `functionId`. Tests inject it; the screens use the registry copy. */
+  declaresParam?: (functionId: string, param: string) => boolean;
+};
+
+/** The registry copy's answer: does the server's function take this parameter? */
+export function registryDeclares(functionId: string, param: string): boolean {
+  return findFunction(functionId)?.declared_params.includes(param) ?? false;
+}
+
+/** Whether a progress entry kept on the laptop can say WHICH activity it is for (see the header's P2 note). */
+export function progressCanNameActivity(declares: (functionId: string, param: string) => boolean = registryDeclares): boolean {
+  return declares("record_work_progress", "activityId");
+}
 
 export type WriteResult =
   | { queued: true; opId: string; tempId: string }
@@ -46,6 +70,7 @@ export type WriteRefusal =
   | "unknown_record" // the worker / material / BOQ line is not in this project on this laptop
   | "invalid" // a value the server would refuse (empty, negative, not a date)
   | "several_activities" // see the header: record_work_progress cannot be told which activity
+  | "no_activity_chosen" // several activities, and the person has not picked one
   | "failed"; // the outbox could not store it (nothing was kept)
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -187,6 +212,8 @@ export type ProgressInput = {
   boqLineItemId: string;
   entryDate: string;
   remarks?: string | null;
+  /** The activity the person chose. Needed when the project has more than one; checked against this laptop's list. */
+  activityId?: string | null;
 } & ({ quantityDone: number; percent?: undefined } | { percent: number; quantityDone?: undefined });
 
 export async function recordProgressOffline(data: ShellData, input: ProgressInput, access: DeliveryWriteAccess = {}): Promise<WriteResult> {
@@ -202,8 +229,17 @@ export async function recordProgressOffline(data: ShellData, input: ProgressInpu
     readKind(data, input.projectId, DELIVERY_KINDS.boqLines, parseBoqLineRef),
   ]);
   if (!activities.synced || !lines.synced) return refuse("not_synced");
-  if (activities.rows.length > 1) return refuse("several_activities");
+  const canName = progressCanNameActivity(access.declaresParam);
+  const chosen = optText(input.activityId);
+  if (activities.rows.length > 1) {
+    if (!canName) return refuse("several_activities");
+    if (!chosen) return refuse("no_activity_chosen");
+  }
+  if (chosen && !activities.rows.some((a) => a.id === chosen)) return refuse("unknown_record");
   if (!lines.rows.some((l) => l.id === input.boqLineItemId)) return refuse("unknown_record");
+  // sent only when the server takes it; with one activity (or none) the server's own choice is the same one
+  const activityParam = canName && chosen ? { activityId: chosen } : {};
+  const activityId = chosen ?? activities.rows[0]?.id ?? null;
   const remarks = optText(input.remarks);
   const value = byQuantity ? { quantityDone: input.quantityDone } : { percent: input.percent };
   return enqueueCreate(ctx, {
@@ -211,9 +247,9 @@ export async function recordProgressOffline(data: ShellData, input: ProgressInpu
     projectId: input.projectId,
     kind: DELIVERY_KINDS.progress,
     label: "Progress entry",
-    params: { projectId: input.projectId, boqLineItemId: input.boqLineItemId, entryDate: input.entryDate, ...value, ...(remarks ? { remarks } : {}) },
+    params: { projectId: input.projectId, boqLineItemId: input.boqLineItemId, entryDate: input.entryDate, ...value, ...activityParam, ...(remarks ? { remarks } : {}) },
     row: (id) => ({
-      id, activity_id: activities.rows[0]?.id ?? null, boq_line_item_id: input.boqLineItemId, entry_date: input.entryDate,
+      id, activity_id: activityId, boq_line_item_id: input.boqLineItemId, entry_date: input.entryDate,
       // a quantity's percent is the server's to compute against the line's own quantity: null until it answers
       quantity_done: byQuantity ? input.quantityDone : null, percent_complete: byQuantity ? null : input.percent,
       remarks: remarks ?? null, entry_basis: "DELTA",
@@ -246,6 +282,8 @@ export function refusalText(reason: WriteRefusal): string {
       return "Please check the values: a date, and an amount above zero.";
     case "several_activities":
       return "This project has more than one activity, and an entry saved on the laptop cannot say which one yet. Save it while you are online, from the full screen.";
+    case "no_activity_chosen":
+      return "Choose which activity this work is for.";
     case "failed":
       return "This could not be kept on the laptop. Nothing was saved; please try again.";
   }
