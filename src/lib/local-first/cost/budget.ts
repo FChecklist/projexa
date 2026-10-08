@@ -62,19 +62,45 @@ export const SCENARIO_BUDGETS = {
    * (a) online, tab visible, nothing changes anywhere, 8 hours. Package FC (cost:COST-03) tightened it from 60: with GET /heads a quiet
    * round is ONE request whatever the number of projects (measured 22; lf-e6's project mode measured 50 at 5 projects, 155 at 20).
    */
-  idle8h: 30,
+  idle8h: 105, // 2026-10-08 FRESHNESS: was 30. A steady 5-minute /heads poll (scheduler `steady`) is ~96 requests per 8 hours by design (measured 101).
   /** (a') the same idle day with 20 projects: the heads poll does not grow with projects (FC cost:COST-03). */
-  idle8h20Projects: 30,
+  idle8h20Projects: 105,
   /** (b) an 8-hour working day: 30 own edits and 30 changes made by colleagues. Includes the 30 exec runs of the pushed ops. */
-  workday: 260,
+  workday: 275, // was 260; the steady poll adds the idle rounds that used to back off (measured 268)
   /** (c) the first sync of a person with 5 projects (28 kinds each), and the rest of that first hour: one page per pair, plus ~35. */
   coldStart5Projects: 5 * 28 + 35,
   /** (d) reconnecting after 3 days offline (200 changes made meanwhile): the catch-up. */
   reconnectAfter3Days: 25,
   /** (e) 10 laptops of one organisation, peers connected, each a working day of 30 edits: per laptop. */
-  tenLaptopsPerLaptop: 260,
+  tenLaptopsPerLaptop: 310, // was 260; steady poll + a moved project is read at once (measured 301.8)
   /** The claim loop of the jobs feature, if switched on, per 8 visible hours with no job ever offered. */
   jobsClaimIdle8h: 45,
+} as const;
+
+/**
+ * DELTA-ONLY ceilings (docs/local-first/DELTA_ONLY.md, scenario (f) in scenarios.ts): bytes and row BODIES on the wire after the first copy.
+ * A row body is a full record. Raising any of these is a deliberate act that says why (the owner's rule: only what changed is sent).
+ */
+export const DELTA_BUDGETS = {
+  /** Row bodies received in a quiet half hour: none. */
+  quietRowBodies: 0,
+  /** Bytes a quiet laptop receives in half an hour: the /heads polls only. */
+  quietBytesPerLaptop: 3_000,
+  /** One edit on laptop A: row bodies A receives back (its own row is already current) ... */
+  editSenderRowBodies: 1,
+  /** ... and row bodies a colleague's laptop receives: exactly the one changed row. */
+  editReceiverRowBodies: 1,
+  /** One colleague change on the server: row bodies each laptop receives. */
+  colleagueRowBodies: 1,
+  /**
+   * Change-feed ENTRIES (id + version, no body) one moved-project read may carry: the documented CHANGE_FEED_OVERLAP re-read (replica.ts, 200)
+   * plus the change itself. The one place more than the change is read; it is metadata, never a row body.
+   */
+  changeEntriesPerRead: 205,
+  /** Everything A sends for one edit in the half hour after it: the one push op (changed field + base version) and its follow-up change reads. */
+  editSenderRequestBytes: 700,
+  /** One edit (sent by A, received by B), both directions together, as a fraction of the first copy's bytes. */
+  editFractionOfFirstCopy: 0.1,
 } as const;
 
 /** The month of one working laptop must leave room for at least this many laptops in the free quota. */

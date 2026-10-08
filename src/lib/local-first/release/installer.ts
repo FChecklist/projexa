@@ -27,6 +27,8 @@ import {
   urlForReleasePath,
 } from "./release-constants";
 import type { InstallRecord, RegistryRelease, ReleaseManifest } from "./release-client";
+import { SIGNATURE_FILE, verifyRelease, type ReleaseSignature, type TrustedReleaseKey } from "../../release-dist/signed-manifest";
+import { PINNED_RELEASE_KEYS, SIGNATURE_REQUIRED_FROM, signatureRequired } from "../../release-dist/pinned-keys";
 
 // ─── what the installer needs from the browser, as small interfaces ───────────────────────────────────
 
@@ -85,6 +87,7 @@ export type InstallFailure =
   | "manifest_unreachable"
   | "manifest_invalid"
   | "manifest_digest"
+  | "manifest_signature"
   | "bundle_unreachable"
   | "bundle_hash"
   | "bundle_unreadable"
@@ -119,6 +122,27 @@ export type InstallerDeps = {
   registry?: (wanted: { release_version: string; manifest_sha256: string }) => Promise<RegistryRelease | null>;
   /** POST /install; resolves false (never throws) when it could not be sent. */
   recordInstall?: (record: InstallRecord) => Promise<boolean>;
+  /** P1: a bundle already downloaded (and verified) before sign-in finished, for exactly this manifest, or null. Hashes are re-checked here. */
+  takePrewarmedBundle?: (manifest: ReleaseManifest) => Uint8Array | null;
+  /**
+   * RELEASE DISTRIBUTION: the release-signing public keys this build trusts (default: the keys pinned at build time, usually none).
+   * With at least one, a release is installed ONLY when `release.sig.json` (or `supplied.signature`) names this manifest and verifies
+   * under one of them; with none the installer behaves as before.
+   */
+  trustedKeys?: readonly TrustedReleaseKey[];
+  /**
+   * The first release_version that must be signed (see pinned-keys.ts SIGNATURE_REQUIRED_FROM; default: this build's value, "" = never). A release
+   * BELOW it that carries no signature file (404) installs as before; one that carries a signature must always verify. When `trustedKeys` is
+   * injected and this is not, every release must be signed (the strict form).
+   */
+  signatureRequiredFrom?: string;
+  /**
+   * A release that arrived without the static host (handed over by another laptop, release/relay.ts): its manifest and signature are used
+   * instead of fetching them, and `takePrewarmedBundle` supplies the bytes. Everything is still verified here, exactly as for a download.
+   */
+  supplied?: { manifest: unknown; signature: ReleaseSignature | null };
+  /** After a successful install that had the whole bundle and a verified signature in hand: lets this laptop pass the release on (relay.ts keep). Best effort. */
+  keepForRelay?: (kept: { manifest: ReleaseManifest; signature: ReleaseSignature; bundle: Uint8Array }) => Promise<void>;
 };
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -232,22 +256,27 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
   let metaWritten = false;
   let downloaded = 0;
   let bytesDownloaded = 0;
+  let fullBundle: Uint8Array | null = null;
 
   try {
     // 1. the manifest, verified
-    let manifestRes: Response;
-    try {
-      const manifestUrl = deps.manifestUrl ?? where("/_release/release.json");
-      manifestRes = await doFetch(manifestUrl, manifestUrl.startsWith("/") ? sameOriginOpts : fetchOpts);
-    } catch (err) {
-      throw new InstallError("manifest_unreachable", `The release manifest could not be fetched (${errText(err)}).`);
-    }
-    if (!manifestRes.ok) throw new InstallError("manifest_unreachable", `The release manifest answered ${manifestRes.status}.`);
     let manifestJson: unknown;
-    try {
-      manifestJson = await manifestRes.json();
-    } catch {
-      throw new InstallError("manifest_invalid", "The release manifest is not JSON.");
+    if (deps.supplied) {
+      manifestJson = deps.supplied.manifest; // handed over by another laptop: nothing to fetch, everything below still applies
+    } else {
+      let manifestRes: Response;
+      try {
+        const manifestUrl = deps.manifestUrl ?? where("/_release/release.json");
+        manifestRes = await doFetch(manifestUrl, manifestUrl.startsWith("/") ? sameOriginOpts : fetchOpts);
+      } catch (err) {
+        throw new InstallError("manifest_unreachable", `The release manifest could not be fetched (${errText(err)}).`);
+      }
+      if (!manifestRes.ok) throw new InstallError("manifest_unreachable", `The release manifest answered ${manifestRes.status}.`);
+      try {
+        manifestJson = await manifestRes.json();
+      } catch {
+        throw new InstallError("manifest_invalid", "The release manifest is not JSON.");
+      }
     }
     manifest = parseManifest(manifestJson);
     if (!(await manifestDigestOk(manifest))) throw new InstallError("manifest_digest", "The release manifest does not match its own digest.");
@@ -263,6 +292,34 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     if (previous && previous.version === version && previous.manifest_sha256 !== manifest.manifest_sha256 && (await deps.caches.has(releaseCacheName(version)))) {
       throw new InstallError("version_collision", `Release ${version} is already installed with different content.`);
     }
+    // SIGNATURE (RELEASE_DISTRIBUTION_2026-10-06.md, "Not done" item 1): right after the manifest digest and the "already installed" answers, before
+    // one byte of the release is downloaded or written. With a pinned key the release must carry a signature that names exactly this manifest
+    // and verifies; anything else refuses and nothing switches. With no pinned key this is skipped (the behaviour before this hook).
+    const trusted = deps.trustedKeys ?? PINNED_RELEASE_KEYS;
+    let verifiedSignature: ReleaseSignature | null = null;
+    const requiredFrom = deps.signatureRequiredFrom ?? (deps.trustedKeys ? "0" : SIGNATURE_REQUIRED_FROM);
+    if (trusted.length > 0) {
+      const mustSign = signatureRequired(version, requiredFrom);
+      let sigDoc: unknown = deps.supplied ? deps.supplied.signature : null;
+      let absent = !deps.supplied ? false : sigDoc === null;
+      if (!deps.supplied) {
+        try {
+          const sigRes = await doFetch(where(`/${SIGNATURE_FILE}`), optsFor(`/${SIGNATURE_FILE}`));
+          if (sigRes.status === 404 && !mustSign) absent = true;
+          else {
+            if (!sigRes.ok) throw new Error(`answered ${sigRes.status}`);
+            sigDoc = await sigRes.json();
+          }
+        } catch (err) {
+          throw new InstallError("manifest_signature", `The release signature could not be read (${errText(err)}).`);
+        }
+      }
+      if (!(absent && !mustSign)) {
+        const check = await verifyRelease(manifest, sigDoc, trusted);
+        if (!check.ok) throw new InstallError("manifest_signature", `The release signature was refused (${check.reason}).`);
+        verifiedSignature = sigDoc as ReleaseSignature;
+      }
+    }
     newCacheName = releaseCacheName(version);
 
     // 2. which files must come over the network
@@ -270,7 +327,10 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     const oldCache = oldCacheName && (await deps.caches.has(oldCacheName)) ? await deps.caches.open(oldCacheName) : null;
     const oldSha = new Map((previousFiles && previous && previousFiles.version === previous.version ? previousFiles.rows : []).map((r) => [r.path, r.sha256]));
     const changed = manifest.files.filter((f) => oldSha.get(f.path) !== f.sha256);
-    const partial = oldCache !== null && oldSha.size > 0 && changed.length * 2 < manifest.files.length;
+    // DELTA-ONLY (docs/local-first/DELTA_ONLY.md, path 1): whenever the old copy is still on the laptop and at least one file is unchanged, ONLY the
+    // changed files are fetched, however many they are. (An earlier rule fetched the whole bundle once half the files changed.) The bundle is
+    // used only when nothing can be reused: a first install, an emptied cache, or a release in which every file differs.
+    const partial = oldCache !== null && oldSha.size > 0 && changed.length < manifest.files.length;
 
     // A leftover of an earlier failed attempt at this same version is not trusted.
     if (await deps.caches.has(newCacheName)) await deps.caches.delete(newCacheName);
@@ -304,33 +364,19 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
       }
     } else {
       // 2a/3/4. the ONE bundle
-      let bundleRes: Response;
-      try {
-        bundleRes = await doFetch(where(`/${manifest.bundle.path}`), optsFor(`/${manifest.bundle.path}`));
-      } catch (err) {
-        throw new InstallError("bundle_unreachable", `The release bundle could not be fetched (${errText(err)}).`);
+      let bundleBytes: Uint8Array | null = deps.takePrewarmedBundle?.(manifest) ?? null;
+      if (!bundleBytes) {
+        let bundleRes: Response;
+        try {
+          bundleRes = await doFetch(where(`/${manifest.bundle.path}`), optsFor(`/${manifest.bundle.path}`));
+        } catch (err) {
+          throw new InstallError("bundle_unreachable", `The release bundle could not be fetched (${errText(err)}).`);
+        }
+        if (!bundleRes.ok) throw new InstallError("bundle_unreachable", `The release bundle answered ${bundleRes.status}.`);
+        bundleBytes = await bytesOf(bundleRes);
       }
-      if (!bundleRes.ok) throw new InstallError("bundle_unreachable", `The release bundle answered ${bundleRes.status}.`);
-      const bundleBytes = await bytesOf(bundleRes);
-      if (bundleBytes.length !== manifest.bundle.size || (await sha256Hex(bundleBytes)) !== manifest.bundle.sha256) {
-        throw new InstallError("bundle_hash", "The release bundle does not match the manifest (size or sha256).");
-      }
-      let entries: TarEntry[];
-      try {
-        entries = await readBundle(bundleBytes, deps.gunzip);
-      } catch (err) {
-        throw new InstallError("bundle_unreadable", errText(err));
-      }
-      const byPath = new Map<string, Uint8Array>(entries.map((e): [string, Uint8Array] => [e.path, e.bytes]));
-      const listed = new Set(manifest.files.map((f) => f.path));
-      for (const entry of entries) {
-        if (!listed.has(entry.path)) throw new InstallError("file_unexpected", `The bundle holds a file the manifest does not list: ${entry.path}`);
-      }
-      for (const file of manifest.files) {
-        const bytes = byPath.get(file.path);
-        if (!bytes) throw new InstallError("file_missing", `The bundle lacks a file the manifest lists: ${file.path}`);
-        await verifyFile(file, bytes);
-      }
+      const byPath = await verifyBundleBytes(manifest, bundleBytes, deps.gunzip);
+      fullBundle = bundleBytes;
       for (const file of manifest.files) await write(file.path, byPath.get(file.path)!);
       downloaded = manifest.files.length;
       bytesDownloaded = bundleBytes.length;
@@ -385,6 +431,9 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     await deleteOtherReleaseCaches(deps.caches, version).catch(() => []);
     await deps.meta.setMeta(META_KEYS.releaseFailure, null).catch(() => {});
 
+    // This laptop may now pass the verified, signed release on to a laptop that has no route to the host (relay.ts).
+    if (deps.keepForRelay && fullBundle && verifiedSignature) await deps.keepForRelay({ manifest, signature: verifiedSignature, bundle: fullBundle }).catch(() => {});
+
     const status: "installed" | "updated" = previous ? "updated" : "installed";
     const installRecord: InstallRecord = {
       device_id: deps.deviceId,
@@ -427,6 +476,34 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     });
     return { status: "failed", version: manifest?.release_version ?? null, reason: failure.reason, error: failure.message };
   }
+}
+
+/**
+ * Checks a whole bundle against its manifest: size and sha256 of the bundle, every file listed and present, none unlisted, every file's size and
+ * sha256. Throws InstallError on the first problem; returns the files by path. The one place this is done: the download path and the peer relay
+ * (relay.ts) both call it, so a relayed bundle is held to exactly the standard a downloaded one is.
+ */
+export async function verifyBundleBytes(manifest: ReleaseManifest, bundleBytes: Uint8Array, gunzip?: Gunzip): Promise<Map<string, Uint8Array>> {
+  if (bundleBytes.length !== manifest.bundle.size || (await sha256Hex(bundleBytes)) !== manifest.bundle.sha256) {
+    throw new InstallError("bundle_hash", "The release bundle does not match the manifest (size or sha256).");
+  }
+  let entries: TarEntry[];
+  try {
+    entries = await readBundle(bundleBytes, gunzip);
+  } catch (err) {
+    throw new InstallError("bundle_unreadable", errText(err));
+  }
+  const byPath = new Map<string, Uint8Array>(entries.map((e): [string, Uint8Array] => [e.path, e.bytes]));
+  const listed = new Set(manifest.files.map((f) => f.path));
+  for (const entry of entries) {
+    if (!listed.has(entry.path)) throw new InstallError("file_unexpected", `The bundle holds a file the manifest does not list: ${entry.path}`);
+  }
+  for (const file of manifest.files) {
+    const bytes = byPath.get(file.path);
+    if (!bytes) throw new InstallError("file_missing", `The bundle lacks a file the manifest lists: ${file.path}`);
+    await verifyFile(file, bytes);
+  }
+  return byPath;
 }
 
 async function fetchFile(doFetch: typeof fetch, target: (urlPath: string) => [string, RequestInit], path: string): Promise<Uint8Array> {

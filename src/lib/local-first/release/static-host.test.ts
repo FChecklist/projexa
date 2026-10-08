@@ -122,7 +122,7 @@ describe("the installer with a static host", () => {
     const l = laptop(hosts, STATIC);
     const result = await l.install();
     expect(result).toMatchObject({ status: "installed", version: V1, mode: "full" });
-    expect(hosts.asked.map((a) => a.url)).toEqual([`${STATIC}/_release/release.json?${INSTALL_PARAM}=1`, `${STATIC}/${release.manifest.bundle.path}?${INSTALL_PARAM}=1`]);
+    expect(hosts.asked.map((a) => a.url)).toEqual([`${STATIC}/_release/release.json?${INSTALL_PARAM}=1`, `${STATIC}/_release/release.sig.json?${INSTALL_PARAM}=1`, `${STATIC}/${release.manifest.bundle.path}?${INSTALL_PARAM}=1`]);
     for (const a of hosts.asked) {
       expect(a.init.credentials).toBe("omit");
       expect(a.init.cache).toBe("no-store");
@@ -146,7 +146,7 @@ describe("the installer with a static host", () => {
     const caches = new FakeCacheStorage();
     const result = await installRelease({ fetchImpl: sameOrigin, caches, meta: new FakeMeta(), gunzip, deviceId: "d", staticBase: "", switchTo: async () => {} });
     expect(result.status).toBe("installed");
-    expect(asked.map((a) => a.url)).toEqual(["/_release/release.json", `/${release.manifest.bundle.path}`]);
+    expect(asked.map((a) => a.url)).toEqual(["/_release/release.json", "/_release/release.sig.json", `/${release.manifest.bundle.path}`]);
     for (const a of asked) expect(new Headers(a.init.headers).get("x-px-install")).toBe("1");
   });
 
@@ -161,7 +161,7 @@ describe("the installer with a static host", () => {
     hosts.asked.length = 0;
     const result = await l.install();
     expect(result).toMatchObject({ status: "updated", version: V2, mode: "partial", downloadedFiles: 2 });
-    expect(hosts.asked.map((a) => a.url).sort()).toEqual([`${STATIC}/_next/static/chunks/file-03.js?${INSTALL_PARAM}=1`, `${STATIC}/_release/release.json?${INSTALL_PARAM}=1`, SHELL_URL].sort());
+    expect(hosts.asked.map((a) => a.url).sort()).toEqual([`${STATIC}/_next/static/chunks/file-03.js?${INSTALL_PARAM}=1`, `${STATIC}/_release/release.json?${INSTALL_PARAM}=1`, `${STATIC}/_release/release.sig.json?${INSTALL_PARAM}=1`, SHELL_URL].sort());
   });
 
   test("the static host serving ONE wrong byte in the bundle: refused, nothing installed", async () => {

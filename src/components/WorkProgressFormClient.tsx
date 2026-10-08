@@ -40,6 +40,7 @@
 // defect, and the same fix, as D-46 applied to ScheduleLogTimeClient: the
 // failure is stated in words, it carries a Retry, and the disabled reason
 // names the real cause.
+import { readScopeHeaders } from "@/lib/scope-list-reads";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -216,7 +217,7 @@ export default function WorkProgressFormClient({
     let cancelled = false;
     (async () => {
       try {
-        const data = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
+        const data = await readScopeHeaders<Boq>(projectId);
         if (cancelled) return;
         const all: Boq[] = data.boqs ?? [];
         setBoqError(null);

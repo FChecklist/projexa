@@ -30,7 +30,7 @@
 // it carries keepRelease: the release cache is KEPT but the record is marked signed out. Online, a signed-out laptop then behaves as before
 // (no navigation is answered with the shell first: the server's pages, the login page, are what the person gets); its public static files
 // are still served from the laptop. OFFLINE (AUDIT-100 B20) the kept release opens the shell, whose signed-out screen is the offline
-// passcode sign-in (the salted hash kept at the last online sign-in, offline-pin.ts). When the SAME person signs in again,
+// connection-needed notice (P1: no passcode; offline-pin.ts is retired). When the SAME person signs in again,
 // USE_RELEASE / SET_PERSON make it active again and the 8.9 MB bundle is not downloaded again. ANOTHER person never gets it: their
 // SET_PERSON or USE_RELEASE deletes it and they install their own (and the explicit "Sign out and delete this laptop's copy" sends no
 // keepRelease: everything is deleted, as before). The release files themselves are public build output; no person's data is ever put
@@ -179,7 +179,7 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
   async function navigation(request: Request, path: string, wantsServerPage: boolean): Promise<Response> {
     const pointer = await readPointer();
     const app = isLocalPath(path) || !isPublicPage(path);
-    // a kept (signed-out) release still has its shell: used when there is no network (its signed-out screen is the offline passcode sign-in)
+    // a kept (signed-out) release still has its shell: used when there is no network (its signed-out screen says a connection is needed for a first sign-in)
     const shell = await shellFor(pointer);
 
     // Served first, so no request leaves the laptop -- unless the shell itself sent the person here for a screen it does not have. Never for a
@@ -277,7 +277,7 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
       }
       case "CLEAR_PERSON": {
         const before = await readPointer();
-        // keepRelease (the default sign-out): the SAME person's release stays on the laptop, no shell online until they sign in again; offline the shell's passcode sign-in (B20).
+        // keepRelease (the default sign-out): the SAME person's release stays on the laptop, no shell online until they sign in again; offline the shell's signed-out notice (P1).
         if (data.keepRelease === true && before && before.personId && typeof data.personId === "string" && before.personId === data.personId && (await scope.caches.has(releaseName(before.version)))) {
           await deleteReleaseCaches(releaseName(before.version));
           await writePointer({ ...before, signedOut: true, at: Date.now() });

@@ -79,7 +79,8 @@ describe("the route list (deny by default: only these are answered by the edge)"
   });
 
   test("the parity contract covers every route and method the edge answers (an uncovered route cannot be added)", () => {
-    for (const r of routesFile().routes) for (const m of Object.keys(r.methods)) expect(REQUESTS.some((q) => q.route === r.route && q.method === m), `${m} ${r.route}`).toBe(true);
+    // an edge_only route has no Next handler to record the contract from: its role gate and answers are held by compliance-tracker's own edge test
+    for (const r of routesFile().routes.filter((x) => !(x as { edge_only?: boolean }).edge_only)) for (const m of Object.keys(r.methods)) expect(REQUESTS.some((q) => q.route === r.route && q.method === m), `${m} ${r.route}`).toBe(true);
   });
 
   test("batch 5: the browser switch's shadow list is the generated one; a literal Vercel sibling of a dynamic edge route stays same-origin", () => {
@@ -142,8 +143,8 @@ describe("G-09: new-organisation provisioning is answered by the function too (s
     expect(seen[2]!.url).toBe("/api/org/provision"); // no token in the browser: same origin, as for every route
   });
 
-  test("signup and login call it through viaPxApi, never a bare fetch", () => {
-    for (const f of ["src/app/signup/page.tsx", "src/app/login/page.tsx"]) {
+  test("sign-in (code, Google, callback) calls it through viaPxApi, never a bare fetch", () => {
+    for (const f of ["src/lib/auth/post-login-deps.ts"]) { // P1: signup redirects to /login; login and the callback both provision through runPostLogin -> post-login-deps
       const src = readFileSync(join(import.meta.dir, "..", "..", f), "utf8");
       expect(src).toContain('viaPxApi("/api/org/provision"');
       expect(src).not.toMatch(/fetch\("\/api\/org\/provision"/);
@@ -204,5 +205,32 @@ describe("the browser switch (src/lib/px-api.ts)", () => {
     expect(isEdgeRoute("get", "/api/drawings/d1/document-url")).toBe(true);
     expect(isEdgeRoute("GET", "/api/dashboard/project")).toBe(false);
     expect(isEdgeRoute("POST", "/api/local-first/client-error")).toBe(false);
+  });
+});
+
+describe("P6: the organisation's internal-AI switch is answered ONLY by the function (/api/org/internal-ai, edge_only)", () => {
+  const spec = () => routesFile().routes.find((r) => r.route === "/api/org/internal-ai") as { edge_only?: boolean; methods: Record<string, { roles?: string; upstream: string; body_pick?: string[] }> };
+
+  test("it is on the browser switch with both methods, has no Next handler, and is counted as served by the function (not a Vercel route)", () => {
+    expect(spec().edge_only).toBe(true);
+    expect(PX_EDGE_ROUTES["/api/org/internal-ai"]).toEqual(["GET", "PUT"]);
+    expect(isEdgeRoute("PUT", "/api/org/internal-ai")).toBe(true);
+    expect(isEdgeRoute("DELETE", "/api/org/internal-ai")).toBe(false);
+    expect(inventory().routes.some((r: { route: string }) => r.route === "/api/org/internal-ai")).toBe(false);
+  });
+
+  test("the PUT is ORG_ADMIN on BOTH gates: the route's own role set and the central write-policy table (owner/admin pass, everyone else refused)", () => {
+    expect(spec().methods.PUT!.roles).toBe("ORG_ADMIN");
+    expect(spec().methods.GET!.roles).toBeUndefined(); // reading is open to any signed-in person
+    expect(spec().methods.PUT!.upstream).toBe("/internal-ai-allowance");
+    expect(spec().methods.PUT!.body_pick).toEqual(["allowed"]); // only the flag goes upstream
+    for (const role of ["owner", "admin"]) expect(checkApiWriteAccess("PUT", "/api/org/internal-ai", role).allowed).toBe(true);
+    for (const role of ["pm", "site_engineer", "member", "client_viewer"]) expect(checkApiWriteAccess("PUT", "/api/org/internal-ai", role).allowed).toBe(false);
+  });
+
+  test("the card calls it through viaPxApi, never a bare fetch", () => {
+    const src = readFileSync(join(import.meta.dir, "..", "components", "InternalAiCard.tsx"), "utf8");
+    expect(src).toContain('viaPxApi("/api/org/internal-ai"');
+    expect(src).not.toMatch(/[^a-zA-Z]fetch\("\/api\/org\/internal-ai"/);
   });
 });

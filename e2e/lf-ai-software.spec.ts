@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { signInByCode, stubAuthOtp } from "./support/sign-in";
 import { isDeniedName } from "../src/lib/local-first/ai/immutability";
 import { STUB_PORT, type LocalSession } from "./support/boq-local";
 import { ai, aiValue, deviceMeta, personMeta, prepareLaptop, stayOnServerPage, waitForAi, waitForAiIdentity } from "./support/lf-ai-laptop";
@@ -203,14 +204,11 @@ test("isolation on one laptop: after a sign-out and ANOTHER person's sign-in, th
     const made = (await res.json()) as LocalSession;
     people.set(made.userId, second);
     const sessionJson = Buffer.from(made.cookieValue.slice("base64-".length), "base64url").toString("utf8");
-    // The Auth stand-in's own /token answers with a made-up person; the login form must get THIS person, as the real service would.
-    await page.route(`http://localhost:${STUB_PORT}/auth/v1/token**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionJson }));
+    // The Auth stand-in's own /verify would mint a made-up person; the login form must get THIS person, as the real service would.
+    await stubAuthOtp(context, JSON.parse(sessionJson));
     first.current.person = second;
     first.current.session = made;
-    await page.locator("#email").fill(second.email);
-    await page.locator("#password").fill("not-a-real-password");
-    await page.locator("form button[type=submit]").click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 60_000 });
+    await signInByCode(page, second.email, { stayOnPage: true, leaves: /\/dashboard/ });
     // the second person's own workspace is prepared (lf-e11 fix: the "skipped in this tab" marker is per person)
     await expect(page.getByTestId("workspace-prepare"), "the 'Preparing your PROJEXA workspace' screen never finished and opened PROJEXA").toHaveCount(0, { timeout: 240_000 });
     await expect.poll(() => personMeta(page, made.userId, `sync:done:${Q1.id}:tasks`), { timeout: 120_000, message: "the second person's tasks never reached the laptop" }).toBeTruthy();

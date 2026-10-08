@@ -76,6 +76,7 @@ import { recordCountLabel, type PaneStatus } from "@/lib/pane-state";
 // R67 D-23: the lineage rule -- grouping, indentation, Rev labels and which
 // revision is CURRENT -- lives in its own unit-tested module, not inline here.
 import { buildLineageRows, type LineageBoq } from "@/lib/boq-lineage";
+import { originalVariationOf, priorVariationOf } from "@/lib/scope-overview";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/csv-export";
 
 // R44 seq3 (M28 registry-model proof, same pattern as PermitsListClient's
@@ -348,27 +349,9 @@ export default function ScopeClient({
   const filterActive = hasActiveScopeFilter(filters);
   const statusOptions = useMemo(() => knownScopeStatuses(boqs), [boqs]);
 
-  /**
-   * vs prior: from the list payload only. F-29's compare aggregate first,
-   * F-23's variationVsPrior next, D-23's totalVariation last -- three names
-   * for one figure across three backend generations, resolved here rather
-   * than by asking the server again.
-   */
-  function priorVariation(boq: Boq): number | null | undefined {
-    return boq.compare?.deltaAmount ?? boq.variationVsPrior ?? boq.totalVariation;
-  }
-
-  /**
-   * vs original: the payload's own figure when present; for the FIRST revision
-   * of a lineage the parent IS the original, so "vs prior" answers it exactly.
-   * Anything else is genuinely unknown until the backend sends it -- and is
-   * shown as unknown, not fetched per row (see this file's header).
-   */
-  function originalVariation(boq: Boq, rootId: string): number | null | undefined {
-    if (typeof boq.totalVariationVsOriginal === "number") return boq.totalVariationVsOriginal;
-    if (boq.parentBoqId === rootId) return priorVariation(boq);
-    return undefined;
-  }
+  // R-96: the two variation rules live in src/lib/scope-overview.ts so the Scope of Work overview and this list share them.
+  const priorVariation = (boq: Boq) => priorVariationOf(boq);
+  const originalVariation = (boq: Boq, rootId: string) => originalVariationOf(boq, rootId);
 
   function openBoq(id: string) {
     router.push(`/scope/${id}`);

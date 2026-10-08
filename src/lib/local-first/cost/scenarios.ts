@@ -10,7 +10,7 @@
 // Common setting: 5 projects x 28 kinds (the backend's SYNC_KINDS), 2 rows per kind plus 10 tasks per project.
 
 import { addCounts, type RouteCounts } from "./budget";
-import { HOUR, MINUTE, colleagueEdit, createLaptop, createWorld, type LaptopOptions, type SimLaptop, type World } from "./harness";
+import { HOUR, MINUTE, colleagueEdit, createLaptop, createWorld, type LaptopOptions, type SimLaptop, type Wire, type World } from "./harness";
 
 export type ScenarioResult = {
   name: string;
@@ -159,4 +159,55 @@ export async function jobsIdle8h(): Promise<ScenarioResult> {
   l.stop();
   const r = summarise("jobsClaimIdle8h", [l]);
   return { ...r, perLaptopTotal: r.perLaptop.jobs_claim ?? 0 };
+}
+
+/**
+ * (f) DELTA (DELTA-ONLY, docs/local-first/DELTA_ONLY.md): two synced laptops of one organisation, 5 projects x 28 kinds. After the first copy
+ * the wire carries only what changed: a quiet half hour moves no row body; ONE small edit on laptop A costs A one op and B exactly the one
+ * changed row; ONE colleague change on the server costs each laptop exactly that row. The first copy's bytes are returned as the yardstick.
+ */
+export type DeltaResult = {
+  firstCopy: Wire;
+  rowsOnLaptop: number;
+  quiet: { a: Wire; b: Wire };
+  editOnA: { a: Wire; b: Wire };
+  colleagueChange: { a: Wire; b: Wire };
+};
+
+const copyWire = (w: Wire): Wire => ({ ...w });
+
+export async function delta(): Promise<DeltaResult> {
+  const world = createWorld({ requestsPerMinute: Number.MAX_SAFE_INTEGER });
+  const a = createLaptop(world, { userId: "u1", peers: 0 });
+  const b = createLaptop(world, { userId: "u2", peers: 0 });
+  await a.prepare();
+  await b.prepare();
+  const firstCopy = copyWire(a.wire);
+  const d = await a.db();
+  let rowsOnLaptop = 0;
+  for (const p of world.projects) for (const k of ["tasks", "boq_lines", "wiki_pages"]) rowsOnLaptop += (await d.listByProject(world.server.orgId, k, p)).length;
+  a.resetCounts();
+  b.resetCounts();
+  await a.open();
+  await b.open();
+  a.resetCounts();
+  b.resetCounts();
+
+  await world.clock.advance(30 * MINUTE);
+  const quiet = { a: copyWire(a.wire), b: copyWire(b.wire) };
+  a.resetCounts();
+  b.resetCounts();
+
+  await a.edit(0);
+  await world.clock.advance(12 * MINUTE);
+  const editOnA = { a: copyWire(a.wire), b: copyWire(b.wire) };
+  a.resetCounts();
+  b.resetCounts();
+
+  colleagueEdit(world, 0);
+  await world.clock.advance(12 * MINUTE);
+  const colleagueChange = { a: copyWire(a.wire), b: copyWire(b.wire) };
+  a.stop();
+  b.stop();
+  return { firstCopy, rowsOnLaptop, quiet, editOnA, colleagueChange };
 }

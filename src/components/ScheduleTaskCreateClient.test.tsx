@@ -44,7 +44,9 @@ function renderClient(over: Partial<Record<string, Handler>> = {}) {
   const handlers: Record<string, Handler> = {
     "/api/schedule/types": () => jsonRes({ types: TYPES }),
     "/api/schedule/tasks": () => jsonRes({ tasks: [{ id: "t1", number: 11, title: "Excavate" }] }),
-    "/api/scope": () => jsonRes({ boqs: [{ id: "b1", lineItems: [{ id: "l1", itemCode: "A-1", description: "Blockwork" }] }] }),
+    // P3: the form reads the headers, picks the current BOQ, then asks for that one BOQ alone.
+    "/api/scope": () => jsonRes({ boqs: [{ id: "b1", version: 1, status: "approved" }] }),
+    "/api/scope/b1": () => jsonRes({ id: "b1", lineItems: [{ id: "l1", itemCode: "A-1", description: "Blockwork" }] }),
     ...over,
   } as Record<string, Handler>;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -155,6 +157,6 @@ describe("D-47 the two new lookups", () => {
     });
     await findByText("schedule service timed out");
     // The BOQ field, which answered, is not implicated in the other's failure.
-    expect(container.textContent).toContain("The scope line this activity earns its value against");
+    await waitFor(() => expect(container.textContent).toContain("The scope line this activity earns its value against"));
   });
 });

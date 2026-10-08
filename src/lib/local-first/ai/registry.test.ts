@@ -8,8 +8,8 @@ import { ROLE_RANK, WRITE_FUNCTIONS, actionOf, checkWrite, findFunction, functio
 describe("registry", () => {
   test("usable = write, on a link level, not excluded (what the server's push gate accepts)", () => {
     const all = (registryFile as { functions: { function_id: string; kind: string; link_level: number | null; excluded_reason: string | null }[] }).functions;
-    // lf-e11: refreshed from compliance-tracker main (118 writes; registry-contract.test.ts checks it against the live list).
-    expect(all.length).toBe(118);
+    // lf-e11: refreshed from compliance-tracker main (119 writes after update_drawing, ct 0740; registry-contract.test.ts checks it against the live list).
+    expect(all.length).toBe(119);
     expect(WRITE_FUNCTIONS.map((f) => f.function_id)).toEqual(all.filter((f) => f.kind === "write" && f.link_level !== null && !f.excluded_reason).map((f) => f.function_id));
     expect(findFunction("link_roster_employee")).toBeUndefined();
     expect(registryFile.source_commit).toMatch(/^[0-9a-f]{40}$/);

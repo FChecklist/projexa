@@ -164,7 +164,7 @@ describe("B13: N installed, the service says N+1 (the real pair) -> the real ins
       },
     });
     expect(result).toMatchObject({ status: "updated", version: N1.release_version, mode: "partial", downloadedFiles: toDownload });
-    expect(l.origin.requests.length).toBe(1 + toDownload); // the manifest + the changed files, never the bundle
+    expect(l.origin.requests.length).toBe(2 + toDownload); // the manifest + its signature + the changed files, never the bundle
     expect(atSwitch).toEqual({ version: N1.release_version, nStillThere: true, n1Files: N1.files.length });
     expect((await l.caches.keys()).filter((k) => k.startsWith("px-release-"))).toEqual([releaseCacheName(N1.release_version)]);
     expect(await l.db.getMeta<{ version: string }>(META_KEYS.release)).toMatchObject({ version: N1.release_version, manifest_sha256: l.relN1.manifest.manifest_sha256 });

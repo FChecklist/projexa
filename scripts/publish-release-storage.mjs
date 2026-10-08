@@ -8,7 +8,7 @@
 // --apply needs SUPABASE_SERVICE_ROLE_KEY in the environment (never printed). Immutable objects are uploaded with x-upsert false (an
 // existing key is a refusal, not an overwrite); only the two mutable pointers are upserted. Design: ai-os/audit37/RELEASE_DISTRIBUTION_2026-10-06.md
 
-import { readFileSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { signRelease, SIGNATURE_FILE } from "../src/lib/release-dist/signed-manifest.ts"
 import { planPublish, planRollback, publicBase } from "../src/lib/release-dist/storage-plan.ts"
@@ -55,7 +55,10 @@ if (process.argv[1].endsWith("publish-release-storage.mjs")) {
     const plan = planPublish([...files, { path: SIGNATURE_FILE, bytes: 0 }], manifest.release_version)
     console.log(JSON.stringify({ mode: apply ? "apply" : "dry-run", base: publicBase(ref, bucket), release_version: manifest.release_version, objects: plan.length, bytes: files.reduce((n, f) => n + f.bytes, 0) }, null, 1))
     if (apply) {
-      const sig = await signRelease(manifest, { kid: process.env.PX_RELEASE_KID ?? "k1", privateJwk: JSON.parse(process.env.PX_RELEASE_SIGNING_JWK ?? "null") })
+      // make-release.mjs signs at build time when PX_RELEASE_SIGNING_KEY is set and leaves release.sig.json in the staged folder: publish THAT file.
+      // Only without one does this script sign itself (the older PX_RELEASE_SIGNING_JWK way).
+      const stagedSig = join(dir, SIGNATURE_FILE)
+      const sig = existsSync(stagedSig) ? JSON.parse(readFileSync(stagedSig, "utf8")) : await signRelease(manifest, { kid: process.env.PX_RELEASE_KID ?? "k1", privateJwk: JSON.parse(process.env.PX_RELEASE_SIGNING_JWK ?? "null") })
       const sigBytes = Buffer.from(JSON.stringify(sig))
       // immutable first (bundle, static files, per-version copies), the two mutable pointers LAST so a laptop never sees a pointer to a missing file
       const ordered = [...plan.filter((p) => !p.mutable), ...plan.filter((p) => p.mutable)]

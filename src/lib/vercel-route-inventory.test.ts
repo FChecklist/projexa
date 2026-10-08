@@ -36,7 +36,8 @@ describe("Vercel route inventory (A2/A3)", () => {
 
   test("the on-laptop shell makes calls to a short, named list of /api routes, and each one is a real route", () => {
     const inv = inventory();
-    expect(inv.shell_api_references.length).toBeLessThanOrEqual(8);
+    // 8, +1 (P6): the laptop chat box posts to /api/tasks only while online and only when the organisation allows the internal AI (optional, never on the daily offline path); /api/tasks is an EDGE route, so it adds no Vercel call
+    expect(inv.shell_api_references.length).toBeLessThanOrEqual(9);
     for (const ref of inv.shell_api_references) {
       expect(inv.routes.some((r) => routeMatches(ref, r.route)), `${ref} is not a route`).toBe(true);
     }
@@ -91,7 +92,8 @@ describe("Vercel route inventory (A2/A3)", () => {
   test("A2: the shell's proxy routes are answered by the edge function on the production origins; only the beacon stays on Vercel (measured 8 -> 1)", () => {
     const inv = inventory();
     const shell = inv.routes.filter((r) => r.shell_reachable);
-    expect(shell.length).toBe(8);
+    // 8, +2 (P6): /api/tasks and /api/tasks/:id (the same reference); both are edge-served, the beacon is still the only shell route on Vercel
+    expect(shell.length).toBe(10);
     const onVercel = shell.filter((r) => r.served_by !== "edge:projexa-api").map((r) => r.route);
     expect(onVercel).toEqual(["/api/local-first/client-error"]);
     expect(inv.shell_vercel_routes_budget).toBeLessThanOrEqual(1);

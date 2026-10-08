@@ -10,6 +10,8 @@ import { generateKeyPairSync, randomUUID, sign } from "node:crypto"
 
 const PORT = Number(process.env.FAKE_SUPABASE_PORT ?? 54399)
 const ORIGIN = `http://localhost:${PORT}`
+// The fixed 6-digit sign-in code the stand-in accepts (same value as STUB_CODE in e2e/support/sign-in.ts).
+const TEST_CODE = "123456"
 const ISSUER = `${ORIGIN}/auth/v1`
 const KID = "local-boq-spec-key"
 
@@ -81,6 +83,8 @@ const server = createServer((req, res) => {
     const made = makeSession(url.searchParams.get("email") ?? "boq-spec@example.invalid")
     return json(req, res, 200, { userId: made.userId, email: made.email, accessToken: made.accessToken, cookieName: made.cookieName, cookieValue: made.cookieValue })
   }
+  // P1c: the login page asks which providers are on; the fake has none (so no "Continue with Google" button in e2e).
+  if (url.pathname === "/auth/v1/settings") return json(req, res, 200, { external: { google: false, email: true }, disable_signup: false })
   if (url.pathname === "/auth/v1/user") {
     const claims = userOfToken(req)
     if (!claims?.sub) return json(req, res, 401, { message: "invalid token" })
@@ -90,6 +94,22 @@ const server = createServer((req, res) => {
     // A refresh: hand back a new session for the same made-up person.
     const made = makeSession("boq-spec@example.invalid")
     return json(req, res, 200, made.session)
+  }
+  // P1 e-mailed-code sign-in: "send the code" is accepted (nothing is sent); "check the code" accepts the fixed test code and answers with a session.
+  if (url.pathname === "/auth/v1/otp" && req.method === "POST") {
+    req.resume()
+    return json(req, res, 200, {})
+  }
+  if (url.pathname === "/auth/v1/verify" && req.method === "POST") {
+    let raw = ""
+    req.on("data", (c) => { raw += c })
+    req.on("end", () => {
+      let body = {}
+      try { body = JSON.parse(raw || "{}") } catch { /* refused below */ }
+      if (body.token !== TEST_CODE) return json(req, res, 403, { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" })
+      return json(req, res, 200, makeSession(String(body.email ?? "boq-spec@example.invalid")).session)
+    })
+    return
   }
   return json(req, res, 404, { message: "not part of the local stub" })
 })

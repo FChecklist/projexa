@@ -223,11 +223,8 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // service worker when the laptop is offline, our server is down, or local-first mode is on. A sidebar entry would point the app at itself.
   "/local",
   "/local/[...path]",
-  // G-08. The password recovery route. /forgot-password is reached from
-  // /login (which is the only screen a locked-out user can see) and
-  // /reset-password only from the emailed link, via /auth/callback. Neither
-  // belongs in a sidebar the visitor cannot reach: by definition they are not
-  // signed in yet.
+  // P1: no password any more. /forgot-password and /reset-password are redirects onto /login (old bookmarks and old reset e-mails land on the
+  // sign-in page; /reset-password adds one plain sentence). Neither belongs in a sidebar the visitor cannot reach.
   "/forgot-password",
   "/reset-password",
   "/auth/callback",

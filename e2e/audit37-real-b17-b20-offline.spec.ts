@@ -2,10 +2,9 @@ import { test, expect, chromium, devices, type BrowserContext, type Page } from 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { USERS } from "./users";
 import { baseURL, loginAndPrepare, openLocal, projectId, readStore } from "./support/real-backend";
 
-// AUDIT-100 rows B20 (offline passcode sign-in in a real browser) and B17 (open the app offline after a FULL browser restart),
+// AUDIT-100 rows B20 (offline sign-in screen in a real browser) and B17 (open the app offline after a FULL browser restart),
 // against the REAL backend (playwright.audit37-real.config.ts): real login, real first copy of the person's data, real Chromium.
 // Everything is read back from what the browser PERSISTED (localStorage, IndexedDB, what the page shows), never from a message.
 test.describe.configure({ mode: "serial" });
@@ -13,24 +12,17 @@ test.setTimeout(1_200_000);
 
 const noop = () => undefined;
 
-// AUDIT-100 B20, FIXED 2026-10-05 (PROJEXA A3 step 1b): this was a test.fail -- a deliberate sign-out deleted the release caches, so offline /login answered
-// the worker's "PROJEXA is not saved on this laptop yet" page, with no form. Now the default sign-out KEEPS the (public) release, marked signed out:
-// online nothing changes (the server's login page), and with no network the worker opens the shell from it, whose signed-out screen is the offline
-// passcode form (OfflinePasscodeSignIn.tsx, the same offline-pin.ts check as login/page.tsx). The same journey runs on the fast rig on every change:
-// e2e/lf-lifecycle-offline-passcode.spec.ts. This real-backend copy runs by hand (playwright.audit37-real.config.ts).
-test("B20: sign out, cut the network, the wrong passcode is refused and the right one opens this laptop's own copy (offline passcode sign-in)", async ({ browser }) => {
-  const who = USERS.hr;
+// AUDIT-100 B20 (P1, 2026-10-08): there is no offline passcode sign-in any more -- sign-in is the e-mailed 6-digit code, which needs a connection. What stays
+// true and is proved here: the default sign-out KEEPS the (public) release, so with no network /login still opens from the laptop (the worker serves the shell
+// from the kept release); its signed-out screen says in plain words that a connection is needed, offers no code or password box, and keeps no passcode
+// record on the laptop. The same journey runs on the fast rig on every change: e2e/lf-lifecycle-offline-passcode.spec.ts.
+test("B20 (P1): sign out, cut the network: /login opens from the laptop and says a connection is needed; no passcode is kept", async ({ browser }) => {
   const context = await browser.newContext({ serviceWorkers: "allow", baseURL });
   const page = await context.newPage();
   try {
     await loginAndPrepare(page, "hr");
 
-    // after the online sign-in the laptop keeps a salted hash, never the passcode itself (offline-pin.ts)
-    const stored = await page.evaluate(() => localStorage.getItem("px-offline-pin-v1"));
-    expect(stored, "no offline passcode record was kept after the online sign-in").toBeTruthy();
-    expect(stored).not.toContain(who.password);
-    expect(Object.keys(JSON.parse(stored!))).toContain(who.email.toLowerCase());
-    const dbBefore = (await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name ?? "").filter((n) => n.startsWith("projexa-local:")))).sort();
+    expect(await page.evaluate(() => localStorage.getItem("px-offline-pin-v1")), "a passcode record was kept on the laptop").toBeNull();
 
     // a real sign-out from the offline shell's own account menu
     await page.goto("/local/");
@@ -38,26 +30,14 @@ test("B20: sign out, cut the network, the wrong passcode is refused and the righ
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await page.waitForURL(/\/login/, { timeout: 60_000 });
 
-    // no network at all: the sign-in page must still open (from the laptop's own copy of the app), and refuse a wrong passcode with a plain message
+    // no network at all: the sign-in page must still open (from the laptop's own copy of the app) and say a connection is needed
     await context.setOffline(true);
     await page.goto("/login");
     expect(await page.evaluate(() => navigator.onLine)).toBe(false);
-    await page.locator("#email").fill(who.email);
-    await page.locator("#password").fill("000000-not-it");
-    await page.locator('button[type="submit"]').click();
-    await expect(page.locator("form")).toContainText("does not match", { timeout: 30_000 });
+    await expect(page.getByTestId("local-shell-signed-out")).toContainText("You need a connection", { timeout: 60_000 });
+    await expect(page.locator("#code")).toHaveCount(0);
+    await expect(page.locator("#password")).toHaveCount(0);
     expect(new URL(page.url()).pathname).toBe("/login");
-
-    // the right passcode signs in offline and the person's own copy opens
-    await page.locator("#password").fill(who.password);
-    await page.locator('button[type="submit"]').click();
-    await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 });
-    await page.goto("/local/");
-    await expect(page.getByTestId("local-shell-person")).toContainText(who.name.split(" ")[0], { timeout: 60_000 });
-    // it is the SAME local copy as before the sign-out (nothing was lost, nothing was made new)
-    const dbAfter = (await page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name ?? "").filter((n) => n.startsWith("projexa-local:")))).sort();
-    expect(dbAfter).toEqual(dbBefore);
-    expect((await readStore(page, "meta")).filter((m) => String(m.key).startsWith("sync:done:")).length).toBeGreaterThan(0);
   } finally {
     await context.close();
   }

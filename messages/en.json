@@ -70,50 +70,23 @@
   },
   "Auth": {
     "login": {
-      "title": "Log in to PROJEXA",
+      "title": "Sign in to PROJEXA",
+      "google": "Continue with Google",
+      "orDivider": "or",
       "email": "Email",
-      "password": "Password",
-      "submit": "Log in",
-      "submitting": "Logging in…",
-      "noAccount": "No account?",
-      "signUpLink": "Sign up",
-      "genericError": "Login failed",
-      "provisionError": "Failed to finish setting up your workspace",
-      "forgotPasswordLink": "Forgot your password?"
-    },
-    "signup": {
-      "title": "Create your PROJEXA account",
-      "checkEmailTitle": "Check your email",
-      "checkEmailBody": "We sent a confirmation link to {email}. Click it, then come back and log in.",
-      "companyName": "Company name",
-      "companyNamePlaceholder": "Acme Construction",
-      "email": "Email",
-      "password": "6-digit PIN",
-      "submit": "Create account",
-      "submitting": "Creating account…",
-      "haveAccount": "Already have an account?",
-      "loginLink": "Log in",
-      "genericError": "Failed to create organization"
-    },
-    "forgotPassword": {
-      "title": "Reset your password",
-      "intro": "Enter the email address on your account and we will send you a link to set a new password.",
-      "email": "Email",
-      "submit": "Send reset link",
-      "submitting": "Sending…",
-      "sentBody": "If that address has a PROJEXA account, a password reset link is on its way. The link can be used once and expires shortly, so open it soon.",
-      "backToLogin": "Back to log in"
-    },
-    "resetPassword": {
-      "title": "Set a new password",
-      "newPassword": "New 6-digit PIN",
-      "confirmPassword": "Confirm 6-digit PIN",
-      "submit": "Save new password",
-      "submitting": "Saving…",
-      "mismatch": "Those two passwords do not match.",
-      "tooShort": "Use exactly 6 digits (numbers only).",
-      "linkExpired": "This reset link has expired or has already been used.",
-      "requestAnother": "Send me a new link"
+      "submit": "Send me a code",
+      "submitting": "Please wait…",
+      "intro": "Type your email and we will send you a 6-digit code. This is also how you get back in if you forgot something.",
+      "codeSent": "We sent a 6-digit code to {email}. Type it here.",
+      "code": "6-digit code",
+      "verify": "Sign in",
+      "resend": "Send a new code",
+      "resendIn": "Send a new code in {seconds}s",
+      "changeEmail": "Use a different email",
+      "needConnection": "You need a connection for the first sign-in on this machine, because the code is sent by email.",
+      "genericError": "Sign-in failed",
+      "noPassword": "PROJEXA no longer uses a password. Type your email and we will send you a 6-digit code.",
+      "provisionError": "Failed to finish setting up your workspace"
     }
   },
   "Marketing": {

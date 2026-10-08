@@ -129,11 +129,37 @@ describe("record_work_progress", () => {
     expect(pushed(r)[0]).toMatchObject({ function_id: "record_work_progress", params: { projectId: "p1", boqLineItemId: "l1", quantityDone: 12, entryDate: "2026-10-02", remarks: "Grid B" } });
   });
 
-  test("with SEVERAL activities it is refused: the server would pick one the person did not choose", async () => {
+  test("with SEVERAL activities and NO activity chosen it is refused: the server would pick one the person did not choose", async () => {
     const r = await rig({ activities: 2 });
-    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 40, entryDate: "2026-10-02" }, r.access)).toEqual({ queued: false, reason: "several_activities" });
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 40, entryDate: "2026-10-02" }, r.access)).toEqual({ queued: false, reason: "no_activity_chosen" });
     expect(r.enqueued()).toBe(0);
-    expect(refusalText("several_activities")).toContain("more than one activity");
+  });
+
+  test("P2: with SEVERAL activities and a server that takes activityId, the chosen activity is kept AND sent", async () => {
+    const r = await rig({ activities: 3 });
+    const declaresParam = (fn: string, param: string) => fn === "record_work_progress" && param === "activityId";
+    const res = await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" }, { ...r.access, declaresParam });
+    expect(res.queued).toBe(true);
+    const temp = (await rowsOf(r, "progress")).find((x) => x.id.startsWith("progress:local-"))!;
+    expect(temp.data).toMatchObject({ activity_id: "a2", boq_line_item_id: "l1", percent_complete: 40 });
+    await r.outbox.flush();
+    expect(pushed(r)[0]).toMatchObject({ function_id: "record_work_progress", params: { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" } });
+  });
+
+  test("P2: several activities, server takes activityId, but none chosen or one not on this project: refused, nothing kept", async () => {
+    const r = await rig({ activities: 2 });
+    const access = { ...r.access, declaresParam: () => true };
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 40, entryDate: "2026-10-02" }, access)).toEqual({ queued: false, reason: "no_activity_chosen" });
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a9", percent: 40, entryDate: "2026-10-02" }, access)).toEqual({ queued: false, reason: "unknown_record" });
+    expect(r.enqueued()).toBe(0);
+    expect(refusalText("no_activity_chosen")).toBe("Choose which activity this work is for.");
+  });
+
+  test("P2: with the REAL registry copy (activityId declared since 294f7ea4) a chosen activity is kept AND sent", async () => {
+    const r = await rig({ activities: 2 });
+    expect((await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" }, r.access)).queued).toBe(true);
+    await r.outbox.flush();
+    expect(pushed(r)[0]!.params).toMatchObject({ activityId: "a2" });
   });
 
   test("a percent outside 0..100 or a missing line is refused", async () => {

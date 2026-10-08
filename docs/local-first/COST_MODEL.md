@@ -146,3 +146,18 @@ Two Vercel costs worth an owner decision (not changed here; `vercel.json`, the m
 - Supabase **Auth** token refreshes (`/auth/v1/token`): a separate Supabase service, not an Edge invocation.
 - The rate cap: measured since package lf-fc (see its section above): the cold start is paced at 100 a minute and completes under the real cap with no 429.
 - Jobs requests from a REQUESTER (`jobs/requester.ts`: enqueue + a get every 1.5 s for up to 8 s ≈ 6 calls per request). Neither the requester nor the claim loop is started anywhere in the app today.
+
+## Steady freshness poll (2026-10-08, SYNC_FRESHNESS_2026-10-08.md)
+
+What changed: the auto-sync scheduler runs in `steady` mode (peer/scheduler.ts). While the laptop is online and signed in it makes ONE `GET /heads`
+every 5 minutes (plus or minus 10 % random jitter), whether or not anything changed; before, a quiet laptop backed off 5 -> 30 minutes. A project whose head
+moved is pulled at once, the open one or not (`headsOthersEveryMs` = 0; the old rule waited an hour for projects nobody had open); a project whose head did
+not move costs nothing. Errors back off 5 -> 10 -> 20 -> 30 minutes and the first success returns to 5. A tab hidden for 15 minutes with no peer connected stops
+polling until it is visible again. Every request still goes through the shared rate pacer (100 a minute) and the replica's circuit breaker.
+
+Measured by cost/harness.ts (now run in steady mode, as auto-sync.ts runs it) per laptop per working day: idle 8 h 101 requests (was 22), a working day 268
+(was under 260), ten laptops of one organisation with peers 301.8 (was under 260). Budgets in cost/budget.ts were raised to 105 / 275 / 310 for this reason.
+In the free quota (500,000 a month, 22 working days): a working day of 268 -> 5,896 a month -> 84 laptops; the ten-laptop scenario 301.8 -> 6,640 a month ->
+about 75 laptops. The earlier "108 laptops" figure assumed the idle backoff; with the 5-minute poll the honest planning number is 75 to 84 laptops on the
+free plan. To go back to about 100+ laptops, lengthen `baseMs` (a 10-minute poll saves about 48 requests a day per laptop) or pass `steady: false`.
+

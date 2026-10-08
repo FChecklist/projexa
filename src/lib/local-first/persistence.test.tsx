@@ -231,6 +231,7 @@ function boot(over: Partial<BootDeps> = {}) {
     gunzip: async (b) => new Uint8Array(gunzipSync(b)),
     now: () => state.now,
     random: () => "device-xyz-123",
+    trustedKeys: [], // signatures are covered by release-update.test.ts and release-signing.test.ts
     ...over,
   });
   return { release, caches, meta, origin, sw, state, deps, run: () => runLocalFirstBoot(deps()) };
@@ -305,8 +306,12 @@ describe("runLocalFirstBoot: the release is installed, kept, and brought back if
     await t.run();
     t.origin.serve(builtRelease(V2, fixtureFiles(5).map((f, i) => (i === 0 ? { ...f, text: "changed" } : f))));
     t.state.now += 7 * 60 * 60 * 1000;
+    t.origin.requests.length = 0;
     const report = await t.run();
     expect(report.release).toMatchObject({ status: "updated", version: V2, mode: "partial", downloadedFiles: 1 });
+    // DELTA-ONLY: the 6-hourly update reads the manifest and the ONE changed file; the bundle is never requested
+    expect(t.origin.requests.filter((r) => r.includes(".tar.gz") || r.includes("bundle"))).toEqual([]);
+    expect(t.origin.requests.length).toBe(2);
     expect(t.sw.pointer?.version).toBe(V2);
     expect([...t.caches.caches.keys()]).toEqual([releaseCacheName(V2)]);
   });

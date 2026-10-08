@@ -39,6 +39,7 @@ import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { fetchScopeList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
 import ScopeClient, { type Boq } from "@/components/ScopeClient";
+import ScopeOverviewClient from "@/components/ScopeOverviewClient";
 import BudgetActualClient from "@/components/BudgetActualClient";
 import BudgetAnalyticalClient from "@/components/BudgetAnalyticalClient";
 
@@ -54,7 +55,7 @@ const SKELETON = (
   // longer has would flash the old name on every load.
   <>
     <PageHeading title="Scope of Work (BOQ)" />
-    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["BOQ", "Budget", "Revenue / Budget / Actual"]} actions={["New BOQ"]} />
+    <ModuleListSkeletonBody columns={BOQ_LIST_COLUMNS} tabs={["Scope of Work", "BOQ", "Budget", "Revenue / Budget / Actual"]} actions={["New BOQ"]} />
   </>
 );
 
@@ -141,14 +142,19 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
         actually superseded and survives as its own tab, renamed so the two
         "Budget"s cannot collide on one value. */}
     <Tabs
-      defaultValue={tab === "budget" || tab === "variance" ? "budget" : tab === "revenue-budget-actual" ? "revenue-budget-actual" : "boq"}
+      defaultValue={tab === "budget" || tab === "variance" ? "budget" : tab === "revenue-budget-actual" ? "revenue-budget-actual" : tab === "boq" ? "boq" : "scope"}
       className="space-y-4"
     >
       <TabsList>
+        <TabsTrigger value="scope">Scope of Work</TabsTrigger>
         <TabsTrigger value="boq">BOQ</TabsTrigger>
         <TabsTrigger value="budget">Budget</TabsTrigger>
         <TabsTrigger value="revenue-budget-actual">Revenue / Budget / Actual</TabsTrigger>
       </TabsList>
+      <TabsContent value="scope">
+        {/* R-96: the plain-English Scope of Work overview, drawn from the same headers-only list the BOQ tab holds. */}
+        <ScopeOverviewClient projectId={projectId} projectName={name} boqs={list?.rows ?? []} />
+      </TabsContent>
       <TabsContent value="boq">
         <ScopeClient
           projectId={projectId}

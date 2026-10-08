@@ -22,6 +22,7 @@
 //   * The money grid: its project-side cost columns are exactly what the gateway never returns, so readBoqDualView stays on the proxy.
 //   * The revision banners (predecessor, successor, variation) read /api/scope?projectId= and /api/scope/{id}/compare in the component.
 
+import { scopeHeadersUrl } from "@/lib/scope-list-reads"
 import { fetchJson } from "@/lib/fetch-json"
 import type { Boq, BoqLineItemRow } from "@/lib/boq-helpers"
 import { BoqGatewayError, fetchAllBoqLines, type GatewayBoqLine } from "@/lib/boq-gateway-client"
@@ -41,7 +42,7 @@ export function readBoqWithLines(boqId: string): Promise<BoqWithLines> {
 
 /** Every BOQ header of a project, for the predecessor and successor banners. */
 export function readProjectBoqs(projectId: string): Promise<{ boqs?: Boq[] }> {
-  return fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`)
+  return fetchJson<{ boqs?: Boq[] }>(scopeHeadersUrl(projectId))
 }
 
 /** The variation of a BOQ against its parent. */

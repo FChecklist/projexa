@@ -41,6 +41,14 @@ import { createFlushScheduler } from "../shell/pending-edits";
 import { createSyncClient, type SyncClient } from "../sync-client";
 import { routeOf, type RouteCounts } from "./budget";
 
+/**
+ * DELTA-ONLY accounting (docs/local-first/DELTA_ONLY.md): what each laptop put on the wire, not just how many requests. Measured from the real
+ * request and response bodies the fake sync server saw. `rowBodies` counts full row bodies received (pull / pull-by-ids items); the id lists
+ * of /ids and the change entries of /changes carry no bodies and are counted apart.
+ */
+export type Wire = { requestBytes: number; responseBytes: number; rowBodies: number; changeEntries: number; idsListed: number; pushOps: number };
+const zeroWire = (): Wire => ({ requestBytes: 0, responseBytes: 0, rowBodies: 0, changeEntries: 0, idsListed: 0, pushOps: 0 });
+
 /** The 28 project kinds of the backend (handler.ts SYNC_KINDS). `progress` has no updated_at cursor, like the fake's default. */
 export const BACKEND_KINDS: FakeKind[] = [
   "project", "tasks", "boqs", "boq_lines", "activities", "progress", "rfis", "submittals", "punch_list", "change_orders", "milestones", "materials", "documents",
@@ -152,6 +160,8 @@ export type LaptopOptions = {
 export type SimLaptop = {
   userId: string;
   counts: RouteCounts;
+  /** Bytes and row bodies on the wire since the last resetCounts() (DELTA-ONLY). */
+  wire: Wire;
   replica: Replica;
   outbox: Outbox;
   scheduler: SyncScheduler | null;
@@ -182,6 +192,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
   const idb = new IDBFactory();
   const env = { online: true, visible: true, lastActivity: clock.now(), peers: o.peers ?? 0, active: o.activeProject ?? world.projects[0] };
   let counts: RouteCounts = {};
+  let wire: Wire = zeroWire();
   let limited = 0;
   const sentAt: number[] = [];
   const count = (route: keyof RouteCounts, n = 1) => { counts[route] = (counts[route] ?? 0) + n; };
@@ -198,6 +209,19 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
     if (route === "push" && Array.isArray(body?.ops)) count("execOps", body.ops.length);
     const res = await server.fetchImpl(input, init);
     if (res.status === 429) limited += 1;
+    // DELTA-ONLY accounting: the bytes of what was sent and of what came back, and how many full row bodies came back
+    wire.requestBytes += typeof init?.body === "string" ? init.body.length : 0;
+    if (route === "push" && Array.isArray(body?.ops)) wire.pushOps += body.ops.length;
+    try {
+      const text = await res.clone().text();
+      wire.responseBytes += text.length;
+      if (res.ok && text.startsWith("{")) {
+        const parsed = JSON.parse(text) as { items?: unknown[]; changes?: unknown[]; ids?: unknown[] };
+        if (route === "pull" || route === "pull_ids") wire.rowBodies += parsed.items?.length ?? 0;
+        else if (route === "changes") wire.changeEntries += parsed.changes?.length ?? 0;
+        else if (route === "ids") wire.idsListed += parsed.ids?.length ?? 0;
+      }
+    } catch { /* an unreadable body only means nothing is added to the row counts */ }
     sentAt.push(clock.now());
     if (route !== "manifest" || !res.ok) return res;
     const json = await res.json();
@@ -253,6 +277,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
   const laptop: SimLaptop = {
     userId,
     get counts() { return counts; },
+    get wire() { return wire; },
     replica,
     outbox,
     get scheduler() { return scheduler; },
@@ -282,7 +307,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
       });
       const att = attestation;
       scheduler = createSyncScheduler({
-        clock, locks: null,
+        clock, locks: null, steady: true, random: () => 0.5, // auto-sync.ts's real setting: a steady ~5-minute /heads poll
         isVisible: () => env.visible, isOnline: () => env.online, peersConnected: () => env.peers,
         // auto-sync.ts: the server step, then the attestation refresh
         serverStep: () => clock.track((async () => { const r = await serverStep(); await att.refresh(); return r; })()),
@@ -353,7 +378,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
       scheduler?.visibilityChanged();
       runner?.refresh();
     },
-    resetCounts() { counts = {}; },
+    resetCounts() { counts = {}; wire = zeroWire(); },
     total() { return Object.values(counts).reduce((a, b) => a + (b ?? 0), 0); },
     limited: () => limited,
     busiestMinute: () => Math.max(0, ...sentAt.map((at) => sentAt.filter((s) => s > at - MINUTE && s <= at).length)),

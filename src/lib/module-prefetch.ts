@@ -22,7 +22,7 @@ export function primaryListUrl(route: string, projectId: string | null): string 
   const path = route.split("?")[0].replace(/\/+$/, "");
   switch (path) {
     case "/scope":
-      return `/api/scope?projectId=${q(projectId)}`;
+      return `/api/scope?projectId=${q(projectId)}&include=variation,headers`;
     case "/work-progress":
       return `/api/work-progress?projectId=${q(projectId)}`;
     case "/permits":

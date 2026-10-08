@@ -46,7 +46,7 @@ const KNOWN_KEYS = new Set(["upstream", "acting_user", "fallback", "required_que
   // of the company dashboard, and the two-read category distribution
   "company_scope", "category_distribution"]);
 /** Route-level keys of projexa-api-routes.json the function does not read (they steer the browser switch and the inventory, not the edge). */
-const ROUTE_KEYS = new Set(["route", "methods", "batch"]);
+const ROUTE_KEYS = new Set(["route", "methods", "batch", "edge_only"]);
 
 /** Problems with the route list: [] when every route is a real proxy route of the inventory with a complete upstream description. */
 export function validateRoutes(spec, inventory) {
@@ -57,13 +57,18 @@ export function validateRoutes(spec, inventory) {
     if (seen.has(entry.route)) problems.push(`${entry.route}: listed twice`);
     seen.add(entry.route);
     const real = inv.get(entry.route);
-    if (!real) {
+    // P6 / A2: an `edge_only` route has NO Next handler at all (so it is not one of the Vercel routes of the inventory): the function is its only
+    // implementation. Its role gate and behaviour are held by hand-written cases in compliance-tracker's edge test, not by the recorded contract
+    // (which needs the Next handler as its oracle).
+    if (entry.edge_only === true && real) problems.push(`${entry.route}: is edge_only but still has a Next handler (${real.file}): delete the handler or drop edge_only`);
+    if (entry.edge_only !== undefined && entry.edge_only !== true) problems.push(`${entry.route}: edge_only is true or absent`);
+    if (!real && entry.edge_only !== true) {
       problems.push(`${entry.route}: not a route of the inventory`);
       continue;
     }
-    if (real.backend !== "veridian-proxy") problems.push(`${entry.route}: is ${real.backend}, only veridian-proxy routes may be answered by the edge proxy`);
+    if (real && real.backend !== "veridian-proxy") problems.push(`${entry.route}: is ${real.backend}, only veridian-proxy routes may be answered by the edge proxy`);
     for (const [method, m] of Object.entries(entry.methods ?? {})) {
-      if (!real.methods.includes(method)) problems.push(`${entry.route}: ${method} is not a method of its Next handler`);
+      if (real && !real.methods.includes(method)) problems.push(`${entry.route}: ${method} is not a method of its Next handler`);
       for (const k of Object.keys(m)) if (!KNOWN_KEYS.has(k)) problems.push(`${entry.route} ${method}: unknown key ${k}`);
       if (typeof m.upstream !== "string" || !m.upstream.startsWith("/")) problems.push(`${entry.route} ${method}: no upstream path`);
       if (typeof m.fallback !== "string" || m.fallback.length < 5) problems.push(`${entry.route} ${method}: no fallback message`);

@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { signInByCode, realTestCode } from "./support/sign-in";
 import { USERS } from "./users";
 
 // AUDIT 37, points 6, 7/8 (wiring), 15, 25, 26, 33 -- against the REAL backend (see playwright.audit37-real.config.ts).
@@ -27,11 +28,7 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => { await context.close(); });
 
 test("real login installs PROJEXA on this laptop (points 6, 15)", async () => {
-  await page.goto("/login");
-  await page.locator("#email").fill(user.email);
-  await page.locator("#password").fill(user.password);
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL(/\/(dashboard|local|scope|prepare)/, { timeout: 60_000 });
+  await signInByCode(page, user.email, { code: realTestCode, leaves: /\/(dashboard|local|scope|prepare)/ });
 
   await expect
     .poll(async () => (await localDbNames(page)).length, { timeout: 300_000, message: "no projexa-local:<userId> IndexedDB database appeared" })

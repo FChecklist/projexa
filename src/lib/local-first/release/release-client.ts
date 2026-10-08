@@ -42,6 +42,8 @@ export type CurrentRelease = {
   min_compatible: string | null;
   /** Whether the release this laptop reported in X-Px-Client is known to the registry. */
   registered: boolean;
+  /** Where the registry says release bytes are served from (projexa-sync PX_RELEASE_ORIGIN); null from an older service. */
+  origin: string | null;
 };
 
 export type InstallStatus = "installed" | "updated" | "failed";
@@ -120,6 +122,7 @@ export function parseCurrentRelease(body: unknown): CurrentRelease | null {
     current,
     min_compatible: typeof body.min_compatible === "string" ? body.min_compatible : null,
     registered: body.registered === true,
+    origin: typeof body.origin === "string" && body.origin ? body.origin : null,
   };
 }
 

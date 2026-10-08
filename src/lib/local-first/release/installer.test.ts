@@ -42,6 +42,8 @@ function harness(initial: BuiltRelease) {
     now: () => (clock += 1000),
     gunzip: sleepless,
     deviceId: "device-1",
+    trustedKeys: [], // this file is about WHAT is fetched; signatures are release-update.test.ts and release-signing.test.ts
+
     switchTo: async (version) => {
       if (state.switchError) throw state.switchError;
       switched.push(version);
@@ -344,8 +346,20 @@ describe("an update of an installed release", () => {
     expect(h.caches.caches.get(releaseCacheName(V2))!.entries.size).toBe(9);
   });
 
-  test("half or more of the files changed: the one bundle is used", async () => {
-    const { v1, v2 } = twoReleases(10, 5);
+  test("half or more of the files changed: STILL only the changed files (delta-only), never the bundle", async () => {
+    const { v1, v2 } = twoReleases(10, 7);
+    const h = harness(v1);
+    await h.install();
+    h.origin.serve(v2);
+    h.origin.requests.length = 0;
+    const result = await h.install();
+    expect(result).toMatchObject({ status: "updated", mode: "partial", downloadedFiles: 7 });
+    expect(h.origin.requests).not.toContain(`/${v2.manifest.bundle.path}`);
+    expect(h.origin.requests.length).toBe(1 + 7);
+  });
+
+  test("every file changed (nothing to reuse): the one bundle is the cheapest way and is used", async () => {
+    const { v1, v2 } = twoReleases(10, 10);
     const h = harness(v1);
     await h.install();
     h.origin.serve(v2);

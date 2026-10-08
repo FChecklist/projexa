@@ -44,14 +44,9 @@ const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   "/disclaimer",
   "/login",
   "/signup",
-  // G-08. Both are public by necessity: someone who cannot log in is by
-  // definition not logged in. /reset-password is normally reached WITH a
-  // session (the recovery link goes through /auth/callback, which mints one
-  // before forwarding), so gating it would usually be harmless -- but the
-  // interesting case is the link that has expired or been used already, and
-  // there a redirect to /login tells the visitor nothing. The page checks the
-  // session itself and says "this link has expired, request another", which
-  // is the answer they need; the gate could only replace it with a login form.
+  // P1: there is no password to forget or reset. Both are one-line redirects onto /login, kept ONLY so an old bookmark or an old reset
+  // e-mail link (/reset-password) still lands on the sign-in page, with one plain sentence (/login?notice=no-password). They must stay public:
+  // behind the gate a signed-out visitor would be bounced to /login without the sentence.
   "/forgot-password",
   "/reset-password",
   // LOCAL-FIRST: the static on-laptop shell (src/app/local/page.tsx). It is one prerendered document with no server data
