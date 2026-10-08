@@ -136,6 +136,35 @@ describe("record_work_progress", () => {
     expect(refusalText("several_activities")).toContain("more than one activity");
   });
 
+  test("P2: with SEVERAL activities and a server that takes activityId, the chosen activity is kept AND sent", async () => {
+    const r = await rig({ activities: 3 });
+    const declaresParam = (fn: string, param: string) => fn === "record_work_progress" && param === "activityId";
+    const res = await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" }, { ...r.access, declaresParam });
+    expect(res.queued).toBe(true);
+    const temp = (await rowsOf(r, "progress")).find((x) => x.id.startsWith("progress:local-"))!;
+    expect(temp.data).toMatchObject({ activity_id: "a2", boq_line_item_id: "l1", percent_complete: 40 });
+    await r.outbox.flush();
+    expect(pushed(r)[0]).toMatchObject({ function_id: "record_work_progress", params: { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" } });
+  });
+
+  test("P2: several activities, server takes activityId, but none chosen or one not on this project: refused, nothing kept", async () => {
+    const r = await rig({ activities: 2 });
+    const access = { ...r.access, declaresParam: () => true };
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 40, entryDate: "2026-10-02" }, access)).toEqual({ queued: false, reason: "no_activity_chosen" });
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a9", percent: 40, entryDate: "2026-10-02" }, access)).toEqual({ queued: false, reason: "unknown_record" });
+    expect(r.enqueued()).toBe(0);
+    expect(refusalText("no_activity_chosen")).toBe("Choose which activity this work is for.");
+  });
+
+  test("P2: with the REAL registry copy (no activityId declared today) a chosen activity is never sent, and several activities still refuse", async () => {
+    const r = await rig({ activities: 2 });
+    expect(await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a2", percent: 40, entryDate: "2026-10-02" }, r.access)).toEqual({ queued: false, reason: "several_activities" });
+    const one = await rig({ activities: 1 });
+    expect((await recordProgressOffline(one.data, { projectId: "p1", boqLineItemId: "l1", activityId: "a1", percent: 40, entryDate: "2026-10-02" }, one.access)).queued).toBe(true);
+    await one.outbox.flush();
+    expect(pushed(one)[0]!.params).not.toHaveProperty("activityId");
+  });
+
   test("a percent outside 0..100 or a missing line is refused", async () => {
     const r = await rig();
     expect((await recordProgressOffline(r.data, { projectId: "p1", boqLineItemId: "l1", percent: 140, entryDate: "2026-10-02" }, r.access)).queued).toBe(false);
