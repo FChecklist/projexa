@@ -74,11 +74,17 @@ export type ServerStepOptions = {
   headsFullEveryMs?: number;
   /** Heads mode: after a 404 (an older service) /heads is not asked again for this long. Default one day. */
   headsRetryMs?: number;
+  /**
+   * Heads mode: a project that is NOT open and whose head moved is read at once by default (0): /heads already said it moved, so the feed
+   * read is real news and a quiet project costs nothing. Raise it to rate-limit a busy project (the old hourly rhythm was OTHERS_EVERY_MS).
+   */
+  headsOthersEveryMs?: number;
 };
 
 export const OTHERS_EVERY_MS = 60 * 60_000;
 export const FULL_EVERY_MS = 6 * 60 * 60_000;
 export const HEADS_FULL_EVERY_MS = 24 * 60 * 60_000;
+export const HEADS_OTHERS_EVERY_MS = 0;
 export const HEADS_RETRY_MS = 24 * 60 * 60_000;
 /** What the last /heads run settled on (meta key): the etag, the classes and the epoch the laptop's copy was made under. */
 export const HEADS_KEY = "sync:heads";
@@ -137,6 +143,7 @@ export function createServerStep(o: ServerStepOptions): () => Promise<StepResult
 
   const headsFullEveryMs = o.headsFullEveryMs ?? HEADS_FULL_EVERY_MS;
   const headsRetryMs = o.headsRetryMs ?? HEADS_RETRY_MS;
+  const headsOthersEveryMs = o.headsOthersEveryMs ?? HEADS_OTHERS_EVERY_MS;
   /** Set when the service answered /heads with 404 (an older service): project mode until then. Memory only. */
   let headsUnsupportedUntil = Number.NEGATIVE_INFINITY;
 
@@ -190,7 +197,7 @@ export function createServerStep(o: ServerStepOptions): () => Promise<StepResult
       // COST (measured, COST_MODEL.md): the open project is read as soon as it moved; another project that moved is read at most
       // every `othersEveryMs` (lf-e6's hourly rhythm for projects nobody is looking at), so a busy colleague elsewhere does not
       // cost a feed read every five minutes. Its news waits at most an hour, and opening it (a screen) reads it at once.
-      if (projectId !== active && now() - (checkedAt.get(projectId) ?? Number.NEGATIVE_INFINITY) < othersEveryMs) continue;
+      if (projectId !== active && now() - (checkedAt.get(projectId) ?? Number.NEGATIVE_INFINITY) < headsOthersEveryMs) continue;
       const report = await o.syncProject!(projectId, { moved: true });
       if (failed(report.status)) throw new Error(`sync ${report.status}`);
       checkedAt.set(projectId, now());

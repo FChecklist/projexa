@@ -282,7 +282,7 @@ export function createLaptop(world: World, o: LaptopOptions = {}): SimLaptop {
       });
       const att = attestation;
       scheduler = createSyncScheduler({
-        clock, locks: null,
+        clock, locks: null, steady: true, random: () => 0.5, // auto-sync.ts's real setting: a steady ~5-minute /heads poll
         isVisible: () => env.visible, isOnline: () => env.online, peersConnected: () => env.peers,
         // auto-sync.ts: the server step, then the attestation refresh
         serverStep: () => clock.track((async () => { const r = await serverStep(); await att.refresh(); return r; })()),

@@ -14,7 +14,7 @@ import { HEADS_KEY, createServerStep } from "./server-step";
 const noYield = async () => {};
 const PROJECTS = ["p1", "p2", "p3"];
 
-async function setup(o: { heads?: boolean; projectFreshMs?: number; feedCurrent?: boolean } = {}) {
+async function setup(o: { heads?: boolean; projectFreshMs?: number; feedCurrent?: boolean; headsOthersEveryMs?: number } = {}) {
   const clock = { t: Date.now() };
   const now = () => clock.t;
   const idb = new IDBFactory();
@@ -36,6 +36,7 @@ async function setup(o: { heads?: boolean; projectFreshMs?: number; feedCurrent?
     resetCopy: async () => { resets.push((await resetLocalCopy(db)).removed); },
     ...(o.feedCurrent === false ? {} : { feedCurrent: (p: string) => replica.noteFeedCurrent?.(p) }),
     now,
+    ...(o.headsOthersEveryMs !== undefined ? { headsOthersEveryMs: o.headsOthersEveryMs } : {}),
   });
   const mark = () => server.requests.length;
   const since = (from: number) => server.requests.slice(from).map((r) => `${r.path}${r.path === "/changes" || r.path === "/pull" ? ` ${(r.body as { project_id?: string }).project_id}` : ""}`);
@@ -71,8 +72,22 @@ describe("heads mode: one request per round when nothing changed", () => {
 });
 
 describe("heads mode: the open project at once, the others at most hourly, and the shortcut for screens", () => {
-  test("a project nobody is looking at that moved AGAIN within the hour waits (one request); the open one is read at once", async () => {
+  test("FRESHNESS: with no throttle (the default) a project nobody is looking at is read as soon as /heads says it moved", async () => {
     const s = await setup();
+    await s.step();
+    s.server.upsert({ kind: "tasks", projectId: "p2", id: "p2-t0", data: { title: "first" } });
+    await s.step();
+    s.clock.t += 5 * 60_000;
+    s.server.upsert({ kind: "tasks", projectId: "p2", id: "p2-t0", data: { title: "second" } });
+    const at = s.mark();
+    await s.step();
+    expect(s.since(at)).toEqual(["/heads", "/changes p2", "/pull p2"]); // p2 is not open, and it is read within one poll
+    expect((await s.db.getRecord("tasks", "p2-t0"))!.data).toMatchObject({ title: "second" });
+    s.db.close();
+  });
+
+  test("a project nobody is looking at that moved AGAIN within the hour waits (one request) when headsOthersEveryMs is an hour; the open one is read at once", async () => {
+    const s = await setup({ headsOthersEveryMs: 60 * 60_000 });
     await s.step();
     s.server.upsert({ kind: "tasks", projectId: "p2", id: "p2-t0", data: { title: "first" } });
     await s.step(); // p2 read (never read by this step before)

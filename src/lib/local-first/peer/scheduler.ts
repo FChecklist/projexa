@@ -52,6 +52,17 @@ export type SchedulerOptions = {
   minGapMs?: number;
   /** While a peer is connected, the server step runs at most this often (except on open / online / manual). Default 30 minutes. */
   serverWithPeersMs?: number;
+  /**
+   * FRESHNESS (2026-10-08, ai-os/audit37/SYNC_FRESHNESS_2026-10-08.md): steady heads polling. The run is ONE cheap GET /heads (server-step.ts
+   * heads mode), so it is not backed off while nothing changes: it repeats every `baseMs` (5 min) with a small random jitter, backs off
+   * only on server ERRORS (5 -> 10 -> 20 -> 30 min, reset by the first success), and pauses once the tab has been hidden for
+   * `hiddenLongMs` (15 min here unless given) with no peer connected. Off by default: the older idle-backoff rhythm is unchanged.
+   */
+  steady?: boolean;
+  /** Steady mode: +- this share of the delay is added as jitter so laptops do not poll in lockstep. Default 0.1. */
+  jitter?: number;
+  /** Steady mode: random source in [0,1) (tests inject one). */
+  random?: () => number;
   onRun?: (info: { reason: TriggerReason; server: "ok" | "failed" | "skipped"; peers: "ok" | "failed" | "skipped"; changed: boolean }) => void;
 };
 
@@ -68,6 +79,9 @@ export type SyncScheduler = {
 
 export const DEFAULTS = { baseMs: 5 * 60_000, idleMaxMs: 30 * 60_000, hiddenMs: 30 * 60_000, hiddenLongMs: 60 * 60_000, minGapMs: 30_000, serverWithPeersMs: 30 * 60_000 } as const;
 
+/** Steady mode: a tab hidden this long (with no peer) stops polling until it is visible again. */
+export const STEADY_HIDDEN_PAUSE_MS = 15 * 60_000;
+
 const realClock: SchedulerClock = {
   now: () => Date.now(),
   setTimeout: (fn, ms) => setTimeout(fn, ms),
@@ -79,7 +93,11 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
   const baseMs = o.baseMs ?? DEFAULTS.baseMs;
   const idleMaxMs = o.idleMaxMs ?? DEFAULTS.idleMaxMs;
   const hiddenMs = o.hiddenMs ?? DEFAULTS.hiddenMs;
-  const hiddenLongMs = o.hiddenLongMs ?? DEFAULTS.hiddenLongMs;
+  const steady = o.steady === true;
+  const hiddenLongMs = o.hiddenLongMs ?? (steady ? STEADY_HIDDEN_PAUSE_MS : DEFAULTS.hiddenLongMs);
+  const jitter = Math.max(0, Math.min(0.5, o.jitter ?? 0.1));
+  const random = o.random ?? Math.random;
+  let failStreak = 0;
   const minGapMs = o.minGapMs ?? DEFAULTS.minGapMs;
   const locks = o.locks !== undefined ? o.locks : typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks ?? null : null;
   const lockName = o.lockName ?? "px-auto-sync";
@@ -101,6 +119,10 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
 
   function delay(): number | null {
     if (suspended()) return null;
+    if (steady) {
+      const d = Math.min(baseMs * 2 ** failStreak, idleMaxMs); // hidden (for less than hiddenLongMs) polls at the same pace
+      return Math.max(1, Math.round(d * (1 + (random() * 2 - 1) * jitter)));
+    }
     if (hiddenSince !== null) return hiddenMs;
     return Math.min(baseMs * 2 ** Math.max(0, idleStreak - 1), idleMaxMs); // the first quiet run still waits only baseMs
   }
@@ -148,7 +170,9 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
     ]);
     const changedOf = (r: PromiseSettledResult<unknown>) => r.status === "fulfilled" && typeof r.value === "object" && r.value !== null && (r.value as { changed?: boolean }).changed === true;
     const changed = changedOf(s) || changedOf(p);
+    if (serverDue) failStreak = s.status === "rejected" ? Math.min(failStreak + 1, 8) : 0; // steady mode's back-off follows server errors only
     idleStreak = changed ? 0 : Math.min(idleStreak + 1, 8);
+    if (steady) idleStreak = 0;
     const word = (r: PromiseSettledResult<unknown>, ran: boolean) => (!ran ? "skipped" : r.status === "fulfilled" ? "ok" : "failed") as "ok" | "failed" | "skipped";
     o.onRun?.({ reason, server: word(s, serverDue), peers: word(p, peers > 0), changed });
   }

@@ -77,7 +77,7 @@ async function laptopB(o: { projects: string[]; shown: string | null; remembered
   const env = { online: true };
   let redraws = 0;
   const auto = createAutoSync({
-    userId: USER, selfId: "laptop-b", db, fetchAttest: async () => { throw new Error("no peers in this test"); },
+    userId: USER, selfId: "laptop-b", random: () => 0.5, db, fetchAttest: async () => { throw new Error("no peers in this test"); },
     remoteProviders: [], openLink: () => { throw new Error("no peers in this test"); },
     serverStep: createServerStep({
       meta: db, changes: (r) => server.client.changes(r), sync: () => replica.sync(),
@@ -131,9 +131,9 @@ describe("B7: an idle colleague laptop picks up EVERY later change of the projec
       await B.fc.advance(delay);
       expect(await B.subject("p1-r1")).toBe(`change ${i}`);
     }
-    // a project NOT open: the documented cost rule (server-step.ts othersEveryMs) -- read at most hourly, never lost
+    // a project NOT open: FRESHNESS (2026-10-08) -- /heads says it moved, so it is read within one poll. (Was: at most hourly, never lost
     B.server.upsert({ kind: "rfis", projectId: "p2", id: "p2-r1", data: { subject: "elsewhere" } });
-    await B.fc.advance(60 * MIN);
+    await B.fc.advance(DEFAULTS.baseMs);
     expect(await B.subject("p2-r1")).toBe("elsewhere");
   });
 

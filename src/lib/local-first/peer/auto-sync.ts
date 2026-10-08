@@ -32,6 +32,8 @@ export type AutoSyncDeps = {
   locks?: LockManager | null;
   now?: () => number;
   foreignOrg?: (data: unknown, org: string) => boolean;
+  /** Tests: random source for the scheduler's poll jitter (() => 0.5 means none). */
+  random?: () => number;
   /** Default true: a row without the px3 view-class signature is refused (protocol.ts). Only a unit test with px2-only fixtures turns it off. */
   requirePx3?: boolean;
   allowedKinds?: readonly string[];
@@ -83,6 +85,7 @@ export function createAutoSync(d: AutoSyncDeps): AutoSync {
 
   const scheduler = createSyncScheduler({
     clock: d.clock, locks: d.locks,
+    steady: true, random: d.random, // one cheap GET /heads every ~5 minutes while online and visible (SYNC_FRESHNESS_2026-10-08.md)
     isVisible: d.isVisible, isOnline: d.isOnline,
     peersConnected: () => net?.verifiedCount() ?? 0,
     serverStep: async () => {

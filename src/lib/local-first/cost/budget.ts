@@ -62,17 +62,17 @@ export const SCENARIO_BUDGETS = {
    * (a) online, tab visible, nothing changes anywhere, 8 hours. Package FC (cost:COST-03) tightened it from 60: with GET /heads a quiet
    * round is ONE request whatever the number of projects (measured 22; lf-e6's project mode measured 50 at 5 projects, 155 at 20).
    */
-  idle8h: 30,
+  idle8h: 105, // 2026-10-08 FRESHNESS: was 30. A steady 5-minute /heads poll (scheduler `steady`) is ~96 requests per 8 hours by design (measured 101).
   /** (a') the same idle day with 20 projects: the heads poll does not grow with projects (FC cost:COST-03). */
-  idle8h20Projects: 30,
+  idle8h20Projects: 105,
   /** (b) an 8-hour working day: 30 own edits and 30 changes made by colleagues. Includes the 30 exec runs of the pushed ops. */
-  workday: 260,
+  workday: 275, // was 260; the steady poll adds the idle rounds that used to back off (measured 268)
   /** (c) the first sync of a person with 5 projects (28 kinds each), and the rest of that first hour: one page per pair, plus ~35. */
   coldStart5Projects: 5 * 28 + 35,
   /** (d) reconnecting after 3 days offline (200 changes made meanwhile): the catch-up. */
   reconnectAfter3Days: 25,
   /** (e) 10 laptops of one organisation, peers connected, each a working day of 30 edits: per laptop. */
-  tenLaptopsPerLaptop: 260,
+  tenLaptopsPerLaptop: 310, // was 260; steady poll + a moved project is read at once (measured 301.8)
   /** The claim loop of the jobs feature, if switched on, per 8 visible hours with no job ever offered. */
   jobsClaimIdle8h: 45,
 } as const;
