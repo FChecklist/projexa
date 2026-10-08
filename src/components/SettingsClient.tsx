@@ -15,6 +15,7 @@ import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { SIGN_OUT_AND_DELETE_LABEL, signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import { formatDate } from "@/lib/format-date";
 import OrgInvitesCard from "@/components/OrgInvitesCard";
+import InternalAiCard from "@/components/InternalAiCard";
 import WorkspaceConnectionCard from "@/components/WorkspaceConnectionCard";
 import BoqCategoriesCard from "@/components/BoqCategoriesCard";
 import DailyDigestCard from "@/components/DailyDigestCard";
@@ -236,6 +237,7 @@ export default function SettingsClient({
           API plus RLS in drizzle/0015_org_invites.sql. */}
       {info && <WorkspaceConnectionCard canRepair={CAN_ASSIGN_ROLES.has(info.role)} />}
       {info && CAN_ASSIGN_ROLES.has(info.role) && <OrgInvitesCard />}
+      {info && CAN_ASSIGN_ROLES.has(info.role) && <InternalAiCard />}
       {info && <GoogleSheetsCard canManage={CAN_ASSIGN_ROLES.has(info.role)} />}
 
       {/* R67 lane I (WS-I item I-05, R-177): the org-level BOQ category list.

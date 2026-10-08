@@ -17,6 +17,7 @@ import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
 import { LocalShellAiBar } from "./LocalShellAiBar";
+import { LocalShellChat } from "./LocalShellChat";
 import { LocalShellAccount } from "./LocalShellAccount";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
@@ -448,6 +449,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         </nav>
       </header>
       <main className="mx-auto max-w-6xl p-4">{children}</main>
+      {data && shell ? <LocalShellChat userId={data.userId} projectId={shell.projectId ?? null} online={shell.connectivity === "online"} /> : null}
     </div>
   );
 }
