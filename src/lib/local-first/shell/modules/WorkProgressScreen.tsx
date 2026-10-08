@@ -59,6 +59,8 @@ function EntryTab({ shell, data }: { shell: ShellScreenProps["shell"]; data: Loc
 
 function EntryForm({ shell, projectId, form }: { shell: ShellScreenProps["shell"]; projectId: string; form: Extract<Local["form"], { mode: "offline" }> }) {
   const [lineId, setLineId] = useState("");
+  const [activityId, setActivityId] = useState("");
+  const choosing = form.activities.length > 1;
   const [by, setBy] = useState<"quantity" | "percent">("quantity");
   const [value, setValue] = useState("");
   const [date, setDate] = useState(localDay());
@@ -72,6 +74,7 @@ function EntryForm({ shell, projectId, form }: { shell: ShellScreenProps["shell"
     const ok = await save(() =>
       recordProgressOffline(shell.data, {
         projectId, boqLineItemId: lineId, entryDate: date, remarks,
+        ...(choosing ? { activityId } : {}),
         ...(by === "quantity" ? { quantityDone: n } : { percent: n }),
       })
     );
@@ -84,8 +87,19 @@ function EntryForm({ shell, projectId, form }: { shell: ShellScreenProps["shell"
   return (
     <form onSubmit={submit} className="mt-4 max-w-xl rounded-lg border border-black/10 bg-white p-4" data-testid="work-progress-form">
       <p className="text-xs text-px-muted">
-        {form.activity ? `Activity: ${form.activity.name}. ` : ""}Kept on this laptop as today&apos;s work (added to the total) and sent when you are connected. A quantity is turned into a percent by the server.
+        {!choosing && form.activity ? `Activity: ${form.activity.name}. ` : ""}Kept on this laptop as today&apos;s work (added to the total) and sent when you are connected. A quantity is turned into a percent by the server.
       </p>
+      {choosing ? (
+        <label className="mt-3 block text-sm">
+          Which activity is this work for?
+          <select aria-label="Activity" className={fieldClass} value={activityId} onChange={(e) => setActivityId(e.target.value)} required data-testid="work-progress-activity">
+            <option value="">Choose an activity</option>
+            {form.activities.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label className="mt-3 block text-sm">
         BOQ line
         <select aria-label="BOQ line" className={fieldClass} value={lineId} onChange={(e) => setLineId(e.target.value)} required>

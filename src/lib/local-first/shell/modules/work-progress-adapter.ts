@@ -14,6 +14,7 @@
 // replica; who recorded an entry is an id (no people master on the laptop yet).
 
 import type { ShellData } from "../context";
+import { progressCanNameActivity } from "./delivery-writes";
 import {
   DELIVERY_KINDS, parseActivity, parseBoqLineRef, parseProgress, readKind,
   type Activity, type BoqLineRef, type ProgressEntry,
@@ -29,7 +30,11 @@ export type ProgressRow = ProgressEntry & {
 
 /** Whether the Daily Entry form can keep an entry on this laptop, and if not, why (the screen says it). */
 export type EntryFormState =
-  | { mode: "offline"; activity: Activity | null; lines: BoqLineRef[] }
+  /**
+   * `activity` is the project's only activity (or null); `activities` is the list the person chooses from when there are several
+   * (empty otherwise). Several activities are offered only when record_work_progress can be told which one (delivery-writes.ts, P2).
+   */
+  | { mode: "offline"; activity: Activity | null; activities: Activity[]; lines: BoqLineRef[] }
   | { mode: "needs_server"; reason: "several_activities" | "not_synced" | "no_lines" };
 
 export type WorkProgressData =
@@ -69,7 +74,11 @@ function enrich(entries: ProgressEntry[], activities: Activity[], lines: BoqLine
     .sort((x, y) => y.entryDate.localeCompare(x.entryDate) || (y.createdAt ?? "").localeCompare(x.createdAt ?? "") || x.id.localeCompare(y.id));
 }
 
-export async function loadWorkProgress(data: ShellData, projectId: string | null): Promise<WorkProgressData> {
+export async function loadWorkProgress(
+  data: ShellData,
+  projectId: string | null,
+  options: { canNameActivity?: boolean } = {}
+): Promise<WorkProgressData> {
   if (!projectId) return { state: "no_project" };
   const [progress, activities, lines] = await Promise.all([
     readKind(data, projectId, DELIVERY_KINDS.progress, parseProgress),
@@ -81,9 +90,13 @@ export async function loadWorkProgress(data: ShellData, projectId: string | null
   const ls = lines.synced ? lines.rows : [];
   let form: EntryFormState;
   if (!activities.synced || !lines.synced) form = { mode: "needs_server", reason: "not_synced" };
-  else if (acts.length > 1) form = { mode: "needs_server", reason: "several_activities" };
+  else if (acts.length > 1 && !(options.canNameActivity ?? progressCanNameActivity())) form = { mode: "needs_server", reason: "several_activities" };
   else if (ls.length === 0) form = { mode: "needs_server", reason: "no_lines" };
-  else form = { mode: "offline", activity: acts[0] ?? null, lines: [...ls].sort((a, b) => (a.itemCode ?? "").localeCompare(b.itemCode ?? "") || a.description.localeCompare(b.description)) };
+  else form = {
+    mode: "offline",
+    activity: acts.length === 1 ? acts[0]! : null,
+    activities: acts.length > 1 ? [...acts].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)) : [],
+    lines: [...ls].sort((a, b) => (a.itemCode ?? "").localeCompare(b.itemCode ?? "") || a.description.localeCompare(b.description)) };
   return {
     state: "local",
     projectId,

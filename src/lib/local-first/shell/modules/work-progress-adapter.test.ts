@@ -39,6 +39,7 @@ describe("the Work Progress list", () => {
     expect(r.form.mode).toBe("offline");
     if (r.form.mode !== "offline") throw new Error("unreachable");
     expect(r.form.activity?.id).toBe("a1");
+    expect(r.form.activities).toEqual([]); // nothing to choose with one activity
     expect(r.form.lines.map((l) => l.id)).toEqual(["l1", "l2"]);
   });
 
@@ -55,6 +56,18 @@ describe("the Work Progress list", () => {
     expect(r2.form).toEqual({ mode: "needs_server", reason: "not_synced" });
     expect(r2.namesKnown.activities).toBe(false);
     expect(r2.entries.find((e) => e.id === "e1")!.activityName).toBeNull(); // never guessed
+  });
+
+  test("P2: several activities and a server that can be told which one: the form is offline with the activities to choose from", async () => {
+    const idb = new IDBFactory();
+    await seedDelivery(idb, [progress(), { projectId: "p1", kind: "activities", rows: [{ id: "a2", name: "Plaster" }, { id: "a1", name: "Blockwork" }] }, lines]);
+    const r = await loadWorkProgress(shellData(idb), "p1", { canNameActivity: true });
+    if (r.state !== "local" || r.form.mode !== "offline") throw new Error("expected an offline form");
+    expect(r.form.activity).toBeNull(); // never pre-picked for the person
+    expect(r.form.activities.map((a) => a.id)).toEqual(["a1", "a2"]);
+    // the real registry copy does not declare activityId today: still needs the server
+    const today = await loadWorkProgress(shellData(idb), "p1");
+    expect(today.state === "local" && today.form).toEqual({ mode: "needs_server", reason: "several_activities" });
   });
 
   test("not synced, no project, and another person's database contributes nothing", async () => {
