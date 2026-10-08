@@ -1,7 +1,7 @@
 "use client";
 
-// P1: the one door. E-mail -> 6-digit code by e-mail -> in. No password anywhere (see src/lib/auth/email-code-login.ts for the rules).
-import { useEffect, useMemo, useRef, useState } from "react";
+// P1: the one door. E-mail -> 6-digit code by e-mail -> in. No password anywhere (see src/lib/auth/email-code-getLogin().ts for the rules).
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -32,7 +32,10 @@ export default function LoginPage() {
   const [googleOn, setGoogleOn] = useState(false);
   const submitting = useRef(false);
 
-  const login = useMemo(() => {
+  // Built on first use in the browser (effects and handlers), never during server rendering: it reads window.localStorage.
+  const loginRef = useRef<ReturnType<typeof createEmailCodeLogin> | null>(null);
+  function getLogin() {
+    if (loginRef.current) return loginRef.current;
     const supabase = createClient();
     const identityStore = () => createIdentityStore({ storage: window.localStorage, openMeta: () => openDeviceMeta() });
     const deps: LoginDeps = {
@@ -45,9 +48,9 @@ export default function LoginPage() {
       hasSavedIdentity: async () => Boolean(await getDurableIdentity(identityStore())),
       afterVerified: () => runPostLogin(postLoginDeps(supabase, identityStore, t)),
     };
-    return createEmailCodeLogin(deps);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loginRef.current = createEmailCodeLogin(deps);
+    return loginRef.current;
+  }
 
   function goIn() {
     // AUDIT-100 B6/B56: back to where the person came from (an invitation link, a signed-in page), same-origin paths only.
@@ -57,7 +60,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     let alive = true;
-    void login.start().then((s) => {
+    void getLogin().start().then((s) => {
       if (!alive) return;
       if (s === "session") goIn();
       else {
@@ -68,7 +71,7 @@ export default function LoginPage() {
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [login]);
+  }, []);
 
   // "Continue with Google" appears only when this project has the Google provider switched on (checked once, never blocks the page).
   useEffect(() => {
@@ -92,19 +95,19 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (stage !== "code") return;
-    const id = setInterval(() => setResendIn(login.resendInMs()), 1000);
+    const id = setInterval(() => setResendIn(getLogin().resendInMs()), 1000);
     return () => clearInterval(id);
-  }, [stage, login]);
+  }, [stage]);
 
   async function sendCode(e?: React.FormEvent, resend = false) {
     e?.preventDefault();
     setError(null);
     setLoading(true);
-    const r = await login.requestCode(email, { resend });
+    const r = await getLogin().requestCode(email, { resend });
     setLoading(false);
     if (!r.ok) { setError(r.notice); return; }
     setCode("");
-    setResendIn(login.resendInMs());
+    setResendIn(getLogin().resendInMs());
     setStage("code");
   }
 
@@ -113,7 +116,7 @@ export default function LoginPage() {
     submitting.current = true;
     setError(null);
     setLoading(true);
-    const r = await login.submitCode(email, value);
+    const r = await getLogin().submitCode(email, value);
     setLoading(false);
     submitting.current = false;
     if (!r.ok) { setError(r.notice); setCode(""); return; }

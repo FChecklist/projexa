@@ -192,4 +192,16 @@ describe("P1 login page", () => {
     const rt = (auth.signInWithOAuth.mock.calls[0]![0] as { options: { redirectTo: string } }).options.redirectTo;
     expect(rt).toBe(`${window.location.origin}/auth/callback?redirectTo=%2Fdashboard`);
   });
+
+  test("server rendering (no window) does not throw: the sign-in engine is built in the browser only (CI: 'window is not defined' broke every server render of /login)", async () => {
+    const { renderToString } = await import("react-dom/server");
+    const g = globalThis as unknown as { window?: unknown };
+    const saved = g.window;
+    g.window = undefined;
+    try {
+      expect(() => renderToString(<LoginPage />)).not.toThrow();
+    } finally {
+      g.window = saved;
+    }
+  });
 });
