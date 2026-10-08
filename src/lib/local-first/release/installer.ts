@@ -313,7 +313,10 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     const oldCache = oldCacheName && (await deps.caches.has(oldCacheName)) ? await deps.caches.open(oldCacheName) : null;
     const oldSha = new Map((previousFiles && previous && previousFiles.version === previous.version ? previousFiles.rows : []).map((r) => [r.path, r.sha256]));
     const changed = manifest.files.filter((f) => oldSha.get(f.path) !== f.sha256);
-    const partial = oldCache !== null && oldSha.size > 0 && changed.length * 2 < manifest.files.length;
+    // DELTA-ONLY (docs/local-first/DELTA_ONLY.md, path 1): whenever the old copy is still on the laptop and at least one file is unchanged, ONLY the
+    // changed files are fetched, however many they are. (An earlier rule fetched the whole bundle once half the files changed.) The bundle is
+    // used only when nothing can be reused: a first install, an emptied cache, or a release in which every file differs.
+    const partial = oldCache !== null && oldSha.size > 0 && changed.length < manifest.files.length;
 
     // A leftover of an earlier failed attempt at this same version is not trusted.
     if (await deps.caches.has(newCacheName)) await deps.caches.delete(newCacheName);

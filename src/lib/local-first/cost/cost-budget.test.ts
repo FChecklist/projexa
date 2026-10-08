@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { EDGE_FREE_MONTHLY, MIN_LAPTOPS_IN_FREE_QUOTA, SCENARIO_BUDGETS, invocations, project, routeOf } from "./budget";
-import { coldStart, idle8h, jobsIdle8h, reconnect3d, tenLaptops, workday, type ScenarioResult } from "./scenarios";
+import { DELTA_BUDGETS, EDGE_FREE_MONTHLY, MIN_LAPTOPS_IN_FREE_QUOTA, SCENARIO_BUDGETS, invocations, project, routeOf } from "./budget";
+import { coldStart, delta, idle8h, jobsIdle8h, reconnect3d, tenLaptops, workday, type ScenarioResult } from "./scenarios";
 
 // THE ENFORCED BUDGET (package lf-e6, R14 cost near zero / G4 our server minimal). Every scenario of the brief is run on the
 // harness -- the REAL laptop code against the fake sync server -- and its requests are held to SCENARIO_BUDGETS (budget.ts).
@@ -77,6 +77,37 @@ describe("cost budget per scenario (requests per laptop, push ops counted twice:
     const month = project(invocations(r.perLaptop));
     table.push(`  -> the organisation: ${Math.round(month.perMonth * 10)} a month for 10 laptops; ${month.laptopsAllowed} such laptops fit in the free quota`);
   }, 600_000);
+
+  // DELTA-ONLY (the owner's rule: after the first copy, only what changed crosses the wire). docs/local-first/DELTA_ONLY.md paths 2 and 3.
+  test("(f) delta: a quiet half hour moves no row body; one edit costs one op and one row; one colleague change costs one row", async () => {
+    const r = await delta();
+    const first = r.firstCopy.responseBytes + r.firstCopy.requestBytes;
+    table.push(`  (f) delta: first copy ${r.firstCopy.rowBodies} row bodies / ${first} bytes; one edit -> A ${r.editOnA.a.requestBytes + r.editOnA.a.responseBytes} B, colleague ${r.editOnA.b.requestBytes + r.editOnA.b.responseBytes} B`);
+    // the first copy is the yardstick: it really did copy everything once
+    expect(r.firstCopy.rowBodies).toBeGreaterThanOrEqual(5 * 28);
+    // quiet: no row body, a few bytes of /heads
+    for (const w of [r.quiet.a, r.quiet.b]) {
+      expect(w.rowBodies).toBe(DELTA_BUDGETS.quietRowBodies);
+      expect(w.changeEntries).toBe(0);
+      expect(w.idsListed).toBe(0);
+      expect(w.requestBytes + w.responseBytes).toBeLessThanOrEqual(DELTA_BUDGETS.quietBytesPerLaptop);
+    }
+    // one edit on A: A sends ONE op; B receives exactly the ONE changed row; neither reads an id list
+    expect(r.editOnA.a.pushOps).toBe(1);
+    expect(r.editOnA.a.requestBytes).toBeLessThanOrEqual(DELTA_BUDGETS.editSenderRequestBytes); // the op carries the changed field(s) and the base version, not the record
+    expect(r.editOnA.a.rowBodies).toBeLessThanOrEqual(DELTA_BUDGETS.editSenderRowBodies);
+    expect(r.editOnA.b.rowBodies).toBe(DELTA_BUDGETS.editReceiverRowBodies);
+    expect(r.editOnA.a.changeEntries).toBeLessThanOrEqual(DELTA_BUDGETS.changeEntriesPerRead);
+    expect(r.editOnA.b.changeEntries).toBeLessThanOrEqual(DELTA_BUDGETS.changeEntriesPerRead);
+    expect(r.editOnA.a.idsListed + r.editOnA.b.idsListed).toBe(0);
+    const edit = r.editOnA.a.requestBytes + r.editOnA.a.responseBytes + r.editOnA.b.requestBytes + r.editOnA.b.responseBytes;
+    expect(edit).toBeLessThanOrEqual(first * DELTA_BUDGETS.editFractionOfFirstCopy);
+    // one colleague change on the server: each laptop receives that one row
+    expect(r.colleagueChange.a.rowBodies).toBe(DELTA_BUDGETS.colleagueRowBodies);
+    expect(r.colleagueChange.b.rowBodies).toBe(DELTA_BUDGETS.colleagueRowBodies);
+    expect(r.colleagueChange.a.pushOps + r.colleagueChange.b.pushOps).toBe(0);
+    expect(r.colleagueChange.a.requestBytes + r.colleagueChange.a.responseBytes).toBeLessThanOrEqual(first * DELTA_BUDGETS.editFractionOfFirstCopy);
+  }, 300_000);
 
   test("jobs claim loop, if switched on: 8 visible idle hours", async () => {
     const r = await jobsIdle8h();

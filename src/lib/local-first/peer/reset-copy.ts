@@ -12,13 +12,16 @@
 
 import { changeCursorKey, reconcileKey, type LocalDb } from "../local-db";
 import { LAST_SYNC_KEY, MANIFEST_KEY, cursorKey, doneKey, type StoredManifest } from "../replica";
+import { noteRecopy } from "../replica-class";
 
 export async function resetLocalCopy(db: Pick<LocalDb, "getMeta" | "setMeta" | "deleteByProject">): Promise<{ removed: number }> {
   const manifest = await db.getMeta<StoredManifest>(MANIFEST_KEY);
   if (!manifest || !Array.isArray(manifest.projectIds)) return { removed: 0 };
   let removed = 0;
   for (const projectId of manifest.projectIds) {
-    removed += await db.deleteByProject(manifest.orgId, projectId); // dirty rows are skipped inside
+    const dropped = await db.deleteByProject(manifest.orgId, projectId); // dirty rows are skipped inside
+    removed += dropped;
+    await noteRecopy(db, { at: Date.now(), reason: "heads_view_class_or_epoch", projectId, removed: dropped });
     for (const kind of manifest.kinds ?? []) {
       await db.setMeta(cursorKey(projectId, kind), null);
       await db.setMeta(doneKey(projectId, kind), null);

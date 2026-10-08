@@ -69,11 +69,28 @@ export async function assertPageClass(db: Pick<LocalDb, "getMeta">, projectId: s
 }
 
 /**
+ * DELTA-ONLY (docs/local-first/DELTA_ONLY.md, path 2): the ONLY ways a laptop copies a project it already holds again from scratch. Each one is
+ * rare by construction (a role change, a server-side restore, a pruned feed) and is written to this short on-laptop log (last 20), so "why did
+ * it download everything again?" always has an answer. The log never leaves the laptop and costs no request.
+ */
+export const RECOPY_LOG_KEY = "sync:recopy-log";
+export type RecopyReason = "reset_required" | "epoch_changed" | "view_class_changed" | "heads_view_class_or_epoch";
+export type RecopyEntry = { at: number; reason: RecopyReason; projectId: string; removed: number };
+
+export async function noteRecopy(db: Pick<LocalDb, "getMeta" | "setMeta">, entry: RecopyEntry): Promise<void> {
+  try {
+    const log = ((await db.getMeta<RecopyEntry[] | null>(RECOPY_LOG_KEY)) ?? []).slice(-19);
+    await db.setMeta(RECOPY_LOG_KEY, [...log, entry]);
+  } catch { /* a log that cannot be written never stops a sync */ }
+}
+
+/**
  * Drops what the laptop holds of one project (non-dirty rows only) and every position of it, so its next pull is a whole, fresh copy.
  * `kinds` are the kinds whose cursors are cleared (pass every kind ever synced for it). Returns the number of rows removed.
  */
-export async function resetProject(db: LocalDb, orgId: string, projectId: string, kinds: readonly string[]): Promise<number> {
+export async function resetProject(db: LocalDb, orgId: string, projectId: string, kinds: readonly string[], reason: RecopyReason = "reset_required", now: number = Date.now()): Promise<number> {
   const removed = await db.deleteByProject(orgId, projectId); // skips every dirty row (local-db.ts)
+  await noteRecopy(db, { at: now, reason, projectId, removed });
   for (const kind of new Set(kinds)) {
     await db.setMeta(cursorKeyOf(projectId, kind), null);
     await db.setMeta(doneKeyOf(projectId, kind), null);
@@ -130,7 +147,7 @@ export async function applyClasses(db: LocalDb, plan: ClassPlan): Promise<ClassO
     if (!cls) continue;
     const stored = await db.getMeta<StoredClass | null>(classKey(projectId));
     if (stored && typeof stored.view === "string" && stored.view !== cls) {
-      out.removed += await resetProject(db, plan.orgId, projectId, kinds);
+      out.removed += await resetProject(db, plan.orgId, projectId, kinds, "view_class_changed", plan.now);
       out.reset.push(projectId);
     }
     if (!stored || stored.view !== cls) await db.setMeta(classKey(projectId), { view: cls, at: plan.now } satisfies StoredClass);
@@ -154,7 +171,7 @@ export async function noteEpoch(db: Pick<LocalDb, "getMeta" | "setMeta">, epoch:
 /** A new epoch: every project and the organisation are reset (dirty rows, the outbox and drafts stay), then the new epoch is recorded. */
 export async function resetEverything(db: LocalDb, orgId: string, projects: readonly string[], kinds: readonly string[], epoch: string): Promise<number> {
   let removed = 0;
-  for (const p of new Set([...projects, ORG_PROJECT])) removed += await resetProject(db, orgId, p, kinds);
+  for (const p of new Set([...projects, ORG_PROJECT])) removed += await resetProject(db, orgId, p, kinds, "epoch_changed");
   await db.setMeta(EPOCH_KEY, epoch);
   return removed;
 }

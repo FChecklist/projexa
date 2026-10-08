@@ -21,7 +21,25 @@ type Held = { manifest: ReleaseManifest; bytes: Uint8Array; at: number };
 let held: Held | null = null;
 let running: Promise<boolean> | null = null;
 
-export type PrewarmDeps = { fetchImpl?: typeof fetch; staticBase?: string; now?: () => number };
+export type PrewarmDeps = {
+  fetchImpl?: typeof fetch;
+  staticBase?: string;
+  now?: () => number;
+  /**
+   * Is a release already installed on this laptop? Default: read the device meta. DELTA-ONLY: with one installed, the bundle is NEVER prewarmed -
+   * the installer will either find it current (nothing to download) or fetch just the changed files (a partial update).
+   */
+  hasInstalledRelease?: () => Promise<boolean>;
+};
+
+async function defaultHasInstalledRelease(): Promise<boolean> {
+  try {
+    const [{ deviceMetaStore }, { META_KEYS }] = await Promise.all([import("../device-meta"), import("./release-constants")]);
+    return Boolean(await deviceMetaStore().getMeta(META_KEYS.release));
+  } catch {
+    return false; // unreadable: treat as a first install (the old behaviour)
+  }
+}
 
 /** Downloads and verifies the public release bundle into memory. Idempotent while running or held. Never throws; true when bytes are held. */
 export function prewarmReleaseBundle(deps: PrewarmDeps = {}): Promise<boolean> {
@@ -43,6 +61,9 @@ export function prewarmReleaseBundle(deps: PrewarmDeps = {}): Promise<boolean> {
       if (!m.ok) return false;
       const manifest = parseManifest(await m.json());
       if (!(await manifestDigestOk(manifest))) return false;
+      // DELTA-ONLY (docs/local-first/DELTA_ONLY.md, path 1): a laptop that already has a release downloads no bundle here, however many times
+      // the person signs in, signs out and in, or refreshes. Only the small manifest was read.
+      if (await (deps.hasInstalledRelease ?? defaultHasInstalledRelease)()) return true;
       const b = await get(`/${manifest.bundle.path}`);
       if (!b.ok) return false;
       const bytes = new Uint8Array(await b.arrayBuffer());

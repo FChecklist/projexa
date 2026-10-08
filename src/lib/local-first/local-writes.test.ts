@@ -181,6 +181,22 @@ describe("update_task", () => {
     db.close();
   });
 
+  // DELTA-ONLY (docs/local-first/DELTA_ONLY.md, path 3): an edit sends the changed field(s) and the base version - never the record - and each op once.
+  test("a title-only edit sends EXACTLY the title, the ids and the base version; flushing again sends nothing", async () => {
+    const r = await rig({ seed: seedTaskAndRfi });
+    await updateTaskLocally({ projectId: "p1", taskId: "t1", patch: { title: "Only the title" } }, r.access);
+    await r.outbox.flush();
+    await r.outbox.flush();
+    await r.outbox.flush();
+    const pushes = r.server.requests.filter((q) => q.path === "/push");
+    expect(pushes.length).toBe(1); // sent once, however many times the queue is flushed
+    expect(pushes[0]!.body.ops.length).toBe(1);
+    const op = pushes[0]!.body.ops[0];
+    expect(op.params).toEqual({ projectId: "p1", issueId: "t1", title: "Only the title" }); // not statusId, priority, dates, % ...: the other fields of the row are not re-sent
+    expect(op.record).toEqual({ kind: "tasks", id: "t1", base_version: 1 });
+    expect(Object.keys(op).sort()).toEqual(["client_at", "function_id", "op_id", "params", "project_id", "record"]);
+  });
+
   test("a title the server refuses (empty) is undone on this laptop and explained in words", async () => {
     const r = await rig({ seed: seedTaskAndRfi });
     await updateTaskLocally({ projectId: "p1", taskId: "t1", patch: { title: " " } }, r.access);

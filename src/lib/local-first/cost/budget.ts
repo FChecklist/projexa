@@ -77,6 +77,32 @@ export const SCENARIO_BUDGETS = {
   jobsClaimIdle8h: 45,
 } as const;
 
+/**
+ * DELTA-ONLY ceilings (docs/local-first/DELTA_ONLY.md, scenario (f) in scenarios.ts): bytes and row BODIES on the wire after the first copy.
+ * A row body is a full record. Raising any of these is a deliberate act that says why (the owner's rule: only what changed is sent).
+ */
+export const DELTA_BUDGETS = {
+  /** Row bodies received in a quiet half hour: none. */
+  quietRowBodies: 0,
+  /** Bytes a quiet laptop receives in half an hour: the /heads polls only. */
+  quietBytesPerLaptop: 3_000,
+  /** One edit on laptop A: row bodies A receives back (its own row is already current) ... */
+  editSenderRowBodies: 1,
+  /** ... and row bodies a colleague's laptop receives: exactly the one changed row. */
+  editReceiverRowBodies: 1,
+  /** One colleague change on the server: row bodies each laptop receives. */
+  colleagueRowBodies: 1,
+  /**
+   * Change-feed ENTRIES (id + version, no body) one moved-project read may carry: the documented CHANGE_FEED_OVERLAP re-read (replica.ts, 200)
+   * plus the change itself. The one place more than the change is read; it is metadata, never a row body.
+   */
+  changeEntriesPerRead: 205,
+  /** Everything A sends for one edit in the half hour after it: the one push op (changed field + base version) and its follow-up change reads. */
+  editSenderRequestBytes: 700,
+  /** One edit (sent by A, received by B), both directions together, as a fraction of the first copy's bytes. */
+  editFractionOfFirstCopy: 0.1,
+} as const;
+
 /** The month of one working laptop must leave room for at least this many laptops in the free quota. */
 export const MIN_LAPTOPS_IN_FREE_QUOTA = 80;
 
