@@ -52,7 +52,8 @@
     "/api/local-first/client-error",
     "/api/permits/:id",
     "/api/reports/boq-analysis",
-    "/api/scope/line-items/:id"
+    "/api/scope/line-items/:id",
+    "/api/tasks"
   ],
   "install_phase_api_allowlist": [
     "GET /api/shell",
@@ -3555,7 +3556,7 @@
         "POST"
       ],
       "backend": "veridian-proxy",
-      "shell_reachable": false,
+      "shell_reachable": true,
       "served_by": "edge:projexa-api",
       "why": "legacy top bar task counter, called by the server-rendered pages. Not called by the on-laptop shell. Measured: once during the first install.",
       "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"
@@ -3567,7 +3568,7 @@
         "GET"
       ],
       "backend": "veridian-proxy",
-      "shell_reachable": false,
+      "shell_reachable": true,
       "served_by": "edge:projexa-api",
       "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
       "plan": "MOVED (AUDIT-100 A2): on the production origins the browser calls the Supabase Edge Function projexa-api (src/lib/px-api.ts), which answers with the same contract (src/lib/projexa-api-parity.test.ts); this Next handler stays as the same-origin fallback (preview, rig, kill switch NEXT_PUBLIC_PX_API_BASE=\"\") and is deleted once no fallback is wanted"

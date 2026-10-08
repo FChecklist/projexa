@@ -5,10 +5,11 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { formatDate } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 
 // P6 (aims 5-6). The organisation owner's one switch for PROJEXA's own AI. Default OFF: the person's own AI is always the first choice
 // and nothing of ours calls a model unless the owner allows it here. The page is a UX affordance for owner/admin; the real gate is
-// PUT /api/org/internal-ai (requireRole ORG_ADMIN) and the same check again on the VERIDIAN side.
+// PUT /api/org/internal-ai (answered by the projexa-api Edge function via viaPxApi, ORG_ADMIN; the Next handler is the requireRole ORG_ADMIN fallback) and the same check again on the VERIDIAN side.
 export const INTERNAL_AI_SWITCH_LABEL = "Allow PROJEXA's own AI for this organisation";
 export const INTERNAL_AI_EXPLANATION =
   "Off by default: your people use their own AI. When on, PROJEXA's own AI can answer typed requests here. It can never change code, and it acts only within each person's role.";
@@ -21,7 +22,7 @@ export default function InternalAiCard() {
 
   useEffect(() => {
     let live = true;
-    fetch("/api/org/internal-ai")
+    viaPxApi("/api/org/internal-ai")
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error((body as { error?: string }).error ?? "Couldn't load this setting");
@@ -34,7 +35,7 @@ export default function InternalAiCard() {
   async function change(next: boolean) {
     setBusy(true);
     try {
-      const res = await fetch("/api/org/internal-ai", {
+      const res = await viaPxApi("/api/org/internal-ai", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allowed: next }),

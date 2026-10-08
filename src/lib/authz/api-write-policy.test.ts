@@ -74,6 +74,10 @@ describe("API_WRITE_POLICY covers the real mutating route surface", () => {
 
   test("every policy entry corresponds to a real mutating route on disk", () => {
     const known = new Set(mutatingRoutes);
+    // P6 / A2: an edge_only route (ai-os/audit37/projexa-api-routes.json) has no Next file but is a real mutating route of the Supabase Edge function,
+    // which enforces this very table; its entry is not stale.
+    const spec = JSON.parse(readFileSync(join(process.cwd(), "ai-os", "audit37", "projexa-api-routes.json"), "utf8")) as { routes: { route: string; edge_only?: boolean; methods: Record<string, unknown> }[] };
+    for (const r of spec.routes) if (r.edge_only && Object.keys(r.methods).some((m) => m !== "GET")) known.add(r.route.replace(/^\/api/, "").replace(/:(\w+)/g, "[$1]"));
     const stale = Object.keys(API_WRITE_POLICY).filter((r) => !known.has(r)).sort();
     expect(stale).toEqual([]);
   });

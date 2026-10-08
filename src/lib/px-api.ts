@@ -232,6 +232,7 @@ export const PX_EDGE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "/api/work-progress/:id": ["DELETE", "GET", "PATCH"],
   "/api/tasks": ["GET", "POST"],
   "/api/tasks/:id": ["GET"],
+  "/api/org/internal-ai": ["GET", "PUT"],
   "/api/attendance/summary": ["GET"],
   "/api/billing-claims": ["GET", "POST"],
   "/api/construction-materials/cost-report": ["GET"],

@@ -1479,6 +1479,15 @@
       }
     },
     {
+      "route": "/api/org/internal-ai",
+      "batch": 9,
+      "edge_only": true,
+      "methods": {
+        "GET": { "upstream": "/internal-ai-allowance", "fallback": "Could not read this setting" },
+        "PUT": { "upstream": "/internal-ai-allowance", "roles": "ORG_ADMIN", "body": "json_lenient", "body_object_error": "allowed must be true or false.", "body_pick": ["allowed"], "fallback": "Could not save this setting" }
+      }
+    },
+    {
       "route": "/api/tasks",
       "batch": 6,
       "methods": {

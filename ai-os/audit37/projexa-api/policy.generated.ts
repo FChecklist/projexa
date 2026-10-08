@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "8b01330b2d938136586686dfa3e0beb2f1827db23e9ba0efdb3d28f9a0feb480"
+export const SOURCE_SHA256 = "0622d96cb64b0d4d45ab08da8a404f6d3a27186f7be78d9371ed985ddd91b719"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -111,6 +111,7 @@ export const API_WRITE_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/org/invites/accept", "ANY_ROLE"],
   ["/org/invites", "ORG_ADMIN"],
   ["/org/invites/[id]", "ORG_ADMIN"],
+  ["/org/internal-ai", "ORG_ADMIN"],
   ["/org-members/[id]", "ORG_ADMIN"],
   ["/org/provision", "PUBLIC"],
   ["/org/repair", "ORG_ADMIN"],
@@ -445,6 +446,7 @@ export const EDGE_ROUTES: ReadonlyArray<{ route: string; methods: Readonly<Recor
   {"route":"/api/timesheets/review-day","methods":{"POST":{"upstream":"/timesheets/review-day","acting_user":"explicit","body":"json_lenient","body_required":[{"fields":["designerId","projectId","spentOn","decision"],"error":"designerId, projectId, spentOn and decision are required"}],"body_pick":["designerId","projectId","spentOn","decision","rejectionReason"],"fallback":"Failed to record the review decision"}}},
   {"route":"/api/timesheets","methods":{"GET":{"upstream":"/timesheets","acting_user":"explicit","required_query_any":{"params":["projectId","issueId"],"error":"projectId or issueId query param is required"},"search_params":["projectId","issueId","mine","spentOn"],"fallback":"Failed to load time entries"},"POST":{"upstream":"/timesheets","acting_user":"explicit","body":"json","body_required":[{"fields":["issueId","hours","spentOn"],"error":"issueId, hours, and spentOn are required"}],"success_status":201,"fallback":"Failed to log time entry"}}},
   {"route":"/api/work-progress/:id","methods":{"GET":{"upstream":"/work-progress/{id}","error_style":"plain","fallback":"Failed to load this progress entry"},"PATCH":{"upstream":"/work-progress/{id}","body":"json_lenient","body_object_error":"A JSON body is required","error_style":"plain","fallback":"Failed to save this progress entry"},"DELETE":{"upstream":"/work-progress/{id}","error_style":"plain","fallback":"Failed to delete this progress entry"}}},
+  {"route":"/api/org/internal-ai","methods":{"GET":{"upstream":"/internal-ai-allowance","fallback":"Could not read this setting"},"PUT":{"upstream":"/internal-ai-allowance","roles":"ORG_ADMIN","body":"json_lenient","body_object_error":"allowed must be true or false.","body_pick":["allowed"],"fallback":"Could not save this setting"}}},
   {"route":"/api/tasks","methods":{"GET":{"upstream":"/tasks","search_params":["projectId","status","limit","cursor"],"search_params_omit_empty":true,"fallback":"Failed to load tasks"},"POST":{"upstream":"/tasks","body":"json_lenient","body_object_error":"A JSON body is required","body_actor_email":"always","success_status":201,"fallback":"Failed to submit"}}},
   {"route":"/api/tasks/:id","methods":{"GET":{"upstream":"/tasks/{id}","fallback":"Failed to load the task"}}},
   {"route":"/api/attendance/summary","methods":{"GET":{"upstream":"/attendance/summary","required_query":{"projectId":"projectId query param is required"},"search_params":["projectId","from","to"],"error_style":"plain","fallback":"Failed to load the attendance summary"}}},
