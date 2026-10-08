@@ -139,7 +139,7 @@ describe("primaryListUrl", () => {
   // A near-miss costs bytes and buys nothing, so these must be byte-identical
   // to the urls the module clients build.
   test("matches what each module client actually requests", () => {
-    expect(primaryListUrl("/scope", "p1")).toBe("/api/scope?projectId=p1");
+    expect(primaryListUrl("/scope", "p1")).toBe("/api/scope?projectId=p1&include=variation,headers");
     expect(primaryListUrl("/work-progress", "p1")).toBe("/api/work-progress?projectId=p1");
     expect(primaryListUrl("/permits", "p1")).toBe("/api/permits?projectId=p1&all=true");
     expect(primaryListUrl("/moms", "p1")).toBe("/api/moms?projectId=p1");

@@ -7,6 +7,7 @@
 // preview comes from the SAME server parse (?dryRun=1) that the real import
 // runs, and PROJEXA gains no XLSX library. A browser-side SheetJS preview would
 // have been a second set of rules that can disagree with the one that imports.
+import { readScopeHeaders } from "@/lib/scope-list-reads";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
@@ -71,7 +72,7 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
   const [reviseOf, setReviseOf] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchJson<{ boqs?: ExistingBoq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`)
+    readScopeHeaders<ExistingBoq>(projectId)
       .then((data) => setExistingBoqs(data.boqs ?? []))
       .catch(() => setExistingBoqs([]));
   }, [projectId]);

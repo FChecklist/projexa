@@ -5,6 +5,7 @@
 // Save/Edit/Delete -- only Back plus a real "Against" selector), so this
 // wraps ScreenFrame directly rather than ObjectScreen, whose footer is
 // fixed to Edit/Delete/Save/Cancel and doesn't fit a pure-display screen.
+import { readScopeHeaders } from "@/lib/scope-list-reads";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -78,7 +79,7 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
     try {
       const data = await fetchJson<Boq & { lineItems: unknown }>(`/api/scope/${boqId}`);
       setBoq(data);
-      const listData = await fetchJson<{ boqs: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(data.projectId)}`);
+      const listData = await readScopeHeaders<Boq>(data.projectId);
       setSiblings(listData.boqs ?? []);
       const original = findOriginalBoqId(data, listData.boqs ?? []);
       setAgainst(original);

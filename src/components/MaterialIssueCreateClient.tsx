@@ -16,6 +16,7 @@
 // two storekeepers on two phones would both pass it. createMaterialIssue()
 // re-reads the balance inside the writing transaction and refuses with its own
 // copy of the same sentence, which is shown verbatim if it ever fires.
+import { readCurrentBoqLines } from "@/lib/scope-list-reads";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -76,8 +77,7 @@ export default function MaterialIssueCreateClient({
 
   async function loadBoqLines() {
     try {
-      const data = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
-      setBoqLines((data.boqs ?? []).flatMap((boq) => boq.lineItems ?? []));
+      setBoqLines(await readCurrentBoqLines<BoqLineItem>(projectId));
       setBoqError(null);
     } catch (err) {
       setBoqLines([]);

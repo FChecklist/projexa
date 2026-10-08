@@ -31,6 +31,7 @@
 // collapse into one empty list -- "this org has no task types" and "the call
 // failed" -- now read differently, which is what
 // e2e/schedule-task-type-signage.spec.ts asserts in a browser.
+import { readCurrentBoqLines } from "@/lib/scope-list-reads";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
@@ -89,8 +90,7 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
   const loadBoqLines = useCallback(async () => {
     setBoqLines((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const data = await fetchJson<{ boqs?: Boq[] }>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
-      setBoqLines({ rows: (data.boqs ?? []).flatMap((b) => b.lineItems ?? []), loading: false, error: null });
+      setBoqLines({ rows: await readCurrentBoqLines<BoqLine>(projectId), loading: false, error: null });
     } catch (err) {
       setBoqLines({
         rows: [],
