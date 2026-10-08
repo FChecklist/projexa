@@ -28,7 +28,7 @@ import {
 import { META_KEYS, normalizeStaticBase, releaseCacheName } from "./release/release-constants";
 import { RELAY_PENDING_KEY, type ReleaseRelay, type RelayPackage } from "./release/relay";
 import type { TrustedReleaseKey } from "../release-dist/signed-manifest";
-import { PINNED_RELEASE_KEYS } from "../release-dist/pinned-keys";
+import { PINNED_RELEASE_KEYS, SIGNATURE_REQUIRED_FROM } from "../release-dist/pinned-keys";
 import { withInstallLock } from "./release/install-lock";
 import type { ReleaseClient } from "./release/release-client";
 import { dropReleaseKeptForAnother, type SwClient } from "./release/sw-client";
@@ -313,7 +313,7 @@ export async function runLocalFirstBoot(deps: BootDeps): Promise<BootReport> {
       // WHERE the bytes come from: the registry may say so (projexa-sync PX_RELEASE_ORIGIN), but only a build that pins release-signing keys follows it,
       // because then a wrong origin can withhold an update and nothing worse: the signature, the digest and every hash still have to verify.
       const trusted = deps.trustedKeys ?? PINNED_RELEASE_KEYS;
-      const advertised = registry && trusted.length > 0 ? normalizeStaticBase((await registry.current().catch(() => null))?.origin) : "";
+      const advertised = registry && trusted.length > 0 && (deps.trustedKeys !== undefined || SIGNATURE_REQUIRED_FROM !== "") ? normalizeStaticBase((await registry.current().catch(() => null))?.origin) : "";
       report.release = await withInstallLock(() => installRelease({
         ...(advertised ? { staticBase: advertised } : {}),
         trustedKeys: deps.trustedKeys,

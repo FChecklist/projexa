@@ -231,6 +231,7 @@ function boot(over: Partial<BootDeps> = {}) {
     gunzip: async (b) => new Uint8Array(gunzipSync(b)),
     now: () => state.now,
     random: () => "device-xyz-123",
+    trustedKeys: [], // signatures are covered by release-update.test.ts and release-signing.test.ts
     ...over,
   });
   return { release, caches, meta, origin, sw, state, deps, run: () => runLocalFirstBoot(deps()) };

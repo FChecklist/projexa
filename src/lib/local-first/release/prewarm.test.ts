@@ -59,7 +59,7 @@ describe("P1 pre-verification download of the public release bundle", () => {
     origin.requests.length = 0;
     const result = await installRelease({
       fetchImpl: origin.fetch, caches: new FakeCacheStorage(), meta: new FakeMeta(), gunzip: async (b) => new Uint8Array(gunzipSync(b)),
-      deviceId: "d", staticBase: "", switchTo: async () => {}, takePrewarmedBundle,
+      deviceId: "d", staticBase: "", trustedKeys: [], switchTo: async () => {}, takePrewarmedBundle,
     });
     expect(result.status).toBe("installed");
     expect(origin.requests).toEqual(["/_release/release.json"]);

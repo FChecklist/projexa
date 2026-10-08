@@ -29,7 +29,7 @@
 // Usage:  node scripts/make-release.mjs [--root <dir>] [--postbuild]
 // Env:    BUILD_NUMBER (the NNN of the version), VERCEL_GIT_COMMIT_SHA / GITHUB_SHA (git_sha, and the NNN when BUILD_NUMBER is unset)
 
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, sign as cryptoSign } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -234,14 +234,54 @@ export function buildRelease({ root, env = process.env, now = new Date(), log = 
   // Only the newest release stays: an older bundle is dead weight in every deployment.
   if (existsSync(dir)) {
     for (const entry of readdirSync(dir)) {
-      if (entry === "release.json" || /^px-.+\.tar\.gz$/.test(entry)) rmSync(join(dir, entry), { force: true });
+      if (entry === "release.json" || entry === SIGNATURE_FILE_NAME || /^px-.+\.tar\.gz$/.test(entry)) rmSync(join(dir, entry), { force: true });
     }
   }
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `px-${version}.tar.gz`), bundleBytes);
   writeFileSync(join(dir, "release.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  // Signing: only when the owner's private key is in PX_RELEASE_SIGNING_KEY; otherwise a clear line and an unsigned release (builds and CI keep passing).
+  // The old release.sig.json was removed above, so a stale signature of an older release can never sit next to this manifest.
+  if (env.PX_RELEASE_SIGNING_KEY) {
+    const kid = env.PX_RELEASE_KID || SIGNING_KID_DEFAULT;
+    const doc = signManifest(manifest, loadSigningKey(env.PX_RELEASE_SIGNING_KEY), kid, now);
+    writeFileSync(join(dir, SIGNATURE_FILE_NAME), `${JSON.stringify(doc, null, 2)}
+`);
+    log(`release ${version}: signed with key ${kid}`);
+  } else {
+    log(`release ${version}: NOT signed (PX_RELEASE_SIGNING_KEY is not set); laptops that do not yet require signatures still install it`);
+  }
   log(`release ${version}: ${files.length} files, bundle ${bundleBytes.length} bytes, manifest ${manifest.manifest_sha256.slice(0, 12)}`);
   return { skipped: false, manifest, dir };
+}
+
+// ─── the signature ──────────────────────────────────────────────────────────────────────────────
+
+export const SIGNATURE_FILE_NAME = "release.sig.json";
+export const SIGNING_KID_DEFAULT = "px-release-2026-10-08";
+
+/** PX_RELEASE_SIGNING_KEY is a PKCS8 PEM, the same PEM base64-encoded (easier in a one-line secret field), or a private JWK as JSON. */
+export function loadSigningKey(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  if (text.startsWith("{")) return createPrivateKey({ key: JSON.parse(text), format: "jwk" });
+  const pem = text.includes("BEGIN") ? text.replace(/\\n/g, "\n") : Buffer.from(text, "base64").toString("utf8");
+  return createPrivateKey(pem);
+}
+
+/** Same message and format as src/lib/release-dist/signed-manifest.ts (ES256, raw r||s, "px-release-v1\nversion\nmanifest_sha256"). */
+export function signManifest(manifest, privateKey, kid, now = new Date()) {
+  const message = Buffer.from(`px-release-v1\n${manifest.release_version}\n${manifest.manifest_sha256}`, "utf8");
+  const sig = cryptoSign("sha256", message, { key: privateKey, dsaEncoding: "ieee-p1363" });
+  return {
+    v: 1,
+    release_version: manifest.release_version,
+    manifest_sha256: manifest.manifest_sha256,
+    kid,
+    alg: "ES256",
+    sig: sig.toString("base64url"),
+    signed_at: now.toISOString(),
+  };
 }
 
 // ─── command line ───────────────────────────────────────────────────────────────────────────────

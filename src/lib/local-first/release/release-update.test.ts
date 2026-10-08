@@ -8,6 +8,7 @@ import { META_KEYS } from "./release-constants";
 import { FakeCacheStorage, FakeMeta, builtRelease, fakeOrigin, fixtureFiles, type BuiltRelease } from "./__fixtures__/fakes";
 import { makeKey, signBuilt, type TestKey } from "./__fixtures__/signing";
 import type { ReleaseSignature } from "../../release-dist/signed-manifest";
+import { PINNED_RELEASE_KEYS } from "../../release-dist/pinned-keys";
 
 const V1 = "2026.10.02-001";
 const V2 = "2026.10.03-002";
@@ -30,7 +31,7 @@ function origin(initial: BuiltRelease, sig: SigSource) {
   return { ...o, fetchImpl };
 }
 
-function laptop(initial: BuiltRelease, sig: SigSource, keys: InstallerDeps["trustedKeys"]) {
+function laptop(initial: BuiltRelease, sig: SigSource, keys: InstallerDeps["trustedKeys"], requiredFrom?: string) {
   const caches = new FakeCacheStorage();
   const meta = new FakeMeta();
   const org = origin(initial, sig);
@@ -39,6 +40,7 @@ function laptop(initial: BuiltRelease, sig: SigSource, keys: InstallerDeps["trus
   const deps = (): InstallerDeps => ({
     fetchImpl: org.fetchImpl, caches, meta, gunzip, deviceId: "device-1", staticBase: "",
     trustedKeys: keys,
+    ...(requiredFrom !== undefined ? { signatureRequiredFrom: requiredFrom } : {}),
     switchTo: async (v) => { switched.push(v); },
     keepForRelay: async (k) => { kept.push(k.manifest.release_version); },
   });
@@ -93,6 +95,36 @@ describe("signature hook (after the manifest digest, before any byte is written)
     const l = laptop(rel, () => "missing", []);
     expect((await l.install()).status).toBe("installed");
     expect(l.org.requests).not.toContain("/_release/release.sig.json");
+  });
+});
+
+describe("signature_required_from: an unsigned build cannot lock a laptop out, a bad signature always refuses", () => {
+  test("below the required-from version an unsigned release (404) installs; a signed one is still verified", async () => {
+    const key = await makeKey("k1");
+    const rel = builtRelease(V1, fixtureFiles(4));
+    const unsigned = laptop(rel, () => "missing", [key.trusted], "2099.01.01-000");
+    expect((await unsigned.install()).status).toBe("installed");
+    expect(unsigned.kept).toEqual([]); // nothing verified, so it is not offered to peers
+    const forged = await signBuilt(rel, await makeKey("k1"));
+    const bad = laptop(rel, () => forged, [key.trusted], "2099.01.01-000");
+    expect(await bad.install()).toMatchObject({ status: "failed", reason: "manifest_signature" });
+  });
+
+  test("from the required-from version on, an unsigned release is refused", async () => {
+    const key = await makeKey("k1");
+    const rel = builtRelease(V1, fixtureFiles(4));
+    const l = laptop(rel, () => "missing", [key.trusted], V1);
+    expect(await l.install()).toMatchObject({ status: "failed", reason: "manifest_signature" });
+    expect(l.switched).toEqual([]);
+  });
+
+  test("with the REAL pinned key list, a release signed by any other key is refused (even though unsigned ones are tolerated)", async () => {
+    const rel = builtRelease(V1, fixtureFiles(4));
+    const other = await makeKey(PINNED_RELEASE_KEYS[0].kid); // the real kid, a different key
+    const forged = await signBuilt(rel, other);
+    const l = laptop(rel, () => forged, PINNED_RELEASE_KEYS, "2099.01.01-000");
+    expect(await l.install()).toMatchObject({ status: "failed", reason: "manifest_signature" });
+    expect(l.switched).toEqual([]);
   });
 });
 

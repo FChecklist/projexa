@@ -28,7 +28,7 @@ import {
 } from "./release-constants";
 import type { InstallRecord, RegistryRelease, ReleaseManifest } from "./release-client";
 import { SIGNATURE_FILE, verifyRelease, type ReleaseSignature, type TrustedReleaseKey } from "../../release-dist/signed-manifest";
-import { PINNED_RELEASE_KEYS } from "../../release-dist/pinned-keys";
+import { PINNED_RELEASE_KEYS, SIGNATURE_REQUIRED_FROM, signatureRequired } from "../../release-dist/pinned-keys";
 
 // ─── what the installer needs from the browser, as small interfaces ───────────────────────────────────
 
@@ -130,6 +130,12 @@ export type InstallerDeps = {
    * under one of them; with none the installer behaves as before.
    */
   trustedKeys?: readonly TrustedReleaseKey[];
+  /**
+   * The first release_version that must be signed (see pinned-keys.ts SIGNATURE_REQUIRED_FROM; default: this build's value, "" = never). A release
+   * BELOW it that carries no signature file (404) installs as before; one that carries a signature must always verify. When `trustedKeys` is
+   * injected and this is not, every release must be signed (the strict form).
+   */
+  signatureRequiredFrom?: string;
   /**
    * A release that arrived without the static host (handed over by another laptop, release/relay.ts): its manifest and signature are used
    * instead of fetching them, and `takePrewarmedBundle` supplies the bytes. Everything is still verified here, exactly as for a download.
@@ -291,20 +297,28 @@ export async function installRelease(deps: InstallerDeps): Promise<InstallResult
     // and verifies; anything else refuses and nothing switches. With no pinned key this is skipped (the behaviour before this hook).
     const trusted = deps.trustedKeys ?? PINNED_RELEASE_KEYS;
     let verifiedSignature: ReleaseSignature | null = null;
+    const requiredFrom = deps.signatureRequiredFrom ?? (deps.trustedKeys ? "0" : SIGNATURE_REQUIRED_FROM);
     if (trusted.length > 0) {
+      const mustSign = signatureRequired(version, requiredFrom);
       let sigDoc: unknown = deps.supplied ? deps.supplied.signature : null;
+      let absent = !deps.supplied ? false : sigDoc === null;
       if (!deps.supplied) {
         try {
           const sigRes = await doFetch(where(`/${SIGNATURE_FILE}`), optsFor(`/${SIGNATURE_FILE}`));
-          if (!sigRes.ok) throw new Error(`answered ${sigRes.status}`);
-          sigDoc = await sigRes.json();
+          if (sigRes.status === 404 && !mustSign) absent = true;
+          else {
+            if (!sigRes.ok) throw new Error(`answered ${sigRes.status}`);
+            sigDoc = await sigRes.json();
+          }
         } catch (err) {
           throw new InstallError("manifest_signature", `The release signature could not be read (${errText(err)}).`);
         }
       }
-      const check = await verifyRelease(manifest, sigDoc, trusted);
-      if (!check.ok) throw new InstallError("manifest_signature", `The release signature was refused (${check.reason}).`);
-      verifiedSignature = sigDoc as ReleaseSignature;
+      if (!(absent && !mustSign)) {
+        const check = await verifyRelease(manifest, sigDoc, trusted);
+        if (!check.ok) throw new InstallError("manifest_signature", `The release signature was refused (${check.reason}).`);
+        verifiedSignature = sigDoc as ReleaseSignature;
+      }
     }
     newCacheName = releaseCacheName(version);
 

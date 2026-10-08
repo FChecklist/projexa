@@ -42,6 +42,8 @@ function harness(initial: BuiltRelease) {
     now: () => (clock += 1000),
     gunzip: sleepless,
     deviceId: "device-1",
+    trustedKeys: [], // this file is about WHAT is fetched; signatures are release-update.test.ts and release-signing.test.ts
+
     switchTo: async (version) => {
       if (state.switchError) throw state.switchError;
       switched.push(version);

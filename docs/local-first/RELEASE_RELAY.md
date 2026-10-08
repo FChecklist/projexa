@@ -37,6 +37,6 @@ Implements the three open items of `ai-os/audit37/RELEASE_DISTRIBUTION_2026-10-0
 
 ## Not done / needs the owner
 
-- No signing keypair exists yet, so nothing is pinned: until the owner generates one and sets `NEXT_PUBLIC_PX_RELEASE_KEYS`, the signature check and the relay stay off.
+- The signing keypair exists since 2026-10-08 (kid `px-release-2026-10-08`, public key built in); the signature check and the relay are ON. Whether an UNSIGNED release is still installed is decided by `SIGNATURE_REQUIRED_FROM`: see RELEASE_SIGNING_OWNER_STEPS.md.
 - `PX_RELEASE_ORIGIN` is not set and no bucket exists. The `/local` HTML shell for a first install still needs an HTML host (spec, owner decision 3).
 - Nothing was run against a real browser, real WebRTC link or the live service; the tests use in-memory links and fakes.
