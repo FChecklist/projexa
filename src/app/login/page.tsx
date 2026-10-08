@@ -9,12 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { createIdentityStore, getDurableIdentity, mirrorSession } from "@/lib/local-first/identity";
+import { createIdentityStore, getDurableIdentity } from "@/lib/local-first/identity";
 import { openDeviceMeta } from "@/lib/local-first/device-meta";
 import { prewarmReleaseBundle } from "@/lib/local-first/release/prewarm";
 import { ensureServiceWorker } from "@/lib/local-first/release/sw-client";
 import { safeRedirectPath } from "@/lib/safe-redirect";
-import { viaPxApi } from "@/lib/px-api";
+import { postLoginDeps } from "@/lib/auth/post-login-deps";
+import { runPostLogin } from "@/lib/auth/post-login";
+import { isGoogleEnabled, startGoogleSignIn } from "@/lib/auth/google-signin";
 import { CODE_LENGTH, cleanCodeInput, createEmailCodeLogin, type AuthLike, type LoginDeps } from "@/lib/auth/email-code-login";
 
 export default function LoginPage() {
@@ -27,6 +29,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [googleOn, setGoogleOn] = useState(false);
   const submitting = useRef(false);
 
   const login = useMemo(() => {
@@ -40,32 +43,7 @@ export default function LoginPage() {
       // Only PUBLIC build files: the service worker and the verified release bundle bytes (release/prewarm.ts). The organisation's data is copied after sign-in by WorkspacePrepare, never before.
       startShellInstall: () => Promise.all([ensureServiceWorker(), prewarmReleaseBundle()]),
       hasSavedIdentity: async () => Boolean(await getDurableIdentity(identityStore())),
-      afterVerified: async () => {
-        const { data } = await supabase.auth.getSession();
-        const session = data.session;
-        if (!session) return { ok: false, notice: t("genericError") };
-        // Finish provisioning when a company name was kept from the old sign-up (otherwise a brand-new e-mail simply opens an empty workspace;
-        // invitations attach an organisation through the existing invite flow).
-        const { data: existing } = await supabase.from("memberships").select("organization_id").eq("user_id", session.user.id).limit(1).maybeSingle();
-        if (!existing) {
-          const pendingOrgName = window.localStorage.getItem("projexa_pending_org_name");
-          if (pendingOrgName) {
-            const res = await viaPxApi("/api/org/provision", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ orgName: pendingOrgName }),
-            });
-            if (res.ok) window.localStorage.removeItem("projexa_pending_org_name");
-            else {
-              const body = await res.json().catch(() => ({ error: t("provisionError") }));
-              return { ok: false, notice: body.error ?? t("provisionError") };
-            }
-          }
-        }
-        // Keep this person's identity on the laptop so it reopens offline with no code (best effort, never blocks).
-        try { await mirrorSession(identityStore(), session as never); } catch { /* the identity mirror also does this */ }
-        return { ok: true };
-      },
+      afterVerified: () => runPostLogin(postLoginDeps(supabase, identityStore, t)),
     };
     return createEmailCodeLogin(deps);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,6 +69,26 @@ export default function LoginPage() {
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [login]);
+
+  // "Continue with Google" appears only when this project has the Google provider switched on (checked once, never blocks the page).
+  useEffect(() => {
+    let alive = true;
+    void isGoogleEnabled({
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      fetch: (url, init) => fetch(url, init),
+      isOnline: () => navigator.onLine !== false,
+      session: window.sessionStorage,
+    }).then((on) => { if (alive) setGoogleOn(on); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  async function continueWithGoogle() {
+    setError(null);
+    void Promise.resolve().then(() => Promise.all([ensureServiceWorker(), prewarmReleaseBundle()])).catch(() => {});
+    const r = await startGoogleSignIn(createClient().auth as never, window.location.origin, new URLSearchParams(window.location.search).get("redirectTo"));
+    if (!r.ok) setError(r.notice);
+  }
 
   useEffect(() => {
     if (stage !== "code") return;
@@ -127,6 +125,21 @@ export default function LoginPage() {
     setCode(v);
     if (v.length === CODE_LENGTH) void checkCode(v);
   }
+
+  const googleButton = googleOn && stage === "email" ? (
+    <div className="mt-4 space-y-3">
+      <p className="text-center text-xs text-px-muted">{t("orDivider")}</p>
+      <Button type="button" variant="outline" className="w-full" onClick={() => void continueWithGoogle()}>
+        <svg aria-hidden="true" viewBox="0 0 48 48" className="mr-2 h-4 w-4">
+          <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z" />
+          <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.2 5.5-4.7 7.2l7.6 5.9c4.4-4.1 6.9-10.1 6.9-17.6z" />
+          <path fill="#FBBC05" d="M10.5 28.7c-.5-1.5-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z" />
+          <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z" />
+        </svg>
+        {t("google")}
+      </Button>
+    </div>
+  ) : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-px-concrete p-6">
@@ -166,6 +179,7 @@ export default function LoginPage() {
               <Button type="submit" className="w-full" disabled={loading || stage === "checking"}>{loading ? t("submitting") : t("submit")}</Button>
             </form>
           )}
+          {googleButton}
         </CardContent>
       </Card>
     </div>

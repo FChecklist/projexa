@@ -71,6 +71,8 @@
   "Auth": {
     "login": {
       "title": "Sign in to PROJEXA",
+      "google": "Continue with Google",
+      "orDivider": "or",
       "email": "Email",
       "submit": "Send me a code",
       "submitting": "Please wait…",

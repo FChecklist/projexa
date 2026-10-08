@@ -83,6 +83,8 @@ const server = createServer((req, res) => {
     const made = makeSession(url.searchParams.get("email") ?? "boq-spec@example.invalid")
     return json(req, res, 200, { userId: made.userId, email: made.email, accessToken: made.accessToken, cookieName: made.cookieName, cookieValue: made.cookieValue })
   }
+  // P1c: the login page asks which providers are on; the fake has none (so no "Continue with Google" button in e2e).
+  if (url.pathname === "/auth/v1/settings") return json(req, res, 200, { external: { google: false, email: true }, disable_signup: false })
   if (url.pathname === "/auth/v1/user") {
     const claims = userOfToken(req)
     if (!claims?.sub) return json(req, res, 401, { message: "invalid token" })

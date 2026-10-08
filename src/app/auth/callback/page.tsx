@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { runPostLogin } from "@/lib/auth/post-login";
+import { postLoginDeps } from "@/lib/auth/post-login-deps";
+import { providerReturnError } from "@/lib/auth/google-signin";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 // R47_AUTH_REDIRECT_01 (found 2026-08-25): PROJEXA had NO auth callback route
 // of any kind. Every emailed Supabase auth link -- signup email confirmation,
@@ -47,6 +51,13 @@ export default function AuthCallbackPage() {
       // Supabase reports link failures (expired/already-used) in the fragment
       // too. Surface that verbatim rather than silently bouncing to /login,
       // which is indistinguishable from "your password was wrong".
+      // Google (or another provider) sent the person back with an error such as access_denied: one plain sentence, never the raw code.
+      const providerError = providerReturnError(url.searchParams, hash);
+      if (providerError) {
+        if (!cancelled) setError(providerError);
+        return;
+      }
+
       const linkError = hash.get("error_description") ?? url.searchParams.get("error_description");
       if (linkError) {
         if (!cancelled) setError(linkError);
@@ -108,32 +119,16 @@ export default function AuthCallbackPage() {
         // (400) -- a signed-in account that cannot use the product. Provision
         // before navigating, and surface a failure instead of dropping them
         // into a dashboard that cannot work.
-        const pendingOrgName = window.localStorage.getItem("projexa_pending_org_name");
-        if (pendingOrgName) {
-          const res = await fetch("/api/org/provision", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orgName: pendingOrgName }),
-          });
-          if (res.ok) {
-            window.localStorage.removeItem("projexa_pending_org_name");
-          } else {
-            const body = await res.json().catch(() => ({}));
-            if (!cancelled) {
-              setError(
-                (body as { error?: string }).error ??
-                  "Your email is confirmed, but we could not finish setting up your organisation. Sign in to retry."
-              );
-            }
-            return;
-          }
+        // The SAME steps as a verified e-mail code (src/lib/auth/post-login.ts): provisioning, saving the identity on this laptop, shell install.
+        const done = await runPostLogin(postLoginDeps(supabase as never));
+        if (!done.ok) {
+          if (!cancelled) setError(done.notice);
+          return;
         }
 
         if (cancelled) return;
-        const target = url.searchParams.get("redirectTo") ?? url.searchParams.get("next") ?? "/dashboard";
-        // Only ever navigate to a same-origin path, so a crafted link cannot
-        // turn this route into an open redirect.
-        router.replace(target.startsWith("/") && !target.startsWith("//") ? target : "/dashboard");
+        // Only ever navigate to a same-origin path (safeRedirectPath), so a crafted link cannot turn this route into an open redirect.
+        router.replace(safeRedirectPath(url.searchParams.get("redirectTo") ?? url.searchParams.get("next")));
         router.refresh();
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not complete sign-in.");

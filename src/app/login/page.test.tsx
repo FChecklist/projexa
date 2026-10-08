@@ -30,11 +30,16 @@ await mock.module("next-intl", () => ({
   },
 }));
 
+let googleOn = false;
+// the Supabase settings endpoint: external.google follows `googleOn`
+globalThis.fetch = (async () => ({ ok: true, json: async () => ({ external: { google: googleOn } }) })) as unknown as typeof fetch;
+
 const RIGHT_CODE = "123456";
 let session: { user: { id: string } } | null = null;
 const auth = {
   getSession: mock(async () => ({ data: { session } })),
   signInWithOtp: mock(async (_a: unknown) => ({ error: null as { message: string } | null })),
+  signInWithOAuth: mock(async (_a: unknown) => ({ error: null as { message: string } | null })),
   verifyOtp: mock(async (a: { token: string }) => {
     if (a.token === RIGHT_CODE) {
       session = { user: { id: "user-1" } };
@@ -67,6 +72,11 @@ function setUrl(search: string) {
 beforeEach(() => {
   session = null;
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  googleOn = false;
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon";
+  auth.signInWithOAuth.mockClear();
   setUrl("");
   push.mockClear();
   refresh.mockClear();
@@ -152,5 +162,34 @@ describe("P1 login page", () => {
     render(<LoginPage />);
     const note = await screen.findByTestId("login-notice");
     expect(note.textContent).toBe(en.Auth.login.noPassword);
+  });
+
+  test("Google: the button is hidden when the provider is off, shown when on, and the e-mail form stays the main flow", async () => {
+    render(<LoginPage />);
+    await screen.findByLabelText(en.Auth.login.email);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("button", { name: en.Auth.login.google })).toBeNull();
+    cleanup();
+    window.sessionStorage.clear();
+    googleOn = true;
+    render(<LoginPage />);
+    const btn = await screen.findByRole("button", { name: en.Auth.login.google });
+    expect(screen.getByRole("button", { name: en.Auth.login.submit })).toBeTruthy();
+    fireEvent.click(btn);
+    await waitFor(() => expect(auth.signInWithOAuth).toHaveBeenCalledTimes(1));
+    expect(auth.signInWithOAuth.mock.calls[0]![0]).toEqual({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback?redirectTo=%2Fdashboard` },
+    });
+  });
+
+  test("Google: an outside redirectTo never reaches the provider call", async () => {
+    googleOn = true;
+    setUrl("?redirectTo=https%3A%2F%2Fevil.example%2Fx");
+    render(<LoginPage />);
+    fireEvent.click(await screen.findByRole("button", { name: en.Auth.login.google }));
+    await waitFor(() => expect(auth.signInWithOAuth).toHaveBeenCalled());
+    const rt = (auth.signInWithOAuth.mock.calls[0]![0] as { options: { redirectTo: string } }).options.redirectTo;
+    expect(rt).toBe(`${window.location.origin}/auth/callback?redirectTo=%2Fdashboard`);
   });
 });
