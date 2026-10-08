@@ -137,16 +137,14 @@ describe("the shell opens OFFLINE from the laptop's own copy", () => {
     expect((await findByTestId("scope-list")).getAttribute("data-state")).toBe("local");
   });
 
-  test("no identity on the laptop and no network: it says so calmly and offers the offline passcode sign-in (AUDIT-100 B20); nothing is fetched", async () => {
+  test("no identity on the laptop and no network: it says a connection is needed for the first sign-in (P1: no passcode); nothing is fetched", async () => {
     setOnline(false);
     go("/local/scope");
-    const { findByTestId } = render(<LocalShell />);
+    const { findByTestId, queryByTestId } = render(<LocalShell />);
     const message = await findByTestId("local-shell-signed-out");
-    expect(message.textContent).toContain("You are offline. Sign in with the email and passcode you used on this laptop.");
-    expect(message.textContent).toContain("The first sign-in on a laptop needs a connection.");
-    const form = await findByTestId("local-shell-offline-signin");
-    expect(form.querySelector("#email")).not.toBeNull();
-    expect(form.querySelector("#password")).not.toBeNull();
+    expect(message.textContent).toContain("You need a connection for the first sign-in on this machine, because the code is sent by email.");
+    expect(queryByTestId("local-shell-offline-signin")).toBeNull();
+    expect(message.querySelector('input[type="password"]')).toBeNull();
     expect(fetchCalls).toEqual([]);
   });
 

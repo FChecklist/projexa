@@ -18,7 +18,6 @@ import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
 import { LocalShellAiBar } from "./LocalShellAiBar";
 import { LocalShellAccount } from "./LocalShellAccount";
-import { OfflinePasscodeSignIn } from "./OfflinePasscodeSignIn";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
@@ -157,7 +156,7 @@ export default function LocalShell() {
   // No identity on this laptop: online, the person signs in once; offline there is nothing to do but say so.
   useEffect(() => {
     if (boot.status !== "signed_out" || !location || connectivity !== "online") return;
-    // AUDIT-100 B20: the shell is drawn at /login only when the server's sign-in page could not be had (no network): its offline passcode form is
+    // AUDIT-100 B20: the shell is drawn at /login only when the server's sign-in page could not be had (no network): its connection notice is
     // the sign-in there, and a redirect to /login would only reload it and wipe what the person typed. Same when the browser itself says offline.
     if (location.path === "/login" || (typeof navigator !== "undefined" && navigator.onLine === false)) return;
     if (!mayRedirectToLogin(Date.now())) return;
@@ -327,14 +326,12 @@ export default function LocalShell() {
           <p className="mt-3 text-sm text-px-muted">
             {!offlineSignIn
               ? "Taking you to sign in…"
-              : "You are offline. Sign in with the email and passcode you used on this laptop. (The first sign-in on a laptop needs a connection.)"}
+              : "You need a connection for the first sign-in on this machine, because the code is sent by email."}
           </p>
-          {/* AUDIT-100 B20: offline, the sign-in is done on the laptop with the passcode kept from the last online sign-in */}
+          {/* P1: no passcode; a machine that signed in before opens its local copy by itself. */}
           {!offlineSignIn ? (
             <p className="mt-4 text-sm"><a className="text-px-ink underline underline-offset-2" href={`/login?redirectTo=${encodeURIComponent(location.path)}`}>Sign in</a></p>
-          ) : (
-            <OfflinePasscodeSignIn next={location.path === "/login" || location.path === "/" ? "/dashboard" : `${location.path}${location.search}`} />
-          )}
+          ) : null}
         </section>
       </Chrome>
     );

@@ -70,16 +70,20 @@
   },
   "Auth": {
     "login": {
-      "title": "Log in to PROJEXA",
+      "title": "Sign in to PROJEXA",
       "email": "Email",
-      "password": "Password",
-      "submit": "Log in",
-      "submitting": "Logging in…",
-      "noAccount": "No account?",
-      "signUpLink": "Sign up",
-      "genericError": "Login failed",
-      "provisionError": "Failed to finish setting up your workspace",
-      "forgotPasswordLink": "Forgot your password?"
+      "submit": "Send me a code",
+      "submitting": "Please wait…",
+      "intro": "Type your email and we will send you a 6-digit code. This is also how you get back in if you forgot something.",
+      "codeSent": "We sent a 6-digit code to {email}. Type it here.",
+      "code": "6-digit code",
+      "verify": "Sign in",
+      "resend": "Send a new code",
+      "resendIn": "Send a new code in {seconds}s",
+      "changeEmail": "Use a different email",
+      "needConnection": "You need a connection for the first sign-in on this machine, because the code is sent by email.",
+      "genericError": "Sign-in failed",
+      "provisionError": "Failed to finish setting up your workspace"
     },
     "signup": {
       "title": "Create your PROJEXA account",
