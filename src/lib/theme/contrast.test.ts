@@ -54,12 +54,13 @@ describe("the three failures the R66 audit measured", () => {
   // These three are the reason WS-G exists. They are asserted as the audit
   // stated them, to prove the formula here agrees with the audit's own.
   test("saffron TEXT on cream is 2.56:1 -- which is why saffron is never text", () => {
-    expect(contrastRatio(TOKENS.saffron, TOKENS.cream)).toBeCloseTo(2.56, 2);
+    // The audit measured the ORIGINAL colours; those literals stay pinned. The brighter palette (2026-10-09) must still never be text.
+    expect(contrastRatio("#F5820A", "#FFFDF9")).toBeCloseTo(2.56, 2);
     expect(contrastRatio(TOKENS.saffron, TOKENS.cream)).toBeLessThan(AA_TEXT);
   });
 
   test("white on saffron is 2.60:1 -- which is why the button text became navy", () => {
-    expect(contrastRatio(TOKENS.white, TOKENS.saffron)).toBeCloseTo(2.6, 2);
+    expect(contrastRatio("#FFFFFF", "#F5820A")).toBeCloseTo(2.6, 2);
     expect(contrastRatio(TOKENS.white, TOKENS.saffron)).toBeLessThan(AA_TEXT);
   });
 
@@ -213,7 +214,7 @@ describe("TOKENS agrees with src/app/globals.css", () => {
     // A second guard on the parser itself: if the regex silently stopped
     // matching, every row below would fail rather than pass, but this says
     // outright what a correct parse looks like.
-    expect(ROOT_VARS["--primary"]).toBe("#F5820A");
+    expect(ROOT_VARS["--primary"]).toBe("#FF8A00");
     expect(DARK_VARS["--card"]).toBe("#182430");
   });
 
