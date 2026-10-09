@@ -92,6 +92,8 @@ export type TopRailProps = {
    * true does nothing.
    */
   openSignal?: number;
+  /** Traditional View | Modern View switch -- upper right, before search. */
+  viewToggle?: ReactNode;
   search?: ReactNode;
   alerts?: ReactNode;
   account?: ReactNode;
@@ -108,6 +110,7 @@ export function TopRail({
   onSelectProject,
   onCreateProject,
   openSignal,
+  viewToggle,
   search,
   alerts,
   account,
@@ -303,6 +306,7 @@ export function TopRail({
       </div>
 
       <div className="ml-auto flex items-center gap-1">
+        {viewToggle}
         {search}
         {alerts}
         {account}

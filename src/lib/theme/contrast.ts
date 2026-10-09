@@ -73,14 +73,14 @@ export const AA_UI = 3;
  */
 export const TOKENS = {
   // Surfaces.
-  /** --background (light) */ cream: "#FFFDF9",
+  /** --background (light) */ cream: "#FFFFFF",
   /** --popover (light): the white surface a dropdown/dialog paints on. */ white: "#FFFFFF",
-  /** --secondary / --muted fill */ cloud: "#F0F4F8",
+  /** --secondary / --muted fill */ cloud: "#DDEBFF",
   /** .dark --background */ darkSurface: "#10181F",
   /** .dark --card */ darkCard: "#182430",
 
   // Brand.
-  /** --primary: the saffron fill. NEVER used as text. */ saffron: "#F5820A",
+  /** --primary: the saffron fill. NEVER used as text. */ saffron: "#FF9500",
   /**
    * --primary-foreground: navy ON saffron. This is the R-197/R-260 fix --
    * the button keeps the saffron fill and the text becomes navy, so no new
@@ -291,7 +291,7 @@ export const ACCEPTED_BELOW_UI_FLOOR: { name: string; fg: string; bg: string; me
     name: "chart-3 (clay) on cream",
     fg: TOKENS.chart3,
     bg: TOKENS.cream,
-    measured: 2.96,
+    measured: 3.01,
     floor: 2.9,
     reason:
       "WCAG 1.4.11 exemption: every bar prints its value at the bar end and every slice is labelled, so no meaning rests on this mark's colour.",

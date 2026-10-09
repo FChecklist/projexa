@@ -31,6 +31,9 @@
 // works, and that Back steps back through the sub-tab before the view.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
+// These tests exercise the Modern View layout (Task Master + chat card); Traditional is the default now, so pin Modern.
+window.localStorage.setItem("projexa.viewMode", "modern");
+
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";

@@ -223,6 +223,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
 import { AiWorkLinkCompact } from "@/components/ai-link/AiWorkLinkCompact";
 import { AiWorkLinkCardButton } from "@/components/ai-link/AiWorkLinkCardButton";
+import ConnectYourAi from "@/components/ai-link/ConnectYourAi";
 import { ChatDocumentAttach, loadChatProducts } from "@/components/shell/ChatDocumentAttach";
 import { canSendProjectDocument } from "@/lib/project-document-access";
 import { getFromDocumentClient } from "@/lib/project-from-document-client";
@@ -232,6 +233,9 @@ import { createClient } from "@/lib/supabase/client";
 import { dropShellIfNotFor, invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { toast } from "sonner";
+import { useViewMode } from "@/lib/view-mode";
+import ViewModeToggle from "@/components/shell/ViewModeToggle";
+import TraditionalMenu from "@/components/shell/TraditionalMenu";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
 import { reactToSignedOut } from "@/lib/local-first/sign-out-everywhere";
@@ -1604,6 +1608,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // then whatever the screen published, then the rail's remembered choice.
   const project = routeProject ?? objectProject ?? routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
+  const [viewMode] = useViewMode();
   // HOW it was chosen, for the rail's label. A project named by the URL was
   // never automatic, whatever the page had to do to render it -- and neither
   // was one read off the record the URL names.
@@ -3859,6 +3864,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // own math only applies it when this is true) -- left wired rather than
       // torn out, since it is harmless and a future caller may still dock.
       taskMasterExpanded={false}
+      traditionalMenu={viewMode === "traditional" ? <TraditionalMenu projectId={projectId} /> : undefined}
       // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
       // below for <Composer>'s own ControlStrip -- no new state. See
       // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
@@ -3930,6 +3936,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             // chooser card both open THIS list rather than each growing a
             // switcher of their own.
             openSignal={switcherOpenSignal}
+            viewToggle={<ViewModeToggle />}
             search={<SearchTrigger />}
             // BUILD-001 U-44 (BR-587): the "Connect your AI" button handed out
             // links to the retired /api/ai/[token] route (M4) and is removed
@@ -4022,7 +4029,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               // `optionLevel` on every OTHER view (e.g. "Frequent Action"),
               // where Box 1 is showing something else and this band is the
               // only place the picked module's own leaves are visible.
-              boxOneShowsOptionLevel ? null : optionLevel
+              boxOneShowsOptionLevel && viewMode !== "traditional" ? null : optionLevel
             )
           }
           // BOX 1 -- LEFT SCREEN COMPLETION. `leftViewContent`/
@@ -4031,8 +4038,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // before this `return`. No `banner` prop any more -- see the
           // 2026-09-30 comment above where `leftPanelBanner` used to be
           // computed.
+          // TRADITIONAL VIEW: the module menu above already holds the modules and projects, and the lower third is just the chat box -- so Box 1's tabs are left out there (they would fill that third and push the message box off the bottom).
           pills={
-            <LeftScreenCompletion
+            viewMode === "traditional" ? null : (<LeftScreenCompletion
               active={activeLeftView}
               onSelect={onLeftSelectView}
               onBack={onLeftBack}
@@ -4041,7 +4049,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               loaded={leftLoadedBanner}
             >
               {leftViewContent}
-            </LeftScreenCompletion>
+            </LeftScreenCompletion>)
           }
           onSubmit={onSubmit}
           textareaRef={composerRef}
@@ -4204,6 +4212,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               />
               {/* Audit 37: for chat AIs that cannot open links: card + selected project's data as one pasteable text. */}
               <AiWorkLinkCardButton role={shell.role} project={project ? { id: project.id, name: project.name } : null} compact className="text-[12px]" />
+              {/* Owner 2026-10-09: the person sees how to connect an outside AI -- access link, MCP, API -- in plain steps. */}
+              <ConnectYourAi role={shell.role} />
             </>
           }
         />
