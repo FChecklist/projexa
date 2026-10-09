@@ -214,7 +214,7 @@ describe("TOKENS agrees with src/app/globals.css", () => {
     // A second guard on the parser itself: if the regex silently stopped
     // matching, every row below would fail rather than pass, but this says
     // outright what a correct parse looks like.
-    expect(ROOT_VARS["--primary"]).toBe("#FF8A00");
+    expect(ROOT_VARS["--primary"]).toBe("#FF9500");
     expect(DARK_VARS["--card"]).toBe("#182430");
   });
 

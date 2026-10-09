@@ -30,12 +30,12 @@
      the status text tones) are untouched so every contrast pairing in src/lib/theme/contrast.ts
      still clears WCAG AA. These intentionally re-value the kit's own ct-* tokens for PROJEXA. */
   --color-ct-cream: #FFFFFF;
-  --color-ct-cloud: #EAF3FF;
-  --color-ct-cloud2: #DCEBFF;
-  --color-ct-saffron: #FF8A00;
-  --color-ct-saffron-hover: #F27B00;
-  --color-ct-border: #D6E4F5;
-  --color-ct-border2: #BCD2EC;
+  --color-ct-cloud: #DDEBFF;
+  --color-ct-cloud2: #C9DFFF;
+  --color-ct-saffron: #FF9500;
+  --color-ct-saffron-hover: #F28800;
+  --color-ct-border: #BBD3F0;
+  --color-ct-border2: #9DBFE6;
 
   /* ─── PROJEXA colors now ALIAS veridian-ui-kit's real ct-* values ──────
      Owner directive 2026-07-18: colors/fonts/navigation must exactly match
@@ -137,7 +137,7 @@
      reason: the kit doesn't have this hue yet, so it is declared here
      rather than invented ad hoc at each call site. Used only by
      TopRail.tsx's own header background. */
-  --color-topbar-tint: #EEEDFE;
+  --color-topbar-tint: #DCE6FF;
 
   /* ─── 2026-09-08: the control strip's own "opens something" link colour,
      per the frozen mock ──────────────────────────────────────────────────
@@ -246,7 +246,7 @@
   --card-foreground: #1C2B3A;
   --popover: #FFFFFF;
   --popover-foreground: #1C2B3A;
-  --primary: #FF8A00;
+  --primary: #FF9500;
   /* R67 WS-G (R-197 / R-260 / R-087), the single highest-traffic fix in this
      workstream. This was #FFFFFF: white on the saffron fill measures 2.60:1,
      so EVERY primary button in PROJEXA failed WCAG AA -- and the default
@@ -258,16 +258,16 @@
      control where white text is genuinely unavoidable; it is the fallback,
      not the default. */
   --primary-foreground: #1C2B3A;
-  --secondary: #EAF3FF;
+  --secondary: #DDEBFF;
   --secondary-foreground: #1C2B3A;
-  --muted: #EAF3FF;
+  --muted: #DDEBFF;
   --muted-foreground: #718096;
-  --accent: #FFEFD0;
+  --accent: #FFE9BF;
   --accent-foreground: #1C2B3A;
   --destructive: #C0392B;
-  --border: #D6E4F5;
-  --input: #BCD2EC;
-  --ring: #FF8A00;
+  --border: #BBD3F0;
+  --input: #9DBFE6;
+  --ring: #FF9500;
 
   /* R67 WS-G (R-227). The previous five (2026-07-27) were a SATURATED
      categorical order -- #eb6834 in slot 2 in particular is a near-neighbour

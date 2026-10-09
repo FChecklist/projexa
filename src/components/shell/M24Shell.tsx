@@ -223,6 +223,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
 import { AiWorkLinkCompact } from "@/components/ai-link/AiWorkLinkCompact";
 import { AiWorkLinkCardButton } from "@/components/ai-link/AiWorkLinkCardButton";
+import ConnectYourAi from "@/components/ai-link/ConnectYourAi";
 import { ChatDocumentAttach, loadChatProducts } from "@/components/shell/ChatDocumentAttach";
 import { canSendProjectDocument } from "@/lib/project-document-access";
 import { getFromDocumentClient } from "@/lib/project-from-document-client";
@@ -4211,6 +4212,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               />
               {/* Audit 37: for chat AIs that cannot open links: card + selected project's data as one pasteable text. */}
               <AiWorkLinkCardButton role={shell.role} project={project ? { id: project.id, name: project.name } : null} compact className="text-[12px]" />
+              {/* Owner 2026-10-09: the person sees how to connect an outside AI -- access link, MCP, API -- in plain steps. */}
+              <ConnectYourAi role={shell.role} />
             </>
           }
         />

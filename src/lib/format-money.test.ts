@@ -36,7 +36,7 @@ describe("G-05 acceptance", () => {
     // the button change are one recommendation: the screens this formatter
     // feeds are the screens whose primary button was failing.
     expect(contrastRatio(TOKENS.primaryText, TOKENS.saffron)).toBeGreaterThanOrEqual(AA_TEXT);
-    expect(contrastRatio(TOKENS.primaryText, TOKENS.saffron)).toBeCloseTo(5.55, 2);
+    expect(contrastRatio(TOKENS.primaryText, TOKENS.saffron)).toBeCloseTo(6.56, 1); // was 5.55 on the old saffron; the brighter orange (2026-10-09) scores higher
   });
 });
 

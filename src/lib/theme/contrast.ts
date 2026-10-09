@@ -75,12 +75,12 @@ export const TOKENS = {
   // Surfaces.
   /** --background (light) */ cream: "#FFFFFF",
   /** --popover (light): the white surface a dropdown/dialog paints on. */ white: "#FFFFFF",
-  /** --secondary / --muted fill */ cloud: "#EAF3FF",
+  /** --secondary / --muted fill */ cloud: "#DDEBFF",
   /** .dark --background */ darkSurface: "#10181F",
   /** .dark --card */ darkCard: "#182430",
 
   // Brand.
-  /** --primary: the saffron fill. NEVER used as text. */ saffron: "#FF8A00",
+  /** --primary: the saffron fill. NEVER used as text. */ saffron: "#FF9500",
   /**
    * --primary-foreground: navy ON saffron. This is the R-197/R-260 fix --
    * the button keeps the saffron fill and the text becomes navy, so no new
