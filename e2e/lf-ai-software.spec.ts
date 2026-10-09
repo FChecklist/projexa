@@ -124,11 +124,12 @@ test("R5 integrity: an altered or missing installed file switches the AI OFF and
       const release = await get<{ version: string }>("app:release");
       const files = await get<{ rows: { path: string }[] }>("app:files");
       db.close();
-      const row = files.rows.find((r) => r.path.endsWith(".js") && !r.path.includes("sw")) ?? files.rows[0];
+      // A stylesheet when the release has one: altering the app's own script can stop the page booting (then window.projexa.ai never appears, which is not what this test checks).
+      const row = files.rows.find((r) => r.path.endsWith(".css")) ?? files.rows.find((r) => r.path.endsWith(".js") && !r.path.includes("sw")) ?? files.rows[0];
       const url = row.path === "_shell/local.html" ? "/local" : `/${row.path}`;
       const cache = await caches.open(`px-release-${release.version}`);
       const original = await (await cache.match(url))!.arrayBuffer();
-      await cache.put(url, new Response("/* changed by somebody */ window.evil = 1;", { headers: { "content-type": "application/javascript" } }));
+      await cache.put(url, new Response("/* changed by somebody */ window.evil = 1;", { headers: { "content-type": url.endsWith(".css") ? "text/css" : "application/javascript" } }));
       // in chunks: a spread of a large file's bytes overflows the call stack
       const bytes = new Uint8Array(original);
       let bin = "";
