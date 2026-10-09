@@ -152,6 +152,13 @@ export type AppShellProps = {
    * gap with nothing in it.
    */
   taskMasterExpanded?: boolean;
+  /**
+   * TRADITIONAL VIEW. When given, the left pane is split in two: this menu
+   * takes the upper two thirds, the usual card (Task Master + composer, i.e.
+   * the chat box) the lower third. Omitted = Modern View, the layout exactly
+   * as it always was.
+   */
+  traditionalMenu?: ReactNode;
 };
 
 /** M24: LEFT 30% / RIGHT 70%. Unchanged from the kit. */
@@ -165,6 +172,7 @@ export function AppShell({
   composerReserveExtra = 0,
   chainRail,
   taskMasterExpanded = true,
+  traditionalMenu,
 }: AppShellProps) {
   return (
     // h-[100svh], not h-dvh -- unchanged from the kit; see its own comment on
@@ -187,6 +195,15 @@ export function AppShell({
           }}
           aria-label="Task Master"
         >
+          {traditionalMenu ? (
+            <div
+              className="mb-2 min-h-0 overflow-hidden rounded-xl border"
+              style={{ flex: "2 1 0%", background: "#fff", borderColor: "var(--color-ct-border2)" }}
+              data-testid="traditional-menu"
+            >
+              {traditionalMenu}
+            </div>
+          ) : null}
           {/* ADDENDUM 2 above -- the one shared card. `position:relative` moved
               here (off the aside) so Composer.tsx's `absolute inset-x-0
               bottom-0` anchors to THIS box -- the card's own width, not the
@@ -194,8 +211,8 @@ export function AppShell({
               the ADDENDUM for why clipping here would break the composer's
               grow-upward behaviour. */}
           <div
-            className="relative flex min-h-0 flex-1 flex-col rounded-xl border"
-            style={{ background: "#fff", borderColor: "var(--color-ct-border2)" }}
+            className="relative flex min-h-0 flex-col rounded-xl border"
+            style={{ flex: traditionalMenu ? "1 1 0%" : "1 1 0%", background: "#fff", borderColor: "var(--color-ct-border2)" }}
           >
             {/*
                 ADDENDUM 4, 2026-09-07 -- A REAL HEIGHT, NOT SCROLL PADDING.

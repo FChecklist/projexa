@@ -232,6 +232,9 @@ import { createClient } from "@/lib/supabase/client";
 import { dropShellIfNotFor, invalidateShell, useShell } from "@/lib/shell-store";
 import { rememberSelectedProject } from "@/lib/project-cookie";
 import { toast } from "sonner";
+import { useViewMode } from "@/lib/view-mode";
+import ViewModeToggle from "@/components/shell/ViewModeToggle";
+import TraditionalMenu from "@/components/shell/TraditionalMenu";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
 import { reactToSignedOut } from "@/lib/local-first/sign-out-everywhere";
@@ -1604,6 +1607,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   // then whatever the screen published, then the rail's remembered choice.
   const project = routeProject ?? objectProject ?? routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
+  const [viewMode] = useViewMode();
   // HOW it was chosen, for the rail's label. A project named by the URL was
   // never automatic, whatever the page had to do to render it -- and neither
   // was one read off the record the URL names.
@@ -3859,6 +3863,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // own math only applies it when this is true) -- left wired rather than
       // torn out, since it is harmless and a future caller may still dock.
       taskMasterExpanded={false}
+      traditionalMenu={viewMode === "traditional" ? <TraditionalMenu projectId={projectId} /> : undefined}
       // 2026-09-07: reuses the SAME `chain`/`onCutFrom` already computed
       // below for <Composer>'s own ControlStrip -- no new state. See
       // AppShell.tsx's ADDENDUM and ChainRail.tsx's own header for why.
@@ -3930,6 +3935,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
             // chooser card both open THIS list rather than each growing a
             // switcher of their own.
             openSignal={switcherOpenSignal}
+            viewToggle={<ViewModeToggle />}
             search={<SearchTrigger />}
             // BUILD-001 U-44 (BR-587): the "Connect your AI" button handed out
             // links to the retired /api/ai/[token] route (M4) and is removed
