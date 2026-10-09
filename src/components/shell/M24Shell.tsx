@@ -4028,7 +4028,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               // `optionLevel` on every OTHER view (e.g. "Frequent Action"),
               // where Box 1 is showing something else and this band is the
               // only place the picked module's own leaves are visible.
-              boxOneShowsOptionLevel ? null : optionLevel
+              boxOneShowsOptionLevel && viewMode !== "traditional" ? null : optionLevel
             )
           }
           // BOX 1 -- LEFT SCREEN COMPLETION. `leftViewContent`/
@@ -4037,8 +4037,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // before this `return`. No `banner` prop any more -- see the
           // 2026-09-30 comment above where `leftPanelBanner` used to be
           // computed.
+          // TRADITIONAL VIEW: the module menu above already holds the modules and projects, and the lower third is just the chat box -- so Box 1's tabs are left out there (they would fill that third and push the message box off the bottom).
           pills={
-            <LeftScreenCompletion
+            viewMode === "traditional" ? null : (<LeftScreenCompletion
               active={activeLeftView}
               onSelect={onLeftSelectView}
               onBack={onLeftBack}
@@ -4047,7 +4048,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               loaded={leftLoadedBanner}
             >
               {leftViewContent}
-            </LeftScreenCompletion>
+            </LeftScreenCompletion>)
           }
           onSubmit={onSubmit}
           textareaRef={composerRef}
