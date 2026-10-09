@@ -4,9 +4,9 @@
 //
 // TRADITIONAL: the left pane is split into two parts -- the upper two thirds
 // is the module menu (the same grouped list the Home directory shows), the
-// lower third is the chat box. MODERN: the shell exactly as it was (left pane
-// = Task Master / chat card, modules on the Home directory). Modern stays the
-// default so nothing changes for a person who never touches the switch.
+// lower third is the chat box. MODERN: the shell as it was before this switch
+// (left pane = Task Master / chat card, modules on the Home directory).
+// TRADITIONAL IS THE DEFAULT (owner, 2026-10-09); a person can switch to Modern.
 //
 // The choice is a per-browser display preference, like the project preference:
 // kept in localStorage only (no server round trip, works fully offline), and
@@ -17,12 +17,12 @@ import { useCallback, useSyncExternalStore } from "react";
 export type ViewMode = "traditional" | "modern";
 
 export const VIEW_MODE_KEY = "projexa.viewMode";
-export const DEFAULT_VIEW_MODE: ViewMode = "modern";
+export const DEFAULT_VIEW_MODE: ViewMode = "traditional";
 
 const listeners = new Set<() => void>();
 
 export function parseViewMode(raw: string | null | undefined): ViewMode {
-  return raw === "traditional" ? "traditional" : DEFAULT_VIEW_MODE;
+  return raw === "modern" ? "modern" : raw === "traditional" ? "traditional" : DEFAULT_VIEW_MODE;
 }
 
 export function readViewMode(): ViewMode {
@@ -46,8 +46,7 @@ export function writeViewMode(mode: ViewMode): void {
 let memoryMode: ViewMode | null = null;
 
 function snapshot(): ViewMode {
-  const stored = readViewMode();
-  return memoryMode !== null && stored === DEFAULT_VIEW_MODE ? memoryMode : stored;
+  return memoryMode ?? readViewMode();
 }
 
 function subscribe(onChange: () => void): () => void {

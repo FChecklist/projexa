@@ -36,6 +36,9 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in
 // ONE process -- same guard as every other happy-dom suite in this repo.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
+// These tests exercise the Modern View layout (Task Master + chat card); Traditional is the default now, so pin Modern.
+window.localStorage.setItem("projexa.viewMode", "modern");
+
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";

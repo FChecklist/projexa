@@ -38,35 +38,41 @@ function Harness() {
 }
 
 describe("view mode store", () => {
-  test("anything that is not 'traditional' is Modern", () => {
-    expect(parseViewMode(null)).toBe("modern");
-    expect(parseViewMode("")).toBe("modern");
-    expect(parseViewMode("Traditional")).toBe("modern");
+  test("Traditional is the default; only a stored 'modern' gives Modern", () => {
+    expect(parseViewMode(null)).toBe("traditional");
+    expect(parseViewMode("")).toBe("traditional");
+    expect(parseViewMode("garbage")).toBe("traditional");
     expect(parseViewMode("traditional")).toBe("traditional");
+    expect(parseViewMode("modern")).toBe("modern");
   });
 });
 
 describe("Traditional View | Modern View switch", () => {
-  test("both options are offered, Modern is the default and is marked", () => {
+  test("both options are offered, Traditional is the default and is marked", () => {
     render(<ViewModeToggle />);
-    expect(screen.getByRole("button", { name: "Modern View" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Traditional View" }).getAttribute("aria-pressed")).toBe("false");
-  });
-
-  test("clicking Traditional persists it and re-reading storage returns it", () => {
-    render(<ViewModeToggle />);
-    fireEvent.click(screen.getByRole("button", { name: "Traditional View" }));
-    expect(window.localStorage.getItem(VIEW_MODE_KEY)).toBe("traditional");
-    expect(readViewMode()).toBe("traditional");
     expect(screen.getByRole("button", { name: "Traditional View" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Modern View" }));
-    expect(readViewMode()).toBe("modern");
+    expect(screen.getByRole("button", { name: "Modern View" }).getAttribute("aria-pressed")).toBe("false");
   });
 
-  test("Traditional shows the menu above the chat card in the left pane; Modern shows no menu", () => {
+  test("clicking Modern persists it and re-reading storage returns it; Traditional returns", () => {
+    render(<ViewModeToggle />);
+    fireEvent.click(screen.getByRole("button", { name: "Modern View" }));
+    expect(window.localStorage.getItem(VIEW_MODE_KEY)).toBe("modern");
+    expect(readViewMode()).toBe("modern");
+    expect(screen.getByRole("button", { name: "Modern View" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Traditional View" }));
+    expect(readViewMode()).toBe("traditional");
+  });
+
+  test("a person who chose Modern last time gets Modern on the next visit", () => {
+    window.localStorage.setItem(VIEW_MODE_KEY, "modern");
     render(<Harness />);
     expect(screen.queryByTestId("traditional-menu")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Traditional View" }));
+    expect(screen.getByRole("button", { name: "Modern View" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("by default the left pane has the menu above the chat card; Modern removes the menu", () => {
+    render(<Harness />);
     const menu = screen.getByTestId("traditional-menu");
     expect(menu.textContent).toContain("module menu");
     const aside = menu.parentElement as HTMLElement;
@@ -77,6 +83,8 @@ describe("Traditional View | Modern View switch", () => {
     expect((children[1] as HTMLElement).style.flex.startsWith("1")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Modern View" }));
     expect(screen.queryByTestId("traditional-menu")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Traditional View" }));
+    expect(screen.getByTestId("traditional-menu")).toBeTruthy();
   });
 
   test("the switch sits in the top rail's right-hand group", () => {
