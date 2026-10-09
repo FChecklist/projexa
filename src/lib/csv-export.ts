@@ -49,7 +49,10 @@ const FORMULA_TRIGGERS = ["=", "+", "-", "@", "\t", "\r"];
 export function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
   let text = String(value);
-  if (text.length > 0 && FORMULA_TRIGGERS.includes(text[0])) text = `'${text}`;
+  // A real JS number (a negative variance, a credit) can never be a formula: guarding it would turn "-30" into the text "'-30" and
+  // break every sum over the column. Only text is guarded.
+  const isNumber = typeof value === "number" && Number.isFinite(value);
+  if (!isNumber && text.length > 0 && FORMULA_TRIGGERS.includes(text[0])) text = `'${text}`;
   if (/[",\n\r]/.test(text)) text = `"${text.replace(/"/g, '""')}"`;
   return text;
 }

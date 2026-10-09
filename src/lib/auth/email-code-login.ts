@@ -24,7 +24,7 @@ export const MESSAGES = {
   needConnection: "You need a connection for the first sign-in on this machine, because the code is sent by email.",
   wrongCode: "That code is not right. Check the email and try again.",
   badShape: "The code has 6 digits. Please type all 6.",
-  expired: "That code has expired or was already used. Ask for a new one.",
+  expired: "That code did not work. Check the digits, or ask for a new one (a code lasts 10 minutes and works once).",
   tooMany: "Too many wrong tries. Please wait 15 minutes, then ask for a new code.",
   tooManyServer: "Too many requests. Please wait a few minutes and try again.",
   resendWait: "You can ask for a new code in a minute.",
