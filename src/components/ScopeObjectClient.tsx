@@ -45,7 +45,7 @@ import { loadBoqFromReplica, rememberBoq, revalidateBoq } from "@/lib/local-firs
 import {
   type Boq, type BoqLineItemRow, type Vendor,
   boqTotal, withCurrency, formatAmount, childPercentSum, derivedSubQtyRate, NO_CATEGORY_CHIP_LABEL,
-  TITLE_REQUIRED_MESSAGE,
+  TITLE_REQUIRED_MESSAGE, approveBlockedReason,
 } from "@/lib/boq-helpers";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 // R85 Addendum 3 v4 (R-50), Phase 2 -- THE GRID. Self-contained: fetches its
@@ -74,8 +74,11 @@ export default function ScopeObjectClient({
   importedNotice = null,
   attachedFileName = null,
   readFlags = BOQ_READ_FLAGS_OFF,
+  viewerRole,
 }: {
   boqId: string;
+  /** QA D2: the signed-in member's role; undefined = unknown, no client-side gating. */
+  viewerRole?: string | null;
   /**
    * R67 D-25: the "Imported BOQ <title> · Rev0 · N lines" confirmation, carried
    * here in ?imported= because the import screen that produced it unmounts with
@@ -93,6 +96,8 @@ export default function ScopeObjectClient({
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // QA D2: set when the server refused an approve because this person created the BOQ.
+  const [selfApproveBlocked, setSelfApproveBlocked] = useState(false);
   // U-33: where the last load came from, and the project search index it filled (browser-first only).
   const [screenLoad, setScreenLoad] = useState<BoqScreenState | null>(null);
   const filterRef = useRef<BoqFilterClient | null>(null);
@@ -282,6 +287,8 @@ export default function ScopeObjectClient({
     return Number.isFinite(value) ? value : undefined;
   }
 
+  const approveBlocked = approveBlockedReason(viewerRole, selfApproveBlocked);
+
   async function runAction(action: "submit" | "approve" | "delete") {
     setActionBusy(action);
     try {
@@ -289,7 +296,10 @@ export default function ScopeObjectClient({
       const path = action === "delete" ? `/api/scope/${boqId}` : `/api/scope/${boqId}/${action}`;
       const res = await fetch(path, { method });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? `Couldn't ${action} this BOQ`);
+      if (!res.ok) {
+        if (action === "approve" && res.status === 403 && /independent approver/i.test(String(data.error ?? ""))) setSelfApproveBlocked(true);
+        throw new Error(data.error ?? `Couldn't ${action} this BOQ`);
+      }
       if (action === "delete") {
         toast.success("BOQ deleted");
         router.push(`/scope?projectId=${boq!.projectId}`);
@@ -568,9 +578,17 @@ export default function ScopeObjectClient({
           </Button>
         )}
         {boq.status === "submitted" && (
-          <Button size="sm" disabled={actionBusy !== null} onClick={() => runAction("approve")}>
-            {actionBusy === "approve" ? "Approving…" : "Approve"}
-          </Button>
+          <>
+            <Button
+              size="sm"
+              disabled={actionBusy !== null || approveBlocked !== null}
+              title={approveBlocked ?? undefined}
+              onClick={() => runAction("approve")}
+            >
+              {actionBusy === "approve" ? "Approving…" : "Approve"}
+            </Button>
+            {approveBlocked && <span className="text-[12px] text-px-muted" data-testid="boq-approve-blocked">{approveBlocked}</span>}
+          </>
         )}
         <Button size="sm" variant="outline" onClick={() => router.push(`/scope/${boqId}/revise`)}>
           Create Revision

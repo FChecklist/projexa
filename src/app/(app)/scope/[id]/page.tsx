@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/supabase/auth-guard";
 import ScopeObjectClient from "@/components/ScopeObjectClient";
 // PROJEXA-BUILD-001 U-33: the two browser-first switches are server environment values (default off); the client cannot read them.
 import { readBoqReadFlags } from "@/lib/boq-read-flags";
@@ -15,6 +16,9 @@ export default async function ScopeDetailPage({
   searchParams: Promise<{ imported?: string; attached?: string }>;
 }) {
   const { id } = await params;
+  // QA D2: the member's role lets the toolbar explain why Approve is unavailable.
+  const auth = await requireAuth();
+  const viewerRole = auth.response ? undefined : (auth.role ?? null);
   // R67 D-25: the import screen unmounts with the navigation, so its own
   // message band would vanish with it -- the confirmation travels here in
   // ?imported= and is rendered as a persistent notice, the same mechanism
@@ -24,7 +28,7 @@ export default async function ScopeDetailPage({
   const { imported, attached } = await searchParams;
   return (
     <div className="flex-1">
-      <ScopeObjectClient boqId={id} importedNotice={imported ?? null} attachedFileName={attached ?? null} readFlags={readBoqReadFlags()} />
+      <ScopeObjectClient boqId={id} importedNotice={imported ?? null} attachedFileName={attached ?? null} readFlags={readBoqReadFlags()} viewerRole={viewerRole} />
     </div>
   );
 }

@@ -16,7 +16,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 // Mocked BEFORE the component is imported below. ScopeObjectClient calls
 // useRouter() for Back/Create Revision/Compare, and toasts on a failed inline
@@ -169,5 +169,39 @@ describe("ScopeObjectClient per-line budget cells (D-26)", () => {
     expect((getByLabelText("Vendor amount for Partition") as HTMLInputElement).value).toBe("130");
     expect((getByLabelText("Material amount for Partition") as HTMLInputElement).value).toBe("0");
     expect((getByLabelText("Manpower amount for Partition") as HTMLInputElement).value).toBe("20");
+  });
+});
+
+// QA D2: Approve must not be offered to people the server will refuse.
+describe("Approve availability", () => {
+  function mountSubmitted(role: string | null | undefined, approve?: () => Response) {
+    globalThis.fetch = router({
+      "/api/scope/boq-1/approve": approve ?? (() => jsonRes({}, 200)),
+      "/api/scope/boq-1": () => jsonRes(boq("submitted")),
+      "/api/vendors": () => jsonRes({ vendors: [] }),
+      "/api/currencies": () => jsonRes({ currencies: [] }),
+    });
+    return render(<ScopeObjectClient boqId="boq-1" viewerRole={role} />);
+  }
+
+  test("a member who is not owner/admin/pm sees Approve disabled with the reason", async () => {
+    const { findByRole, getByTestId } = mountSubmitted("site_engineer");
+    const btn = (await findByRole("button", { name: "Approve" })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(getByTestId("boq-approve-blocked").textContent).toContain("owner, admin or project manager");
+  });
+
+  test("a project manager can approve", async () => {
+    const { findByRole, queryByTestId } = mountSubmitted("pm");
+    const btn = (await findByRole("button", { name: "Approve" })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(queryByTestId("boq-approve-blocked")).toBeNull();
+  });
+
+  test("after the server refuses the creator, Approve is disabled with the independent-approver reason", async () => {
+    const { findByRole, findByTestId } = mountSubmitted("pm", () =>
+      jsonRes({ error: "You cannot approve a BOQ you created yourself -- an independent approver is required" }, 403));
+    fireEvent.click(await findByRole("button", { name: "Approve" }));
+    expect((await findByTestId("boq-approve-blocked")).textContent).toContain("someone else must approve");
   });
 });

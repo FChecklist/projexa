@@ -168,4 +168,26 @@ describe("BillingMilestonesClient", () => {
       expect(btn.disabled).toBe(true);
     });
   });
+
+  test("QA D5: 'no approved BOQ' is not shown while the BOQ lookup is still pending", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const { queryByTestId, getByText } = renderClient({
+      "/api/reports/boq-analysis": (() => gate.then(() => jsonRes({ row: { boqId: null } }))) as unknown as Handler,
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(queryByTestId("billing-no-approved-boq")).toBeNull();
+    release();
+    await waitFor(() => expect(queryByTestId("billing-no-approved-boq")).not.toBeNull());
+    expect(getByText(/no approved BOQ yet/)).toBeDefined();
+  });
+
+  test("QA D1: with no tax template the page says what to do, not just a tooltip", async () => {
+    const claim = { ...CLAIM_SUBMITTED, status: "client_approved" as const };
+    const { findByTestId } = renderClient({
+      "/api/billing-claims": () => jsonRes({ claims: [claim] }),
+      "/api/tax-templates": () => jsonRes({ taxTemplates: [] }),
+    });
+    expect((await findByTestId("billing-no-tax-template")).textContent).toContain("Ask your administrator");
+  });
 });
