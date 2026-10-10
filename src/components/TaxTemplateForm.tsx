@@ -69,7 +69,11 @@ export default function TaxTemplateForm({ onCreated }: { onCreated: () => void |
   async function create() {
     setSaving(true);
     try {
-      const seeded = await fetchJson<{ taxAccounts?: TaxAccount[] }>("/api/tax-templates/accounts", { method: "POST" });
+      const seeded = await fetchJson<{ taxAccounts?: TaxAccount[] }>("/api/tax-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setupAccounts: true }),
+      });
       const built = buildTaxTemplatePayload(mode, customName, cgst, sgst, igst, seeded.taxAccounts ?? []);
       if (!built.ok) {
         toast.error(built.error);

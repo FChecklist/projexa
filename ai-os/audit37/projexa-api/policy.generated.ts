@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "75248a1fec2b47ec6f0a3efb0561cbad2de96ecc16d713853a9b99691775f6f8"
+export const SOURCE_SHA256 = "1d22eeb5702414475d1177cdd9b54c353fc74a33d8d7c78f32eb791af1062bca"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -24,7 +24,6 @@ export const API_WRITE_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/change-orders", "PM_OR_ABOVE"],
   ["/change-orders/[id]", "PM_OR_ABOVE"],
   ["/tax-templates", "PM_OR_ABOVE"],
-  ["/tax-templates/accounts", "PM_OR_ABOVE"],
   ["/cache/revalidate", "ANY_ROLE"],
   ["/classify", "ANY_MEMBER"],
   ["/companies", "ORG_ADMIN"],

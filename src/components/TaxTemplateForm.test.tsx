@@ -57,19 +57,19 @@ describe("TaxTemplateForm", () => {
     globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      const body = url.includes("/accounts") ? { taxAccounts: ACCOUNTS } : { id: "tpl-1" };
+      const body = init?.body && String(init.body).includes("setupAccounts") ? { taxAccounts: ACCOUNTS } : { id: "tpl-1" };
       return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
     }) as unknown as typeof fetch;
     const onCreated = mock(async () => {});
     const { getByTestId } = render(<TaxTemplateForm onCreated={onCreated} />);
     fireEvent.click(getByTestId("tax-template-create"));
     await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
-    const post = calls.find((c) => c.url.endsWith("/api/tax-templates") && c.method === "POST")!;
+    const post = calls.find((c) => c.url.endsWith("/api/tax-templates") && c.method === "POST" && !(c.body as { setupAccounts?: boolean }).setupAccounts)!;
     expect(post.body).toEqual({
       name: "GST 18% (CGST 9 + SGST 9)",
       isSalesTax: true,
       items: [{ taxAccountId: "acc-cgst", rate: 9 }, { taxAccountId: "acc-sgst", rate: 9 }],
     });
-    expect(calls[0].url).toContain("/api/tax-templates/accounts");
+    expect(calls[0].body).toEqual({ setupAccounts: true });
   });
 });
