@@ -93,6 +93,8 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/board": "FIELD",
   "/change-orders": "PM_OR_ABOVE",
   "/change-orders/[id]": "PM_OR_ABOVE",
+  // Defect D1 (2026-10-10): create a tax template / set up GST accounts so a billing milestone can be invoiced.
+  "/tax-templates": "PM_OR_ABOVE",
   // R67 C-03/C-05: the composer's PREVIEW. It is a POST only because the
   // sentence goes in the body -- VERIDIAN's own handler gates it on READ
   // scope and returns executed:false on every response, so classifying
