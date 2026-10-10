@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
+import TaxTemplateForm from "@/components/TaxTemplateForm";
 
 export type ClaimStatus = "milestone_achieved" | "drafted" | "submitted" | "client_approved" | "invoiced" | "rejected";
 
@@ -69,7 +70,7 @@ export const CUSTOMER_REQUIRED = "Customer is required";
 // toast error with the form left open, instead of the same inline
 // Save-button guidance NAME_REQUIRED/CUSTOMER_REQUIRED already give.
 export const SCHEDULED_DATE_REQUIRED = "Scheduled date is required";
-export const NO_TAX_TEMPLATE_REASON = "No tax template is set up for this organisation yet, so a milestone cannot be invoiced. Ask your administrator to create one (CGST/SGST/IGST) in VERIDIAN Accounting, then reload this page.";
+export const NO_TAX_TEMPLATE_REASON = "No tax template is set up for this organisation yet, so a milestone cannot be invoiced. Create one below (CGST/SGST/IGST), or ask your administrator to set it up in VERIDIAN Accounting, then reload this page.";
 export const NO_APPROVED_BOQ_REASON = "This project has no approved BOQ yet -- a billing milestone needs one to bill against.";
 
 /**
@@ -145,12 +146,18 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    fetchJson<{ taxTemplates?: TaxTemplate[] }>("/api/tax-templates")
-      .then((d) => setTaxTemplates(d.taxTemplates ?? []))
-      .catch(() => setTaxTemplates([]))
-      .finally(() => setTaxLoaded(true)); // ERP may not be enabled for this org -- invoicing simply stays unavailable, not a page-breaking error.
+  const loadTaxTemplates = useCallback(async () => {
+    try {
+      const d = await fetchJson<{ taxTemplates?: TaxTemplate[] }>("/api/tax-templates");
+      setTaxTemplates(d.taxTemplates ?? []);
+    } catch {
+      setTaxTemplates([]); // ERP may not be enabled for this org -- invoicing simply stays unavailable, not a page-breaking error.
+    } finally {
+      setTaxLoaded(true);
+    }
   }, []);
+
+  useEffect(() => { void loadTaxTemplates(); }, [loadTaxTemplates]);
 
   function customerName(id: string): string {
     return customers.find((c) => c.id === id)?.customerName ?? id;
@@ -335,6 +342,9 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
                         )}
                         {c.status === "client_approved" && taxLoaded && taxTemplates.length === 0 && (
                           <p className="basis-full max-w-md text-right text-xs text-px-muted" data-testid="billing-no-tax-template">{NO_TAX_TEMPLATE_REASON}</p>
+                        )}
+                        {c.status === "client_approved" && taxLoaded && taxTemplates.length === 0 && (
+                          <div className="basis-full"><TaxTemplateForm onCreated={loadTaxTemplates} /></div>
                         )}
                         {c.status === "invoiced" && c.interimBillId && (
                           <Button size="sm" variant="ghost" onClick={() => router.push(`/invoices?highlight=${c.interimBillId}`)}>View invoice</Button>

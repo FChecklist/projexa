@@ -188,6 +188,6 @@ describe("BillingMilestonesClient", () => {
       "/api/billing-claims": () => jsonRes({ claims: [claim] }),
       "/api/tax-templates": () => jsonRes({ taxTemplates: [] }),
     });
-    expect((await findByTestId("billing-no-tax-template")).textContent).toContain("Ask your administrator");
+    expect((await findByTestId("billing-no-tax-template")).textContent).toContain("Create one below");
   });
 });
