@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3100",
+    "dev:warm": "node scripts/dev-warm-routes.mjs",
     "build": "next build",
     "postbuild": "node scripts/make-release.mjs --postbuild && node scripts/publish-static-pages.mjs",
     "release:build": "node scripts/make-release.mjs",

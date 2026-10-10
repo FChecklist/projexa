@@ -97,6 +97,13 @@ describe("BillingMilestonesClient", () => {
     });
   });
 
+  test("the no-approved-BOQ reason is written on the page, not only in the button's tooltip", async () => {
+    const { getByTestId } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: { boqId: null } }) });
+    await waitFor(() => {
+      expect(getByTestId("billing-no-approved-boq").textContent).toContain(NO_APPROVED_BOQ_REASON);
+    });
+  });
+
   test("the create form opens with Save disabled until a description and customer exist", async () => {
     const { getByText, getByRole } = renderClient({ "/api/billing-claims": () => jsonRes({ claims: [] }) });
     await waitFor(() => expect(getByText("No billing milestones yet.")).toBeDefined());
