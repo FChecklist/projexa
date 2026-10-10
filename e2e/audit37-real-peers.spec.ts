@@ -7,7 +7,7 @@ import { USERS } from "./users";
 // The proof is the calm "Synced with N laptop(s)" line each laptop shows (data-testid="peer-sync"), which only renders when a peer link is up.
 
 async function laptop(browser: import("@playwright/test").Browser, who: keyof typeof USERS): Promise<{ context: BrowserContext; page: Page }> {
-  const context = await browser.newContext({ serviceWorkers: "allow", baseURL: `http://localhost:${process.env.AUDIT37_PORT ?? 3100}` });
+  const context = await browser.newContext({ serviceWorkers: "allow", baseURL: process.env.AUDIT37_BASE_URL ?? `http://localhost:${process.env.AUDIT37_PORT ?? 3100}` });
   const page = await context.newPage();
   await signInByCode(page, USERS[who].email, { code: realTestCode, leaves: /\/(dashboard|local|scope|prepare)/ });
   await expect

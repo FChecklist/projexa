@@ -7,7 +7,7 @@ import { signInByCode, realTestCode } from "./sign-in";
 // (e2e/users.ts). The access token is read from the browser's own session cookie and is never printed.
 
 export const SYNC_BASE = "https://pcrjmlpuqsbocqfwoxod.supabase.co/functions/v1/projexa-sync";
-export const baseURL = `http://localhost:${process.env.AUDIT37_PORT ?? 3100}`;
+export const baseURL = process.env.AUDIT37_BASE_URL ?? `http://localhost:${process.env.AUDIT37_PORT ?? 3100}`; // AUDIT37_BASE_URL=https://projexa-ai.com runs the same specs against the live site
 
 export async function loginAndPrepare(page: Page, who: UserKey): Promise<void> {
   // this development laptop's link to Supabase drops now and then ("Failed to fetch" under the form): ask again, like a person would
