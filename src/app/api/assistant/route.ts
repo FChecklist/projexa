@@ -96,6 +96,8 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
       actingUserId: ctx.user?.id,
       actingUserEmail: ctx.user?.email ?? undefined,
       method: "POST",
+      // the codeReferences that run a model answer through the Claude Code bridge: give them a model-sized budget, not the 8 s default
+      ...(codeReference === "generate_construction_progress_summary" ? { timeoutMs: 55_000 } : {}),
       body: { codeReference, inputs },
     });
     const { data: updated } = await supabase
