@@ -214,11 +214,17 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
         {!formOpen ? (
           <Button onClick={() => setFormOpen(true)} disabled={!boqId} title={!boqId ? NO_APPROVED_BOQ_REASON : undefined}>
             <Plus className="size-4" /> New Billing Milestone
           </Button>
+        ) : null}
+        {/* The reason was only a tooltip on a greyed-out button, which a person using touch or a keyboard never sees. Say it on the page. */}
+        {!formOpen && !boqId ? (
+          <p className="max-w-md text-right text-sm text-px-muted" data-testid="billing-no-approved-boq">
+            {NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.
+          </p>
         ) : null}
       </div>
 
