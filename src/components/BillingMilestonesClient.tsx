@@ -69,6 +69,7 @@ export const CUSTOMER_REQUIRED = "Customer is required";
 // toast error with the form left open, instead of the same inline
 // Save-button guidance NAME_REQUIRED/CUSTOMER_REQUIRED already give.
 export const SCHEDULED_DATE_REQUIRED = "Scheduled date is required";
+export const NO_TAX_TEMPLATE_REASON = "No tax template is set up for this organisation yet, so a milestone cannot be invoiced. Ask your administrator to create one (CGST/SGST/IGST) in VERIDIAN Accounting, then reload this page.";
 export const NO_APPROVED_BOQ_REASON = "This project has no approved BOQ yet -- a billing milestone needs one to bill against.";
 
 /**
@@ -102,6 +103,9 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [taxTemplates, setTaxTemplates] = useState<TaxTemplate[]>([]);
   const [boqId, setBoqId] = useState<string | null>(null);
+  // QA D5: false until the first BOQ lookup settles, so "no approved BOQ" is never shown while it is still loading.
+  const [boqChecked, setBoqChecked] = useState(false);
+  const [taxLoaded, setTaxLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -134,6 +138,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't load billing milestones"));
     } finally {
+      setBoqChecked(true);
       setLoading(false);
     }
   }, [projectId]);
@@ -143,7 +148,8 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
   useEffect(() => {
     fetchJson<{ taxTemplates?: TaxTemplate[] }>("/api/tax-templates")
       .then((d) => setTaxTemplates(d.taxTemplates ?? []))
-      .catch(() => setTaxTemplates([])); // ERP may not be enabled for this org -- invoicing simply stays unavailable, not a page-breaking error.
+      .catch(() => setTaxTemplates([]))
+      .finally(() => setTaxLoaded(true)); // ERP may not be enabled for this org -- invoicing simply stays unavailable, not a page-breaking error.
   }, []);
 
   function customerName(id: string): string {
@@ -216,12 +222,12 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
     <div className="space-y-4">
       <div className="flex flex-col items-end gap-1">
         {!formOpen ? (
-          <Button onClick={() => setFormOpen(true)} disabled={!boqId} title={!boqId ? NO_APPROVED_BOQ_REASON : undefined}>
+          <Button onClick={() => setFormOpen(true)} disabled={!boqId} title={boqChecked && !boqId ? NO_APPROVED_BOQ_REASON : undefined}>
             <Plus className="size-4" /> New Billing Milestone
           </Button>
         ) : null}
         {/* The reason was only a tooltip on a greyed-out button, which a person using touch or a keyboard never sees. Say it on the page. */}
-        {!formOpen && !boqId ? (
+        {!formOpen && boqChecked && !boqId ? (
           <p className="max-w-md text-right text-sm text-px-muted" data-testid="billing-no-approved-boq">
             {NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.
           </p>
@@ -321,11 +327,14 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
                           <Button
                             size="sm"
                             disabled={busy || taxTemplates.length === 0}
-                            title={taxTemplates.length === 0 ? "No tax templates configured -- set one up in Accounting first" : undefined}
+                            title={taxLoaded && taxTemplates.length === 0 ? NO_TAX_TEMPLATE_REASON : undefined}
                             onClick={() => setInvoicingId(invoicingId === c.id ? null : c.id)}
                           >
                             Invoice
                           </Button>
+                        )}
+                        {c.status === "client_approved" && taxLoaded && taxTemplates.length === 0 && (
+                          <p className="basis-full max-w-md text-right text-xs text-px-muted" data-testid="billing-no-tax-template">{NO_TAX_TEMPLATE_REASON}</p>
                         )}
                         {c.status === "invoiced" && c.interimBillId && (
                           <Button size="sm" variant="ghost" onClick={() => router.push(`/invoices?highlight=${c.interimBillId}`)}>View invoice</Button>

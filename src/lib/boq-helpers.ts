@@ -458,3 +458,16 @@ export function toPayloadLineItems(validLines: LineItemDraft[]) {
     ...(l.breakdownPercentage?.trim() ? { breakdownPercentage: Number(l.breakdownPercentage) } : {}),
   }));
 }
+
+// QA D2: PROJEXA's gate for POST /api/scope/[id]/approve is PM_OR_ABOVE
+// (owner/admin/pm), and VERIDIAN refuses the BOQ's own creator ("independent
+// approver required"). The button must say so instead of offering a click
+// that is certain to fail. A UX affordance only -- both server rules stay.
+export const APPROVE_ROLE_REASON = "Only an owner, admin or project manager can approve a BOQ.";
+export const APPROVE_SELF_REASON = "You created this BOQ, so someone else must approve it (independent approver required).";
+const APPROVER_ROLES = ["owner", "admin", "pm"];
+export function approveBlockedReason(viewerRole: string | null | undefined, selfBlocked: boolean): string | null {
+  if (viewerRole !== undefined && !(viewerRole && APPROVER_ROLES.includes(viewerRole))) return APPROVE_ROLE_REASON;
+  if (selfBlocked) return APPROVE_SELF_REASON;
+  return null;
+}

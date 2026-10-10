@@ -159,8 +159,8 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
             ) : (
               <div className="space-y-2 max-w-sm">
                 <p className="text-xs text-ct-muted">Real signing request, tamper-evident audit trail (same workflow used for contracts).</p>
-                <div className="space-y-1.5"><Label>Signer name</Label><Input value={signerName} onChange={(e) => setSignerName(e.target.value)} /></div>
-                <div className="space-y-1.5"><Label>Signer email</Label><Input type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label htmlFor="co-signer-name">Signer name</Label><Input id="co-signer-name" value={signerName} onChange={(e) => setSignerName(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label htmlFor="co-signer-email">Signer email</Label><Input id="co-signer-email" type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} /></div>
                 <div className="flex gap-2">
                   <Button size="sm" disabled={submitting} onClick={submitForApproval}>{submitting ? "Sending…" : "Send"}</Button>
                   <Button size="sm" variant="ghost" onClick={() => setSendingOpen(false)}>Cancel</Button>
