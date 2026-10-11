@@ -137,6 +137,14 @@ export type ComposerProps = {
   pills?: ReactNode;
   /** Two worked examples under the input (A-02). */
   examples?: ReactNode;
+  /**
+   * "Connect your AI" (owner order 2026-10-11): no AI is connected, so free TYPING is unavailable. The typing area greys out and says
+   * "+ Connect to AI"; pressing it calls `onConnectAi` (opens the Connect panel). Everything else in the shell is untouched: menus, forms,
+   * the module pills and Send for a pill-path request all work, because those never needed a model. The caller passes false while a chain
+   * step is waiting for typed words (a name, a number), which is an answer to a form field, not a request to an AI.
+   */
+  aiLocked?: boolean;
+  onConnectAi?: () => void;
 
   value: string;
   onChange: (v: string) => void;
@@ -174,6 +182,8 @@ export function Composer({
   conversation,
   pills,
   examples,
+  aiLocked = false,
+  onConnectAi,
   value,
   onChange,
   onSubmit,
@@ -310,11 +320,24 @@ export function Composer({
                   }
                 }}
                 rows={2}
-                placeholder={placeholder}
+                disabled={aiLocked}
+                placeholder={aiLocked ? "" : placeholder}
                 aria-label="Describe the task"
                 className="w-full resize-none bg-transparent pr-9 text-[13px] leading-relaxed text-[var(--color-ct-navy)] outline-none placeholder:text-[var(--color-ct-muted)]"
                 style={{ minHeight: 46 }}
               />
+              {aiLocked ? (
+                <button
+                  type="button"
+                  data-testid="composer-ai-locked"
+                  onClick={onConnectAi}
+                  aria-label="Connect to AI to type a request"
+                  className="absolute inset-y-0 left-0 right-11 flex items-center justify-center rounded-md text-[13px] font-semibold"
+                  style={{ background: "rgba(120,120,120,0.16)", color: "var(--color-ct-navy)", minHeight: 46 }}
+                >
+                  + Connect to AI
+                </button>
+              ) : null}
               <button
                 type="button"
                 data-testid="composer-send"

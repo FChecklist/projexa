@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "1d22eeb5702414475d1177cdd9b54c353fc74a33d8d7c78f32eb791af1062bca"
+export const SOURCE_SHA256 = "a3037fe3d9f52760dea5c982231e22fe03ef3594032557c1463dc403293c2d38"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -113,6 +113,9 @@ export const API_WRITE_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/org/invites", "ORG_ADMIN"],
   ["/org/invites/[id]", "ORG_ADMIN"],
   ["/org/internal-ai", "ORG_ADMIN"],
+  ["/org/own-ai", "ORG_ADMIN"],
+  ["/org/own-ai/mine", "ANY_MEMBER"],
+  ["/org/own-ai/shares", "ANY_MEMBER"],
   ["/org-members/[id]", "ORG_ADMIN"],
   ["/org/provision", "PUBLIC"],
   ["/org/repair", "ORG_ADMIN"],

@@ -1,6 +1,6 @@
 {
   "_about": "AUDIT-100 A2/A3. Every PROJEXA route that runs on Vercel (src/app/api/**/route.ts), why it is still there, and its plan. Checked by src/lib/vercel-route-inventory.test.ts on every test run; rewrite with `node scripts/vercel-route-inventory.mjs --write` (hand-written why/plan are kept).",
-  "max_routes": 312,
+  "max_routes": 316,
   "edge_functions": {
     "projexa-sync": [
       "manifest",
@@ -43,7 +43,7 @@
     ]
   },
   "shell_vercel_routes_budget": 1,
-  "vercel_served_routes_budget": 74,
+  "vercel_served_routes_budget": 78,
   "shell_api_references": [
     "/api/dashboard/project",
     "/api/documents/:id",
@@ -1938,6 +1938,57 @@
       "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
     },
     {
+      "route": "/api/org/own-ai",
+      "file": "src/app/api/org/own-ai/route.ts",
+      "methods": [
+        "DELETE",
+        "GET",
+        "PUT"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/org/own-ai/mine",
+      "file": "src/app/api/org/own-ai/mine/route.ts",
+      "methods": [
+        "DELETE",
+        "PUT"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/org/own-ai/people",
+      "file": "src/app/api/org/own-ai/people/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/org/own-ai/shares",
+      "file": "src/app/api/org/own-ai/shares/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
       "route": "/api/org/provision",
       "file": "src/app/api/org/provision/route.ts",
       "methods": [
@@ -3577,7 +3628,8 @@
       "route": "/api/tax-templates",
       "file": "src/app/api/tax-templates/route.ts",
       "methods": [
-        "GET"
+        "GET",
+        "POST"
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
