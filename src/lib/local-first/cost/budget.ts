@@ -72,7 +72,7 @@ export const SCENARIO_BUDGETS = {
   /** (d) reconnecting after 3 days offline (200 changes made meanwhile): the catch-up. */
   reconnectAfter3Days: 25,
   /** (e) 10 laptops of one organisation, peers connected, each a working day of 30 edits: per laptop. */
-  tenLaptopsPerLaptop: 310, // was 260; steady poll + a moved project is read at once (measured 301.8)
+  tenLaptopsPerLaptop: 600, // was 310; the server is asked every 10 min (not 30) while a peer is connected, so a colleague of another role sees a change within ~10 min (live finding 2026-10-11: laptop B waited 6+ min; measured 589.4). The 80-laptop workday guarantee below is a separate scenario and is unchanged
   /** The claim loop of the jobs feature, if switched on, per 8 visible hours with no job ever offered. */
   jobsClaimIdle8h: 45,
 } as const;

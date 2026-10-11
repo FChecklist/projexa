@@ -117,12 +117,12 @@ function schedulerRig(peers: number) {
 }
 
 describe("scheduler: peers first", () => {
-  test("with a peer connected, the server is asked on open and then at most every 30 minutes; the peer every run", async () => {
+  test("with a peer connected, the server is asked on open and then at most every 10 minutes; the peer every run", async () => {
     const r = schedulerRig(1);
     r.s.start();
     await r.flush();
     await r.advance(60 * MIN);
-    expect(r.calls.server).toEqual([0, 30 * MIN, 60 * MIN]);
+    expect(r.calls.server).toEqual([0, 10 * MIN, 20 * MIN, 30 * MIN, 40 * MIN, 50 * MIN, 60 * MIN]);
     expect(r.calls.peer).toBe(13); // every 5 minutes, things keep changing
     r.s.stop();
   });
@@ -131,9 +131,9 @@ describe("scheduler: peers first", () => {
     const r = schedulerRig(1);
     r.s.start();
     await r.flush();
-    await r.advance(12 * MIN); // timer runs at 5 and 10 minutes went to the peer only
+    await r.advance(12 * MIN); // the timer run at 5 minutes went to the peer only; the one at 10 asks the server too
     await r.s.trigger("online");
-    expect(r.calls.server).toEqual([0, 12 * MIN]);
+    expect(r.calls.server).toEqual([0, 10 * MIN, 12 * MIN]);
     r.s.stop();
   });
 
