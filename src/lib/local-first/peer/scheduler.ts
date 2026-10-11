@@ -162,7 +162,10 @@ export function createSyncScheduler(o: SchedulerOptions): SyncScheduler {
     // delivers tombstones, redaction changes and projects that were taken away. Opening the app, coming back online and a
     // manual sync always ask the server.
     const forced = reason === "open" || reason === "online" || reason === "manual";
-    const serverDue = online && (peers === 0 || forced || clock.now() - lastServerAt >= serverWithPeersMs);
+    // Steady mode is ONE cheap GET /heads every ~5 minutes, and a connected peer must not switch it off: a peer of ANOTHER role (a PM and an owner, say) is
+    // connected but hands over nothing the other may see, so the colleague's change waited up to 30 minutes (live run 2026-10-11: laptop B never saw laptop A's RFI).
+    // The 30-minute rule stays for the older, non-steady rhythm.
+    const serverDue = online && (peers === 0 || steady || forced || clock.now() - lastServerAt >= serverWithPeersMs);
     if (serverDue) lastServerAt = clock.now();
     const [s, p] = await Promise.allSettled([
       serverDue ? o.serverStep() : Promise.resolve("skipped" as const),

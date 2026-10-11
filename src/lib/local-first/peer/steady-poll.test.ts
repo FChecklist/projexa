@@ -39,7 +39,7 @@ function fakeClock() {
   };
 }
 
-type Setup = { random?: () => number; visible?: boolean };
+type Setup = { random?: () => number; visible?: boolean; peers?: number };
 
 function setup(o: Setup = {}) {
   const fc = fakeClock();
@@ -77,7 +77,7 @@ function setup(o: Setup = {}) {
   });
   const sched = createSyncScheduler({
     clock: fc.clock, locks: null, steady: true, random: o.random ?? (() => 0.5),
-    isVisible: () => env.visible, isOnline: () => true, peersConnected: () => 0,
+    isVisible: () => env.visible, isOnline: () => true, peersConnected: () => o.peers ?? 0,
     serverStep: step, peerStep: async () => undefined,
   });
   return { fc, env, server, log, stamps, sched };
@@ -93,6 +93,17 @@ describe("steady /heads poll", () => {
     expect(s.log.every((x) => x === "heads")).toBe(true);
     // a quiet laptop is NOT backed off: still every 5 minutes
     expect(s.stamps.slice(1).map((t, i) => t - s.stamps[i]!)).toEqual(Array(s.stamps.length - 1).fill(5 * MIN));
+    s.sched.stop();
+  });
+
+  test("a connected peer (even of another role, which hands over nothing) does NOT stop the server poll: a colleague's change arrives within 5 minutes", async () => {
+    const s = setup({ peers: 1 });
+    s.sched.start();
+    await flush();
+    s.log.length = 0;
+    s.server.heads.p1 = 9; // the colleague saved something in the open project
+    await s.fc.advance(5 * MIN);
+    expect(s.log).toEqual(["heads", "project p1"]);
     s.sched.stop();
   });
 
