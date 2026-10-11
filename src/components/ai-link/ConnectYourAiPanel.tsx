@@ -17,7 +17,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { WebsiteWizard } from "@/components/ai-link/WebsiteWizard";
-import { CONNECT_PROVIDERS, OWN_KEY_VENDORS, checkKeyFormat, modelFor, type ConnectProvider, type OwnKeyVendor } from "@/components/ai-link/connect-your-ai-providers";
+import { CONNECT_PROVIDERS, ORG_KEY_VENDORS, OWN_KEY_VENDORS, checkKeyFormat, modelFor, type ConnectProvider, type OwnKeyVendor } from "@/components/ai-link/connect-your-ai-providers";
 import { ROLE_GROUPS } from "@/lib/authz/roles";
 import { AI_CONNECTION_CHANGED_EVENT, OPEN_CONNECT_AI_EVENT, announceAiConnectionChanged, describeEffective, useAiConnection, type PersonRef } from "@/lib/ai-connection";
 
@@ -95,7 +95,7 @@ export function OwnKeyForm({ scope, provider, showVendorPicker = false, testId }
       />
       {showVendorPicker ? (
         <select value={vendor} onChange={(e) => { const v = e.target.value as OwnKeyVendor; setVendor(v); setModel(OWN_KEY_VENDORS[v].defaultModel); }} className="w-full rounded-md border px-2 py-1 text-[13px]" style={{ borderColor: "var(--color-ct-border2)" }} aria-label="AI company">
-          {(Object.keys(OWN_KEY_VENDORS) as OwnKeyVendor[]).map((v) => <option key={v} value={v}>{OWN_KEY_VENDORS[v].label}</option>)}
+          {(scope === "org" ? ORG_KEY_VENDORS : (Object.keys(OWN_KEY_VENDORS) as OwnKeyVendor[])).map((v) => <option key={v} value={v}>{OWN_KEY_VENDORS[v].label}</option>)}
         </select>
       ) : (
         <details className="text-[12px]">

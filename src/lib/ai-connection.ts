@@ -8,7 +8,7 @@
 // blocked storage must never break a screen.
 import { useCallback, useEffect, useState } from "react";
 
-export type AiVendor = "openai" | "anthropic" | "google" | "groq" | "openrouter";
+export type AiVendor = "openai" | "anthropic" | "google" | "groq" | "openrouter" | "deepseek" | "zai" | "xai";
 export type AiSource = "mine" | "shared" | "org" | "projexa";
 export type PersonRef = { id: string; name: string };
 
@@ -101,7 +101,7 @@ export function useAiConnection(): AiConnectionState {
 
 /** The one plain sentence for the status line. */
 export function describeEffective(e: AiPicture["effective"]): string {
-  const vendor: Record<AiVendor, string> = { openai: "ChatGPT (OpenAI)", anthropic: "Claude (Anthropic)", google: "Gemini (Google)", groq: "Groq", openrouter: "OpenRouter" };
+  const vendor: Record<AiVendor, string> = { openai: "ChatGPT (OpenAI)", anthropic: "Claude (Anthropic)", google: "Gemini (Google)", groq: "Groq", openrouter: "OpenRouter", deepseek: "DeepSeek", zai: "z.ai (GLM)", xai: "Grok (xAI)" };
   const name = e.provider ? vendor[e.provider] : "";
   switch (e.source) {
     case "mine": return `Using your own AI: ${name}`;

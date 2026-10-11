@@ -51,12 +51,26 @@ describe("the eight AIs", () => {
     }
   });
 
-  test("DeepSeek, z.ai, Grok and Others use an OpenRouter key; Grok and z.ai start with their own model; Copilot has no key", () => {
+  test("Grok, DeepSeek and z.ai use their OWN company's key (read from each company's documentation); only Others goes through OpenRouter; Copilot has no key", () => {
     const by = Object.fromEntries(CONNECT_PROVIDERS.map((p) => [p.id, p]));
-    for (const id of ["deepseek", "zai", "grok", "others"]) expect(by[id]!.ownKey!.vendor).toBe("openrouter");
-    expect(modelFor(by.grok!)).toBe("x-ai/grok-4");
-    expect(modelFor(by.zai!)).toBe("z-ai/glm-4.6");
+    expect(by.grok!.ownKey!.vendor).toBe("xai");
+    expect(by.deepseek!.ownKey!.vendor).toBe("deepseek");
+    expect(by.zai!.ownKey!.vendor).toBe("zai");
+    expect(by.others!.ownKey!.vendor).toBe("openrouter");
+    expect(modelFor(by.deepseek!)).toBe("deepseek-flash");
+    expect(modelFor(by.zai!)).toBe("glm-5");
+    expect(modelFor(by.grok!)).toBe("grok-4.20-0309-non-reasoning");
+    expect(by.deepseek!.ownKey!.keyAddress).toBe("platform.deepseek.com/api_keys");
+    expect(by.zai!.ownKey!.keyAddress).toBe("z.ai/manage-apikey/apikey-list");
     expect(by.copilot!.ownKey).toBeNull();
+  });
+  test("the organisation form offers only the five vendors its database takes; a person's form offers all eight", async () => {
+    const org = render(<OwnKeyForm scope="org" provider={null} showVendorPicker testId="org-key" />);
+    const orgOptions = [...(org.getByLabelText("AI company") as HTMLSelectElement).options].map((o) => o.value);
+    expect(orgOptions).toEqual(["openai", "anthropic", "google", "groq", "openrouter"]);
+    cleanup();
+    const me = render(<OwnKeyForm scope="me" provider={null} showVendorPicker testId="me-key" />);
+    expect([...(me.getByLabelText("AI company") as HTMLSelectElement).options].map((o) => o.value)).toEqual(["openai", "anthropic", "google", "groq", "openrouter", "deepseek", "zai", "xai"]);
   });
 });
 

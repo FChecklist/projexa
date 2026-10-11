@@ -102,7 +102,7 @@ describe("WebsiteWizard", () => {
     const { getByTestId, queryByTestId } = render(<WebsiteWizard provider={by("deepseek")} role="admin" client={fakeClient().client} />);
     expect(getByTestId("wizard-support-deepseek").textContent).toContain("Cannot connect from the website");
     expect(queryByTestId("wizard-make")).toBeNull();
-    expect(getByTestId("wizard-deepseek").textContent).toContain("OpenRouter");
+    expect(getByTestId("wizard-deepseek").textContent).toContain("key steps in part B");
   });
 
   test("Copilot: the company-administrator route, still with a code to hand over", () => {

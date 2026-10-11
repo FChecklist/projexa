@@ -76,6 +76,9 @@ describe("the AI cards", () => {
     const by = Object.fromEntries(CONNECT_PROVIDERS.map((p) => [p.id, p]));
     expect(by.copilot!.website.support).toBe("no");
     expect(by.deepseek!.website.support).toBe("no");
+    expect(by.grok!.website.support).toBe("works"); // xAI: "available to all Grok users"
+    expect(by.chatgpt!.website.supportNote).toContain("Business, Enterprise and Edu");
+    expect(by.gemini!.website.supportNote).toContain("Ultra");
     expect(by.copilot!.ownKey).toBeNull();
     expect(by.grok!.maker).toBe("xAI");
   });
@@ -94,6 +97,7 @@ describe("checkKeyFormat (mistakes caught before anything is sent)", () => {
     ["anthropic", "sk-or-abcdefghijklmnopqrstuvwxyz", /OpenRouter key/],
     ["openrouter", "gsk_abcdefghijklmnopqrstuvwxyz", /Groq key/],
     ["openai", "AIzaabcdefghijklmnopqrstuvwxyz", /Gemini \(Google\) key/],
+    ["deepseek", "xai-abcdefghijklmnopqrstuvwxyz", /Grok \(xAI\) key/],
     ["openai", "mypasswordisverylongandsafe123", /start with sk-/],
     ["openai", "sk-short", /too short/],
   ])("%s: %s", (vendor, key, expected) => {

@@ -8,12 +8,17 @@
 //   B. CHAT INSIDE PROJEXA (`ownKey`). The person (or their organisation) pastes a developer KEY from the AI company; the chat box in PROJEXA is then
 //      answered by that AI. A website subscription (ChatGPT Plus, Claude Pro, Gemini Advanced, Copilot) is NOT a key and cannot do this.
 //
-// WHAT WAS CHECKED (web research 2026-10-11, sources in the panel's footnote of the PR): ChatGPT, Gemini, Claude and Grok have a connector screen on their
+// WHAT WAS CHECKED (the companies' own documentation, read 2026-10-11): xAI docs.x.ai/grok/connectors (grok.com/connectors > New Connector > Custom, "available
+// to all Grok users", admin first on Business/Enterprise); OpenAI's help article "Developer mode and MCP apps in ChatGPT" (full read-and-write MCP is a beta for Business,
+// Enterprise and Edu; on Business only admins; User Settings > Apps > Advanced settings > Developer mode); DeepSeek api-docs.deepseek.com (platform.deepseek.com/api_keys,
+// OpenAI format at https://api.deepseek.com, model deepseek-flash); Z.ai docs.z.ai (z.ai/manage-apikey/apikey-list, https://api.z.ai/api/paas/v4, model glm-5); xAI
+// docs.x.ai (https://api.x.ai/v1, model grok-4.20-0309-non-reasoning); Gemini and Copilot have no first-party page we could read, so those cards rest on the sources
+// named in the PR and say "depends" or "no". Also checked by web search: ChatGPT, Gemini, Claude and Grok have a connector screen on their
 // websites (plan and country limits apply and change); the free Microsoft Copilot website has none; DeepSeek's and z.ai's websites have none we could
 // confirm. Where a screen's exact wording could not be confirmed, the steps say where to LOOK and what to do if it is missing, instead of promising a menu.
 // Vendors rename menus often: the check button at the end of each wizard (diagnoseConnection) is what tells the person whether it really worked.
 
-export type OwnKeyVendor = "openai" | "anthropic" | "google" | "groq" | "openrouter";
+export type OwnKeyVendor = "openai" | "anthropic" | "google" | "groq" | "openrouter" | "deepseek" | "zai" | "xai";
 
 export type ConnectProviderId = "chatgpt" | "gemini" | "copilot" | "grok" | "deepseek" | "zai" | "claude" | "others";
 
@@ -64,17 +69,17 @@ export const CONNECT_PROVIDERS: readonly ConnectProvider[] = [
     summary: "Work in PROJEXA from the ChatGPT website, or chat inside PROJEXA with your OpenAI key.",
     website: {
       support: "depends",
-      supportNote: "ChatGPT's website can connect to other apps only on some paid plans, and OpenAI changes which. If you cannot find \"Developer mode\" below, your plan does not allow it yet.",
+      supportNote: "OpenAI says connections that can create, edit and delete are in beta for ChatGPT Business, Enterprise and Edu (on Business only the workspace admin can switch them on). Their pages disagree about Plus and Pro, and some say those plans can only read. If you cannot find \"Developer mode\" below, your plan does not allow it.",
       steps: [
         "Open chatgpt.com in your browser and sign in.",
         "Click your name or picture (bottom-left), then click Settings.",
-        "Click \"Apps & Connectors\" (it may just say \"Connectors\").",
-        "Click \"Advanced\" and switch ON \"Developer mode\".",
+        "Click \"Apps\" (older versions say \"Apps & Connectors\" or \"Connectors\").",
+        "Click \"Advanced settings\" and switch ON \"Developer mode\". (If you run a Business workspace and cannot see it, ask the workspace admin: it is under Workspace settings, then Apps.)",
         "Click \"Create\" (or \"Add\"). In Name type PROJEXA. In the address/URL box paste the address from step 1. Under sign-in choose \"No authentication\". Tick \"I trust this application\" and click Create.",
         "Open a NEW chat, click the \"+\" next to the message box, pick PROJEXA, and type: Show my PROJEXA projects",
       ],
-      ifMissing: "No \"Developer mode\" or no \"Create\" button means your ChatGPT plan cannot connect to other apps. Use \"Chat inside PROJEXA\" below instead (it needs an OpenAI developer key, which is separate from ChatGPT Plus).",
-      mistakes: [PARTIAL_ADDRESS_MISTAKE, NO_SIGNIN_MISTAKE, NEW_CHAT_MISTAKE, "Developer mode was not switched on, so the Create button did not appear."],
+      ifMissing: "No \"Developer mode\" or no \"Create\" button means your ChatGPT plan cannot connect to other apps. Use \"Chat inside PROJEXA\" below instead (it needs an OpenAI developer key, which is separate from ChatGPT).",
+      mistakes: [PARTIAL_ADDRESS_MISTAKE, NO_SIGNIN_MISTAKE, NEW_CHAT_MISTAKE, "Developer mode was not switched on, so the Create button did not appear.", "ChatGPT can read your projects but cannot create, change or delete anything: your plan only allows reading. Chat inside PROJEXA (part B) does not have this limit."],
     },
     ownKey: {
       vendor: "openai",
@@ -95,15 +100,16 @@ export const CONNECT_PROVIDERS: readonly ConnectProvider[] = [
     summary: "Work in PROJEXA from the Gemini website, or chat inside PROJEXA with your Google AI key.",
     website: {
       support: "depends",
-      supportNote: "Google is adding this slowly. It may need a paid Google AI plan and may not be in your country yet. If you cannot find \"Connected apps\" below, the Gemini website cannot connect yet.",
+      supportNote: "Google is adding this slowly, and its own pages are hard to find. Guides we could read say it needs a paid Google AI plan (Ultra, and some say Pro), a personal Google account (not work or school), an adult, English, and at the time of writing the United States. If you cannot find \"Add a custom app\" below, your Gemini cannot connect yet.",
       steps: [
-        "Open gemini.google.com and sign in.",
-        "Click \"Settings & help\" (bottom-left), then look for \"Connected apps\" (it may say \"Apps\").",
-        "Click \"Add custom app\" (or \"Add MCP server\"). In Name type PROJEXA and paste the address from step 1 into the address box. Save.",
-        "Open a NEW chat and type: Show my PROJEXA projects",
+        "Open gemini.google.com in a browser on a computer (not the phone app) and sign in with your personal Google account.",
+        "Click \"Settings & help\" at the bottom of the left side, then \"Connected apps\". If you do not see it, look under \"Personal Intelligence\" first.",
+        "Under \"Custom apps for Spark\" click \"Add a custom app\". Paste the address from step 1 into the \"MCP server URL\" box, leave \"Advanced features\" alone, and click \"Next\".",
+        "If a small window asks about access, read it and click \"Allow\".",
+        "Open a NEW chat and type: Use PROJEXA to show my projects. (The first time, say the name PROJEXA in your message.)",
       ],
       ifMissing: "No \"Connected apps\" or no \"Add custom app\" means your Gemini cannot connect yet. Use \"Chat inside PROJEXA\" below instead (it needs a Google AI key, which is free to start and separate from your Gemini plan).",
-      mistakes: [PARTIAL_ADDRESS_MISTAKE, NO_SIGNIN_MISTAKE, NEW_CHAT_MISTAKE, "The app was added but not switched on for this chat. Look for PROJEXA in the tools list of the message box and switch it on."],
+      mistakes: [PARTIAL_ADDRESS_MISTAKE, NEW_CHAT_MISTAKE, "You did not say the name PROJEXA in your first message. Gemini only uses a connected app when you name it.", "Gemini's \"Activity\" setting is switched off. Gemini cannot use connected apps unless Activity is on.", "You used a work or school Google account, or the Gemini phone app. Use a personal account in a browser on a computer."],
     },
     ownKey: {
       vendor: "google",
@@ -141,29 +147,30 @@ export const CONNECT_PROVIDERS: readonly ConnectProvider[] = [
     id: "grok",
     name: "Grok",
     maker: "xAI",
-    summary: "Work in PROJEXA from grok.com, or chat inside PROJEXA through an OpenRouter key.",
+    summary: "Work in PROJEXA from grok.com, or chat inside PROJEXA with your xAI key.",
     website: {
-      support: "depends",
-      supportNote: "Grok's website has a screen for connecting other apps; xAI says custom connectors are for paid Grok plans. If you do not see it, your plan does not include it.",
+      support: "works",
+      supportNote: "xAI's documentation says connectors are available to all Grok users. If your company uses Grok Business or Enterprise, your team admin has to switch the connector on first.",
       steps: [
         "Open grok.com in your browser and sign in.",
-        "Open grok.com/connectors (or click your picture, then Settings, then Connectors).",
+        "Open grok.com/connectors in your browser.",
         "Click \"New Connector\", then choose \"Custom\".",
-        "In Name type PROJEXA and paste the address from step 1 into the server URL box. If it asks how to sign in, choose none. Save.",
+        "Paste the address from step 1 into the server URL box. If it asks for authentication, leave it empty or choose none: the code inside the address is already the sign-in. Save.",
         "Open a NEW chat and type: Show my PROJEXA projects",
       ],
-      ifMissing: "No \"New Connector\" or no \"Custom\" means your Grok plan cannot connect to other apps. Use \"Chat inside PROJEXA\" below instead.",
+      ifMissing: "No \"New Connector\" or no \"Custom\" usually means your company's Grok admin has not allowed it yet. Ask them, or use \"Chat inside PROJEXA\" below instead.",
       mistakes: [PARTIAL_ADDRESS_MISTAKE, NO_SIGNIN_MISTAKE, NEW_CHAT_MISTAKE, "The connector was saved but not switched on for the chat. Look for PROJEXA in the connectors list of the message box."],
     },
     ownKey: {
-      vendor: "openrouter",
-      keyFrom: "OpenRouter",
-      keyAddress: "openrouter.ai/keys",
+      vendor: "xai",
+      keyFrom: "xAI",
+      keyAddress: "console.x.ai",
       getKey: [
-        "Open openrouter.ai and sign in. OpenRouter is one account that reaches Grok and many other AIs.",
-        "Click \"Keys\", then \"Create key\", and copy it (it starts with sk-or-). Add a little credit under \"Credits\".",
-        "When you connect, the model box already says x-ai/grok-4.",
+        "Open console.x.ai (xAI's developer site, not the Grok chat page) and sign in.",
+        "Open \"API Keys\", click to create a key, and copy it (it starts with xai-).",
+        "Add a little credit under billing. The key is paid by use, separately from a Grok plan.",
       ],
+      note: "Your Grok or X login is not a key.",
     },
   },
   {
@@ -173,28 +180,29 @@ export const CONNECT_PROVIDERS: readonly ConnectProvider[] = [
     summary: "DeepSeek's website cannot connect to other apps. Use DeepSeek inside PROJEXA with an OpenRouter key.",
     website: {
       support: "no",
-      supportNote: "We found no way for chat.deepseek.com to connect to other apps, so the website cannot work in PROJEXA.",
+      supportNote: "DeepSeek's documentation describes no connector for its website (chat.deepseek.com), so the website cannot work in PROJEXA.",
       steps: [],
       ifMissing: "If you see a \"Connectors\" or \"MCP\" item in DeepSeek's settings, tell us and we will add the steps.",
       mistakes: [],
-      instead: "Chat inside PROJEXA with DeepSeek: use the OpenRouter key steps below. DeepSeek answers your PROJEXA chat box.",
+      instead: "Chat inside PROJEXA with DeepSeek: use the key steps in part B below. DeepSeek then answers your PROJEXA chat box.",
     },
     ownKey: {
-      vendor: "openrouter",
-      keyFrom: "OpenRouter",
-      keyAddress: "openrouter.ai/keys",
+      vendor: "deepseek",
+      keyFrom: "DeepSeek",
+      keyAddress: "platform.deepseek.com/api_keys",
       getKey: [
-        "Open openrouter.ai and sign in. OpenRouter is one account that reaches DeepSeek and many other AIs.",
-        "Click \"Keys\", then \"Create key\", and copy it (it starts with sk-or-). Add a little credit under \"Credits\".",
-        "When you connect, the model box already says deepseek/deepseek-chat.",
+        "Open platform.deepseek.com (DeepSeek's developer site, not the chat page) and sign in or register.",
+        "Open \"API keys\", click to create a new key, and copy it (it starts with sk-).",
+        "Add a little balance under top-up. The key is paid by use, separately from the DeepSeek chat website.",
       ],
+      note: "Your DeepSeek chat login is not a key.",
     },
   },
   {
     id: "zai",
     name: "z.ai",
     maker: "Zhipu AI (GLM)",
-    summary: "We could not confirm that chat.z.ai connects to other apps. Use GLM inside PROJEXA with an OpenRouter key.",
+    summary: "We could not confirm that chat.z.ai connects to other apps. Use GLM inside PROJEXA with a Z.ai key.",
     website: {
       support: "no",
       supportNote: "We could not confirm that chat.z.ai can connect to other apps. If its settings show \"MCP\" or \"Connectors\", follow the same steps as Grok below; if not, it cannot.",
@@ -207,13 +215,15 @@ export const CONNECT_PROVIDERS: readonly ConnectProvider[] = [
       mistakes: [PARTIAL_ADDRESS_MISTAKE, NO_SIGNIN_MISTAKE, NEW_CHAT_MISTAKE],
     },
     ownKey: {
-      vendor: "openrouter",
-      keyFrom: "OpenRouter",
-      keyAddress: "openrouter.ai/keys",
+      vendor: "zai",
+      keyFrom: "Z.ai",
+      keyAddress: "z.ai/manage-apikey/apikey-list",
       getKey: [
-        "Open openrouter.ai, sign in, click \"Keys\", then \"Create key\", and copy it (it starts with sk-or-). Add a little credit under \"Credits\".",
-        "When you connect, change the model box to z-ai/glm-4.6 (or any GLM name OpenRouter lists).",
+        "Open z.ai/model-api (the Z.ai Open Platform, not the chat page) and sign in or register.",
+        "Add a little credit on the billing page (z.ai/manage-apikey/billing).",
+        "Open z.ai/manage-apikey/apikey-list, click to create an API key, and copy it.",
       ],
+      note: "Your Z.ai chat login is not a key.",
     },
   },
   {
@@ -281,14 +291,18 @@ export const OWN_KEY_VENDORS: Readonly<Record<OwnKeyVendor, { label: string; def
   anthropic: { label: "Claude (Anthropic)", defaultModel: "claude-haiku-5-5" },
   google: { label: "Gemini (Google)", defaultModel: "gemini-2.0-flash" },
   groq: { label: "Groq (very fast)", defaultModel: "llama-3.3-70b-versatile" },
-  openrouter: { label: "OpenRouter (DeepSeek, GLM, Grok, others)", defaultModel: "deepseek/deepseek-chat" },
+  openrouter: { label: "OpenRouter (hundreds of AIs)", defaultModel: "deepseek/deepseek-chat" },
+  deepseek: { label: "DeepSeek", defaultModel: "deepseek-flash" },
+  zai: { label: "z.ai (GLM)", defaultModel: "glm-5" },
+  xai: { label: "Grok (xAI)", defaultModel: "grok-4.20-0309-non-reasoning" },
 };
+
+/** The vendors the ORGANISATION's connection takes (its database column is an enum of these five); a person may use all eight. */
+export const ORG_KEY_VENDORS: readonly OwnKeyVendor[] = ["openai", "anthropic", "google", "groq", "openrouter"];
 
 /** What the model box starts with for a provider card: its own suggestion where the card names one, else the vendor's default. */
 export function modelFor(provider: ConnectProvider): string {
   if (!provider.ownKey) return "";
-  if (provider.id === "zai") return "z-ai/glm-4.6";
-  if (provider.id === "grok") return "x-ai/grok-4";
   return OWN_KEY_VENDORS[provider.ownKey.vendor].defaultModel;
 }
 
@@ -302,7 +316,7 @@ export function checkKeyFormat(vendor: OwnKeyVendor, rawKey: string): string | n
   if (/\s/.test(key)) return "The key has a space or a line break inside it. Copy it again; a key is one unbroken piece.";
   if (/^https?:\/\//i.test(key) || key.includes("/functions/v1/")) return "That is a web address, not a key. A key is a long code of letters and numbers that your AI company shows you under \"API keys\".";
   if (key.includes("@")) return "That looks like an email address. A key is a long code your AI company gives you under \"API keys\"; your email and password do not work here.";
-  const issuer: Array<[string, OwnKeyVendor, string]> = [["sk-ant-", "anthropic", "Claude (Anthropic)"], ["sk-or-", "openrouter", "OpenRouter"], ["gsk_", "groq", "Groq"], ["AIza", "google", "Gemini (Google)"]];
+  const issuer: Array<[string, OwnKeyVendor, string]> = [["sk-ant-", "anthropic", "Claude (Anthropic)"], ["sk-or-", "openrouter", "OpenRouter"], ["gsk_", "groq", "Groq"], ["AIza", "google", "Gemini (Google)"], ["xai-", "xai", "Grok (xAI)"]];
   for (const [prefix, owner, name] of issuer) {
     if (key.startsWith(prefix) && vendor !== owner) return `This key starts with ${prefix}, which is a ${name} key. Pick ${name} instead (its own card, or the company box).`;
   }
