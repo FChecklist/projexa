@@ -144,13 +144,24 @@ async function submitLogin(page: Page, who: Account, leaves: (u: URL) => boolean
     }
   }
 }
-/** Clicks the in-app "AI prompt" button (the user-wide Copy AI prompt, AiWorkLinkCompact in the shell) and waits for its answer. */
+/** Opens "+ Connect to AI" and the ChatGPT card (owner order 2026-10-11: the access link is made by step 1 of an AI's website wizard). */
+async function openChatGptWizard(page: Page) {
+  const open = page.getByTestId("connect-your-ai-open").first();
+  await open.waitFor({ state: "visible", timeout: 90_000 });
+  await open.click();
+  const card = page.getByTestId("connect-provider-chatgpt");
+  await card.waitFor({ state: "visible", timeout: 30_000 });
+  await card.getByRole("button").first().click();
+  await page.getByTestId("wizard-chatgpt").waitFor({ state: "visible", timeout: 30_000 });
+}
+/** Presses "Make my PROJEXA code" (the user-wide link, level 1) in the ChatGPT wizard and waits for its answer. */
 async function clickCopyAiPrompt(page: Page): Promise<"copied" | string> {
-  const trigger = page.getByTestId("awl-compact-trigger").filter({ hasText: /AI prompt/ }).first();
-  await trigger.waitFor({ state: "visible", timeout: 90_000 });
-  await trigger.click();
-  const done = page.getByTestId("awl-compact-confirm").first();
-  const failed = page.getByTestId("awl-compact-error").first();
+  await openChatGptWizard(page);
+  const make = page.getByTestId("wizard-make");
+  await make.waitFor({ state: "visible", timeout: 90_000 });
+  await make.click();
+  const done = page.getByTestId("wizard-code").first();
+  const failed = page.getByTestId("wizard-chatgpt").getByRole("alert").first();
   await expect(done.or(failed)).toBeAttached({ timeout: 90_000 });
   return (await done.count()) > 0 ? "copied" : String(await failed.textContent());
 }
@@ -261,20 +272,21 @@ for (const a of invitees) {
 }
 
 for (const a of [pm, se]) {
-  test(`${a.role}: the in-app "AI prompt" (Copy AI prompt) button mints their own level 1 link`, async () => {
+  test(`${a.role}: the in-app + Connect to AI > ChatGPT > "Make my PROJEXA code" button mints their own level 1 link`, async () => {
     const { page } = laptops[a.key];
     expect(await clickCopyAiPrompt(page)).toBe("copied");
     const [vuser] = await vusersOf(a);
     const links = await activeLinksOf(vuser.id);
-    // one user link per person: the button's link (the service's default label) replaced the welcome link
-    expect(links.map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", "All my projects", 1]]);
+    // one user link per person: the wizard's link (labelled "ChatGPT connection") replaced the welcome link
+    expect(links.map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", "ChatGPT connection", 1]]);
   });
 }
 
 test("client_viewer: the button is replaced by the role note; their own session mints a READ-ONLY link and a write through it is refused", async () => {
   const { page } = laptops.cv;
-  await expect(page.getByTestId("awl-compact-role-note").first()).toBeVisible({ timeout: 90_000 });
-  expect(await page.getByTestId("awl-compact-trigger").filter({ hasText: /AI prompt/ }).count()).toBe(0);
+  await openChatGptWizard(page);
+  await expect(page.getByTestId("wizard-role-note")).toBeVisible({ timeout: 90_000 });
+  expect(await page.getByTestId("wizard-make").count()).toBe(0);
 
   const token = await sessionToken(cv);
   const res = await fetch(`${AWL_URL}/user-link`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ days: 1 }) });
@@ -303,7 +315,7 @@ test("a member who joined BEFORE the fix (no accept, no VERIDIAN user) is healed
   expect(await clickCopyAiPrompt(page)).toBe("copied");
   const vusers = await vusersOf(legacy);
   expect(vusers.map(({ id: _i, ...u }) => u)).toEqual([{ org_id: veridianOrgId, role: "member", is_active: true, email: legacy.email.toLowerCase() }]);
-  expect((await activeLinksOf(vusers[0].id)).map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", "All my projects", 1]]);
+  expect((await activeLinksOf(vusers[0].id)).map((l) => [l.scope, l.label, l.authority_level])).toEqual([["user", "ChatGPT connection", 1]]);
 });
 
 test("idempotent: /link-member again answers already_linked and writes nothing; a second accept is refused and adds nothing", async () => {

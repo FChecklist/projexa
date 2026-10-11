@@ -221,9 +221,8 @@ import { SearchTrigger } from "@/components/search-command";
 import { ShellMessageProvider, ShellMessageStrip } from "@/components/shell/shell-messages";
 import { NotificationBell } from "@/components/NotificationBell";
 import { AiWorkLinkButtons } from "@/components/ai-link/AiWorkLinkButtons";
-import { AiWorkLinkCompact } from "@/components/ai-link/AiWorkLinkCompact";
-import { AiWorkLinkCardButton } from "@/components/ai-link/AiWorkLinkCardButton";
-import ConnectYourAi from "@/components/ai-link/ConnectYourAi";
+import ConnectYourAiPanel from "@/components/ai-link/ConnectYourAiPanel";
+import { requestOpenConnectAi, useAiConnection } from "@/lib/ai-connection";
 import { ChatDocumentAttach, loadChatProducts } from "@/components/shell/ChatDocumentAttach";
 import { canSendProjectDocument } from "@/lib/project-document-access";
 import { getFromDocumentClient } from "@/lib/project-from-document-client";
@@ -1609,6 +1608,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   const project = routeProject ?? objectProject ?? routeScreen?.project ?? railProject;
   const projectId = project?.id ?? null;
   const [viewMode] = useViewMode();
+  // "Connect your AI": which AI (if any) answers this person; the typing area is grey until one is connected.
+  const ai = useAiConnection();
   // HOW it was chosen, for the rail's label. A project named by the URL was
   // never automatic, whatever the page had to do to render it -- and neither
   // was one read off the record the URL names.
@@ -4200,22 +4201,15 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
           // link (`scope="user"`): pasted into any outside AI it lists all the person's projects, then "Report on all above", then
           // "Create New Project", and works in whichever they pick. It no longer depends on a selected project or module.
           examples={
-            <>
-              <AiWorkLinkCompact
-                role={shell.role}
-                project={null}
-                scope="user"
-                triggerLabel="AI prompt — paste in any AI"
-                compact
-                variant="default"
-                className="text-[12px]"
-              />
-              {/* Audit 37: for chat AIs that cannot open links: card + selected project's data as one pasteable text. */}
-              <AiWorkLinkCardButton role={shell.role} project={project ? { id: project.id, name: project.name } : null} compact className="text-[12px]" />
-              {/* Owner 2026-10-09: the person sees how to connect an outside AI -- access link, MCP, API -- in plain steps. */}
-              <ConnectYourAi role={shell.role} />
-            </>
+            // Owner 2026-10-11: ONE entry to AI under the chat box. The copy-this-prompt chips are gone from here (an outside chat website often cannot
+            // open the link, so it "cannot work properly"); the same thing now lives under "Advanced" inside the panel. "Connect to AI" opens a panel on
+            // the RIGHT: connect an AI for me, share it with teammates, or (owner/admin) connect one for the organisation.
+            <ConnectYourAiPanel role={shell.role} />
           }
+          // No AI connected: the typing area is grey and says "+ Connect to AI". Menus, forms and pills keep working (they never needed a model).
+          // A chain step that is waiting for typed words is an answer to a form field, so it stays open.
+          aiLocked={ai.known && !ai.connected && !awaitingText}
+          onConnectAi={requestOpenConnectAi}
         />
       }
     >

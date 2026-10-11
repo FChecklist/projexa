@@ -280,6 +280,10 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/org/invites/[id]": "ORG_ADMIN",
   // P6: the organisation owner's switch for PROJEXA's own AI (default off).
   "/org/internal-ai": "ORG_ADMIN",
+  // "Connect your AI": the organisation's own AI key (PUT/DELETE: owner/admin only; GET is not a mutating method).
+  "/org/own-ai": "ORG_ADMIN", // the ORGANISATION's AI
+  "/org/own-ai/mine": "ANY_MEMBER", // a person's OWN AI
+  "/org/own-ai/shares": "ANY_MEMBER",
   "/org-members/[id]": "ORG_ADMIN",
   // Public by design: the pre-tenancy provisioning path, called before any
   // membership row exists.

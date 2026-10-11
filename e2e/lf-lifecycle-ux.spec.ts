@@ -78,7 +78,7 @@ async function readHeaderColours(page: Page) {
     projectBorder: await coloursOf(page, '[data-testid="local-shell-project"]', "borderTopColor"),
     accountSurface: await coloursOf(page, '[data-testid="local-shell-account"] summary', "backgroundColor"),
     accountText: await coloursOf(page, '[data-testid="local-shell-account"] summary', "color"),
-    connectors: await coloursOf(page, '[data-testid="local-shell-connectors"]', "backgroundColor"),
+    connectors: await coloursOf(page, '[data-testid="connect-your-ai-open"]', "backgroundColor"),
   }
 }
 
@@ -137,9 +137,9 @@ test("bright, lively colours: the install screen, the header, the account contro
     expectVivid("project switcher border", c.projectBorder)
     expectLight("account control background", c.accountSurface)
     expectVivid("account control text", c.accountText)
-    expectVivid("Connectors button", c.connectors)
+    expectVivid("Connect to AI button", c.connectors)
     await expect(page.getByTestId("local-shell-ai-bar")).toHaveAttribute("data-online", "1")
-    expectVivid("Copy AI prompt button", await coloursOf(page, '[data-testid="local-shell-ai-bar"] button', "backgroundColor"))
+    expectVivid("+ Connect to AI button", await coloursOf(page, '[data-testid="local-shell-ai-bar"] button', "backgroundColor"))
   })
 
   await test.step("the account menu, when opened, is light too", async () => {
@@ -189,22 +189,26 @@ test("phone screen (375 x 812): no sideways page scroll; switcher, account, AI b
   await test.step("the header controls are all on the screen", async () => {
     await inside("local-shell-project")
     await inside("local-shell-account", '[data-testid="local-shell-account"] summary')
-    await inside("local-shell-connectors")
+    await inside("connect-your-ai-open")
     await inside("local-shell-ai-bar")
-    await expect(page.getByRole("button", { name: "Copy AI prompt" })).toBeVisible()
-    const prompt = await page.getByRole("button", { name: "Copy AI prompt" }).boundingBox()
-    expect(prompt!.x + prompt!.width).toBeLessThanOrEqual(376)
+    await expect(page.getByRole("button", { name: "+ Connect to AI" })).toBeVisible()
+    const connect = await page.getByRole("button", { name: "+ Connect to AI" }).boundingBox()
+    expect(connect!.x + connect!.width).toBeLessThanOrEqual(376)
   })
 
-  await test.step("the Connectors panel opens inside the screen", async () => {
-    await page.getByTestId("local-shell-connectors").click()
-    await expect(page.getByTestId("local-shell-connectors-panel")).toBeVisible()
-    await inside("local-shell-connectors-panel")
+  await test.step("the Connect to AI panel opens inside the screen", async () => {
+    await page.getByTestId("connect-your-ai-open").click()
+    await expect(page.getByTestId("connect-your-ai-panel")).toBeVisible()
+    // the panel slides in from the right: wait for it to stop moving, then measure (a real overflow still fails, it just stays put)
+    await expect.poll(async () => { const b = await page.getByTestId("connect-your-ai-panel").boundingBox(); return b ? Math.round(b.x + b.width) : 9999 }, { timeout: 10_000 }).toBeLessThanOrEqual(376)
+    await inside("connect-your-ai-panel")
     const widths = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }))
     expect(widths.doc, "opening the panel made the page scroll sideways").toBeLessThanOrEqual(widths.inner + 1)
   })
 
   await test.step("the account menu opens inside the screen", async () => {
+    await page.keyboard.press("Escape")
+    await expect(page.getByTestId("connect-your-ai-panel")).toHaveCount(0)
     await page.getByTestId("local-shell-account").locator("summary").click()
     await inside("account menu", '[data-testid="local-shell-account"] > div')
   })
