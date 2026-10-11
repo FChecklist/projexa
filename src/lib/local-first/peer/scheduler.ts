@@ -77,7 +77,7 @@ export type SyncScheduler = {
   readonly runs: number;
 };
 
-export const DEFAULTS = { baseMs: 5 * 60_000, idleMaxMs: 30 * 60_000, hiddenMs: 30 * 60_000, hiddenLongMs: 60 * 60_000, minGapMs: 30_000, serverWithPeersMs: 30 * 60_000 } as const;
+export const DEFAULTS = { baseMs: 5 * 60_000, idleMaxMs: 30 * 60_000, hiddenMs: 30 * 60_000, hiddenLongMs: 60 * 60_000, minGapMs: 30_000, serverWithPeersMs: 10 * 60_000 } as const;
 
 /** Steady mode: a tab hidden this long (with no peer) stops polling until it is visible again. */
 export const STEADY_HIDDEN_PAUSE_MS = 15 * 60_000;
