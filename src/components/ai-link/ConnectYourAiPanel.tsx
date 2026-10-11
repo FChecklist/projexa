@@ -187,7 +187,7 @@ function Heading({ n, children }: { n: number; children: string }) {
 
 /** The panel's content (exported so it can be tested without the sheet's portal). */
 export function ConnectPanelBody({ role }: { role: string | null | undefined }) {
-  const { picture, refresh } = useAiConnection();
+  const { picture, refresh } = useAiConnection({ needPicture: true });
   const [people, setPeople] = useState<Array<PersonRef & { role?: string }>>([]);
   const [removing, setRemoving] = useState<Scope | null>(null);
   const [error, setError] = useState<string | null>(null);

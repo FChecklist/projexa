@@ -41,8 +41,20 @@ function readCache(): boolean | null {
     return null;
   }
 }
+// A remembered answer younger than this is trusted on page load, so the status read (a Vercel call) is not repeated on every page of every day.
+// Opening the Connect panel, a change, or coming back online always reads fresh.
+const FRESH_MS = 6 * 60 * 60 * 1000;
+function cacheIsFresh(): boolean {
+  try {
+    const at = Number(window.localStorage.getItem(`${CACHE_KEY}:at`));
+    return at > 0 && Date.now() - at < FRESH_MS;
+  } catch {
+    return false;
+  }
+}
 function writeCache(connected: boolean): void {
   try {
+    window.localStorage.setItem(`${CACHE_KEY}:at`, String(Date.now()));
     window.localStorage.setItem(CACHE_KEY, connected ? "1" : "0");
   } catch {
     /* storage blocked: the screen still works */
@@ -70,7 +82,8 @@ export async function fetchAiPicture(fetchImpl: typeof fetch = fetch): Promise<A
   }
 }
 
-export function useAiConnection(): AiConnectionState {
+/** `needPicture`: the Connect panel needs the full picture, so it always reads; the chat box only needs connected-or-not, which a fresh remembered answer gives. */
+export function useAiConnection(opts: { needPicture?: boolean } = {}): AiConnectionState {
   const [picture, setPicture] = useState<AiPicture | null>(null);
   const [cached, setCached] = useState<boolean | null>(null);
 
@@ -84,7 +97,7 @@ export function useAiConnection(): AiConnectionState {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    if (opts.needPicture || readCache() === null || !cacheIsFresh()) void refresh();
     const onChanged = () => { void refresh(); };
     window.addEventListener(AI_CONNECTION_CHANGED_EVENT, onChanged);
     window.addEventListener("online", onChanged);
@@ -92,7 +105,7 @@ export function useAiConnection(): AiConnectionState {
       window.removeEventListener(AI_CONNECTION_CHANGED_EVENT, onChanged);
       window.removeEventListener("online", onChanged);
     };
-  }, [refresh]);
+  }, [refresh, opts.needPicture]);
 
   const known = picture !== null || cached !== null;
   const connected = picture ? picture.effective.connected : cached === true;

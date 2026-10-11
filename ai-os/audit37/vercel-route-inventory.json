@@ -64,7 +64,6 @@
   ],
   "daily_use_api_allowlist": [
     "GET /api/dashboard/project/:id",
-    "GET /api/org/own-ai",
     "POST /api/local-first/client-error"
   ],
   "daily_use_api_allowlist_production": [
