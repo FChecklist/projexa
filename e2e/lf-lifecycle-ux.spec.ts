@@ -207,6 +207,8 @@ test("phone screen (375 x 812): no sideways page scroll; switcher, account, AI b
   })
 
   await test.step("the account menu opens inside the screen", async () => {
+    await page.keyboard.press("Escape")
+    await expect(page.getByTestId("connect-your-ai-panel")).toHaveCount(0)
     await page.getByTestId("local-shell-account").locator("summary").click()
     await inside("account menu", '[data-testid="local-shell-account"] > div')
   })
