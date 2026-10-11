@@ -199,6 +199,8 @@ test("phone screen (375 x 812): no sideways page scroll; switcher, account, AI b
   await test.step("the Connect to AI panel opens inside the screen", async () => {
     await page.getByTestId("connect-your-ai-open").click()
     await expect(page.getByTestId("connect-your-ai-panel")).toBeVisible()
+    // the panel slides in from the right: wait for it to stop moving, then measure (a real overflow still fails, it just stays put)
+    await expect.poll(async () => { const b = await page.getByTestId("connect-your-ai-panel").boundingBox(); return b ? Math.round(b.x + b.width) : 9999 }, { timeout: 10_000 }).toBeLessThanOrEqual(376)
     await inside("connect-your-ai-panel")
     const widths = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, inner: window.innerWidth }))
     expect(widths.doc, "opening the panel made the page scroll sideways").toBeLessThanOrEqual(widths.inner + 1)

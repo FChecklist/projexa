@@ -84,6 +84,7 @@ export function OwnKeyForm({ scope, provider, showVendorPicker = false, testId }
       <label className="block text-[12px] font-semibold" htmlFor={`${testId}-key`}>Paste your key</label>
       <input
         id={`${testId}-key`}
+        data-testid={`${testId}-key`}
         ref={keyRef}
         type="password"
         autoComplete="off"
