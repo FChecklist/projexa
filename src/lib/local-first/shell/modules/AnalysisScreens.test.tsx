@@ -13,7 +13,7 @@ import { snapshotCacheFor } from "../snapshot-cache";
 import AnalysisHubScreen from "./AnalysisHubScreen";
 import ExceptionsLocalScreen from "./ExceptionsLocalScreen";
 import Project360LocalScreen from "./Project360LocalScreen";
-import { exceptionsSnapshotName, loadAnalysisHub, loadExceptions, loadProject360 } from "./analysis-adapter";
+import { boqAnalysisSnapshotName, exceptionsSnapshotName, loadAnalysisHub, loadExceptions, loadProject360 } from "./analysis-adapter";
 
 // The analysis screens with the network OFF draw from the laptop (the server's last answers + exact counts) and send nothing; online they
 // fetch the online screens' own endpoints. `fetch` is a spy throughout.
@@ -101,5 +101,27 @@ describe("analysis on this laptop", () => {
     render(<Project360LocalScreen shell={fakeShell("online", () => { refreshed += 1; })} {...props} data={await loadProject360(shellData(), "p1")} />);
     await waitFor(() => expect(refreshed).toBe(1));
     expect(fetchCalls).toEqual(["/api/reports/boq-analysis?projectId=p1"]);
+  });
+
+  // Sumeet R-100: no baseline -> confirming is a server action; the laptop only points at the online screen (no new /api call: Vercel budget)
+  test("project 360 with no baseline: online it links to the online screen; offline it says it needs a connection", async () => {
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(boqAnalysisSnapshotName("p1"), { row: { hasBaseline: false, boqId: "boq-1" } });
+    const data = await loadProject360(shellData(), "p1");
+    const online = render(<Project360LocalScreen shell={fakeShell("online")} {...props} data={data} />);
+    const link = online.getByTestId("baseline-open-online");
+    expect(link.getAttribute("href")).toBe("/analysis/project-360?projectId=p1&px-server=1");
+    expect(link.textContent).toContain("Confirm baseline");
+    cleanup();
+    const offline = render(<Project360LocalScreen shell={fakeShell("offline")} {...props} data={data} />);
+    expect(offline.queryByTestId("baseline-open-online")).toBeNull();
+    expect(offline.getByTestId("baseline-needs-connection").textContent).toContain("needs a connection");
+  });
+
+  test("project 360 with a baseline: no baseline control at all", async () => {
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(boqAnalysisSnapshotName("p1"), { row: { hasBaseline: true, boqId: "boq-1" } });
+    const data = await loadProject360(shellData(), "p1");
+    const r = render(<Project360LocalScreen shell={fakeShell("online")} {...props} data={data} />);
+    expect(r.queryByTestId("baseline-open-online")).toBeNull();
+    expect(r.queryByTestId("baseline-needs-connection")).toBeNull();
   });
 });

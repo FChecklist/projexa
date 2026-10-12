@@ -1620,7 +1620,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       import("@/lib/local-first/replica-shared"),
       import("@/lib/local-first/prepare-workspace"),
       import("@/lib/local-first/shell/context"),
-    ]).then(([refresh, shared, prepare, ctx]) => {
+      import("@/lib/local-first/org-change"),
+      import("@/lib/local-first/local-db"),
+    ]).then(([refresh, shared, prepare, ctx, orgChange, localDb]) => {
       if (stopped) return;
       const replica = shared.getSharedReplica(userId);
       const run = refresh.createBackgroundRefresh({
@@ -1629,7 +1631,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         visible: () => document.visibilityState === "visible",
         activeProject: () => ctx.activeProjectFor(userId),
         syncProject: (projectId) => replica.syncProject(projectId),
-        syncAll: () => replica.sync(),
+        syncAll: () => orgChange.syncRecoveringFromOrgChange(() => replica.sync(), () => localDb.openLocalDb(undefined, localDb.localDbNameFor(userId))),
       });
       const go = () => { void run(); };
       const first = setTimeout(go, 20_000);

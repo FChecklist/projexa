@@ -63,6 +63,24 @@ export default function Project360LocalScreen({ shell, data }: ShellScreenProps<
             {shell.connectivity === "online" ? "Fetching the analysis from the server…" : "Not saved on this laptop yet. It is recalculated by the server when the laptop is connected."}
           </p>
         )}
+        {(() => {
+          // Sumeet R-100: no baseline yet -> confirming one is a SERVER action (the server records who confirmed it and on what evidence), so the
+          // control lives on the online page (components/Project360Client.tsx). This screen only points there, and only while online: a new /api call
+          // from the laptop would break the Vercel budget (vercel-route-inventory.test.ts shell_api_references).
+          const row = snap?.body.row as { hasBaseline?: unknown; boqId?: unknown } | undefined;
+          if (!row || row.hasBaseline !== false || typeof row.boqId !== "string" || !row.boqId) return null;
+          if (shell.connectivity !== "online") return <p data-testid="baseline-needs-connection" className="mt-2 text-xs text-px-muted">No baseline is confirmed for this project yet. Confirming one needs a connection: the server records who confirmed it and on what evidence.</p>;
+          const projectId = data.state === "local" ? data.projectId : "";
+          return (
+            <a
+              data-testid="baseline-open-online"
+              className="mt-3 inline-block rounded-md bg-px-accent px-4 py-2 text-sm font-medium text-white"
+              href={`/analysis/project-360?projectId=${encodeURIComponent(projectId)}&px-server=1`}
+            >
+              Confirm baseline (opens the online screen)
+            </a>
+          );
+        })()}
         {note ? <p className="mt-2 text-xs text-px-muted">{note}</p> : null}
       </section>
       <div className="grid gap-4 md:grid-cols-3">
