@@ -1572,8 +1572,12 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const shown = railProject?.id ?? null;
     if (!shown) return;
-    if (readCookieProjectId() !== shown) {
+    const hadCookie = readCookieProjectId();
+    if (hadCookie !== shown) {
       writeStoredProjectId(shown);
+      // No cookie at all = a first visit (the install itself): the server pages used the same default, so just remember it. A full reload here
+      // drew the install screen twice and downloaded the release bundle twice (offline e2e, 2026-10-12).
+      if (!hadCookie) return;
       // Never re-render the page under someone who has already started typing -- neither a reload nor router.refresh(), which remounts the form
       // and wipes what they typed (UAT 2026-10-12). The cookie is already corrected; the next navigation reads it.
       const typing = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("main input, main textarea")).some(
@@ -1603,6 +1607,41 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     if (!userId || !railProject?.id || !isLocalFirstEnabled()) return;
     try { window.localStorage.setItem(`px-shell-project:${userId}`, railProject.id); } catch { /* storage blocked: nothing to remember */ }
   }, [userId, railProject?.id]);
+
+  // UAT 2026-10-12 (offline finding): bring the laptop copy up to date while the person works on the normal pages (see lib/local-first/background-refresh.ts
+  // for why this is not the auto-sync scheduler). Never before the laptop is prepared; nothing offline or while the tab is hidden.
+  useEffect(() => {
+    if (!userId || !isLocalFirstEnabled()) return;
+    let stopped = false;
+    let tick: ReturnType<typeof setInterval> | null = null;
+    const cleanups: Array<() => void> = [];
+    void Promise.all([
+      import("@/lib/local-first/background-refresh"),
+      import("@/lib/local-first/replica-shared"),
+      import("@/lib/local-first/prepare-workspace"),
+      import("@/lib/local-first/shell/context"),
+    ]).then(([refresh, shared, prepare, ctx]) => {
+      if (stopped) return;
+      const replica = shared.getSharedReplica(userId);
+      const run = refresh.createBackgroundRefresh({
+        ready: () => { try { return window.localStorage.getItem(prepare.readyKey(userId)) !== null; } catch { return false; } },
+        online: () => navigator.onLine !== false,
+        visible: () => document.visibilityState === "visible",
+        activeProject: () => ctx.activeProjectFor(userId),
+        syncProject: (projectId) => replica.syncProject(projectId),
+        syncAll: () => replica.sync(),
+      });
+      const go = () => { void run(); };
+      const first = setTimeout(go, 20_000);
+      cleanups.push(() => clearTimeout(first));
+      tick = setInterval(go, 60_000);
+      document.addEventListener("visibilitychange", go);
+      window.addEventListener("online", go);
+      cleanups.push(() => { document.removeEventListener("visibilitychange", go); window.removeEventListener("online", go); });
+    }).catch(() => {});
+    return () => { stopped = true; if (tick) clearInterval(tick); cleanups.forEach((c) => c()); };
+  }, [userId]);
+
   const routeProject = useMemo(() => {
     if (!routeProjectId) return null;
     const named = projects.find((p) => p.id === routeProjectId);
