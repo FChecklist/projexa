@@ -146,10 +146,11 @@ function computeGrandTotal(rows: LineItemRow[], mode: ThirdColumnMode) {
   const parents = rows.filter((r) => !r.parentLineItemId);
   return {
     amtTotal: parents.reduce((s, r) => s + r.amtTotal, 0),
+    // Parents only: a parent's earned amount is already the sum of its sub-tasks', so adding the sub-task rows counted that work twice.
     amt: {
-      prev: rows.reduce((s, r) => s + r.amt.prev, 0),
-      current: rows.reduce((s, r) => s + r.amt.current, 0),
-      third: rows.reduce((s, r) => s + r.amt[mode], 0),
+      prev: parents.reduce((s, r) => s + r.amt.prev, 0),
+      current: parents.reduce((s, r) => s + r.amt.current, 0),
+      third: parents.reduce((s, r) => s + r.amt[mode], 0),
     },
   };
 }
