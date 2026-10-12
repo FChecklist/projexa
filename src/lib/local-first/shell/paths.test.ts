@@ -41,6 +41,10 @@ describe("route matching", () => {
     expect(matchPattern("/scope/:id", "/scope")).toBeNull();
     expect(matchPattern("/scope", "/scope/abc")).toBeNull();
     expect(matchPattern("/scope/:id", "/rfis/abc")).toBeNull();
+    // create screens are server pages, never a record id
+    expect(matchPattern("/scope/:id", "/scope/new")).toBeNull();
+    expect(matchPattern("/scope/:id", "/scope/import")).toBeNull();
+    expect(matchPattern("/projects/:id", "/projects/from-file")).toBeNull();
     expect(matchPattern("/scope/:id", "/scope/%E0%A4%A")).toBeNull(); // a broken escape is no match, not a crash
     expect(matchPattern("/", "/")).toEqual({});
   });

@@ -99,15 +99,16 @@ export default function ProjectCreateClient({
       invalidateShell("projects");
       router.push(created?.id ? `/dashboard/project?projectId=${encodeURIComponent(created.id)}` : "/dashboard");
       router.refresh();
+      // Stay locked after a success: if the navigation is slow (or the embedded shell does not move), a second click must not create a duplicate project.
+      return;
     } catch (err) {
       // Never a generic "couldn't create": the server's own refusal is the
       // only thing the user can act on. Values are kept, nothing is reset.
       const message = errorMessage(err, "Couldn't create the project");
       setSaveError(message);
       toast.error(message);
-    } finally {
-      setSubmitting(false);
     }
+    setSubmitting(false);
   }
 
   return (
