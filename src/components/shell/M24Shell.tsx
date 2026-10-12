@@ -700,7 +700,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   const [projectPrompt, setProjectPrompt] = useState<string | null>(null);
   // R67 B-07: band 2 (CONVERSATION). What the server understood, and what it
   // still needs -- in the closed vocabulary, never a parameter name.
-  const [notice, setNotice] = useState<{ chain: string | null; text: string | null } | null>(null);
+  const [notice, setNotice] = useState<{ chain: string | null; text: string | null; link?: { label: string; route: string } } | null>(null);
   // R67-PART-B decision #2 -- THE VERDICT AWAITING CONFIRMATION.
   //
   // Lane A's own onSubmit already implements the real protocol correctly: a
@@ -2890,7 +2890,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               rows,
             });
           } else {
-            setNotice({ chain: verdict.chain ?? null, text: verdict.message ?? verdict.answer?.text ?? null });
+            // UAT 2026-10-12 (R-81/R-82): a gap answer ends "... - Open RFIs" and the server sends that screen's route in `links`; it was
+            // dropped, so the sentence promised a destination nobody could click. Keep it and render it as a button below.
+            const gapLink = verdict.status === "gap" ? verdict.links?.find((l) => typeof l?.route === "string" && l.route.startsWith("/")) : undefined;
+            setNotice({ chain: verdict.chain ?? null, text: verdict.message ?? verdict.answer?.text ?? null, ...(gapLink ? { link: gapLink } : {}) });
           }
           setDraft("");
           await loadTasks();
@@ -4072,6 +4075,16 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                   <p style={{ color: "var(--color-ct-muted)" }}>Understood: {notice.chain}</p>
                 )}
                 {notice.text && <p>{notice.text}</p>}
+                {notice.link && (
+                  <button
+                    type="button"
+                    className="mt-1 rounded-md border px-2 py-0.5 text-[12px] font-medium"
+                    style={{ borderColor: "var(--color-ct-navy)", color: "var(--color-ct-navy)" }}
+                    onClick={() => router.push(notice.link!.route)}
+                  >
+                    {notice.link.label}
+                  </button>
+                )}
               </div>
             ) : (
               // BUG 3 FIX, 2026-09-14 -- see `boxOneShowsOptionLevel`'s own

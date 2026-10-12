@@ -27,4 +27,10 @@ describe("M24Shell starts the background refresh of the laptop copy", () => {
     expect(source).toContain("`px-shell-project:${userId}`");
     expect(source).toContain("railProject.id");
   });
+
+  // R-81/R-82: "That is not enabled for this workspace yet - Open RFIs" must come with a working "Open RFIs" button (the route was dropped).
+  test("a gap answer keeps the screen link the server sends and renders it as a button", () => {
+    expect(source).toContain('verdict.status === "gap" ? verdict.links?.find');
+    expect(source).toContain("onClick={() => router.push(notice.link!.route)}");
+  });
 });
