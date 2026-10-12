@@ -234,7 +234,9 @@ async function deleteOtherReleaseCaches(caches: CacheStorageLike, keep: string):
  * is complete). Never throws: every failure is a `failed` result and leaves the previous release untouched.
  */
 export async function installRelease(deps: InstallerDeps): Promise<InstallResult> {
-  const doFetch = deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+  // A request that never answers must fail the install (the screen retries), not hang it: one minute per request.
+  const doFetch = deps.fetchImpl ?? ((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    fetch(input, typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" && !init?.signal ? { ...init, signal: AbortSignal.timeout(60_000) } : init));
   const now = deps.now ?? (() => Date.now());
   const iso = (ms: number) => new Date(ms).toISOString();
   const startedAt = now();
