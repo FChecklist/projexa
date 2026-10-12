@@ -37,4 +37,11 @@ describe("M24Shell starts the background refresh of the laptop copy", () => {
     expect(source).toContain('verdict.status === "gap" ? verdict.links?.find');
     expect(source).toContain("onClick={() => router.push(notice.link!.route)}");
   });
+
+  // live finding 2026-10-13: a person whose organisation changed was refused for ever; the callers rebuild the copy (org-change.ts)
+  test("both background syncs (this shell's refresh and the auto-sync scheduler) rebuild a copy refused because the organisation changed", () => {
+    expect(source).toContain("orgChange.syncRecoveringFromOrgChange(");
+    const peer = readFileSync(join(import.meta.dir, "..", "..", "lib", "local-first", "peer", "peer-shared.ts"), "utf8");
+    expect(peer).toContain("syncRecoveringFromOrgChange(() => replica.sync()");
+  });
 });

@@ -24,6 +24,7 @@ import { createAutoSync, type AutoSync } from "./auto-sync";
 import type { RealtimeClientLike } from "./signalling";
 import { broadcastChannelProvider, remoteSignalProviders } from "./signalling";
 import { createServerStep } from "./server-step";
+import { syncRecoveringFromOrgChange } from "../org-change";
 import { createRtcLink } from "./transport";
 import { createIceSource } from "./ice";
 
@@ -84,7 +85,9 @@ export function startPeerSync(userId: string): void {
       // heads mode (FC cost:COST-03): ONE GET /heads per run, a project's feed only when its head moved, a reset when the view class
       // or epoch changed; an older service without /heads falls back to lf-e6's project mode (the open project every run, others hourly)
       serverStep: createServerStep({
-        meta: db, changes: (r) => client.changes(r), sync: () => replica.sync(),
+        meta: db, changes: (r) => client.changes(r),
+        // a whole run refused because the person's organisation changed rebuilds the copy from the new one (org-change.ts), instead of failing for ever
+        sync: () => syncRecoveringFromOrgChange(() => replica.sync(), () => openLocalDb(globalThis.indexedDB, localDbNameFor(userId))),
         syncProject: (projectId, opts) => replica.syncProject(projectId, undefined, undefined, opts),
         heads: async () => { await sharedPacer().take(); return client.heads!(); },
         resetCopy: async () => { await resetLocalCopy(db); },
