@@ -212,6 +212,9 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // so a sidebar entry would be meaningless.
   "/",
   "/how-it-works",
+  // Owner 2026-10-12: the plain "Dashboard" menu entry is hidden; /dashboard stays as the signed-in landing route and is reached by the PROJEXA
+  // logo and the "Project Dashboard" entry (/dashboard/hierarchy), not by its own menu item.
+  "/dashboard",
   // Legal/footer-only page (owner-approved Disclaimer, 2026-09-13). Linked
   // from MarketingFooter on every real page, not from the authenticated
   // app's sidebar -- same class as /how-it-works above: a real, standalone
