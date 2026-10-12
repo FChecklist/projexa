@@ -18,6 +18,8 @@ import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
 import { LocalShellAiBar } from "./LocalShellAiBar";
 import { LocalShellChat } from "./LocalShellChat";
+import { useViewMode } from "@/lib/view-mode";
+import ViewModeToggle from "@/components/shell/ViewModeToggle";
 import { LocalShellAccount } from "./LocalShellAccount";
 import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectivity } from "../connectivity";
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
@@ -387,6 +389,22 @@ const NEW_PROJECT = "__new_project__";
 
 function Chrome({ children, navigate, data, shell, locationPath }: { children: React.ReactNode; navigate: (href: string) => void; data?: ShellData; shell?: ShellApi; locationPath?: string }) {
   const nav = navRoutes();
+  // Traditional View is the default (owner 2026-10-09/12): module menu down the left. Modern keeps the old top tabs.
+  const [viewMode] = useViewMode();
+  const traditional = viewMode === "traditional";
+  const moduleNav = (
+        <nav aria-label="Modules" className={traditional ? "flex flex-col gap-1 text-sm" : "mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 text-sm"}>
+          {nav.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className={`${traditional ? "rounded-md" : "rounded-full"} px-3 py-1 transition-colors hover:bg-[#BAE6FD] ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "bg-[#38BDF8] font-semibold text-white" : "text-[#0369A1]"}`}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+  );
   return (
     <div
       data-testid="local-shell"
@@ -430,25 +448,23 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
             </label>
           ) : null}
           <div className="ml-auto flex max-w-full flex-wrap items-start gap-x-4 gap-y-2 text-xs text-px-muted">
+            <ViewModeToggle />
             {data && shell ? <LocalShellAiBar role={data.role} project={data.projects.find((p) => p.id === shell.projectId) ?? null} online={shell.connectivity === "online"} /> : null}
             <ConnectivityMarker />
             {data ? <LocalShellAccount data={data} /> : null}
           </div>
         </div>
-        {/* Row 2: the modules; scrolls sideways on a narrow screen instead of pushing the account control down. */}
-        <nav aria-label="Modules" className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 text-sm">
-          {nav.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className={`rounded-full px-3 py-1 transition-colors hover:bg-[#BAE6FD] ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "bg-[#38BDF8] font-semibold text-white" : "text-[#0369A1]"}`}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
+        {/* Row 2 (Modern View only): the modules; scrolls sideways on a narrow screen. */}
+        {traditional ? null : moduleNav}
       </header>
-      <main className="mx-auto max-w-6xl p-4">{children}</main>
+      {traditional ? (
+        <div className="mx-auto flex max-w-7xl gap-4 p-4">
+          <aside className="sticky top-2 h-fit w-52 shrink-0 rounded-xl border-2 border-[#BAE6FD] bg-white p-2">{moduleNav}</aside>
+          <main className="min-w-0 flex-1">{children}</main>
+        </div>
+      ) : (
+        <main className="mx-auto max-w-6xl p-4">{children}</main>
+      )}
       {data && shell ? <LocalShellChat userId={data.userId} projectId={shell.projectId ?? null} online={shell.connectivity === "online"} /> : null}
     </div>
   );

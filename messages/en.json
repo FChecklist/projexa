@@ -15,7 +15,7 @@
     },
     "items": {
       "dashboard": "Dashboard",
-      "companyDashboard": "Company Dashboard",
+      "companyDashboard": "Project Dashboard",
       "projectsOverview": "Projects Overview",
       "projects": "Projects",
       "schedule": "Schedule",
