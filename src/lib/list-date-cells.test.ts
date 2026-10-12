@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { dateCellRenderers, formatListDate } from "./list-date-cells";
 
 describe("list date cells", () => {
@@ -34,8 +36,6 @@ describe("never the runtime's own locale", () => {
 });
 
 describe("every list that uses the kit's ListScreen routes its date columns through renderCell", () => {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
-  const { join } = require("node:path") as typeof import("node:path");
   for (const [file, arg] of [["PermitsListClient.tsx", "columns"], ["BudgetsClient.tsx", "columns"], ["ProjectsListClient.tsx", "COLUMNS"]] as const) {
     test(file, () => {
       const src = readFileSync(join(import.meta.dir, "..", "components", file), "utf8");
