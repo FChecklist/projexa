@@ -42,9 +42,9 @@ import { EMPTY_VALUE } from "@/lib/format-number";
 const FIXED_LOCALE = "en-US";
 const FIXED_TIME_ZONE = "UTC";
 
-/** e.g. "8/25/2026" -- identical on server and client, any visitor. */
+/** e.g. "25-08-2026" -- the ONE house date format (owner decision 2026-10-13: dd-mm-yyyy), identical on server and client, any visitor. */
 export function formatDate(value: Date | string | number): string {
-  return new Date(value).toLocaleDateString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
+  return formatDateDMY(value);
 }
 
 // R67 D-23's formatDayMonthYear USED to live here, implemented with

@@ -161,7 +161,7 @@ test("documents: edits made offline wait on the laptop, survive a reload, and ar
     await page.getByTestId("doc-edit-expiryDate").fill("2027-06-30")
     await page.getByTestId("doc-edit-save").click()
     await expect(page.getByTestId("permit-title")).toContainText("Building permit - podium and tower")
-    await expect(page.getByTestId("fact-end-date")).toHaveText(new Date("2027-06-30").toLocaleDateString("en-US", { timeZone: "UTC" }))
+    await expect(page.getByTestId("fact-end-date")).toHaveText("30-06-2027")
     await expect(page.getByTestId("doc-waiting")).toBeVisible()
   })
 

@@ -20,6 +20,7 @@
 // spec (name, % complete, contract value, status) is answerable from the fields
 // VERIDIAN's /dashboard already returns per project, which that proxy was
 // discarding until this item.
+import { dateCellRenderers } from "@/lib/list-date-cells";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -186,6 +187,7 @@ export default function ProjectsListClient() {
               : "No projects match this filter."
           }
           renderCell={{
+            ...dateCellRenderers(COLUMNS),
             name: (row) => (
               // Kept as a real link so middle-click still opens a tab; the row
               // click above is the fast path.

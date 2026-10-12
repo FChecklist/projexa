@@ -196,6 +196,9 @@ export default function MoMObjectClient({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
   const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
+  // A failed people read is NOT "nobody matches": it is shown as an error with a retry (UAT 2026-10-12: a 504 rendered as an empty picker).
+  const [peopleError, setPeopleError] = useState<string | null>(null);
+  const [peopleRetry, setPeopleRetry] = useState(0);
 
   // The last text the server has confirmed. Kept in a ref, not state, because
   // the retry timer closes over it and must always see the newest value.
@@ -267,11 +270,11 @@ export default function MoMObjectClient({
     const query = pickerQuery.trim();
     const timer = setTimeout(() => {
       fetchJson<{ users?: OrgUser[] }>(`/api/org-users${query ? `?q=${encodeURIComponent(query)}` : ""}`)
-        .then((data) => { if (!cancelled) setOrgUsers(data.users ?? []); })
-        .catch(() => { if (!cancelled) setOrgUsers([]); });
+        .then((data) => { if (!cancelled) { setOrgUsers(data.users ?? []); setPeopleError(null); } })
+        .catch((err) => { if (!cancelled) { setOrgUsers([]); setPeopleError(errorMessage(err, "Couldn't load the people in this organisation")); } });
     }, query ? 200 : 0);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [pickerQuery]);
+  }, [pickerQuery, peopleRetry]);
 
   function note(message: FieldMessage) {
     setNotices((prev) => [...prev.filter((n) => n.field !== message.field), message]);
@@ -850,7 +853,14 @@ export default function MoMObjectClient({
                       <CommandList>
                         <CommandEmpty>
                           <div className="space-y-1.5 px-2 py-3 text-center">
-                            <p className="text-xs text-ct-muted">Nobody in this organisation matches that.</p>
+                            {peopleError ? (
+                              <>
+                                <p className="text-xs text-destructive" role="alert">{peopleError}</p>
+                                <Button size="sm" variant="outline" onClick={() => setPeopleRetry((n) => n + 1)}>Try again</Button>
+                              </>
+                            ) : (
+                              <p className="text-xs text-ct-muted">Nobody in this organisation matches that.</p>
+                            )}
                             {/* Disabled-by-condition, never hidden: the reader
                                 learns the capability exists and why they cannot
                                 use it yet. */}

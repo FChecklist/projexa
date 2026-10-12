@@ -106,3 +106,15 @@ describe("duration <-> finish date", () => {
     expect(addDaysIso("not-a-date", 4)).toBeNull();
   });
 });
+
+describe("typing a date digit by digit never derives garbage (UAT 2026-10-12)", () => {
+  test("a half-typed year (0002) is not a date: no due date and no duration come out of it", () => {
+    expect(dueDateFromDuration("0002-10-18", "5")).toBeNull();
+    expect(durationFieldValue("0002-10-18", "2026-10-23")).toBe("");
+    expect(durationFieldValue("2026-10-18", "0002-10-23")).toBe("");
+  });
+  test("real dates still derive exactly as before", () => {
+    expect(dueDateFromDuration("2026-10-18", "5")).toBe("2026-10-23");
+    expect(durationFieldValue("2026-10-18", "2026-10-23")).toBe("5");
+  });
+});

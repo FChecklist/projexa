@@ -55,6 +55,8 @@ const ORG_USERS = [
 ];
 
 const writes: { url: string; method: string }[] = [];
+/** Set to 504 to make the people read fail (UAT 2026-10-12). */
+let orgUsersStatus = 200;
 
 function mount(overrides: Partial<typeof BASE_MEETING> = {}, props: { justCreated?: boolean } = {}) {
   const meeting = { ...BASE_MEETING, ...overrides };
@@ -63,7 +65,10 @@ function mount(overrides: Partial<typeof BASE_MEETING> = {}, props: { justCreate
     const method = (init?.method ?? "GET").toUpperCase();
     if (method !== "GET") writes.push({ url, method });
     if (url.includes("/share-links")) return jsonRes({ links: LINKS });
-    if (url.includes("/api/org-users")) return jsonRes({ users: ORG_USERS });
+    if (url.includes("/api/org-users")) {
+      if (orgUsersStatus !== 200) return new Response(JSON.stringify({ error: "The data service did not respond in time" }), { status: orgUsersStatus, headers: { "Content-Type": "application/json" } });
+      return jsonRes({ users: ORG_USERS });
+    }
     if (url.includes("/api/moms/mom-1")) return jsonRes(meeting);
     throw new Error(`unexpected fetch in test: ${url}`);
   }) as typeof fetch;
@@ -71,6 +76,7 @@ function mount(overrides: Partial<typeof BASE_MEETING> = {}, props: { justCreate
 }
 
 afterEach(() => {
+  orgUsersStatus = 200;
   cleanup();
   writes.length = 0;
   pushed.length = 0;
@@ -228,6 +234,19 @@ describe("D-19: the people picker replaced a pasted user id", () => {
     expect(getByText("Everyone else")).toBeDefined();
     expect(getByText("Site Engineer")).toBeDefined();
     expect(getByText("Project Manager")).toBeDefined();
+  });
+
+  test("a FAILED people read says so and offers Try again -- it is never worded as \"nobody matches\"", async () => {
+    orgUsersStatus = 504;
+    const { getByRole, getByText, queryByText } = mount();
+    await waitFor(() => expect(getByText("Weekly Site Coordination")).toBeDefined());
+    fireEvent.click(getByRole("combobox"));
+    await waitFor(() => expect(getByRole("button", { name: "Try again" })).toBeDefined());
+    expect(queryByText("Nobody in this organisation matches that.")).toBeNull();
+    // and the retry actually asks again, and a good answer fills the picker
+    orgUsersStatus = 200;
+    fireEvent.click(getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(getByText("Everyone else")).toBeDefined());
   });
 
   test("the facet reads 'Meeting no.', not 'System ID'", async () => {

@@ -360,6 +360,9 @@ export type CategoryRollup = {
 function rollupBy<T>(rows: LineItemProgress[], keyFn: (r: LineItemProgress) => T, nameFn: (r: LineItemProgress) => string) {
   const groups = new Map<string, { key: T; name: string; amtTotal: number; prev: number; current: number; total: number }>();
   for (const r of rows) {
+    // A parent's earned amount IS the sum of its sub-tasks' (applyWeightedParentRollup), and only parents carry the contract value, so summing the
+    // sub-task rows as well counted every sub-task rupee twice (parent 700 + child 700 = 1,400 earned on 700 of work).
+    if (r.parentLineItemId) continue;
     const key = keyFn(r);
     const mapKey = String(key);
     const g = groups.get(mapKey) ?? { key, name: nameFn(r), amtTotal: 0, prev: 0, current: 0, total: 0 };

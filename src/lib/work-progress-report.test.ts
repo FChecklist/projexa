@@ -1173,3 +1173,24 @@ describe("progressDeleteConfirmSentence (R67 D-28)", () => {
     expect(sentence).toBe("This removes 3 logged on 25-08-2026 against R60SK-A. This cannot be undone.");
   });
 });
+
+describe("buildWorkProgressReport -- sub-task work is counted once in the category subtotals (UAT 2026-10-12)", () => {
+  test("parent 100 x 50 with a 35% sub-task that did 40 of 100: the category earned amount is the parent's 700, not 700 + 700", () => {
+    const parent: BoqLineItem = { id: "p1", activityId: null, itemCode: "A-10", description: "Excavation", unit: "m3", quantity: 100, rate: 50, amount: 5000, category: "Civil" };
+    const child: BoqLineItem = { id: "c1", activityId: "act_c", itemCode: "A-10.1", description: "Trenching", unit: "m3", quantity: 100, rate: 17.5, amount: 1750, category: "Civil", parentLineItemId: "p1", breakdownPercentage: 35 };
+    const entries: ProgressEntry[] = [{ id: "e1", activityId: "act_c", entryDate: "2026-10-12", quantityDone: 40 }];
+    const report = buildWorkProgressReport({
+      lineItems: [parent, child],
+      entries,
+      activities: [{ id: "act_c", categoryId: "cat_1", name: "Trenching" }],
+      categories: CATEGORIES,
+      from: "2026-10-09",
+      to: "2026-10-12",
+    });
+    const parentRow = report.rows.find((r) => !r.parentLineItemId)!;
+    expect(parentRow.amt.total).toBeCloseTo(700, 2);
+    const civil = report.byCategory.find((c) => c.name === "Civil")!;
+    expect(civil.amt.total).toBeCloseTo(700, 2); // was 1400: the sub-task's 700 was added on top of the parent's 700
+    expect(civil.amtTotal).toBeCloseTo(5000, 2); // contract value counts parents only
+  });
+});

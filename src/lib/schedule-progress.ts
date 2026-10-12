@@ -22,6 +22,10 @@ export const EMPTY_SCHEDULE_CELL = "—";
 /** Parses 'YYYY-MM-DD' (or any Date-parseable string) to UTC-midnight ms, or null. */
 export function toUtcMs(value: string | null | undefined): number | null {
   if (!value) return null;
+  // A date box being typed into passes through "0002-10-18" on the way to "2026-10-18": a year nobody means. Deriving a due date or a duration from
+  // it produced "23-10-0002" and a duration of -739246 days (UAT 2026-10-12), so an implausible year is "not a date yet", not a date.
+  const year = Number(value.slice(0, 4));
+  if (!Number.isFinite(year) || year < 1900 || year > 2200) return null;
   const ms = Date.parse(`${value.slice(0, 10)}T00:00:00.000Z`);
   return Number.isNaN(ms) ? null : ms;
 }

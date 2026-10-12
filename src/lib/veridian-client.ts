@@ -540,21 +540,39 @@ export async function readComplianceCredentialKey(
   }
 }
 
+// UAT 2026-10-12: one slow or dropped lookup of an organisation's own key surfaced as "No VERIDIAN credentials configured for organization ..."
+// -- a screen full of a scary, false statement that cleared itself on reload. A lookup that FAILED (database or network) is not the same as a
+// row that does not exist. The last key this process read for the organisation is kept in memory and used ONLY when a later lookup fails
+// (never when the row is simply absent, so a removed credential still stops working and AR-04 is untouched); with nothing remembered, the
+// caller gets an honest "try again" instead of the false "not configured".
+const lastGoodKey = new Map<string, string>();
+const lookupFailedFor = new Set<string>();
+
 export async function getVeridianApiKey(organizationId: string): Promise<string | null> {
   const fromCompliance = await readComplianceCredentialKey(organizationId);
-  if (fromCompliance) return fromCompliance;
+  if (fromCompliance) {
+    lastGoodKey.set(organizationId, fromCompliance);
+    lookupFailedFor.delete(organizationId);
+    return fromCompliance;
+  }
   try {
     const [row] = await db
       .select({ apiKey: veridianCredentials.veridianApiKey })
       .from(veridianCredentials)
       .where(eq(veridianCredentials.organizationId, organizationId))
       .limit(1);
+    lookupFailedFor.delete(organizationId);
+    if (row?.apiKey) lastGoodKey.set(organizationId, row.apiKey);
+    else lastGoodKey.delete(organizationId);
     return row?.apiKey ?? null;
   } catch (err) {
     console.error(
-      `[veridian-client] getVeridianApiKey(${organizationId}) failed -- treating as no per-org key found:`,
+      `[veridian-client] getVeridianApiKey(${organizationId}) failed -- using the last key read for this organisation, if any:`,
       err instanceof Error ? describeErrorChain(err) : err
     );
+    const remembered = lastGoodKey.get(organizationId);
+    if (remembered) return remembered;
+    lookupFailedFor.add(organizationId);
     return null;
   }
 }
@@ -572,6 +590,9 @@ export async function resolveApiKey(options: { apiKey?: string; organizationId?:
   if (options.organizationId) {
     const perOrgKey = await getVeridianApiKey(options.organizationId);
     if (perOrgKey) return perOrgKey;
+    if (lookupFailedFor.has(options.organizationId)) {
+      throw new VeridianApiError("Your account details could not be reached just now. Nothing was lost - please try again in a moment.", 503);
+    }
     // AR-04 fail-loud guard: a request that identifies a tenant but has no
     // per-org credentials MUST fail, never silently authenticate as whatever
     // tenant the shared VERIDIAN_API_KEY belongs to. Falling back here would

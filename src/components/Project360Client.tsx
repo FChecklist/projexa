@@ -16,9 +16,12 @@
 //     /api/billing-claims (this session).
 //   - Timelines: pms_issues/critical-path, via /api/schedule/gantt (already
 //     real and working).
-// Nothing on this screen is ever editable -- same GET-only, read-only
-// contract as /api/v1/projexa/reports/boq-analysis's own upstream route.
+// The screen is read-only EXCEPT one deliberate action (Sumeet R-100): "Confirm baseline". Profit and loss are computed from the first confirmed
+// baseline of the project's BOQ, and nothing could create one, so every project read "Not yet baselined" for ever (UAT 2026-10-12). Confirming
+// needs a person and an evidence reference (a PO, a signed proposal, an email: D88), and is only offered while no baseline exists.
 import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
@@ -36,6 +39,7 @@ type ProfitAtBothLevels = {
 };
 
 type ProjectAnalysisRow = {
+  boqId?: string | null;
   hasBaseline: boolean;
   contractAtFirstConfirmation: MoneyFigure;
   contractValueNow: MoneyFigure;
@@ -82,6 +86,32 @@ export default function Project360Client({ projectId, projectName }: { projectId
   const [billingClaims, setBillingClaims] = useState<BillingClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [evidence, setEvidence] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  async function confirmBaseline(boqId: string) {
+    if (!evidence.trim()) {
+      setConfirmError("Name the evidence first — a PO, a signed proposal, an email — so the baseline can be checked later.");
+      return;
+    }
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await fetchJson(`/api/scope/${encodeURIComponent(boqId)}/revisions?action=baseline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evidenceArtefactRef: evidence.trim() }),
+      });
+      setEvidence("");
+      setReloadKey((n) => n + 1);
+    } catch (err) {
+      setConfirmError(errorMessage(err, "The baseline was not confirmed"));
+    } finally {
+      setConfirming(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -110,9 +140,9 @@ export default function Project360Client({ projectId, projectName }: { projectId
     }
     void load();
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, reloadKey]);
 
-  if (loading) {
+  if (loading && !analysis) {
     return <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
   }
   if (error || !analysis) {
@@ -166,7 +196,27 @@ export default function Project360Client({ projectId, projectName }: { projectId
             </div>
           </div>
           {!analysis.hasBaseline && (
-            <p className="mt-3 text-xs text-px-muted">No baseline has been confirmed for this project's BOQ yet — the figures above will read "Not yet baselined" until one is.</p>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-px-muted">No baseline has been confirmed for this project's BOQ yet — the figures above will read "Not yet baselined" until one is.</p>
+              {analysis.boqId ? (
+                <div className="flex flex-wrap items-start gap-2">
+                  <Input
+                    aria-label="Evidence for the baseline"
+                    className="max-w-md"
+                    placeholder="Evidence: PO number, signed proposal, email date…"
+                    value={evidence}
+                    onChange={(e) => setEvidence(e.target.value)}
+                    disabled={confirming}
+                  />
+                  <Button type="button" onClick={() => void confirmBaseline(analysis.boqId as string)} disabled={confirming}>
+                    {confirming ? "Confirming…" : "Confirm baseline"}
+                  </Button>
+                  {confirmError && <p role="alert" className="w-full text-xs text-px-error">{confirmError}</p>}
+                </div>
+              ) : (
+                <p className="text-xs text-px-muted">This project has no BOQ yet — create one first, then confirm its baseline here.</p>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

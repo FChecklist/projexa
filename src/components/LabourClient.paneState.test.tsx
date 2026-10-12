@@ -106,3 +106,28 @@ describe("LabourClient", () => {
     expect(container.textContent).toContain("1 record");
   });
 });
+
+describe("LabourClient -- attendance names a worker the stale server seed did not know (UAT 2026-10-12)", () => {
+  test("the Worker column shows the NAME, not the raw id, after the roster is re-read once", async () => {
+    let rosterReads = 0;
+    routeFetch((url) => {
+      if (url.includes("/api/labour-roster")) {
+        rosterReads += 1;
+        return { status: 200, body: { roster: [WORKER] } };
+      }
+      if (url.includes("/api/attendance/summary")) return { status: 200, body: { rows: [], totals: {}, reconciliation: { ties: true } } };
+      if (url.includes("/api/attendance")) {
+        return { status: 200, body: { attendance: [{ id: "a1", rosterId: "w1", attendanceDate: "2026-10-12", status: "present", hoursWorked: "8", dailyCost: "180" }] } };
+      }
+      return { status: 200, body: {} };
+    });
+
+    // the server rendered the page a moment before the worker existed: an EMPTY, error-free roster seed
+    const { container } = render(<LabourClient projectId="p-riverside" initialTab="attendance" initialRoster={{ rows: [], errorMessage: null } as never} />);
+    await waitFor(() => {
+      expect(container.textContent).toContain("Ramesh Kumar");
+    });
+    expect(container.textContent).not.toMatch(/w1/);
+    expect(rosterReads).toBe(1); // exactly one re-read, never a loop
+  });
+});

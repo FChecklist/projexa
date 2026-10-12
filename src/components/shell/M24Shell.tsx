@@ -203,6 +203,7 @@ import { deriveMode } from "@/lib/chain-mode";
 import { isStripPainted, rankingArrival } from "@/lib/pill-ranking";
 import { navigationOutcome } from "@/lib/chain-navigation";
 import { persistLastProjectId, pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
+import { readCookieProjectId } from "@/lib/project-cookie";
 import { objectPromptLabel, objectSegmentFor, railDestinationForObject } from "@/lib/object-screens";
 import { useScreenModule } from "./use-screen-module";
 import {
@@ -699,7 +700,7 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
   const [projectPrompt, setProjectPrompt] = useState<string | null>(null);
   // R67 B-07: band 2 (CONVERSATION). What the server understood, and what it
   // still needs -- in the closed vocabulary, never a parameter name.
-  const [notice, setNotice] = useState<{ chain: string | null; text: string | null } | null>(null);
+  const [notice, setNotice] = useState<{ chain: string | null; text: string | null; link?: { label: string; route: string } } | null>(null);
   // R67-PART-B decision #2 -- THE VERDICT AWAITING CONFIRMATION.
   //
   // Lane A's own onSubmit already implements the real protocol correctly: a
@@ -1566,6 +1567,81 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     [projects, railProjectId]
   );
   const railProject = railPick.source === "auto" ? null : railPick.project;
+  // The server page reads the COOKIE, the rail paints from localStorage. When they drift apart (another tab, another localhost port, a cleared
+  // cookie) a screen would save into one project while the rail names another. Make the cookie say what the rail shows, then re-render once.
+  useEffect(() => {
+    const shown = railProject?.id ?? null;
+    if (!shown) return;
+    const hadCookie = readCookieProjectId();
+    if (hadCookie !== shown) {
+      writeStoredProjectId(shown);
+      // No cookie at all = a first visit (the install itself): the server pages used the same default, so just remember it. A full reload here
+      // drew the install screen twice and downloaded the release bundle twice (offline e2e, 2026-10-12).
+      if (!hadCookie) return;
+      // Never re-render the page under someone who has already started typing -- neither a reload nor router.refresh(), which remounts the form
+      // and wipes what they typed (UAT 2026-10-12). The cookie is already corrected; the next navigation reads it.
+      const typing = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("main input, main textarea")).some(
+        (el) => el.type !== "hidden" && el.type !== "checkbox" && el.type !== "radio" && el.value.trim() !== ""
+      );
+      if (typing) return;
+      // router.refresh() did not re-render an already-open server page here, so reload once. Only if the cookie was really written (cookies can be
+      // blocked) and only once per project per tab, so this can never loop.
+      try {
+        const guard = `px.cookie-sync.${shown}`;
+        if (readCookieProjectId() === shown && !window.sessionStorage.getItem(guard)) {
+          window.sessionStorage.setItem(guard, "1");
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // storage blocked: fall through to the soft refresh
+      }
+      router.refresh();
+    }
+  }, [railProject, router]);
+
+  // UAT 2026-10-12 (offline finding): the offline shell remembers its project in its own key and only wrote it when the person used ITS
+  // switcher, so after working in Riverside online the offline shell opened another project ("AI Test Tower RENAMED"). Keep that key in step
+  // with the project this screen shows, so offline opens the project the person was just working in (and auto-sync reads it first).
+  useEffect(() => {
+    if (!userId || !railProject?.id || !isLocalFirstEnabled()) return;
+    try { window.localStorage.setItem(`px-shell-project:${userId}`, railProject.id); } catch { /* storage blocked: nothing to remember */ }
+  }, [userId, railProject?.id]);
+
+  // UAT 2026-10-12 (offline finding): bring the laptop copy up to date while the person works on the normal pages (see lib/local-first/background-refresh.ts
+  // for why this is not the auto-sync scheduler). Never before the laptop is prepared; nothing offline or while the tab is hidden.
+  useEffect(() => {
+    if (!userId || !isLocalFirstEnabled()) return;
+    let stopped = false;
+    let tick: ReturnType<typeof setInterval> | null = null;
+    const cleanups: Array<() => void> = [];
+    void Promise.all([
+      import("@/lib/local-first/background-refresh"),
+      import("@/lib/local-first/replica-shared"),
+      import("@/lib/local-first/prepare-workspace"),
+      import("@/lib/local-first/shell/context"),
+    ]).then(([refresh, shared, prepare, ctx]) => {
+      if (stopped) return;
+      const replica = shared.getSharedReplica(userId);
+      const run = refresh.createBackgroundRefresh({
+        ready: () => { try { return window.localStorage.getItem(prepare.readyKey(userId)) !== null; } catch { return false; } },
+        online: () => navigator.onLine !== false,
+        visible: () => document.visibilityState === "visible",
+        activeProject: () => ctx.activeProjectFor(userId),
+        syncProject: (projectId) => replica.syncProject(projectId),
+        syncAll: () => replica.sync(),
+      });
+      const go = () => { void run(); };
+      const first = setTimeout(go, 20_000);
+      cleanups.push(() => clearTimeout(first));
+      tick = setInterval(go, 60_000);
+      document.addEventListener("visibilitychange", go);
+      window.addEventListener("online", go);
+      cleanups.push(() => { document.removeEventListener("visibilitychange", go); window.removeEventListener("online", go); });
+    }).catch(() => {});
+    return () => { stopped = true; if (tick) clearInterval(tick); cleanups.forEach((c) => c()); };
+  }, [userId]);
+
   const routeProject = useMemo(() => {
     if (!routeProjectId) return null;
     const named = projects.find((p) => p.id === routeProjectId);
@@ -2838,7 +2914,10 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
               rows,
             });
           } else {
-            setNotice({ chain: verdict.chain ?? null, text: verdict.message ?? verdict.answer?.text ?? null });
+            // UAT 2026-10-12 (R-81/R-82): a gap answer ends "... - Open RFIs" and the server sends that screen's route in `links`; it was
+            // dropped, so the sentence promised a destination nobody could click. Keep it and render it as a button below.
+            const gapLink = verdict.status === "gap" ? verdict.links?.find((l) => typeof l?.route === "string" && l.route.startsWith("/")) : undefined;
+            setNotice({ chain: verdict.chain ?? null, text: verdict.message ?? verdict.answer?.text ?? null, ...(gapLink ? { link: gapLink } : {}) });
           }
           setDraft("");
           await loadTasks();
@@ -4020,6 +4099,16 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
                   <p style={{ color: "var(--color-ct-muted)" }}>Understood: {notice.chain}</p>
                 )}
                 {notice.text && <p>{notice.text}</p>}
+                {notice.link && (
+                  <button
+                    type="button"
+                    className="mt-1 rounded-md border px-2 py-0.5 text-[12px] font-medium"
+                    style={{ borderColor: "var(--color-ct-navy)", color: "var(--color-ct-navy)" }}
+                    onClick={() => router.push(notice.link!.route)}
+                  >
+                    {notice.link.label}
+                  </button>
+                )}
               </div>
             ) : (
               // BUG 3 FIX, 2026-09-14 -- see `boxOneShowsOptionLevel`'s own

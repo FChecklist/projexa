@@ -6,7 +6,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 const Project360Client = (await import("./Project360Client")).default;
 
@@ -98,5 +98,71 @@ describe("Project360Client", () => {
       "/api/reports/boq-analysis": () => jsonRes({ error: "No organisation on this account" }, 400),
     });
     await waitFor(() => expect(getByText(/No organisation on this account/)).toBeDefined());
+  });
+});
+
+/** Types into a CONTROLLED input (fireEvent.change cannot drive one in this environment): calls its React onChange inside act(). */
+function typeInto(el: Element, value: string) {
+  const key = Object.keys(el).find((k) => k.startsWith("__reactProps"));
+  const props = (el as unknown as Record<string, { onChange?: (e: unknown) => void }>)[key!];
+  act(() => { props.onChange!({ target: { value }, currentTarget: { value } }); });
+}
+
+// Sumeet R-100: nothing could create a baseline, so profit and loss read "Not yet baselined" for ever. The one deliberate action on this screen.
+describe("Project360Client: confirm the baseline", () => {
+  const NO_BASELINE = { ...ANALYSIS_ROW, boqId: "boq-9", hasBaseline: false, contractAtFirstConfirmation: "NOT_SET", expectedProfitGross: "NOT_SET", profitVsExpectedDelta: "NOT_SET" };
+
+  test("offered while no baseline exists; sends the evidence, then re-reads the analysis and the answer appears", async () => {
+    let posted: { url: string; body: unknown } | null = null;
+    let confirmed = false;
+    const { getByLabelText, getByText, queryByText } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: confirmed ? { ...ANALYSIS_ROW, boqId: "boq-9" } : NO_BASELINE }),
+      "/api/scope/boq-9/revisions": async () => { confirmed = true; return jsonRes({ id: "b1", version: 1 }, 201); },
+    });
+    const base = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("action=baseline") && init?.method === "POST") posted = { url, body: JSON.parse(String(init.body)) };
+      return base(input, init);
+    }) as typeof fetch;
+
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-2026-114");
+    fireEvent.click(getByText("Confirm baseline"));
+
+    await waitFor(() => expect(queryByText("Confirm baseline")).toBeNull());
+    expect(posted).not.toBeNull();
+    expect(posted!.url).toContain("/api/scope/boq-9/revisions");
+    expect(posted!.body).toEqual({ evidenceArtefactRef: "PO-2026-114" });
+    expect(getByText("25.9% margin")).toBeDefined();
+  });
+
+  test("a blank evidence field sends nothing and says why", async () => {
+    let posts = 0;
+    const { getByText, findByRole } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: NO_BASELINE }),
+      "/api/scope/boq-9/revisions": () => { posts += 1; return jsonRes({}, 201); },
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    fireEvent.click(getByText("Confirm baseline"));
+    expect((await findByRole("alert")).textContent).toContain("Name the evidence first");
+    expect(posts).toBe(0);
+  });
+
+  test("a refusal from the backend is shown as it was said", async () => {
+    const { getByLabelText, getByText, findByRole } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: NO_BASELINE }),
+      "/api/scope/boq-9/revisions": () => jsonRes({ error: "Forbidden: manager role required" }, 403),
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-1");
+    fireEvent.click(getByText("Confirm baseline"));
+    expect((await findByRole("alert")).textContent).toContain("Forbidden: manager role required");
+  });
+
+  test("not offered once a baseline exists", async () => {
+    const { getByText, queryByText } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: { ...ANALYSIS_ROW, boqId: "boq-9" } }) });
+    await waitFor(() => expect(getByText("Profit & Loss — the answer")).toBeDefined());
+    expect(queryByText("Confirm baseline")).toBeNull();
   });
 });
