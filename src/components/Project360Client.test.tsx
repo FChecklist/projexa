@@ -117,12 +117,12 @@ describe("Project360Client: confirm the baseline", () => {
     let confirmed = false;
     const { getByLabelText, getByText, queryByText } = renderClient({
       "/api/reports/boq-analysis": () => jsonRes({ row: confirmed ? { ...ANALYSIS_ROW, boqId: "boq-9" } : NO_BASELINE }),
-      "/api/scope/boq-9/baseline": async () => { confirmed = true; return jsonRes({ id: "b1", version: 1 }, 201); },
+      "/api/scope/boq-9/revisions": async () => { confirmed = true; return jsonRes({ id: "b1", version: 1 }, 201); },
     });
     const base = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/baseline") && init?.method === "POST") posted = { url, body: JSON.parse(String(init.body)) };
+      if (url.includes("action=baseline") && init?.method === "POST") posted = { url, body: JSON.parse(String(init.body)) };
       return base(input, init);
     }) as typeof fetch;
 
@@ -132,7 +132,7 @@ describe("Project360Client: confirm the baseline", () => {
 
     await waitFor(() => expect(queryByText("Confirm baseline")).toBeNull());
     expect(posted).not.toBeNull();
-    expect(posted!.url).toContain("/api/scope/boq-9/baseline");
+    expect(posted!.url).toContain("/api/scope/boq-9/revisions");
     expect(posted!.body).toEqual({ evidenceArtefactRef: "PO-2026-114" });
     expect(getByText("25.9% margin")).toBeDefined();
   });
@@ -141,7 +141,7 @@ describe("Project360Client: confirm the baseline", () => {
     let posts = 0;
     const { getByText, findByRole } = renderClient({
       "/api/reports/boq-analysis": () => jsonRes({ row: NO_BASELINE }),
-      "/api/scope/boq-9/baseline": () => { posts += 1; return jsonRes({}, 201); },
+      "/api/scope/boq-9/revisions": () => { posts += 1; return jsonRes({}, 201); },
     });
     await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
     fireEvent.click(getByText("Confirm baseline"));
@@ -152,7 +152,7 @@ describe("Project360Client: confirm the baseline", () => {
   test("a refusal from the backend is shown as it was said", async () => {
     const { getByLabelText, getByText, findByRole } = renderClient({
       "/api/reports/boq-analysis": () => jsonRes({ row: NO_BASELINE }),
-      "/api/scope/boq-9/baseline": () => jsonRes({ error: "Forbidden: manager role required" }, 403),
+      "/api/scope/boq-9/revisions": () => jsonRes({ error: "Forbidden: manager role required" }, 403),
     });
     await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
     typeInto(getByLabelText("Evidence for the baseline"), "PO-1");

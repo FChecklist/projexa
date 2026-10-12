@@ -105,7 +105,7 @@ describe("destructiveAction", () => {
     });
     expect(
       destructiveAction({ ...BASE, disposalDate: "2027-03-01", today: "2026-09-02" }).disabledReason
-    ).toBe("Kept until 3/1/2027 under the retention policy");
+    ).toBe("Kept until 01-03-2027 under the retention policy");
     // Past its disposal date: Dispose is offered for real.
     expect(destructiveAction({ ...BASE, disposalDate: "2026-08-01", today: "2026-09-02" })).toEqual({ label: "Dispose" });
   });

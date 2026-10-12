@@ -99,7 +99,7 @@ export default function Project360Client({ projectId, projectName }: { projectId
     setConfirming(true);
     setConfirmError(null);
     try {
-      await fetchJson(`/api/scope/${encodeURIComponent(boqId)}/baseline`, {
+      await fetchJson(`/api/scope/${encodeURIComponent(boqId)}/revisions?action=baseline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ evidenceArtefactRef: evidence.trim() }),

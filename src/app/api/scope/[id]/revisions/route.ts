@@ -9,6 +9,22 @@ export const POST = withTiming("POST", async function POST(request: NextRequest,
   if (ctx.response) return ctx.response;
   const { id } = await params;
   const body = await request.json();
+  // Sumeet R-100: "?action=baseline" confirms the BOQ's baseline (evidence required) through THIS route, not a new one -- the number of /api routes on
+  // Vercel is budgeted (vercel-route-inventory.test.ts) and must not grow. Same PM_OR_ABOVE gate (api-write-policy.ts), manager+ on the backend.
+  if (new URL(request.url).searchParams.get("action") === "baseline") {
+    try {
+      const data = await callVeridian(`/scope/${encodeURIComponent(id)}/baseline`, {
+        organizationId: ctx.organizationId!,
+        method: "POST",
+        body: { evidenceArtefactRef: typeof body?.evidenceArtefactRef === "string" ? body.evidenceArtefactRef : "" },
+        actingUserId: ctx.user?.id,
+        actingUserEmail: ctx.user?.email ?? undefined,
+      });
+      return NextResponse.json(data, { status: 201 });
+    } catch (err) {
+      return veridianErrorResponse(err, "Failed to confirm the baseline");
+    }
+  }
   try {
     const data = await callVeridian(`/scope/${encodeURIComponent(id)}/revisions`, { organizationId: ctx.organizationId!, method: "POST", body });
     return NextResponse.json(data, { status: 201 });
