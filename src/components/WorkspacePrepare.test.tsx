@@ -117,6 +117,9 @@ describe("the 'Copy your projects to this laptop' step", () => {
 
   test("signed out, and a single project failing, have their own messages", () => {
     expect(syncFailureMessage({ status: "signed_out", issues: [] })).toMatch(/Sign in again/);
+    const notLinked = syncFailureMessage({ status: "error", issues: [{ reason: "bad_response", message: "Your sign-in is not linked to a PROJEXA person yet." }] });
+    expect(notLinked).toMatch(/not linked to a PROJEXA person/);
+    expect(notLinked).toMatch(/administrator/);
     expect(syncFailureMessage({ status: "partial", issues: [{ reason: "store", message: "Disk full", projectId: "p1" }] })).toBe("Disk full");
   });
 });

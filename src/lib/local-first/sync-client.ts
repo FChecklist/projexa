@@ -504,6 +504,9 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
           const details = parseUpdateRequired(await res.json().catch(() => null));
           throw new SyncError("update_required", "PROJEXA on this laptop must be updated before it can sync.", res.status, details);
         }
+        // 403 stays kind "bad_response" (the breaker, the cooldown and the outbox key on kind + status 403); only the WORDS change, so the
+        // screen and the report say "not linked" instead of "service unreachable".
+        if (res.status === 403) throw new SyncError("bad_response", "Your sign-in is not linked to a PROJEXA person yet.", 403);
         if (res.status === 404) throw new SyncError("not_found", "That project or data kind is not available to you.", 404);
         if (res.status === 429 || res.status >= 500) {
           const header = Number(res.headers?.get?.("Retry-After"));

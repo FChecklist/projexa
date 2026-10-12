@@ -68,6 +68,7 @@ function pause(ms: number, signal: AbortSignal) {
 /** What the "copy your projects" step says when the sync did not finish; PROJEXA still works from the server. */
 export function syncFailureMessage(report: { status: string; issues: { reason: string; message: string; projectId?: string }[] }): string {
   const first = report.issues[0];
+  if (first && /not linked/i.test(first.message)) return "Your sign-in is not linked to a PROJEXA person yet, so your projects could not be copied. Ask your administrator to add you.";
   if (report.status === "signed_out") return "You are signed out, so your projects could not be copied. Sign in again.";
   if (first && !first.projectId && (first.reason === "not_found" || first.reason === "network" || first.reason === "timeout" || first.reason === "server")) {
     return "The laptop copy service is not reachable yet, so your projects will open from the server for now.";
