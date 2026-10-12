@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "a3037fe3d9f52760dea5c982231e22fe03ef3594032557c1463dc403293c2d38"
+export const SOURCE_SHA256 = "58c374326f7c62c72d664adb36fa23dabe6c6373d74e5bb8f5dc3190d5f7dabc"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -193,6 +193,7 @@ export const API_WRITE_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/schedule/workload", "PM_OR_ABOVE"],
   ["/scope", "PM_OR_ABOVE"],
   ["/scope/[id]/approve", "PM_OR_ABOVE"],
+  ["/scope/[id]/baseline", "PM_OR_ABOVE"],
   ["/scope/[id]/revisions", "PM_OR_ABOVE"],
   ["/scope/[id]/submit", "PM_OR_ABOVE"],
   ["/scope/categories", "PM_OR_ABOVE"],

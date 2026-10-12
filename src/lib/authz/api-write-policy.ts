@@ -399,6 +399,7 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/schedule/workload": "PM_OR_ABOVE",
   "/scope": "PM_OR_ABOVE",
   "/scope/[id]/approve": "PM_OR_ABOVE",
+  "/scope/[id]/baseline": "PM_OR_ABOVE", // Sumeet R-100: confirming a BOQ baseline locks the quoted margin; backend gate is manager+
   "/scope/[id]/revisions": "PM_OR_ABOVE",
   "/scope/[id]/submit": "PM_OR_ABOVE",
   // R67 lane I (WS-I item I-05, R-177): the org's BOQ category list. Same tier
