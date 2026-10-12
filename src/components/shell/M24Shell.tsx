@@ -1610,6 +1610,14 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       router.refresh();
     }
   }, [railProject, router]);
+
+  // UAT 2026-10-12 (offline finding): the offline shell remembers its project in its own key and only wrote it when the person used ITS
+  // switcher, so after working in Riverside online the offline shell opened another project ("AI Test Tower RENAMED"). Keep that key in step
+  // with the project this screen shows, so offline opens the project the person was just working in (and auto-sync reads it first).
+  useEffect(() => {
+    if (!userId || !railProject?.id || !isLocalFirstEnabled()) return;
+    try { window.localStorage.setItem(`px-shell-project:${userId}`, railProject.id); } catch { /* storage blocked: nothing to remember */ }
+  }, [userId, railProject?.id]);
   const routeProject = useMemo(() => {
     if (!routeProjectId) return null;
     const named = projects.find((p) => p.id === routeProjectId);

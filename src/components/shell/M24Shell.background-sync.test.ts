@@ -22,4 +22,9 @@ describe("M24Shell starts the background refresh of the laptop copy", () => {
   test("stops it again when the shell unmounts", () => {
     expect(source).toContain("m.stopPeerSync(userId)");
   });
+
+  test("keeps the offline shell's remembered project in step with the project this screen shows", () => {
+    expect(source).toContain("`px-shell-project:${userId}`");
+    expect(source).toContain("railProject.id");
+  });
 });
