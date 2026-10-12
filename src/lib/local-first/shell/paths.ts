@@ -43,6 +43,8 @@ export function isShellNavigable(href: string, origin: string): boolean {
   return true;
 }
 
+const RESERVED_ID_WORDS: ReadonlySet<string> = new Set(["new", "import", "from-file"]);
+
 export type PathMatch<P extends string = string> = { params: Record<P, string> };
 
 /** "/scope/:id" matched against "/scope/abc" -> { id: "abc" }; null when it does not match. Segments are decoded. */
@@ -55,6 +57,8 @@ export function matchPattern(pattern: string, path: string): Record<string, stri
     const w = want[i]!;
     const h = have[i]!;
     if (w.startsWith(":")) {
+      // "new", "import" and "from-file" are create screens that only exist on the server, never a record id: "/scope/new" must not be read as BOQ "new".
+      if (RESERVED_ID_WORDS.has(h)) return null;
       try {
         params[w.slice(1)] = decodeURIComponent(h);
       } catch {
