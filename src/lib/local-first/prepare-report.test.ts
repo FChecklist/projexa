@@ -53,6 +53,7 @@ describe("stage and reason classes", () => {
   });
   test("failures get a reason class a person can act on", () => {
     expect(classifyFailure("projects", "The laptop copy service is not reachable yet, so your projects will open from the server for now.", false)).toBe("service_unreachable");
+    expect(classifyFailure("projects", "Your sign-in is not linked to a PROJEXA person yet, so your projects could not be copied. Ask your administrator to add you.", false)).toBe("not_linked");
     expect(classifyFailure("projects", "You are signed out, so your projects could not be copied. Sign in again.", false)).toBe("signed_out");
     expect(classifyFailure("worker", "This browser cannot keep PROJEXA on the laptop (no service worker).", false)).toBe("no_service_worker");
     expect(classifyFailure("worker", "The laptop worker did not start.", false)).toBe("worker_failed");

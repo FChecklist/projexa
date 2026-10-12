@@ -141,3 +141,11 @@ describe("sync client: 429s", () => {
     expect(waits).toEqual([30_000]); // the client's own wait stays capped
   });
 });
+
+describe("sync client: 403 not linked", () => {
+  test("a 403 says the sign-in is NOT LINKED (not 'answered 403'), keeps kind bad_response and status 403, and is not retried", async () => {
+    const m = make([json({ error: "This sign-in is not linked to a PROJEXA person.", code: "NOT_LINKED" }, 403), json(goodPage)], { maxRetries: 3 });
+    await expect(m.client.pull({ projectId: "p", kind: "k", after: null })).rejects.toMatchObject({ kind: "bad_response", status: 403, message: expect.stringMatching(/not linked/i) });
+    expect(m.calls.length).toBe(1);
+  });
+});
