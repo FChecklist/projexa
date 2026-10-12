@@ -412,6 +412,16 @@ export default function LabourClient({
 
   const roster = rosterPane.rows;
   const attendance = attendancePane.rows;
+  // The roster is seeded from the server render, which can be a few seconds old (a worker added a moment ago, then attendance marked, lands here with
+  // an empty seed). When attendance names a worker this screen does not know, re-read the roster ONCE instead of showing a raw id (UAT 2026-10-12).
+  const rosterRecheckedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (rosterPane.status === "loading") return;
+    if (!attendance.some((a) => !roster.some((r) => r.id === a.rosterId))) return;
+    if (rosterRecheckedRef.current === projectId) return;
+    rosterRecheckedRef.current = projectId;
+    void loadRoster(true);
+  }, [attendance, roster, rosterPane.status, projectId, loadRoster]);
   const rosterStatus = rosterPane.status;
   const attendanceStatus = attendancePane.status;
   const rosterError: PaneError = rosterPane.error ? { status: null, message: rosterPane.error } : null;
