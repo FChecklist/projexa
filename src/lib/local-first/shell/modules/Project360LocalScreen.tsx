@@ -6,7 +6,8 @@
 // path is recalculated by the server when online.
 
 import type { ShellScreenProps } from "../types";
-import { asOfLabel } from "../snapshot-cache";
+import { asOfLabel, refreshSnapshot, snapshotCacheFor } from "../snapshot-cache";
+import Project360BaselineForm from "./Project360BaselineForm";
 import { boqAnalysisSnapshotName, boqAnalysisUrl, isBoqAnalysisBody, type Project360Data } from "./analysis-adapter";
 import type { Fact } from "./dashboard-adapter";
 import type { StatusCount } from "./dashboard-facts";
@@ -63,6 +64,22 @@ export default function Project360LocalScreen({ shell, data }: ShellScreenProps<
             {shell.connectivity === "online" ? "Fetching the analysis from the server…" : "Not saved on this laptop yet. It is recalculated by the server when the laptop is connected."}
           </p>
         )}
+        {(() => {
+          // Sumeet R-100: no baseline yet -> the one deliberate write on this screen (online only; the server decides)
+          const row = snap?.body.row as { hasBaseline?: unknown; boqId?: unknown } | undefined;
+          if (!row || row.hasBaseline !== false || typeof row.boqId !== "string" || !row.boqId) return null;
+          return (
+            <Project360BaselineForm
+              boqId={row.boqId}
+              online={shell.connectivity === "online"}
+              onConfirmed={() => {
+                if (data.state !== "local") return;
+                const cache = snapshotCacheFor({ userId: shell.data.userId, role: shell.data.role, idb: shell.data.idb });
+                void refreshSnapshot(cache, boqAnalysisSnapshotName(data.projectId), boqAnalysisUrl(data.projectId), isBoqAnalysisBody).then(() => shell.refresh());
+              }}
+            />
+          );
+        })()}
         {note ? <p className="mt-2 text-xs text-px-muted">{note}</p> : null}
       </section>
       <div className="grid gap-4 md:grid-cols-3">
