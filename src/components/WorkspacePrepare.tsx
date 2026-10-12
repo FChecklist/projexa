@@ -14,6 +14,7 @@ import { createPrepareReporter, type PrepareReport } from "@/lib/local-first/pre
 import { MANIFEST_KEY, type Replica } from "@/lib/local-first/replica";
 import { announceShellReady, markCopying } from "@/lib/local-first/release/shell-handoff";
 import { SYNC_BUSY_MESSAGE } from "@/lib/local-first/sync-busy";
+import { signOutEverywhere } from "@/lib/local-first/sign-out-everywhere";
 import {
   PREPARE_BUDGET_MS,
   prepareWorkspace,
@@ -205,7 +206,7 @@ export function createLiveReporter() {
   });
 }
 
-export function WorkspacePrepareView({ progress }: { progress: PrepareProgress; lastSyncedAt?: number | null }) {
+export function WorkspacePrepareView({ progress, onSignOut, signingOut }: { progress: PrepareProgress; lastSyncedAt?: number | null; onSignOut?: () => void; signingOut?: boolean }) {
   // MANDATORY and QUIET (owner directive 2026-10-03): the title, one sentence and the percentage. No step list, no errors, no buttons:
   // nothing to skip and nothing to press. It opens PROJEXA by itself at 100% (WorkspacePrepare); after a failure it simply tries again.
   return (
@@ -227,6 +228,18 @@ export function WorkspacePrepareView({ progress }: { progress: PrepareProgress; 
         <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-[#E0F2FE]" role="progressbar" aria-valuenow={progress.percent} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-gradient-to-r from-[#FF8A1F] via-[#FF4F9A] to-[#8B5CF6] transition-all" style={{ width: `${progress.percent}%` }} />
         </div>
+        {onSignOut && (
+          // Owner request 2026-10-12: a laptop stuck here had no way out, not even to sign out.
+          <button
+            type="button"
+            data-testid="prepare-sign-out"
+            onClick={onSignOut}
+            disabled={signingOut}
+            className="mt-6 text-sm text-px-muted underline underline-offset-2 hover:text-px-ink disabled:opacity-60"
+          >
+            {signingOut ? "Signing out..." : "Sign out"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -397,6 +410,14 @@ export function WorkspacePrepare() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installed]);
 
+  const [signingOut, setSigningOut] = useState(false);
+  async function signOut() {
+    setSigningOut(true);
+    quietStopped.current = true;
+    try { await signOutEverywhere({ auth: createClient().auth, deleteLocalCopy: false }); } catch { /* never trap the person */ }
+    router.push("/login");
+  }
+
   if (!open || !progress) return null;
-  return <WorkspacePrepareView progress={progress} lastSyncedAt={lastSyncedAt} />;
+  return <WorkspacePrepareView progress={progress} lastSyncedAt={lastSyncedAt} onSignOut={signOut} signingOut={signingOut} />;
 }

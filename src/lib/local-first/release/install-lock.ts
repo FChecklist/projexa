@@ -5,10 +5,18 @@
 
 export const INSTALL_LOCK_NAME = "px-release-install";
 
-type LockManagerLike = { request<T>(name: string, callback: () => Promise<T>): Promise<T> };
+type LockManagerLike = {
+  request<T>(name: string, callback: () => Promise<T>): Promise<T>;
+  request<T>(name: string, options: { signal?: AbortSignal }, callback: () => Promise<T>): Promise<T>;
+};
+
+/** How long a tab waits for another tab's install before giving up (the screen then reports it and tries again). */
+export const INSTALL_LOCK_WAIT_MS = 45_000;
 
 export function withInstallLock<T>(fn: () => Promise<T>, locks?: LockManagerLike | null): Promise<T> {
   const manager = locks === undefined ? (typeof navigator !== "undefined" ? ((navigator as unknown as { locks?: LockManagerLike }).locks ?? null) : null) : locks;
   if (!manager || typeof manager.request !== "function") return fn();
-  return manager.request(INSTALL_LOCK_NAME, fn);
+  // A stuck install in another tab must not queue this one for ever (a laptop sat at 24% with no end): the WAIT is bounded, not the install.
+  if (typeof AbortSignal === "undefined" || typeof AbortSignal.timeout !== "function") return manager.request(INSTALL_LOCK_NAME, fn);
+  return manager.request(INSTALL_LOCK_NAME, { signal: AbortSignal.timeout(INSTALL_LOCK_WAIT_MS) }, fn);
 }

@@ -26,6 +26,18 @@ const base: PrepareProgress = {
   timedOut: false,
 };
 
+describe("WorkspacePrepareView sign out", () => {
+  test("shows a Sign out button that calls the handler, and none when no handler is given", () => {
+    let n = 0;
+    const a = render(<WorkspacePrepareView progress={base} onSignOut={() => { n += 1; }} />);
+    a.getByTestId("prepare-sign-out").click();
+    expect(n).toBe(1);
+    a.unmount();
+    const b = render(<WorkspacePrepareView progress={base} />);
+    expect(b.queryByTestId("prepare-sign-out")).toBeNull();
+  });
+});
+
 describe("WorkspacePrepareView", () => {
   test("shows only the title, the sentence and the real percentage", () => {
     const { getByTestId, getByText, container } = render(<WorkspacePrepareView progress={base} />);

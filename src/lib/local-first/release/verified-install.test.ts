@@ -143,9 +143,27 @@ describe("verifiedInstall: the gate behind the prepare screen's 'app' step", () 
 describe("withInstallLock", () => {
   test("serialises through the Web Locks manager when there is one, and just runs without it", async () => {
     const seen: string[] = [];
-    const locks = { request: async <T,>(name: string, cb: () => Promise<T>) => { seen.push(name); return cb(); } };
-    expect(await withInstallLock(async () => 7, locks)).toBe(7);
+    const locks = {
+      request: async <T,>(name: string, a: unknown, b?: () => Promise<T>) => { seen.push(name); return (typeof a === "function" ? (a as () => Promise<T>) : b!)(); },
+    };
+    expect(await withInstallLock(async () => 7, locks as never)).toBe(7);
     expect(seen).toEqual(["px-release-install"]);
     expect(await withInstallLock(async () => 8, null)).toBe(8);
+  });
+
+  test("the WAIT for another tab's install is bounded: a lock held for ever ends in an error, not a hang", async () => {
+    let signal: AbortSignal | undefined;
+    const locks = {
+      request: <T,>(_n: string, opts: { signal?: AbortSignal }) => {
+        signal = opts.signal;
+        return new Promise<T>((_res, rej) => signal?.addEventListener("abort", () => rej(new Error("lock wait aborted"))));
+      },
+    };
+    const p = withInstallLock(async () => 1, locks as never);
+    expect(signal).toBeDefined();
+    expect(signal!.aborted).toBe(false);
+    const { INSTALL_LOCK_WAIT_MS } = await import("./install-lock");
+    expect(INSTALL_LOCK_WAIT_MS).toBeLessThanOrEqual(60_000);
+    p.catch(() => {});
   });
 });
