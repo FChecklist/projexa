@@ -75,7 +75,7 @@ export const TOKENS = {
   // Surfaces.
   /** --background (light) */ cream: "#FFFFFF",
   /** --popover (light): the white surface a dropdown/dialog paints on. */ white: "#FFFFFF",
-  /** --secondary / --muted fill */ cloud: "#CFE4FF",
+  /** --secondary / --muted fill */ cloud: "#BFDDFF",
   /** .dark --background */ darkSurface: "#10181F",
   /** .dark --card */ darkCard: "#182430",
 

@@ -30,8 +30,8 @@
      the status text tones) are untouched so every contrast pairing in src/lib/theme/contrast.ts
      still clears WCAG AA. These intentionally re-value the kit's own ct-* tokens for PROJEXA. */
   --color-ct-cream: #FFFFFF;
-  --color-ct-cloud: #CFE4FF;
-  --color-ct-cloud2: #B3D4FF;
+  --color-ct-cloud: #BFDDFF;
+  --color-ct-cloud2: #9FCBFF;
   --color-ct-saffron: #FF9500;
   --color-ct-saffron-hover: #F28800;
   --color-ct-border: #BBD3F0;
@@ -258,11 +258,11 @@
      control where white text is genuinely unavoidable; it is the fallback,
      not the default. */
   --primary-foreground: #1C2B3A;
-  --secondary: #CFE4FF;
+  --secondary: #BFDDFF;
   --secondary-foreground: #1C2B3A;
-  --muted: #CFE4FF;
+  --muted: #BFDDFF;
   --muted-foreground: #718096;
-  --accent: #FFDD99;
+  --accent: #FFD66B;
   --accent-foreground: #1C2B3A;
   --destructive: #C0392B;
   --border: #9CC4F5;
@@ -298,11 +298,11 @@
   --brand-text: #9A4D0A;
   --brand-fill-deep: #A8540A;
 
-  --sidebar: #FFFDF9;
+  --sidebar: #FFF8EC;
   --sidebar-foreground: #4A5568;
   --sidebar-primary: #F5820A;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #FEF3E2;
+  --sidebar-accent: #FFE3B8;
   --sidebar-accent-foreground: #1C2B3A;
   --sidebar-border: #E2E8F0;
   --sidebar-ring: #F5820A;
@@ -400,4 +400,11 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .animate-px-drift { animation: px-drift 14s ease-in-out infinite; }
+}
+
+/* Owner 2026-10-12: "too dull ... bright, lively, flowery". A soft warm-to-sky-to-blush wash behind
+   every light-theme page; cards stay white so text contrast is unchanged. */
+html:not(.dark) body {
+  background-image: linear-gradient(135deg, #FFF3DC 0%, #EAF4FF 48%, #FFE9F4 100%);
+  background-attachment: fixed;
 }
