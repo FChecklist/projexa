@@ -95,7 +95,7 @@ describe("disposeDisabledReason", () => {
     );
     expect(
       disposeDisabledReason({ isDisposed: false, legalHold: false, disposalDate: "2027-01-31" }, false, TODAY)
-    ).toBe("Kept until 1/31/2027 under the retention policy");
+    ).toBe("Kept until 31-01-2027 under the retention policy");
   });
 
   test("a document past its disposal date can actually be disposed", () => {
@@ -185,7 +185,7 @@ describe("DocumentObjectClient", () => {
     const view = render(<DocumentObjectClient documentId="doc-1" />);
 
     await waitFor(() => expect(view.getByText(/^Versions:/)).toBeTruthy());
-    expect(view.getByText("v1 (8/1/2026)")).toBeTruthy();
+    expect(view.getByText("v1 (01-08-2026)")).toBeTruthy();
     expect(view.getByText("Version 2")).toBeTruthy();
   });
 

@@ -34,7 +34,7 @@ describe("cellValue (R67 D-61)", () => {
   });
 
   test("a date-only ISO string renders through the product's date formatter", () => {
-    expect(cellValue("2026-08-25")).toBe("8/25/2026");
+    expect(cellValue("2026-08-25")).toBe("25-08-2026");
   });
 
   test("an ISO timestamp renders as a date and time, in UTC, not as raw JSON", () => {

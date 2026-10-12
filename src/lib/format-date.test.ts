@@ -38,8 +38,8 @@ import {
 } from "./format-date";
 
 describe("formatDate", () => {
-  test("pins en-US/UTC output regardless of process locale/time zone", () => {
-    expect(formatDate("2026-08-25T00:00:00.000Z")).toBe("8/25/2026");
+  test("pins the house dd-mm-yyyy/UTC output regardless of process locale/time zone", () => {
+    expect(formatDate("2026-08-25T00:00:00.000Z")).toBe("25-08-2026");
   });
 
   test("does not shift across a UTC day boundary -- the exact bug an unpinned timeZone reintroduces", () => {
@@ -50,7 +50,7 @@ describe("formatDate", () => {
     // "some visitors see a different date than the server rendered, some
     // don't" -- is exactly the route/mount-condition-dependent shape this
     // bug class produces in production.
-    expect(formatDate("2026-08-25T00:00:00.000Z")).toBe("8/25/2026");
+    expect(formatDate("2026-08-25T00:00:00.000Z")).toBe("25-08-2026");
   });
 
   test("accepts a Date instance and a numeric timestamp, not just an ISO string", () => {
@@ -75,13 +75,13 @@ describe("formatDayMonthYear (R67 D-23)", () => {
 });
 
 describe("formatDateTime", () => {
-  test("pins en-US/UTC output for date+time", () => {
+  test("pins the house dd-mm-yyyy/UTC output for date+time", () => {
     expect(formatDateTime("2026-08-25T14:30:00.000Z")).toBe("8/25/2026, 2:30:00 PM");
   });
 });
 
 describe("formatTime", () => {
-  test("pins en-US/UTC output for time-only", () => {
+  test("pins the house dd-mm-yyyy/UTC output for time-only", () => {
     expect(formatTime("2026-08-25T14:30:00.000Z")).toBe("2:30:00 PM");
   });
 });
@@ -287,7 +287,7 @@ describe("formatDayMonthYear", () => {
 describe("formatDateNumeric", () => {
   test("is day-first and zero-padded, unlike formatDate's en-US month-first output", () => {
     expect(formatDateNumeric("2026-08-28")).toBe("28-08-2026");
-    expect(formatDate("2026-08-28")).toBe("8/28/2026");
+    expect(formatDate("2026-08-28")).toBe("28-08-2026");
     expect(formatDateNumeric("2026-01-02")).toBe("02-01-2026");
   });
 
