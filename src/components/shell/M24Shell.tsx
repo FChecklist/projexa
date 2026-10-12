@@ -1124,6 +1124,21 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     void import("@/lib/local-first/outbox-shared").then((m) => m.startOutbox(userId)).catch(() => {});
   }, [userId]);
 
+  // UAT 2026-10-12 (offline finding): the background catch-up (auto-sync: ONE cheap heads check, then only what moved) was started only
+  // inside the /local shell. A person working on the normal pages kept a one-time snapshot: BOQs, progress and permits created after
+  // the first copy never reached the laptop, so the offline shell showed an old picture. Start the same leader-tab scheduler here too.
+  useEffect(() => {
+    if (!userId || !isLocalFirstEnabled()) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    void import("@/lib/local-first/peer/peer-shared").then((m) => {
+      if (cancelled) return;
+      m.startPeerSync(userId);
+      stop = () => m.stopPeerSync(userId);
+    }).catch(() => {});
+    return () => { cancelled = true; stop?.(); };
+  }, [userId]);
+
   // F_025, first half: this tab's own sign-in/sign-out.
   useEffect(() => {
     let live = true;
