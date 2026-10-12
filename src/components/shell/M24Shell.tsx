@@ -203,6 +203,7 @@ import { deriveMode } from "@/lib/chain-mode";
 import { isStripPainted, rankingArrival } from "@/lib/pill-ranking";
 import { navigationOutcome } from "@/lib/chain-navigation";
 import { persistLastProjectId, pickProject, readStoredProjectId, writeStoredProjectId } from "@/lib/project-preference";
+import { readCookieProjectId } from "@/lib/project-cookie";
 import { objectPromptLabel, objectSegmentFor, railDestinationForObject } from "@/lib/object-screens";
 import { useScreenModule } from "./use-screen-module";
 import {
@@ -1566,6 +1567,28 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     [projects, railProjectId]
   );
   const railProject = railPick.source === "auto" ? null : railPick.project;
+  // The server page reads the COOKIE, the rail paints from localStorage. When they drift apart (another tab, another localhost port, a cleared
+  // cookie) a screen would save into one project while the rail names another. Make the cookie say what the rail shows, then re-render once.
+  useEffect(() => {
+    const shown = railProject?.id ?? null;
+    if (!shown) return;
+    if (readCookieProjectId() !== shown) {
+      writeStoredProjectId(shown);
+      // router.refresh() did not re-render an already-open server page here, so reload once. Only if the cookie was really written (cookies can be
+      // blocked) and only once per project per tab, so this can never loop.
+      try {
+        const guard = `px.cookie-sync.${shown}`;
+        if (readCookieProjectId() === shown && !window.sessionStorage.getItem(guard)) {
+          window.sessionStorage.setItem(guard, "1");
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // storage blocked: fall through to the soft refresh
+      }
+      router.refresh();
+    }
+  }, [railProject, router]);
   const routeProject = useMemo(() => {
     if (!routeProjectId) return null;
     const named = projects.find((p) => p.id === routeProjectId);

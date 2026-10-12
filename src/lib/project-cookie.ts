@@ -59,6 +59,26 @@ export function rememberSelectedProject(projectId: string | null): void {
 }
 
 /**
+ * The project id in the cookie the SERVER reads, on its own (no localStorage). Null when the cookie is absent or blank.
+ * Used to notice that the cookie (what a server page renders) and localStorage (what the rail shows) have drifted apart.
+ */
+export function readCookieProjectId(cookieString?: string): string | null {
+  const jar = cookieString ?? (typeof document === "undefined" ? "" : document.cookie);
+  try {
+    for (const part of jar.split(";")) {
+      const [name, ...rest] = part.trim().split("=");
+      if (name === PROJECT_COOKIE) {
+        const value = decodeURIComponent(rest.join("="));
+        return value.trim() ? value : null;
+      }
+    }
+  } catch {
+    // an unreadable jar is "we do not know"
+  }
+  return null;
+}
+
+/**
  * The project the rail last selected, as the BROWSER sees it. Null when nothing
  * has been selected in this browser yet.
  *
