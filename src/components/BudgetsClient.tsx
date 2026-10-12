@@ -40,6 +40,7 @@
 //   * Filter and Export did not exist here at all, so this module's header did
 //     not match any other module's. They exist now, in the fixed order, and
 //     say why they cannot be used yet.
+import { dateCellRenderers } from "@/lib/list-date-cells";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -306,6 +307,7 @@ export default function BudgetsClient({
             onRowClick={(row) => router.push(`/finance/budgets/${row.id}`)}
             emptyStateLabel={EMPTY_COPY(orgName)}
             renderCell={{
+              ...dateCellRenderers(columns),
               name: (row) => <span className="font-medium">{String(row.name)}</span>,
               status: (row) => (
                 <Badge variant={STATUS_VARIANT[String(row.status)] ?? "outline"}>{String(row.status)}</Badge>

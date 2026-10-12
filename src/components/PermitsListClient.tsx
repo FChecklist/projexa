@@ -62,6 +62,7 @@
 // lives in a tested module instead of being re-typed per screen.
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { dateCellRenderers } from "@/lib/list-date-cells";
 import { ListScreen, ScreenFrame, type FieldMessage, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
@@ -325,6 +326,7 @@ export default function PermitsListClient({
             onRowClick={(row) => router.push(`/permits/${row.id}`)}
             emptyStateLabel="No permits yet for this project."
             renderCell={{
+              ...dateCellRenderers(columns),
               __document: (row) => {
                 const permit = row as unknown as Permit;
                 if (!rowHasDocument(permit)) return <span className="text-ct-muted">-</span>;
