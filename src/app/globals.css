@@ -30,8 +30,8 @@
      the status text tones) are untouched so every contrast pairing in src/lib/theme/contrast.ts
      still clears WCAG AA. These intentionally re-value the kit's own ct-* tokens for PROJEXA. */
   --color-ct-cream: #FFFFFF;
-  --color-ct-cloud: #DDEBFF;
-  --color-ct-cloud2: #C9DFFF;
+  --color-ct-cloud: #CFE4FF;
+  --color-ct-cloud2: #B3D4FF;
   --color-ct-saffron: #FF9500;
   --color-ct-saffron-hover: #F28800;
   --color-ct-border: #BBD3F0;
@@ -258,14 +258,14 @@
      control where white text is genuinely unavoidable; it is the fallback,
      not the default. */
   --primary-foreground: #1C2B3A;
-  --secondary: #DDEBFF;
+  --secondary: #CFE4FF;
   --secondary-foreground: #1C2B3A;
-  --muted: #DDEBFF;
+  --muted: #CFE4FF;
   --muted-foreground: #718096;
-  --accent: #FFE9BF;
+  --accent: #FFDD99;
   --accent-foreground: #1C2B3A;
   --destructive: #C0392B;
-  --border: #BBD3F0;
+  --border: #9CC4F5;
   --input: #9DBFE6;
   --ring: #FF9500;
 

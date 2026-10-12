@@ -54,7 +54,8 @@ const NAV_SECTIONS: NavSection[] = [
     // resolves dashboard-hierarchy-no-ffe-redirect.test.ts (fault F_023)
     // properly rather than leaving it failing indefinitely.
     items: [
-      { labelKey: "items.dashboard", href: "/dashboard", icon: LayoutDashboard },
+      // Owner 2026-10-12: the plain "Dashboard" entry is hidden from the menu (the page still
+      // exists as the landing route); "Project Dashboard" below is the one dashboard shown.
       { labelKey: "items.companyDashboard", href: "/dashboard/hierarchy", icon: Building2 },
       // R67 D-69 (audit R-261/R-300): the Projects LIST. Projects were the one
       // entity every other entity nests under that had no landing of its own --
