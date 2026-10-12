@@ -20,7 +20,7 @@ describe("AttendanceSummaryStrip", () => {
     const { getByText } = render(<AttendanceSummaryStrip summary={SUMMARY} />);
     // format-date.ts pins en-US + UTC, so a plain YYYY-MM-DD renders as the
     // same calendar day everywhere -- never a day earlier east of Greenwich.
-    expect(getByText(/Attendance on 9\/2\/2026/)).toBeDefined();
+    expect(getByText(/Attendance on 02-09-2026/)).toBeDefined();
   });
 
   test("shows the three counts and the day's labour cost, in the org currency", () => {
