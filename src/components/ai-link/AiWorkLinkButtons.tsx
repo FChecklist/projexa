@@ -69,9 +69,9 @@ export function AiWorkLinkButtons({
           <AiWorkLinkCompact role={role} project={project} client={awl} triggerLabel="AI work link for this project" compact={compact} variant={variant} />
         )}
         {showNewProject && (
-          <Button type="button" variant="outline" size="sm" onClick={() => setNewProjectOpen(true)} aria-label="New project with my AI" data-testid="ai-new-project-open">
+          <Button type="button" variant="outline" size="sm" onClick={() => setNewProjectOpen(true)} aria-label="+ Connect to AI" data-testid="ai-new-project-open">
             <Sparkles className="size-3.5" aria-hidden="true" />
-            <span className={label}>New project with my AI</span>
+            <span className={label}>+ Connect to AI</span>
           </Button>
         )}
       </div>
