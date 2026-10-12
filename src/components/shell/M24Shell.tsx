@@ -1578,7 +1578,11 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
       // blocked) and only once per project per tab, so this can never loop.
       try {
         const guard = `px.cookie-sync.${shown}`;
-        if (readCookieProjectId() === shown && !window.sessionStorage.getItem(guard)) {
+        // Never reload under someone who has already started typing: a slow first load can reach this effect after the first keystrokes.
+        const typing = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("main input, main textarea")).some(
+          (el) => el.type !== "hidden" && el.type !== "checkbox" && el.type !== "radio" && el.value.trim() !== ""
+        );
+        if (readCookieProjectId() === shown && !typing && !window.sessionStorage.getItem(guard)) {
           window.sessionStorage.setItem(guard, "1");
           window.location.reload();
           return;
