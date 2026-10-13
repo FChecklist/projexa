@@ -78,9 +78,14 @@ export const emptyLine = (): LineItemDraft => ({
 export function toDrafts(rows: BoqLineItemRow[]): LineItemDraft[] {
   const codeById = new Map<string, string>();
   const taken = new Set(rows.map((r) => r.itemCode?.trim()).filter((c): c is string => Boolean(c)));
+  // Only a line that takes part in a parent/child link needs a code (the link names it); a plain uncoded line stays blank, so the form shows no
+  // invented `_row_<id>` and the server keys it by its description, like the line it came from.
+  const linked = new Set<string>();
+  for (const r of rows) if (r.parentLineItemId) { linked.add(r.id); linked.add(r.parentLineItemId); }
   for (const r of rows) {
     const existing = r.itemCode?.trim();
     if (existing) { codeById.set(r.id, existing); continue; }
+    if (!linked.has(r.id)) continue;
     let synth = `_row_${r.id}`;
     while (taken.has(synth)) synth = `${synth}_x`;
     taken.add(synth);
