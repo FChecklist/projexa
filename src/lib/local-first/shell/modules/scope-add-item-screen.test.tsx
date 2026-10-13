@@ -2,7 +2,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in ONE process.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createFakeSyncServer } from "../../__fixtures__/fake-sync-server";
@@ -15,6 +15,9 @@ import { seedDelivery } from "./delivery-test-seed";
 
 // R-96 / R-98 inside the REAL shell with the NETWORK OFF: "Add a scope item" on a BOQ keeps ONE create_boq_revision (every line kept, the new one added),
 // optionally because of an approved change order; a second revision while one waits is said to be impossible; a viewer is not offered it.
+
+// the first test of a file also pays for loading the shell (several seconds on a busy laptop); bun's 5 s default is for unit tests
+setDefaultTimeout(20_000);
 
 let idb: IDBFactory;
 let outbox: Outbox | null = null;

@@ -2,7 +2,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in ONE process.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createFakeSyncServer } from "../../__fixtures__/fake-sync-server";
@@ -15,6 +15,9 @@ import { seedOrgKinds } from "./finance-test-seed";
 
 // R-95 / checklist 2.14 inside the REAL shell with the NETWORK OFF: a new billing milestone is saved on the laptop as a DRAFT (no money, no
 // invoice), listed as "Waiting to sync" and "Draft until confirmed", and sent as ONE create_progress_claim op; a member is not offered the form.
+
+// the first test of a file also pays for loading the shell (several seconds on a busy laptop); bun's 5 s default is for unit tests
+setDefaultTimeout(20_000);
 
 let idb: IDBFactory;
 let outbox: Outbox | null = null;

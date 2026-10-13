@@ -23,7 +23,7 @@
 // as the person typed them in `local_lines`; the Scope screens draw it marked "Waiting to sync". Nothing computed here is sent as authority:
 // only the person's lines are, and the server stores its own figures.
 //
-// Excel import is online-only by design and is not touched.
+// Excel import now works here too: the workbook is read ON THE LAPTOP (boq-excel/) and fills the New BOQ grid, which then keeps an ordinary create_boq.
 
 import { localDbNameFor, openLocalDb } from "../../local-db";
 import { OutboxRefusal } from "../../outbox";
