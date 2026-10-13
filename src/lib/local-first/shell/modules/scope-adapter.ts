@@ -200,6 +200,17 @@ export async function loadScopeBudget(data: ShellData, boqId: string, projectId:
       budgetPercentage: r.budgetPercentage ?? DEFAULT_BUDGET_PERCENT, vendorId: r.vendorId ?? null, vendorAmount: r.vendorAmount ?? null,
       waiting: (view.waitingOn.get(r.id) ?? []).length > 0, trouble: view.troubled.get(r.id) ?? null,
     }));
+    // A budget saved here and not yet accepted shows AT ONCE (it used to keep the server's old figure beside "Waiting to sync"). Only a save still
+    // waiting counts: one the server refused or that is in conflict leaves the line as the server has it, flagged by `trouble`.
+    const waitingBudgets = (await readPendingOps(data, candidate)).filter((op) => op.functionId === "update_line_item_budget" && op.status !== "blocked" && op.status !== "conflict");
+    for (const op of waitingBudgets) {
+      const target = budgetLines.find((l) => l.id === op.params?.boqLineItemId);
+      if (!target) continue;
+      const p = op.params as Record<string, unknown>;
+      if (typeof p.budgetPercentage === "number") target.budgetPercentage = String(p.budgetPercentage);
+      if (typeof p.vendorId === "string") target.vendorId = p.vendorId;
+      if (typeof p.vendorAmount === "number") target.vendorAmount = String(p.vendorAmount);
+    }
     const names = await vendorNames({ userId: data.userId, idb: data.idb });
     const vendors = names.state === "local" ? { state: "local" as const, options: [...names.names].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)) } : { state: names.state };
     return { state: "ready", projectId: candidate, boq, lines: budgetLines, vendors };
