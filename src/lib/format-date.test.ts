@@ -76,7 +76,7 @@ describe("formatDayMonthYear (R67 D-23)", () => {
 
 describe("formatDateTime", () => {
   test("pins the house dd-mm-yyyy/UTC output for date+time", () => {
-    expect(formatDateTime("2026-08-25T14:30:00.000Z")).toBe("8/25/2026, 2:30:00 PM");
+    expect(formatDateTime("2026-08-25T14:30:00.000Z")).toBe("25-08-2026 14:30");
   });
 });
 
