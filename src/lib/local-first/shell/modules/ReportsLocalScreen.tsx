@@ -5,10 +5,12 @@
 // whenever that answer is on the laptop -- it is the same reportResultToCsv the online screen uses -- and otherwise says plainly that it
 // needs the server once.
 
+import { useState } from "react";
 import { formatDateTime } from "@/lib/format-date";
 import { reportResultToCsv } from "@/lib/report-run";
 import type { ShellScreenProps } from "../types";
-import { asOfLabel } from "../snapshot-cache";
+import { asOfLabel, snapshotCacheFor } from "../snapshot-cache";
+import { prefetchReportSnapshots } from "./reports-prefetch";
 import type { ReportsData } from "./reports-adapter";
 import { isReportBody } from "./reports-adapter";
 import { OverviewBody, downloadText } from "./OverviewBody";
@@ -20,6 +22,20 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
   const status = useSnapshotRefresh(shell, reads);
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
   const online = shell.connectivity === "online";
+
+  // Keeping EVERY report on the laptop is the person's choice (a button), never automatic: it asks the server for each report, and a daily walk of the
+  // shell must stay off Vercel (e2e/lf-lifecycle-vercel-budget.spec.ts, owner directive "Vercel ~0"). One request at a time, nothing already fresh.
+  const prefetchProject = data.state === "local" ? data.projectId : null;
+  const prefetchReports = data.state === "local" ? data.reports.filter((r) => r.value !== selected?.value) : null;
+  const [keeping, setKeeping] = useState<"idle" | "running" | "done" | "stopped">("idle");
+  async function keepAllReports() {
+    if (!online || !prefetchProject || !prefetchReports) return;
+    setKeeping("running");
+    const cache = snapshotCacheFor({ userId: shell.data.userId, role: shell.data.role, idb: shell.data.idb });
+    const result = await prefetchReportSnapshots({ cache, reports: prefetchReports, projectId: prefetchProject });
+    setKeeping(result.stoppedBecause === "none" ? "done" : "stopped");
+    shell.refresh();
+  }
 
   if (data.state === "no_project") {
     return (
@@ -38,6 +54,21 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
     <section data-testid="overview-reports" data-state="local" className="space-y-4">
       <h1 className="font-heading text-2xl text-px-ink">Reports{project ? ` / ${project.name}` : ""}</h1>
       <p className="text-xs text-px-muted">Reports are worked out by the server. This laptop shows the last one it received for you.</p>
+      {online ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            data-testid="reports-keep-all"
+            disabled={keeping === "running"}
+            onClick={() => void keepAllReports()}
+            className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink disabled:opacity-60"
+          >
+            {keeping === "running" ? "Keeping the reports on this laptop…" : "Keep all reports on this laptop"}
+          </button>
+          {keeping === "done" ? <span className="text-xs text-px-muted" data-testid="reports-keep-all-note">Every report is now saved here and opens offline.</span> : null}
+          {keeping === "stopped" ? <span className="text-xs text-px-muted" data-testid="reports-keep-all-note">The server did not answer for every report. Those that were saved are kept; try again later.</span> : null}
+        </div>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
         <nav aria-label="Reports" className="rounded-lg border border-black/10 bg-white p-2 text-sm">
           <ul className="space-y-1">
