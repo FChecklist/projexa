@@ -12,6 +12,7 @@ import { addWorkerOffline, createMaterialOffline, createMilestoneOffline, create
 import {
   approveTimeEntryOffline, createChangeOrderOffline, recordTimeEntryOffline, rejectTimeEntryOffline, submitChangeOrderOffline, submitTimeEntryOffline,
 } from "../shell/modules/design-change-writes";
+import { createBillingMilestoneOffline } from "../shell/modules/billing-writes";
 import { createBoqOffline, reviseBoqOffline, setLineBudgetOffline } from "../shell/modules/scope-writes";
 import { addMomActionItemOffline, amendMinutesOffline, createMomOffline, editDocumentDetailsOffline } from "../shell/modules/documents-writes";
 import {
@@ -188,6 +189,8 @@ beforeAll(async () => {
       parent: [{ id: "l1", itemCode: "01", description: "Blockwork", unit: "m2", quantity: "100", rate: "10", amount: "1000", activityId: null }],
       lines: [{ description: "Blockwork", unit: "m2", quantity: "120", rate: "10", category: "Civil", itemCode: "01", parentItemCode: "", breakdownPercentage: "" }],
     }, access),
+    // R-95 (checklist 2.14): a billing milestone as a draft, every optional field filled
+    await createBillingMilestoneOffline(data, { projectId: P, boqId: "b1", customerId: "c1", milestoneDescription: "Slab complete", scheduledDate: "2026-11-01", retentionPercent: 5 }, { boq: { id: "b1" }, customers: [{ id: "c1" }] }, { outbox }),
     await setLineBudgetOffline({ projectId: P, lineId: "l1", current: { budgetPercentage: null, vendorId: null, vendorAmount: null }, budgetPercentage: "40", vendorId: "v1", vendorAmount: "3500" }, access),
   ];
   // A writer that refused would hide its params from this check: every one must have queued.
@@ -203,9 +206,9 @@ afterAll(() => {
 const RECREATE_TASK: Captured = { functionId: "create_schedule_task", params: { projectId: P, title: "T", startDate: "2026-10-01", description: "D", priority: "high", dueDate: "2026-10-05" } };
 
 describe("every write the laptop builds uses the live registry's parameter names", () => {
-  test("the rig queued every writer (37 ops, 34 function ids)", () => {
-    expect(captured).toHaveLength(37);
-    expect(new Set(captured.map((c) => c.functionId)).size).toBe(34);
+  test("the rig queued every writer (38 ops, 35 function ids)", () => {
+    expect(captured).toHaveLength(38);
+    expect(new Set(captured.map((c) => c.functionId)).size).toBe(35);
   });
 
   test("each built op: a live write, every param a declared name, every required name present", () => {

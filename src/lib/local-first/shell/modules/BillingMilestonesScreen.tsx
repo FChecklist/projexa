@@ -1,12 +1,13 @@
 "use client";
 
-// LOCAL-FIRST shell, Billing Milestones (/billing-milestones): the project's progress claims from the laptop's own copy. Read-only:
-// a claim is moved along (drafted, submitted, approved, rejected, invoiced) by the server, which decides approvals and works out the
-// money. See billing-adapter.ts.
+// LOCAL-FIRST shell, Billing Milestones (/billing-milestones): the project's progress claims from the laptop's own copy. A NEW milestone can
+// be made with no network (BillingNewScreen: a draft until a person with the billing role confirms it online, billing-writes.ts); moving a
+// claim along (drafted, submitted, approved, rejected, invoiced) stays with the server, which decides approvals and works out the money.
+// See billing-adapter.ts.
 
 import { formatDate } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
-import { CopyNote, DASH, Screen, ServerOnly, StateMessage, projectName } from "./DeliveryParts";
+import { CopyNote, DASH, Screen, ServerOnly, StateMessage, projectName, withProject } from "./DeliveryParts";
 import type { BillingData } from "./billing-adapter";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -25,7 +26,11 @@ export default function BillingMilestonesScreen({ shell, data }: ShellScreenProp
   return (
     <Screen testId="billing" state="local" title={`Billing Milestones${name ? ` / ${name}` : ""}`}>
       <CopyNote testId="billing-copy-note" syncedAt={data.syncedAt} />
-      <ServerOnly shell={shell} what="Creating a milestone, and drafting, submitting, approving, rejecting or invoicing one, is done on the server." path="/billing-milestones" />
+      <p className="mt-3 text-sm" data-testid="billing-new-link">
+        <a className="text-px-ink underline underline-offset-2" href={withProject("/billing-milestones/new", data.projectId)}>New billing milestone</a>
+        {" — it works with no network and stays a draft until a person with the billing role confirms it online."}
+      </p>
+      <ServerOnly shell={shell} what="Drafting, submitting, approving, rejecting or invoicing a milestone is done on the server, by a person: no money is posted from the laptop." path="/billing-milestones" />
       {!data.customerHidden && data.customerNames !== "local" && data.claims.length > 0 ? (
         <p className="mt-2 text-xs text-px-muted" data-testid="billing-customers-note">
           {data.customerNames === "not_allowed"
@@ -42,6 +47,8 @@ export default function BillingMilestonesScreen({ shell, data }: ShellScreenProp
               <p className="font-medium text-px-ink">{c.description}</p>
               <p className="mt-0.5 text-xs text-px-muted">
                 <span className="mr-2 rounded border border-black/10 px-1.5 py-0.5 text-px-ink" data-testid="billing-status">{statusLabel(c.status)}</span>
+                {c.waiting ? <span className="mr-2 rounded bg-px-concrete px-1.5 py-0.5 text-px-muted" data-testid="billing-waiting">Waiting to sync</span> : null}
+                {c.status === "milestone_achieved" ? <span className="mr-2 text-px-muted" data-testid="billing-draft">Draft until confirmed</span> : null}
                 {data.customerHidden ? <span data-hidden="1">Customer hidden for your role</span> : (c.customerName ?? DASH)}
                 {" · Scheduled "}{c.scheduledDate ? formatDate(c.scheduledDate) : DASH}
               </p>

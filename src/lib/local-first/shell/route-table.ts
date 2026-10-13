@@ -79,6 +79,13 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     load: () => import("./modules/BillingMilestonesScreen"),
     adapter: (shell) => loadBilling(shell.data, shell.projectId),
   }),
+  // R-95 (checklist 2.14): a new billing milestone made with no network, a draft until a person with the billing role confirms it online.
+  defineShellRoute({
+    pattern: "/billing-milestones/new",
+    title: "New billing milestone",
+    load: () => import("./modules/BillingNewScreen"),
+    adapter: (shell) => loadBilling(shell.data, shell.projectId),
+  }),
   defineShellRoute({
     pattern: "/customers",
     title: "Customers",
