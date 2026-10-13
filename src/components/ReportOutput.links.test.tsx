@@ -80,3 +80,22 @@ describe("ReportOutput fieldLinks (scalar key/value grid branch)", () => {
     expect(container.textContent).toContain("100");
   });
 });
+
+describe("ReportOutput headings read as words (Sumeet R-C11)", () => {
+  test("a manpower-cost style payload shows 'By trade', 'Total cost', 'Worker days', not the camelCase keys; the rows keep their real keys for links", () => {
+    const { container, queryByText } = render(
+      <ReportOutput data={{ byTrade: [{ trade: "Mason", totalCost: 180, workerDays: 1 }] }} rowLinks={{ trade: (row) => `/t/${row.trade}` }} />
+    );
+    expect(queryByText("By trade")).not.toBeNull();
+    expect(queryByText("Total cost")).not.toBeNull();
+    expect(queryByText("Worker days")).not.toBeNull();
+    expect(queryByText("totalCost")).toBeNull();
+    expect(container.querySelector('a[href="/t/Mason"]')).not.toBeNull();
+  });
+
+  test("a caller's own label map still wins over the generated one", () => {
+    const { queryByText } = render(<ReportOutput data={{ totalCost: 5 }} fieldLabels={{ totalCost: "Cost to date" }} />);
+    expect(queryByText("Cost to date")).not.toBeNull();
+    expect(queryByText("Total cost")).toBeNull();
+  });
+});

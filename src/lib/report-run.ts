@@ -235,3 +235,16 @@ export function reportResultToCsv(result: unknown, titleLine: string): string {
   lines.push("Value", csvEscape(result));
   return lines.join("\n");
 }
+
+/**
+ * Sumeet R-C11 ("all reports in dashboard format"): a generic report grid showed the payload's own camelCase keys as its headings ("byTrade", "totalCost",
+ * "workerDays"). This is the READ label for such a key: "By trade", "Total cost", "Worker days". Display only -- rows keep their real keys, so filters and
+ * row links that read them are untouched.
+ */
+export function humanizeKey(key: string): string {
+  const spaced = key.replace(/_/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").trim();
+  if (spaced === "") return key;
+  const lower = spaced.toLowerCase();
+  const fixed = lower.replace(/\b(id|ids|boq|rfi|kpi|uom|gst)\b/g, (m) => m.toUpperCase());
+  return fixed.charAt(0).toUpperCase() + fixed.slice(1);
+}
