@@ -114,7 +114,8 @@ describe("with NO network, the site screens open from the laptop's own copy", ()
     expect(getByTestId("rfi-object").textContent).toContain("Use 200mm.");
     expect(document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"]')).toBeNull();
     expect(fetchCalls).toEqual([]);
-  });
+    // This test renders three screens and saves once; on a loaded CI runner it passed or hit bun's default 5 s limit on identical code (seen on PRs #440/#441, 2026-10-13).
+  }, 30000);
 
   test("site diary: list, then a new entry saved on the laptop appears in the list as waiting", async () => {
     await seedLaptop();
