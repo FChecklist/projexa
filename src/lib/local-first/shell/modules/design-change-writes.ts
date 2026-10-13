@@ -36,7 +36,7 @@ export type WriteResult = { queued: true; opId: string; tempId?: string } | { qu
 
 type Ready = { userId: string; orgId: string; idb: IDBFactory; outbox: Pick<Outbox, "enqueue"> };
 
-async function ready(projectId: string, access: DesignChangeWriteAccess): Promise<Ready | null> {
+export async function ready(projectId: string, access: DesignChangeWriteAccess): Promise<Ready | null> {
   const idb = access.idb ?? (typeof indexedDB === "undefined" ? undefined : indexedDB);
   if (!idb || !access.userId || !projectId) return null;
   const db = await openLocalDb(idb, localDbNameFor(access.userId));
@@ -52,7 +52,7 @@ async function ready(projectId: string, access: DesignChangeWriteAccess): Promis
 }
 
 /** The row the laptop holds, if it is this organisation's, of this project, and carries a server version (an edit is based on it). */
-async function editableRow(ctx: Ready, kind: string, id: string, projectId: string): Promise<(LocalRecord & { serverVersion: number }) | null> {
+export async function editableRow(ctx: Ready, kind: string, id: string, projectId: string): Promise<(LocalRecord & { serverVersion: number }) | null> {
   const db = await openLocalDb(ctx.idb, localDbNameFor(ctx.userId));
   try {
     const row = await db.getRecord(kind, id);
@@ -63,7 +63,7 @@ async function editableRow(ctx: Ready, kind: string, id: string, projectId: stri
   }
 }
 
-const tempIdOf = () => `local-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+export const tempIdOf = () => `local-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
 /** A finite number from what the person typed, or undefined when they typed nothing. NaN means "not a number". */
 function typedNumber(raw: string | number | null | undefined): number | undefined {

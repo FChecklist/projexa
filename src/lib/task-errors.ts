@@ -66,6 +66,8 @@ export const TASK_ERROR_CODES = [
   "RECORD_NOT_FOUND",
   "ALREADY_RECORDED",
   "REQUEST_REJECTED",
+  // OFFLINE WRITERS 2: a BOQ revision that would remove or reduce a line with progress recorded on site (compliance-tracker ScopeReductionError, 409).
+  "SCOPE_REDUCTION_BLOCKED",
   "FUNCTION_NOT_AVAILABLE",
   "NOT_PERMITTED",
   "READ_AS_QUESTION",
@@ -272,6 +274,11 @@ const ENTRIES: Readonly<Record<TaskErrorCode, Entry>> = {
   REQUEST_REJECTED: {
     message: () => "That was not accepted as entered — check the values and try again",
     ...openRoute("Open Home", "/dashboard"),
+  },
+
+  SCOPE_REDUCTION_BLOCKED: {
+    message: () => "Work is already recorded on a line this revision removes or reduces, so the revision was not made — open the BOQ and review the lines",
+    ...openRoute("Open Scope", "/scope"),
   },
 
   // ---- what this workspace or this role may not do ------------------------
