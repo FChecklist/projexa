@@ -233,12 +233,13 @@ export function parseTask(raw: unknown): ScheduleTask | null {
   };
 }
 
-export type Milestone = { id: string; name: string; status: string | null; targetDate: string | null };
+export type Milestone = { id: string; name: string; description: string | null; status: string | null; targetDate: string | null; waiting: boolean };
 export function parseMilestone(raw: unknown): Milestone | null {
   const o = withId(raw);
   const name = o && str(o, "name");
   if (!o || !name) return null;
-  return { id: o.id, name, status: str(o, "status"), targetDate: day(o, "target_date") };
+  // `waiting` is set by the adapter that also reads the outbox (a row made here, or one with an edit not yet sent)
+  return { id: o.id, name, description: str(o, "description"), status: str(o, "status"), targetDate: day(o, "target_date"), waiting: o.id.startsWith("local-") };
 }
 
 export type Baseline = { id: string; name: string; createdAt: string | null };

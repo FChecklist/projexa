@@ -83,7 +83,12 @@ export function canOffer(role: string | null, minRank: 2 | 3): boolean {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const isDate = (v: unknown): v is string => typeof v === "string" && DATE_RE.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+// a real day: 2026-02-30 is refused (some engines roll it over to March 2), so the date must read back the same
+const isDate = (v: unknown): v is string => {
+  if (typeof v !== "string" || !DATE_RE.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
 const required = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 const optText = (v: string | null | undefined): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
@@ -268,6 +273,38 @@ export async function createSiteDiaryOffline(data: ShellData, input: DiaryInput,
     row: (id) => ({
       id, diary_date: input.diaryDate, weather: text.weather ?? null, work_done: text.workDone ?? null, visitors: text.visitors ?? null, issues: text.issues ?? null,
       instructions: text.instructions ?? null, material_received: text.materialReceived ?? null, labour_count: labourCount ?? null, remarks: text.remarks ?? null,
+    }),
+  });
+}
+
+export type SiteInstructionInput = {
+  projectId: string; issueDate: string; toContractor: string; description: string; drawingRef?: string | null; costImpact?: boolean; timeImpact?: boolean;
+};
+
+/**
+ * create_site_instruction (R-C14). The two flags say that the instruction changes cost or time; they are yes/no, not amounts, and are sent
+ * only when set. NOT offline: the attached PDF or photo (the file is linked to the instruction's server id, which does not exist yet) and
+ * the BOQ the instruction varies (the screen does not offer a BOQ list); both are added online. The SI number is the server's.
+ */
+export async function createSiteInstructionOffline(data: ShellData, input: SiteInstructionInput, access: SiteWriteAccess = {}): Promise<SiteWriteResult> {
+  if (!canOffer(data.role, 2)) return refuse("not_allowed");
+  if (!isDate(input.issueDate) || !required(input.toContractor) || !required(input.description)) return refuse("invalid");
+  const toContractor = input.toContractor.trim();
+  const description = input.description.trim();
+  const drawingRef = optText(input.drawingRef);
+  const costImpact = input.costImpact === true;
+  const timeImpact = input.timeImpact === true;
+  const ctx = await context(data, input.projectId, access);
+  if (!ctx) return refuse("not_on_laptop");
+  return enqueueCreate(ctx, {
+    functionId: "create_site_instruction", projectId: input.projectId, kind: SITE_KINDS.siteInstructions, label: "New site instruction",
+    params: {
+      projectId: input.projectId, issueDate: input.issueDate, toContractor, description,
+      ...(drawingRef ? { drawingRef } : {}), ...(costImpact ? { costImpact: true } : {}), ...(timeImpact ? { timeImpact: true } : {}),
+    },
+    row: (id) => ({
+      id, si_number: null, issue_date: input.issueDate, issued_by: null, to_contractor: toContractor, description, drawing_ref: drawingRef ?? null,
+      cost_impact: costImpact, time_impact: timeImpact, boq_id: null,
     }),
   });
 }

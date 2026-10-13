@@ -94,7 +94,7 @@ export async function readKind(data: ShellData, projectId: string, kind: string)
 }
 
 /** Ids of this person's rows of (project, kind) that hold an edit not yet sent. A failure reads as "none waiting", never as an error. */
-async function waitingIdsOf(data: ShellData, projectId: string, kind: string): Promise<ReadonlySet<string>> {
+export async function waitingIdsOf(data: ShellData, projectId: string, kind: string): Promise<ReadonlySet<string>> {
   const idb = data.idb ?? (typeof indexedDB === "undefined" ? undefined : indexedDB);
   if (!idb || !data.orgId) return new Set();
   try {

@@ -8,6 +8,7 @@ import { revisionLabel } from "@/lib/boq-lineage";
 import { formatDateTime } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
 import type { ScopeListData } from "./scope-adapter";
+import { mayOffer, projectQuery } from "./DesignChangeShared";
 
 export default function ScopeListScreen({ shell, data }: ShellScreenProps<ScopeListData>) {
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
@@ -35,6 +36,11 @@ export default function ScopeListScreen({ shell, data }: ShellScreenProps<ScopeL
       <p className="mt-1 text-xs text-px-muted" data-testid="scope-list-copy-note">
         Saved on this laptop{data.syncedAt ? ` · last copied ${formatDateTime(data.syncedAt)}` : ""}
       </p>
+      {mayOffer(shell.data.role, "create_boq") ? (
+        <p className="mt-3 text-sm">
+          <a className="text-px-ink underline underline-offset-2" data-testid="scope-list-new" href={`/scope/new${projectQuery(data.projectId)}`}>New BOQ</a>
+        </p>
+      ) : null}
       {data.rows.length === 0 ? (
         <p className="mt-4 text-sm text-px-muted">No BOQ in this project yet.</p>
       ) : (
@@ -58,7 +64,9 @@ export default function ScopeListScreen({ shell, data }: ShellScreenProps<ScopeL
                     </a>
                   </TableCell>
                   <TableCell>{revisionLabel(row.version)}</TableCell>
-                  <TableCell className="capitalize">{row.status}</TableCell>
+                  <TableCell className="capitalize">
+                    {row.waiting ? <span data-testid="scope-list-waiting" className="rounded bg-px-concrete px-1.5 py-0.5 text-xs text-px-muted normal-case">Waiting to sync</span> : row.status}
+                  </TableCell>
                   <TableCell className="text-right">{row.lineCount}</TableCell>
                   <TableCell className="text-right">{formatAmount(row.total)}</TableCell>
                 </TableRow>

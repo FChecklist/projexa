@@ -4,6 +4,8 @@
 //   markAttendanceOffline     record_attendance       {projectId, rosterId, date, status, hours?}
 //   recordIssueOffline        record_material_issue   {projectId, materialId, quantity, issuedDate, boqLineItemId?, issuedTo?, note?}
 //   recordReceiptOffline      record_material_receipt {projectId, materialId, quantity, receivedDate, reference?, notes?}  (NO unitCost)
+//   createMilestoneOffline    create_milestone        {projectId, title, description?, targetDate?}                       (R-94)
+//   updateMilestoneOffline    update_milestone        {projectId, milestoneId, title?, description?, targetDate?, status?}  (R-94)
 //   recordProgressOffline     record_work_progress    {projectId, boqLineItemId, quantityDone | percent, entryDate, remarks?, activityId?*}
 //                                                     * only once the registry DECLARES activityId for it (see "honest limit" below)
 //
@@ -68,13 +70,19 @@ export type WriteRefusal =
   | "not_on_laptop" // the laptop's copy does not know this project (or this person, or this organisation)
   | "not_synced" // a list the check needs was never copied to the end
   | "unknown_record" // the worker / material / BOQ line is not in this project on this laptop
+  | "not_confirmed" // the row exists only on this laptop (or has no server version yet): the server cannot be told which version this edit is built on
   | "invalid" // a value the server would refuse (empty, negative, not a date)
   | "several_activities" // see the header: record_work_progress cannot be told which activity
   | "no_activity_chosen" // several activities, and the person has not picked one
   | "failed"; // the outbox could not store it (nothing was kept)
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const isDate = (v: unknown): v is string => typeof v === "string" && DATE_RE.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+// a real day: 2026-02-30 is refused (some engines roll it over to March 2), so the date must read back the same
+const isDate = (v: unknown): v is string => {
+  if (typeof v !== "string" || !DATE_RE.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
 const positive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const optText = (v: string | null | undefined): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
@@ -278,6 +286,8 @@ export function refusalText(reason: WriteRefusal): string {
       return "This project has not finished copying to this laptop yet. Try again once it has, while you are online.";
     case "unknown_record":
       return "That item is not in this project on this laptop. Choose one from the list.";
+    case "not_confirmed":
+      return "The server has not confirmed this yet, so it cannot be changed from this laptop. Try again once it has been sent.";
     case "invalid":
       return "Please check the values: a date, and an amount above zero.";
     case "several_activities":
@@ -366,4 +376,91 @@ export async function createTaskOffline(data: ShellData, input: CreateTaskInput,
     // number, status and completion are the server's: the optimistic row says null, as for the other writers
     row: (id) => ({ id, number: null, title, priority: priority ?? null, status_id: null, start_date: input.startDate, due_date: dueDate ?? null, completion_percentage: null, description: description ?? null }),
   });
+}
+
+// ─── create_milestone / update_milestone (R-94: a milestone is its own record, not a task) ───────────────────────
+
+/** The statuses pms_milestones accepts (compliance-tracker pms-taxonomy-service.ts MILESTONE_STATUSES); the server checks them again. */
+export const MILESTONE_STATUSES = ["planned", "in_progress", "completed", "cancelled"] as const;
+
+export type CreateMilestoneInput = { projectId: string; title: string; targetDate?: string | null; description?: string | null };
+
+export async function createMilestoneOffline(data: ShellData, input: CreateMilestoneInput, access: DeliveryWriteAccess = {}): Promise<WriteResult> {
+  const title = optText(input.title);
+  if (!title || title.length > 300) return refuse("invalid");
+  const targetDate = optText(input.targetDate);
+  if (targetDate && !isDate(targetDate)) return refuse("invalid");
+  const ctx = await context(data, input.projectId, access);
+  if (!ctx) return refuse("not_on_laptop");
+  const description = optText(input.description);
+  return enqueueCreate(ctx, {
+    functionId: "create_milestone",
+    projectId: input.projectId,
+    kind: DELIVERY_KINDS.milestones,
+    label: "New milestone",
+    params: { projectId: input.projectId, title, ...(targetDate ? { targetDate } : {}), ...(description ? { description } : {}) },
+    // the laptop's copy of a milestone names it `name` (pms_milestones.name); the registry's parameter is `title`. The status is the server's.
+    row: (id) => ({ id, name: title, description: description ?? null, target_date: targetDate ?? null, status: null }),
+  });
+}
+
+export type UpdateMilestoneInput = { projectId: string; milestoneId: string; title?: string | null; targetDate?: string | null; description?: string | null; status?: string | null };
+
+/** Only what the person changed is sent (the server patches those fields and leaves the rest). A milestone made on this laptop and not yet sent cannot be edited. */
+export async function updateMilestoneOffline(data: ShellData, input: UpdateMilestoneInput, access: DeliveryWriteAccess = {}): Promise<WriteResult> {
+  if (!input.milestoneId) return refuse("invalid");
+  const title = optText(input.title);
+  const targetDate = optText(input.targetDate);
+  const description = optText(input.description);
+  const status = optText(input.status);
+  if (typeof input.title === "string" && input.title.trim() !== "" && (title === undefined || title.length > 300)) return refuse("invalid");
+  if (targetDate && !isDate(targetDate)) return refuse("invalid");
+  if (status && !(MILESTONE_STATUSES as readonly string[]).includes(status)) return refuse("invalid");
+  if (title === undefined && targetDate === undefined && description === undefined && status === undefined) return refuse("invalid");
+  const ctx = await context(data, input.projectId, access);
+  if (!ctx) return refuse("not_on_laptop");
+  const row = await readEditable(data, ctx, input.projectId, DELIVERY_KINDS.milestones, input.milestoneId);
+  if (row === "missing") return refuse("unknown_record");
+  if (row === "unconfirmed") return refuse("not_confirmed");
+  const columns: Record<string, unknown> = {
+    ...(title !== undefined ? { name: title } : {}), ...(description !== undefined ? { description } : {}),
+    ...(targetDate !== undefined ? { target_date: targetDate } : {}), ...(status !== undefined ? { status } : {}),
+  };
+  try {
+    const { opId } = await ctx.outbox.enqueue({
+      functionId: "update_milestone",
+      projectId: input.projectId,
+      params: {
+        projectId: input.projectId, milestoneId: input.milestoneId,
+        ...(title !== undefined ? { title } : {}), ...(description !== undefined ? { description } : {}),
+        ...(targetDate !== undefined ? { targetDate } : {}), ...(status !== undefined ? { status } : {}),
+      },
+      label: "Milestone change",
+      record: { kind: DELIVERY_KINDS.milestones, id: input.milestoneId, baseVersion: row.serverVersion },
+      optimistic: async (tx) => {
+        const current = await tx.getRecord(DELIVERY_KINDS.milestones, input.milestoneId);
+        const was = current && typeof current.data === "object" && current.data !== null && !Array.isArray(current.data) ? (current.data as Record<string, unknown>) : {};
+        if (current) await tx.patchRecord(DELIVERY_KINDS.milestones, input.milestoneId, { data: { ...was, ...columns } });
+      },
+    });
+    return { queued: true, opId, tempId: input.milestoneId };
+  } catch {
+    return refuse("failed");
+  }
+}
+
+/** The row on this laptop an edit may be built on: this organisation's, this project's, and carrying a server version. */
+async function readEditable(data: ShellData, ctx: Ctx, projectId: string, kind: string, id: string): Promise<{ serverVersion: number } | "missing" | "unconfirmed"> {
+  try {
+    const db = await openLocalDb(data.idb ?? indexedDB, localDbNameFor(data.userId));
+    try {
+      const row = await db.getRecord(kind, id);
+      if (!row || row.orgId !== ctx.orgId || row.projectId !== projectId) return "missing";
+      return typeof row.serverVersion === "number" ? { serverVersion: row.serverVersion } : "unconfirmed";
+    } finally {
+      db.close();
+    }
+  } catch {
+    return "missing";
+  }
 }

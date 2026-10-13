@@ -9,7 +9,7 @@ import type { MomsListData } from "./moms-adapter";
 
 // The new-meeting form (G-15): the screen hands exactly what the person typed to createMomOffline (attendees and agenda split on lines or
 // commas) and says in words what happened; the writer itself is proven against the real outbox in documents-writes.test.ts.
-type Input = { projectId: string; title: string; scheduledAt: string; meetingType?: string | null; attendees?: readonly string[]; agenda?: readonly string[]; minutes?: string | null };
+type Input = { projectId: string; title: string; scheduledAt: string; meetingType?: string | null; attendees?: readonly string[]; agenda?: readonly string[]; minutes?: string | null; actionItems?: readonly { title: string; dueDate?: string | null }[] };
 let calls: Input[];
 let answer: { ok: true; opId: string } | { ok: false; message: string };
 mock.module("./documents-writes", () => ({ createMomOffline: async (_data: unknown, input: Input) => { calls.push(input); return answer; } }));
@@ -34,6 +34,18 @@ describe("MomNewScreen", () => {
     expect(calls[0]).toMatchObject({ projectId: "p1", title: "Site meeting", attendees: ["Asha", "Ravi", "Meena"], agenda: ["Slab", "Safety"], minutes: "Pour agreed." });
     await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"));
     expect(getByTestId("save-note").textContent).toContain("will be sent to the server when you are connected");
+  });
+
+  test("action items: each row is a title and a due date, a second row can be added, and they are handed over as typed", async () => {
+    const { getByLabelText, getByTestId } = render(<MomNewScreen shell={shell()} params={{}} query={new URLSearchParams()} data={data} />);
+    fireEvent.input(getByLabelText("Title"), { target: { value: "Site meeting" } });
+    fireEvent.input(getByLabelText("Action item 1"), { target: { value: "Order tiles" } });
+    fireEvent.input(getByLabelText("Due date for action item 1"), { target: { value: "2026-10-20" } });
+    fireEvent.click(getByTestId("mom-new-actions").querySelector("button")!);
+    fireEvent.input(getByLabelText("Action item 2"), { target: { value: "Check props" } });
+    fireEvent.submit(getByTestId("mom-new-form"));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]!.actionItems).toEqual([{ title: "Order tiles", dueDate: "2026-10-20" }, { title: "Check props", dueDate: "" }]);
   });
 
   test("a refusal is shown in the writer's own words and nothing is cleared", async () => {

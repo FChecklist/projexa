@@ -5,7 +5,7 @@
 // ADDING A MODULE is one file of screens plus ~10 lines below; docs/local-first/ROUTE_TABLE.md has the walk-through.
 
 import { defineShellRoute, type ShellRoute } from "./types";
-import { loadScopeList, loadScopeObject } from "./modules/scope-adapter";
+import { loadScopeBudget, loadScopeList, loadScopeNew, loadScopeObject, loadScopeRevise } from "./modules/scope-adapter";
 import { loadBilling } from "./modules/billing-adapter";
 import { loadCustomers } from "./modules/customers-adapter";
 import { loadExpenses } from "./modules/expenses-adapter";
@@ -27,6 +27,27 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     nav: { label: "Scope (BOQ)", order: 10 },
     load: () => import("./modules/ScopeListScreen"),
     adapter: (shell) => loadScopeList(shell.data, shell.projectId),
+  }),
+  // OFFLINE WRITERS 2: a new BOQ and a new revision, kept on the laptop as create_boq / create_boq_revision (modules/scope-writes.ts).
+  // Static paths win over ":param" paths (paths.ts matchRoute), so /scope/new is never read as a BOQ id.
+  defineShellRoute({
+    pattern: "/scope/new",
+    title: "New BOQ",
+    load: () => import("./modules/ScopeNewScreen"),
+    adapter: (shell) => loadScopeNew(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/scope/:id/revise",
+    title: "New BOQ Revision",
+    load: () => import("./modules/ScopeReviseScreen"),
+    adapter: (shell, params, query) => loadScopeRevise(shell.data, params.id!, query.get("projectId")),
+  }),
+  // R-C09: the budget overlay of a BOQ's lines (budget %, vendor, vendor amount), update_line_item_budget, manager rank.
+  defineShellRoute({
+    pattern: "/scope/:id/budget",
+    title: "BOQ Budget",
+    load: () => import("./modules/ScopeBudgetScreen"),
+    adapter: (shell, params, query) => loadScopeBudget(shell.data, params.id!, query.get("projectId")),
   }),
   defineShellRoute({
     pattern: "/scope/:id",

@@ -177,6 +177,21 @@ describe("a new meeting offline (create_mom, G-15)", () => {
     });
   });
 
+  test("R-C04 action items are sent as {title, dueDate?} (blank titles dropped, no assignee) and a bad item is refused with nothing queued", async () => {
+    const r = await rig();
+    const data = shellData(r.idb as never);
+    const ok = await createMomOffline(data, { ...input, actionItems: [{ title: " Order tiles ", dueDate: "2026-10-20" }, { title: "Check props", dueDate: "" }, { title: "  " }] }, { outbox: r.outbox });
+    expect(ok.ok).toBe(true);
+    await r.outbox.flush();
+    expect((pushed(r)[0]!.params as { actionItems: unknown }).actionItems).toEqual([{ title: "Order tiles", dueDate: "2026-10-20" }, { title: "Check props" }]);
+    const before = r.enqueued();
+    for (const actionItems of [[{ title: "x".repeat(201) }], [{ title: "ok", dueDate: "2026-02-30" }], [{ title: "ok", dueDate: "20/10/2026" }], Array.from({ length: 26 }, (_, i) => ({ title: `T${i}` }))]) {
+      const res = await createMomOffline(data, { ...input, actionItems }, { outbox: r.outbox });
+      expect(res.ok).toBe(false);
+    }
+    expect(r.enqueued()).toBe(before);
+  });
+
   test("only what the person gave is sent (a bare meeting has no attendees, agenda, type or minutes keys)", async () => {
     const r = await rig();
     const result = await createMomOffline(shellData(r.idb as never), { projectId: "p1", title: "Quick sync", scheduledAt: "2026-10-12T09:00" }, { outbox: r.outbox });
