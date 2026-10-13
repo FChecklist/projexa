@@ -3,7 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { reportDestination } from "@/lib/report-destinations";
 import type { ShellApi } from "../types";
@@ -54,9 +54,8 @@ describe("reports on this laptop", () => {
     expect(getAllByTestId("overview-body-row")).toHaveLength(2);
     expect(getByTestId("overview-report-export")).toBeTruthy();
     expect(getAllByTestId("overview-report-entry").length).toBeGreaterThan(10);
-    await new Promise((r) => setTimeout(r, 50));
-    // The work-progress report is its own screen: never asked for here, even by the keep-every-report run.
-    expect(fetchCalls.some((u) => u.includes("/api/reports/work-progress"))).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchCalls).toEqual([]);
   });
 
   test("offline, a report never saved here: a calm sentence, no export, no error, no request", async () => {
@@ -64,20 +63,17 @@ describe("reports on this laptop", () => {
     const { getByTestId, queryByTestId } = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams()} data={data} />);
     expect(getByTestId("overview-report-none").textContent).toContain("once the laptop is connected");
     expect(queryByTestId("overview-report-export")).toBeNull();
-    await new Promise((r) => setTimeout(r, 50));
-    // The work-progress report is its own screen: never asked for here, even by the keep-every-report run.
-    expect(fetchCalls.some((u) => u.includes("/api/reports/work-progress"))).toBe(false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchCalls).toEqual([]);
   });
 
   test("online: the online screen's endpoint is fetched, the answer saved, and the screen redrawn", async () => {
     let refreshed = 0;
     const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
     render(<ReportsLocalScreen shell={fakeShell("online", () => { refreshed += 1; })} params={{}} query={new URLSearchParams()} data={data} />);
-    await waitFor(() => expect(refreshed).toBeGreaterThanOrEqual(1));
-    // The selected report is fetched first; every other fetch report of the project is then kept too (Sumeet R-C11 offline), one request each, none twice.
-    expect(fetchCalls[0]).toBe(STATUS_URL);
-    await waitFor(() => expect(fetchCalls.length).toBeGreaterThan(5));
-    expect(new Set(fetchCalls).size).toBe(fetchCalls.length);
+    await waitFor(() => expect(refreshed).toBe(1));
+    // Only the selected report is fetched on its own: the others are kept when the person presses "Keep all reports on this laptop" (the Vercel budget).
+    expect(fetchCalls).toEqual([STATUS_URL]);
     const again = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
     expect(again.state === "local" && again.selected?.kind === "fetch" ? again.selected.snapshot?.body : null).toEqual(BODY);
   });
@@ -86,8 +82,24 @@ describe("reports on this laptop", () => {
     const data = await loadReports(shellData(), "p1", new URLSearchParams("report=work-progress"));
     const { getByTestId } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams()} data={data} />);
     expect(getByTestId("overview-report").querySelector("a")?.getAttribute("href")).toContain("/work-progress?");
-    await new Promise((r) => setTimeout(r, 50));
-    // The work-progress report is its own screen: never asked for here, even by the keep-every-report run.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("'Keep all reports on this laptop' fetches every other fetch report once, one after another; nothing is fetched before it is pressed", async () => {
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    const { getByTestId, findByTestId } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams("report=project-status")} data={data} />);
+    await waitFor(() => expect(fetchCalls).toEqual([STATUS_URL]));
+    fireEvent.click(getByTestId("reports-keep-all"));
+    expect((await findByTestId("reports-keep-all-note")).textContent).toContain("Every report is now saved here");
+    expect(fetchCalls.length).toBeGreaterThan(5);
+    expect(new Set(fetchCalls).size).toBe(fetchCalls.length);
     expect(fetchCalls.some((u) => u.includes("/api/reports/work-progress"))).toBe(false);
+  });
+
+  test("offline the button is not offered", async () => {
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    const { queryByTestId } = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams("report=project-status")} data={data} />);
+    expect(queryByTestId("reports-keep-all")).toBeNull();
   });
 });
