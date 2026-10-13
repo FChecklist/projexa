@@ -20,8 +20,8 @@ import { loadLocalFirst, localSyncInfo } from "../../local-reader";
 import type { ShellData } from "../context";
 import { applyPendingEdits, type PendingEdit } from "../pending-edits";
 import { parseProgress, readKind } from "./delivery-local";
-import { DEFAULT_BUDGET_PERCENT, latestProgress } from "./scope-writes";
-import { pendingView, readPendingOps } from "./design-change-rows";
+import { DEFAULT_BUDGET_PERCENT, latestProgress, type LinkableChangeOrder } from "./scope-writes";
+import { CHANGE_ORDERS_KIND, pendingView, readKind as readDesignKind, readPendingOps, toChangeOrder } from "./design-change-rows";
 import { vendorNames, type MasterState } from "./org-masters";
 
 export type BoqListRow = {
@@ -93,6 +93,10 @@ export type ScopeReviseData =
       parent: BoqLineItemRow[];
       /** Percent complete per parent line id, from this laptop's progress entries; null when progress was never copied here. */
       progress: Record<string, number> | null;
+      /** The approved change orders no revision has been made from yet (a revision can carry one out); empty when change orders were never copied here. */
+      changeOrders: LinkableChangeOrder[];
+      /** This person already has a revision of this BOQ waiting to be sent: a BOQ can be revised once, so a second is not offered. */
+      revisionWaiting: boolean;
     };
 
 /** One line of the budget screen: the server's copy of its budget overlay, and what is waiting on it. */
@@ -225,9 +229,22 @@ export async function loadScopeRevise(data: ShellData, boqId: string, projectId:
     const first = own[0]!;
     const boq: Boq = { id: boqId, projectId: candidate, version: first.boqVersion, title: first.boqTitle, status: first.boqStatus, parentBoqId: null, createdAt: first.createdAt ?? "" };
     const progressRead = await readKind(data, candidate, "progress", parseProgress);
+    const pending = await readPendingOps(data, candidate);
+    const revisionWaiting = pending.some((op) => op.functionId === "create_boq_revision" && op.params.boqId === boqId);
+    // a change order a waiting revision already names is taken, whatever the server has not yet said
+    const taken = new Set(pending.filter((op) => op.functionId === "create_boq_revision").map((op) => op.params.sourceChangeOrderId).filter((id): id is string => typeof id === "string"));
+    const coRead = await readDesignKind(data, CHANGE_ORDERS_KIND, candidate);
+    const changeOrders: LinkableChangeOrder[] = coRead.synced
+      ? coRead.rows
+          .map(toChangeOrder)
+          .filter((c): c is NonNullable<typeof c> => c !== null && c.status === "approved" && c.boqRevisionId === null && !c.id.startsWith("local-") && !taken.has(c.id))
+          .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
+          .map((c) => ({ id: c.id, number: c.number, title: c.title }))
+      : [];
     return {
       state: "ready", projectId: candidate, boq, parent: orderLinesForBoq(own).map(toBoqLineItemRow),
       progress: progressRead.synced ? Object.fromEntries(latestProgress(progressRead.rows)) : null,
+      changeOrders, revisionWaiting,
     };
   }
   return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };

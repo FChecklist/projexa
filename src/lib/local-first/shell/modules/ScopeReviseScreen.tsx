@@ -26,6 +26,7 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
   const [errors, setErrors] = useState<BoqDraftErrors>({});
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [changeOrderId, setChangeOrderId] = useState("");
   const progress = useMemo(() => new Map(Object.entries(ready?.progress ?? {})), [ready]);
 
   if (data.state === "no_project") return <StateMessage testId="scope-revise-screen" state="no_project" title="New Revision" back={BACK}>{NO_PROJECT}</StateMessage>;
@@ -33,7 +34,7 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
   if (data.state === "not_found") return <StateMessage testId="scope-revise-screen" state="not_found" title="New Revision" back={BACK}>This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</StateMessage>;
   if (data.state === "parent_waiting") return <StateMessage testId="scope-revise-screen" state="parent_waiting" title="New Revision" back={BACK}>This BOQ is still waiting to be sent. It can be revised once the server has accepted it.</StateMessage>;
   if (data.state === "money_hidden") return <StateMessage testId="scope-revise-screen" state="money_hidden" title="New Revision" back={BACK}>Quantities and rates are hidden for your role, so this BOQ cannot be revised from the laptop.</StateMessage>;
-  const { projectId, boq, parent } = data;
+  const { projectId, boq, parent, changeOrders, revisionWaiting } = data;
   const back = { href: `/scope/${encodeURIComponent(boq.id)}${projectQuery(projectId)}`, label: "Back to this BOQ" };
   if (!mayOffer(shell.data.role, "create_boq_revision")) {
     return <StateMessage testId="scope-revise-screen" state="role" title="New Revision" back={back}>Your role can read BOQs but not revise them.</StateMessage>;
@@ -48,7 +49,7 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
     setErrors(errs);
     if (errs.title || errs.lines) return;
     setBusy(true);
-    const result = await reviseBoqOffline({ projectId, parentBoqId: boq.id, parent, parentVersion: boq.version, title, lines, progress }, writeAccess(shell));
+    const result = await reviseBoqOffline({ projectId, parentBoqId: boq.id, parent, parentVersion: boq.version, title, lines, progress, ...(changeOrderId ? { sourceChangeOrderId: changeOrderId, linkable: changeOrders } : {}) }, writeAccess(shell));
     setBusy(false);
     if (!result.queued) return setNote(scopeNotQueuedMessage(result.reason));
     setNote(keptNote(shell));
@@ -67,6 +68,20 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
         <ScopeLinesEditor lines={lines} onChange={setLines} testIdPrefix="scope-revise" />
         <Button type="button" variant="outline" size="sm" data-testid="scope-revise-add" onClick={() => setLines((prev) => [...prev, emptyLine()])}>+ Add Line</Button>
         <p className="text-xs text-px-muted">Removing a line, or reducing its quantity or rate, is blocked if that item is already recorded as complete on site.</p>
+        {revisionWaiting ? (
+          <p role="alert" className="rounded border border-px-error-border bg-px-error-light p-3 text-sm text-px-error" data-testid="scope-revise-waiting">
+            A revision of this BOQ is already waiting to be sent, and a BOQ can be revised only once. Wait until it has been sent, then make the next change from the new revision.
+          </p>
+        ) : null}
+        {changeOrders.length > 0 ? (
+          <label className="block max-w-xl text-sm">Because of a change order (optional)
+            <select aria-label="Because of a change order" data-testid="scope-revise-change-order" className="mt-1 block w-full rounded-md border border-black/15 bg-white px-2 py-1.5 text-sm" value={changeOrderId} {...textInput(setChangeOrderId)}>
+              <option value="">No change order</option>
+              {changeOrders.map((c) => <option key={c.id} value={c.id}>{c.number !== null ? `CO-${c.number} ` : ""}{c.title}</option>)}
+            </select>
+            <span className="mt-1 block text-xs text-px-muted">Only an approved change order that no revision has been made from yet. The server links the two when it accepts this revision.</span>
+          </label>
+        ) : null}
         {ready?.progress === null ? (
           <p className="text-xs text-px-muted" data-testid="scope-revise-progress-unknown">Site progress has not been copied to this laptop yet, so the server checks it when this is sent.</p>
         ) : null}
@@ -82,7 +97,7 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
         ) : null}
         {errors.lines ? <p role="alert" className="text-xs text-px-error" data-testid="scope-error-lines">{errors.lines}</p> : null}
         <div className="flex gap-2">
-          <Button type="submit" size="sm" data-testid="scope-revise-save" disabled={busy || !title.trim() || reductions.length > 0} title={reductions.length > 0 ? "A line with work recorded on site would be removed or reduced" : undefined}>Save revision</Button>
+          <Button type="submit" size="sm" data-testid="scope-revise-save" disabled={busy || !title.trim() || reductions.length > 0 || revisionWaiting} title={reductions.length > 0 ? "A line with work recorded on site would be removed or reduced" : undefined}>Save revision</Button>
           <a className="px-2 py-1.5 text-sm underline underline-offset-2" href={back.href}>Cancel</a>
         </div>
       </form>

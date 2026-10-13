@@ -25,9 +25,10 @@
 //
 // Excel import is online-only by design and is not touched.
 
+import { localDbNameFor, openLocalDb } from "../../local-db";
 import { OutboxRefusal } from "../../outbox";
 import {
-  collectLines, draftBoqTotal, draftLineAmount, draftRootAncestor, emptyLine, TITLE_REQUIRED_MESSAGE, toPayloadLineItems,
+  collectLines, draftBoqTotal, draftLineAmount, draftRootAncestor, emptyLine, TITLE_REQUIRED_MESSAGE, toDrafts, toPayloadLineItems,
   type BoqLineItemRow, type LineItemDraft,
 } from "@/lib/boq-helpers";
 import { BOQ_LINES_KIND, BOQS_KIND } from "../../boq-local";
@@ -37,7 +38,7 @@ export { emptyLine };
 
 export type ScopeWriteResult =
   | { queued: true; opId: string; tempId: string }
-  | { queued: false; reason: "no_copy" | "no_row" | "invalid" | "blocked" | "too_large" | "failed" };
+  | { queued: false; reason: "no_copy" | "no_row" | "invalid" | "blocked" | "too_large" | "failed" | "revision_waiting" | "change_order" };
 
 const trim = (s: string | undefined) => (s ?? "").trim();
 
@@ -185,6 +186,9 @@ export async function createBoqOffline(input: NewBoq, access: DesignChangeWriteA
   }
 }
 
+/** An APPROVED change order of the project that no BOQ revision has been made from yet: the only kind the server lets a revision be linked to. */
+export type LinkableChangeOrder = { id: string; number: number | null; title: string };
+
 export type NewRevision = {
   projectId: string;
   /** The server's BOQ this revision is made from: a row the laptop holds at a server version, never a temporary one. */
@@ -195,6 +199,13 @@ export type NewRevision = {
   lines: LineItemDraft[];
   /** The latest percent complete per parent line id, from this laptop's progress entries. */
   progress: ReadonlyMap<string, number>;
+  /**
+   * CHANGE OF SCOPE (R-98): the approved change order this revision carries out. The server links the two (the change order's boq_revision_id) in
+   * the same transaction as the revision, and refuses a change order that is not approved, is already linked, or is another project's. The
+   * laptop checks the first two from its own copy against `linkable` (the approved, unlinked change orders it holds) and sends the id.
+   */
+  sourceChangeOrderId?: string;
+  linkable?: readonly LinkableChangeOrder[];
 };
 
 export function validateRevision(input: Pick<NewRevision, "title" | "lines" | "parent" | "progress">): BoqDraftErrors & { reductions?: string[] } {
@@ -210,9 +221,14 @@ export async function reviseBoqOffline(input: NewRevision, access: DesignChangeW
   if (errors.title || errors.lines) return { queued: false, reason: "invalid" };
   if (errors.reductions) return { queued: false, reason: "blocked" };
   if (input.parentBoqId.startsWith("local-")) return { queued: false, reason: "no_row" };
+  // CHANGE OF SCOPE: only an approved change order that no revision was made from yet (the server's rules, from this laptop's copy)
+  if (input.sourceChangeOrderId !== undefined && !(input.linkable ?? []).some((c) => c.id === input.sourceChangeOrderId)) return { queued: false, reason: "change_order" };
   try {
     const ctx = await ready(input.projectId, access);
     if (!ctx) return { queued: false, reason: "no_copy" };
+    // A BOQ can be revised once: the server refuses a second revision of the same parent (409). Two revisions made one after the other with no
+    // network would both be built on the same parent, so the second is refused HERE, in words, instead of coming back as a rejected card.
+    if (await revisionAlreadyWaiting(ctx.idb, ctx.userId, input.parentBoqId)) return { queued: false, reason: "revision_waiting" };
     const tempId = tempIdOf();
     const { valid } = collectLines(input.lines);
     const title = input.title.trim();
@@ -220,8 +236,11 @@ export async function reviseBoqOffline(input: NewRevision, access: DesignChangeW
       functionId: "create_boq_revision",
       projectId: input.projectId,
       // no allowScopeReductionOverride: the override is made online, with the blocked lines in front of the person
-      params: { projectId: input.projectId, boqId: input.parentBoqId, title, lineItems: toPayloadLineItems(valid) },
-      label: "New BOQ revision",
+      params: {
+        projectId: input.projectId, boqId: input.parentBoqId, title, lineItems: toPayloadLineItems(valid),
+        ...(input.sourceChangeOrderId !== undefined ? { sourceChangeOrderId: input.sourceChangeOrderId } : {}),
+      },
+      label: input.sourceChangeOrderId !== undefined ? "New BOQ revision (change of scope)" : "New BOQ revision",
       creates: { kind: BOQS_KIND, id: tempId },
       optimistic: async (tx) => {
         await tx.putRecord({
@@ -237,6 +256,36 @@ export async function reviseBoqOffline(input: NewRevision, access: DesignChangeW
   }
 }
 
+/**
+ * ADD A SCOPE ITEM (R-96): one or more new lines on a BOQ that already exists. Online this is a revision that keeps every line and adds the new
+ * ones, so that is what is kept here: ONE create_boq_revision with the parent's lines plus the new items. Nothing existing is touched, so the
+ * progress guard has nothing to refuse unless the person's own edits to the kept lines would do so (they are not offered on this screen).
+ * Everything reviseBoqOffline checks applies (an item code used twice, a missing field, a revision already waiting, a change order that cannot be used).
+ */
+export type NewScopeItems = Omit<NewRevision, "lines" | "title"> & {
+  items: LineItemDraft[];
+  /** The BOQ's own title, used for the revision when none is given. */
+  boqTitle: string;
+  title?: string;
+};
+
+export async function addScopeItemsOffline(input: NewScopeItems, access: DesignChangeWriteAccess): Promise<ScopeWriteResult> {
+  const items = input.items.filter((l) => !isBlank(l));
+  if (items.length === 0) return { queued: false, reason: "invalid" };
+  const { items: _items, boqTitle, title, ...rest } = input;
+  return reviseBoqOffline({ ...rest, title: trim(title) || boqTitle, lines: [...toDrafts([...input.parent]), ...items] }, access);
+}
+
+/** Whether this person's outbox already holds a revision of this BOQ (any status: a refused or conflicted one is still in the outbox). */
+export async function revisionAlreadyWaiting(idb: IDBFactory, userId: string, parentBoqId: string): Promise<boolean> {
+  const db = await openLocalDb(idb, localDbNameFor(userId));
+  try {
+    return (await db.listOps()).some((op) => op.functionId === "create_boq_revision" && op.params.boqId === parentBoqId);
+  } finally {
+    db.close();
+  }
+}
+
 /** Plain words for a BOQ write that was not kept on the laptop. */
 export function scopeNotQueuedMessage(reason: Exclude<ScopeWriteResult, { queued: true }>["reason"]): string {
   switch (reason) {
@@ -248,6 +297,10 @@ export function scopeNotQueuedMessage(reason: Exclude<ScopeWriteResult, { queued
       return "Please check the highlighted fields.";
     case "blocked":
       return "A revision cannot remove or reduce a line that already has work recorded on site. Nothing was saved.";
+    case "revision_waiting":
+      return "A revision of this BOQ is already waiting to be sent, and a BOQ can be revised only once. Nothing was saved. Wait until it has been sent, then make the next change from the new revision.";
+    case "change_order":
+      return "That change order cannot be used: only an approved change order that no BOQ revision has been made from yet can be linked. Nothing was saved.";
     case "too_large":
       return "This BOQ is too large to send in one go from the laptop. Nothing was saved here; create it while you are online (or import it from Excel).";
     default:

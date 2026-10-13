@@ -200,6 +200,8 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
       {boq.status !== "superseded" && mayOffer(shell.data.role, "create_boq_revision") ? (
         <p className="mt-1 text-sm">
           <a className="text-px-ink underline underline-offset-2" data-testid="boq-local-revise" href={`/scope/${encodeURIComponent(boq.id)}/revise${projectQuery(boq.projectId)}`}>New revision</a>
+          {" · "}
+          <a className="text-px-ink underline underline-offset-2" data-testid="boq-local-add-item" href={`/scope/${encodeURIComponent(boq.id)}/add-item${projectQuery(boq.projectId)}`}>Add a scope item</a>
         </p>
       ) : null}
       {mayOffer(shell.data.role, "update_line_item_budget") ? (

@@ -42,6 +42,13 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     load: () => import("./modules/ScopeReviseScreen"),
     adapter: (shell, params, query) => loadScopeRevise(shell.data, params.id!, query.get("projectId")),
   }),
+  // R-96 / R-98: add a scope item (a revision that keeps every line and adds the new ones), optionally because of an approved change order.
+  defineShellRoute({
+    pattern: "/scope/:id/add-item",
+    title: "Add a scope item",
+    load: () => import("./modules/ScopeAddItemScreen"),
+    adapter: (shell, params, query) => loadScopeRevise(shell.data, params.id!, query.get("projectId")),
+  }),
   // R-C09: the budget overlay of a BOQ's lines (budget %, vendor, vendor amount), update_line_item_budget, manager rank.
   defineShellRoute({
     pattern: "/scope/:id/budget",
