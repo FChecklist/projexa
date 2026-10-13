@@ -104,6 +104,11 @@ const isBlank = (l: LineItemDraft) => !trim(l.description) && !trim(l.itemCode) 
 /** The server's diff key: the item code, else the description (construction-boq-service.ts lineItemKey). */
 const keyOfRow = (r: BoqLineItemRow) => r.itemCode || r.description;
 const keyOfDraft = (l: LineItemDraft) => trim(l.itemCode) || trim(l.description);
+/**
+ * A line saved with no item code reaches the revise form under an invented one, `_row_<id>` (boq-helpers toDrafts, with a `_x` de-dup suffix
+ * if that name is taken). It still IS the old line, so it must not read as a removal: the server's diffLineItems resolves it the same way.
+ */
+const inventedCodeNames = (code: string, rowId: string) => code === `_row_${rowId}` || code.startsWith(`_row_${rowId}_`);
 
 /**
  * The lines of the revision this person may not make: a line with progress recorded on site that the revision removes, or whose amount it
@@ -116,7 +121,7 @@ export function scopeReductions(parent: readonly BoqLineItemRow[], progress: Rea
   for (const row of parent) {
     const pct = progress.get(row.id);
     if (!pct || pct <= 0) continue;
-    const next = draftByKey.get(keyOfRow(row));
+    const next = draftByKey.get(keyOfRow(row)) ?? (row.itemCode ? undefined : kept.find((l) => inventedCodeNames(trim(l.itemCode), row.id)));
     if (!next) {
       out.push(`"${row.description}" is ${pct}% complete on site and would be removed entirely`);
       continue;
