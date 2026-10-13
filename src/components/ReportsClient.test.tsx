@@ -232,6 +232,7 @@ describe("ReportsClient: a run is addressable (R67 E-09)", () => {
   test("Export offers all three server-rendered formats once there is a result (R67 E-12)", async () => {
     const calls: string[] = [];
     stubFetch(calls, async () => jsonRes({ projectName: "Cedar Heights Villa - Phase 1" }));
+    searchParams = new URLSearchParams({ from: "2026-10-01", to: "2026-10-13" });
     const { findByTestId } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
 
     await findByTestId("reports-title-block");
@@ -241,12 +242,25 @@ describe("ReportsClient: a run is addressable (R67 E-09)", () => {
     // from the same schema this screen renders the table from.
     fireEvent.click(await findByTestId("export-menu-button"));
     for (const [format, expected] of [
-      ["pdf", "/api/reports/project-status/export?projectId=p-1&format=pdf"],
-      ["xlsx", "/api/reports/project-status/export?projectId=p-1&format=xlsx"],
-      ["csv", "/api/reports/project-status/export?projectId=p-1&format=csv"],
+      ["pdf", "/api/reports/project-status/export?projectId=p-1&format=pdf&from=2026-10-01&to=2026-10-13"],
+      ["xlsx", "/api/reports/project-status/export?projectId=p-1&format=xlsx&from=2026-10-01&to=2026-10-13"],
+      ["csv", "/api/reports/project-status/export?projectId=p-1&format=csv&from=2026-10-01&to=2026-10-13"],
     ] as const) {
       expect((await findByTestId(`export-${format}`)).getAttribute("href")).toBe(expected);
     }
+  });
+
+  test("a report with no hand-written document schema still offers real PDF, XLSX and CSV links carrying its own period (Sumeet R-C15 / R-C11)", async () => {
+    const calls: string[] = [];
+    stubFetch(calls, async () => jsonRes({ columns: [], rows: [], currency: "AED" }));
+    searchParams = new URLSearchParams({ report: "manpower-cost", from: "2026-10-01", to: "2026-10-13" });
+    const { findByTestId, queryByText } = render(<ReportsClient projectId="p-1" projectName="Cedar Heights Villa - Phase 1" />);
+    fireEvent.click(await findByTestId("export-menu-button"));
+    for (const format of ["pdf", "xlsx", "csv"] as const) {
+      expect((await findByTestId(`export-${format}`)).getAttribute("href")).toBe(`/api/reports/manpower-cost/export?projectId=p-1&format=${format}&from=2026-10-01&to=2026-10-13`);
+    }
+    // The old reason ("Not available for this report yet") is gone: PDF and XLSX are not greyed out for this report any more.
+    expect(queryByText(/Not available for this report yet/)).toBeNull();
   });
 
   test("an unknown ?report= slug says so, and still selects a real report rather than a dead screen", async () => {
