@@ -20,7 +20,9 @@ import { loadLocalFirst, localSyncInfo } from "../../local-reader";
 import type { ShellData } from "../context";
 import { applyPendingEdits, type PendingEdit } from "../pending-edits";
 import { parseProgress, readKind } from "./delivery-local";
-import { latestProgress } from "./scope-writes";
+import { DEFAULT_BUDGET_PERCENT, latestProgress } from "./scope-writes";
+import { pendingView, readPendingOps } from "./design-change-rows";
+import { vendorNames, type MasterState } from "./org-masters";
 
 export type BoqListRow = {
   id: string;
@@ -93,6 +95,25 @@ export type ScopeReviseData =
       progress: Record<string, number> | null;
     };
 
+/** One line of the budget screen: the server's copy of its budget overlay, and what is waiting on it. */
+export type BudgetLine = {
+  id: string; itemCode: string | null; description: string; amount: number; isSub: boolean;
+  budgetPercentage: string; vendorId: string | null; vendorAmount: string | null;
+  waiting: boolean; trouble: "conflict" | "blocked" | null;
+};
+
+export type ScopeBudgetData =
+  | { state: "no_project" }
+  | { state: "not_synced"; projectId: string | null }
+  | { state: "not_found"; projectId: string | null }
+  | { state: "parent_waiting"; projectId: string }
+  | { state: "money_hidden"; projectId: string }
+  | {
+      state: "ready"; projectId: string; boq: Boq; lines: BudgetLine[];
+      /** The organisation's vendors on this laptop (id -> name), or why there are none. */
+      vendors: { state: "local"; options: { id: string; label: string }[] } | { state: MasterState };
+    };
+
 export type ScopeObjectData =
   | { state: "no_project" }
   | { state: "not_synced"; projectId: string | null }
@@ -154,6 +175,36 @@ export async function loadScopeNew(data: ShellData, projectId: string | null): P
   if (data.projects.length === 0) return { state: "no_project" };
   if (!projectId || !data.projects.some((p) => p.id === projectId)) return { state: "not_synced", projectId };
   return { state: "ready", projectId };
+}
+
+/** One BOQ's lines with their budget overlay (budget %, vendor, vendor amount), from the laptop's own database. */
+export async function loadScopeBudget(data: ShellData, boqId: string, projectId: string | null): Promise<ScopeBudgetData> {
+  if (isTempBoqId(boqId)) return { state: "parent_waiting", projectId: projectId ?? "" };
+  const candidates = projectId ? [projectId] : data.projects.map((p) => p.id);
+  if (candidates.length === 0) return { state: "no_project" };
+  let anySynced = false;
+  for (const candidate of candidates) {
+    const { lines, synced } = await readProjectLines(data, candidate);
+    if (!synced) continue;
+    anySynced = true;
+    const own = lines.filter((l) => l.boqId === boqId);
+    if (own.length === 0) continue;
+    const info = await localSyncInfo(BOQ_LINES_KIND, candidate, { userId: data.userId, idb: data.idb });
+    const hidden: unknown[] = Array.isArray(info?.hiddenFields) ? info.hiddenFields : [];
+    if (hidden.some((f) => f === "budget_percentage" || f === "vendor_amount" || f === "amount")) return { state: "money_hidden", projectId: candidate };
+    const first = own[0]!;
+    const boq: Boq = { id: boqId, projectId: candidate, version: first.boqVersion, title: first.boqTitle, status: first.boqStatus, parentBoqId: null, createdAt: first.createdAt ?? "" };
+    const view = pendingView(await readPendingOps(data, candidate), BOQ_LINES_KIND);
+    const budgetLines: BudgetLine[] = orderLinesForBoq(own).map(toBoqLineItemRow).map((r) => ({
+      id: r.id, itemCode: r.itemCode, description: r.description, amount: Number(r.amount) || 0, isSub: Boolean(r.parentLineItemId),
+      budgetPercentage: r.budgetPercentage ?? DEFAULT_BUDGET_PERCENT, vendorId: r.vendorId ?? null, vendorAmount: r.vendorAmount ?? null,
+      waiting: (view.waitingOn.get(r.id) ?? []).length > 0, trouble: view.troubled.get(r.id) ?? null,
+    }));
+    const names = await vendorNames({ userId: data.userId, idb: data.idb });
+    const vendors = names.state === "local" ? { state: "local" as const, options: [...names.names].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)) } : { state: names.state };
+    return { state: "ready", projectId: candidate, boq, lines: budgetLines, vendors };
+  }
+  return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };
 }
 
 /** The BOQ a revision is made from, its lines and the progress this laptop holds, all from the laptop's own database. */

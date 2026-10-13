@@ -5,7 +5,7 @@
 // ADDING A MODULE is one file of screens plus ~10 lines below; docs/local-first/ROUTE_TABLE.md has the walk-through.
 
 import { defineShellRoute, type ShellRoute } from "./types";
-import { loadScopeList, loadScopeNew, loadScopeObject, loadScopeRevise } from "./modules/scope-adapter";
+import { loadScopeBudget, loadScopeList, loadScopeNew, loadScopeObject, loadScopeRevise } from "./modules/scope-adapter";
 import { loadBilling } from "./modules/billing-adapter";
 import { loadCustomers } from "./modules/customers-adapter";
 import { loadExpenses } from "./modules/expenses-adapter";
@@ -41,6 +41,13 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     title: "New BOQ Revision",
     load: () => import("./modules/ScopeReviseScreen"),
     adapter: (shell, params, query) => loadScopeRevise(shell.data, params.id!, query.get("projectId")),
+  }),
+  // R-C09: the budget overlay of a BOQ's lines (budget %, vendor, vendor amount), update_line_item_budget, manager rank.
+  defineShellRoute({
+    pattern: "/scope/:id/budget",
+    title: "BOQ Budget",
+    load: () => import("./modules/ScopeBudgetScreen"),
+    adapter: (shell, params, query) => loadScopeBudget(shell.data, params.id!, query.get("projectId")),
   }),
   defineShellRoute({
     pattern: "/scope/:id",

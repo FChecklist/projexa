@@ -30,8 +30,8 @@ import {
   collectLines, draftBoqTotal, draftLineAmount, draftRootAncestor, emptyLine, TITLE_REQUIRED_MESSAGE, toPayloadLineItems,
   type BoqLineItemRow, type LineItemDraft,
 } from "@/lib/boq-helpers";
-import { BOQS_KIND } from "../../boq-local";
-import { ready, tempIdOf, type DesignChangeWriteAccess } from "./design-change-writes";
+import { BOQ_LINES_KIND, BOQS_KIND } from "../../boq-local";
+import { editableRow, ready, tempIdOf, type DesignChangeWriteAccess } from "./design-change-writes";
 
 export { emptyLine };
 
@@ -247,5 +247,85 @@ export function scopeNotQueuedMessage(reason: Exclude<ScopeWriteResult, { queued
       return "This BOQ is too large to send in one go from the laptop. Nothing was saved here; create it while you are online (or import it from Excel).";
     default:
       return "This could not be saved on this laptop. Please try again.";
+  }
+}
+
+// ─── the budget overlay of a BOQ line (R-C09) ──────────────────────────────────────────────────────────────────────────────────────────
+
+/** The default budget percent of a line the server has never been told a budget for (the column's own default). */
+export const DEFAULT_BUDGET_PERCENT = "25";
+
+export type BudgetCurrent = { budgetPercentage: string | null; vendorId: string | null; vendorAmount: string | null };
+export type BudgetEdit = {
+  projectId: string;
+  lineId: string;
+  /** What the line holds now (the laptop's copy). */
+  current: BudgetCurrent;
+  /** As typed. Empty = leave this field alone. */
+  budgetPercentage: string;
+  vendorId: string;
+  vendorAmount: string;
+};
+export type BudgetErrors = { budgetPercentage?: string; vendorAmount?: string; nothing?: string };
+
+/** The line's budget: amount x percent / 100 (derived, never stored; the server's computedBudget). */
+export const computedBudget = (amount: number, percent: number): number => (amount * percent) / 100;
+
+/**
+ * The server's rules for the three fields, in plain words: the percent is a number from 0 to 100 (both allowed), the vendor amount a number of zero
+ * or more. Only what the person CHANGED is sent, so a call that changes nothing is refused here as it is on the server (VALUE_REQUIRED).
+ */
+export function validateBudgetEdit(input: BudgetEdit): BudgetErrors {
+  const errors: BudgetErrors = {};
+  const pct = trim(input.budgetPercentage);
+  if (pct) {
+    const n = Number(pct);
+    if (!Number.isFinite(n) || n < 0 || n > 100) errors.budgetPercentage = "Budget % must be a number from 0 to 100.";
+  }
+  const amount = trim(input.vendorAmount);
+  if (amount) {
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n < 0) errors.vendorAmount = "Vendor amount must be a number, zero or more.";
+  }
+  if (!errors.budgetPercentage && !errors.vendorAmount && Object.keys(budgetPatch(input)).length === 0) errors.nothing = "Nothing was changed.";
+  return errors;
+}
+
+/** The parameters of the fields that differ from what the line holds. */
+export function budgetPatch(input: BudgetEdit): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const pct = trim(input.budgetPercentage);
+  if (pct && Number(pct) !== Number(input.current.budgetPercentage ?? DEFAULT_BUDGET_PERCENT)) out.budgetPercentage = Number(pct);
+  const vendor = trim(input.vendorId);
+  if (vendor && vendor !== (input.current.vendorId ?? "")) out.vendorId = vendor;
+  const amount = trim(input.vendorAmount);
+  if (amount && (input.current.vendorAmount === null || Number(amount) !== Number(input.current.vendorAmount))) out.vendorAmount = Number(amount);
+  return out;
+}
+
+export type BudgetWriteResult = { queued: true; opId: string } | { queued: false; reason: "no_copy" | "no_row" | "invalid" | "failed" };
+
+/**
+ * Sets a line's budget percent, vendor and vendor amount: ONE update_line_item_budget op on the line, based on the server version this laptop holds
+ * (a change made on the server meanwhile comes back as a conflict card, never a silent overwrite). Changes nothing on the laptop: the line keeps
+ * what the server last said and the screen marks it "Waiting to sync". Manager rank (the registry's min_role_rank 3): decided again by the server.
+ */
+export async function setLineBudgetOffline(input: BudgetEdit, access: DesignChangeWriteAccess): Promise<BudgetWriteResult> {
+  if (Object.keys(validateBudgetEdit(input)).length > 0) return { queued: false, reason: "invalid" };
+  try {
+    const ctx = await ready(input.projectId, access);
+    if (!ctx) return { queued: false, reason: "no_copy" };
+    const row = await editableRow(ctx, BOQ_LINES_KIND, input.lineId, input.projectId);
+    if (!row) return { queued: false, reason: "no_row" };
+    const { opId } = await ctx.outbox.enqueue({
+      functionId: "update_line_item_budget",
+      projectId: input.projectId,
+      params: { projectId: input.projectId, boqLineItemId: input.lineId, ...budgetPatch(input) },
+      label: "Line budget",
+      record: { kind: BOQ_LINES_KIND, id: input.lineId, baseVersion: row.serverVersion },
+    });
+    return { queued: true, opId };
+  } catch {
+    return { queued: false, reason: "failed" };
   }
 }

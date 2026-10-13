@@ -52,7 +52,7 @@ export async function ready(projectId: string, access: DesignChangeWriteAccess):
 }
 
 /** The row the laptop holds, if it is this organisation's, of this project, and carries a server version (an edit is based on it). */
-async function editableRow(ctx: Ready, kind: string, id: string, projectId: string): Promise<(LocalRecord & { serverVersion: number }) | null> {
+export async function editableRow(ctx: Ready, kind: string, id: string, projectId: string): Promise<(LocalRecord & { serverVersion: number }) | null> {
   const db = await openLocalDb(ctx.idb, localDbNameFor(ctx.userId));
   try {
     const row = await db.getRecord(kind, id);

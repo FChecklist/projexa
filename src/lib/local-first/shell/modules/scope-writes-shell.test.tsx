@@ -14,7 +14,8 @@ import { findShellRoute } from "../route-table";
 import { readPendingOps } from "./design-change-rows";
 import { designChangeWriteDeps } from "./DesignChangeShared";
 import { seedDesignChange } from "./design-change-test-fixtures";
-import { allLinesTotal, latestProgress, revisionVariation, scopeReductions, validateBoqDraft } from "./scope-writes";
+import { seedOrgKinds } from "./finance-test-seed";
+import { allLinesTotal, budgetPatch, latestProgress, revisionVariation, scopeReductions, validateBoqDraft, validateBudgetEdit } from "./scope-writes";
 import { emptyLine, toDrafts, type BoqLineItemRow } from "@/lib/boq-helpers";
 // The replica pull after a sent edit talks to Supabase; here it is a no-op (the REAL module is spread first, see CLAUDE.md's mock.module() note).
 const realReplicaShared = await import("../../replica-shared");
@@ -62,6 +63,7 @@ async function seedLaptop(opts: { role?: string; progress?: boolean; moneyHidden
     { kind: "boq_lines", projectId: "p1", data: lineRow("li3", "A3", "Paint", 300, 10) },
     { kind: "progress", projectId: "p1", data: progressRow("pr1", "li1", 40) },
   ], { done, hiddenFields: opts.moneyHidden ? { boq_lines: ["quantity", "rate", "amount"] } : {} });
+  await seedOrgKinds(idb, [{ kind: "vendors", rows: [{ id: "v1", supplier_name: "Shree Cement" }] }], { at: NOW });
   const device = await openDeviceMeta(idb);
   await device.meta.setMeta(shellManifestKey("u1"), { at: NOW, user: { id: "u1", name: "Asha Rao", role: opts.role ?? "manager", org_id: "orgA" }, projects: [{ id: "p1", name: "Cedar Heights Villa", status: "active" }] });
   device.close();
@@ -292,5 +294,60 @@ describe("New Revision with NO network", () => {
     go("/local/scope/local-abc/revise?projectId=p1");
     const second = render(<LocalShell />);
     expect((await second.findByTestId("scope-revise-screen")).getAttribute("data-state")).toBe("parent_waiting");
+  });
+});
+
+describe("Line budgets with NO network (R-C09)", () => {
+  const edit = (over: Partial<Parameters<typeof validateBudgetEdit>[0]> = {}) => ({
+    projectId: "p1", lineId: "li1", current: { budgetPercentage: null, vendorId: null, vendorAmount: null }, budgetPercentage: "", vendorId: "", vendorAmount: "", ...over,
+  });
+
+  test("the rules as pure functions: 0 and 100 are allowed; below 0, above 100, a negative vendor amount and no change are refused; only what changed is sent", () => {
+    expect(validateBudgetEdit(edit({ budgetPercentage: "0" }))).toEqual({});
+    expect(validateBudgetEdit(edit({ budgetPercentage: "100" }))).toEqual({});
+    expect(validateBudgetEdit(edit({ budgetPercentage: "-1" })).budgetPercentage).toBe("Budget % must be a number from 0 to 100.");
+    expect(validateBudgetEdit(edit({ budgetPercentage: "100.5" })).budgetPercentage).toBeDefined();
+    expect(validateBudgetEdit(edit({ budgetPercentage: "abc" })).budgetPercentage).toBeDefined();
+    expect(validateBudgetEdit(edit({ vendorAmount: "-5" })).vendorAmount).toBe("Vendor amount must be a number, zero or more.");
+    expect(validateBudgetEdit(edit({ budgetPercentage: "25" })).nothing).toBe("Nothing was changed."); // 25 is the default already
+    expect(budgetPatch(edit({ budgetPercentage: "40", vendorId: "v1", vendorAmount: "3500" }))).toEqual({ budgetPercentage: 40, vendorId: "v1", vendorAmount: 3500 });
+  });
+
+  test("opens from the laptop's copy at the default 25 %; bad values are refused with nothing queued; a good edit is ONE update_line_item_budget op marked 'Waiting to sync'", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/scope/b1/budget?projectId=p1");
+    const { findByTestId, getByTestId, getAllByTestId } = render(<LocalShell />);
+    await findByTestId("scope-budget-screen");
+    expect(getAllByTestId("scope-budget-row")).toHaveLength(3);
+    expect((getByTestId("scope-budget-li1-pct") as HTMLInputElement).value).toBe("25");
+    expect(getByTestId("scope-budget-li1-budget").textContent).toBe("1,250.00");
+
+    type(getByTestId("scope-budget-li1-pct"), "101");
+    fireEvent.click(getByTestId("scope-budget-li1-save"));
+    expect((await findByTestId("scope-budget-li1-pct-error")).textContent).toBe("Budget % must be a number from 0 to 100.");
+    type(getByTestId("scope-budget-li1-pct"), "40");
+    type(getByTestId("scope-budget-li1-vamount"), "-3");
+    fireEvent.click(getByTestId("scope-budget-li1-save"));
+    expect((await findByTestId("scope-budget-li1-vamount-error")).textContent).toBe("Vendor amount must be a number, zero or more.");
+    expect(await ops()).toEqual([]);
+
+    type(getByTestId("scope-budget-li1-vamount"), "3500");
+    fireEvent.change(getByTestId("scope-budget-li1-vendor"), { target: { value: "v1" } });
+    expect(getByTestId("scope-budget-li1-budget").textContent).toBe("2,000.00");
+    fireEvent.click(getByTestId("scope-budget-li1-save"));
+    expect((await findByTestId("scope-budget-li1-waiting")).textContent).toBe("Waiting to sync");
+    const [op] = await ops();
+    expect(op).toMatchObject({ functionId: "update_line_item_budget", projectId: "p1", params: { projectId: "p1", boqLineItemId: "li1", budgetPercentage: 40, vendorId: "v1", vendorAmount: 3500 } });
+    expect(op!.record).toMatchObject({ kind: "boq_lines", id: "li1" });
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("manager rank only: a member is not offered the budget screen", async () => {
+    await seedLaptop({ role: "member" });
+    setOnline(false);
+    go("/local/scope/b1/budget?projectId=p1");
+    const { findByTestId } = render(<LocalShell />);
+    expect((await findByTestId("scope-budget-screen")).getAttribute("data-state")).toBe("role");
   });
 });

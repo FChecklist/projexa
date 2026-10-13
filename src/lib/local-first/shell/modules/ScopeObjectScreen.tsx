@@ -202,6 +202,11 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
           <a className="text-px-ink underline underline-offset-2" data-testid="boq-local-revise" href={`/scope/${encodeURIComponent(boq.id)}/revise${projectQuery(boq.projectId)}`}>New revision</a>
         </p>
       ) : null}
+      {mayOffer(shell.data.role, "update_line_item_budget") ? (
+        <p className="mt-1 text-sm">
+          <a className="text-px-ink underline underline-offset-2" data-testid="boq-local-budget" href={`/scope/${encodeURIComponent(boq.id)}/budget${projectQuery(boq.projectId)}`}>Line budgets</a>
+        </p>
+      ) : null}
       <p className="mt-1 text-xs text-px-muted" data-testid="boq-local-copy-note">
         Saved on this laptop{data.syncedAt ? ` · last copied ${formatDateTime(data.syncedAt)}` : ""}
       </p>
