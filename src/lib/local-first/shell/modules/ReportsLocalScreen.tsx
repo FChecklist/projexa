@@ -5,10 +5,12 @@
 // whenever that answer is on the laptop -- it is the same reportResultToCsv the online screen uses -- and otherwise says plainly that it
 // needs the server once.
 
+import { useEffect } from "react";
 import { formatDateTime } from "@/lib/format-date";
 import { reportResultToCsv } from "@/lib/report-run";
 import type { ShellScreenProps } from "../types";
-import { asOfLabel } from "../snapshot-cache";
+import { asOfLabel, snapshotCacheFor } from "../snapshot-cache";
+import { prefetchReportSnapshots } from "./reports-prefetch";
 import type { ReportsData } from "./reports-adapter";
 import { isReportBody } from "./reports-adapter";
 import { OverviewBody, downloadText } from "./OverviewBody";
@@ -20,6 +22,22 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
   const status = useSnapshotRefresh(shell, reads);
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
   const online = shell.connectivity === "online";
+
+  // Keep the server's last answer for every report of this project, so all of them are here when the laptop goes offline.
+  const prefetchProject = data.state === "local" ? data.projectId : null;
+  // The selected report is already fetched by useSnapshotRefresh above: not asked for twice.
+  const prefetchReports = data.state === "local" ? data.reports.filter((r) => r.value !== selected?.value) : null;
+  useEffect(() => {
+    if (!online || !prefetchProject || !prefetchReports) return;
+    const controller = new AbortController();
+    void (async () => {
+      const cache = snapshotCacheFor({ userId: shell.data.userId, role: shell.data.role, idb: shell.data.idb });
+      const result = await prefetchReportSnapshots({ cache, reports: prefetchReports, projectId: prefetchProject, signal: controller.signal });
+      if (result.refreshed > 0 && !controller.signal.aborted) shell.refresh();
+    })();
+    return () => controller.abort();
+    // Once per project per time the laptop comes online: not on every redraw (shell.refresh() redraws this screen).
+  }, [online, prefetchProject, selected?.value]);
 
   if (data.state === "no_project") {
     return (
