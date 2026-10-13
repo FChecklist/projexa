@@ -125,6 +125,11 @@ export default function WorkProgressFormClient({
   // R67 D-28: Save lands the user ON the entry they just made.
   const router = useRouter();
   const [activities, setActivities] = useState<Activity[]>([]);
+  // Sumeet live UAT 2026-10-13: a brand-new project has NO activities and the form had no way to make one (the backend POST existed, nothing called
+  // it), so Work Progress -- and the progress cap, the report -- could not be used on a new project from the screen.
+  const [firstActivityName, setFirstActivityName] = useState("");
+  const [addingActivity, setAddingActivity] = useState(false);
+  const [addActivityError, setAddActivityError] = useState<string | null>(null);
   const [lineItems, setLineItems] = useState<BoqLineItem[]>([]);
   // R47-005 (fault R46M13_TC30_01): every BOQ in the project, plus which one is
   // currently selected. Before this, the form resolved exactly ONE "current"
@@ -175,6 +180,27 @@ export default function WorkProgressFormClient({
       });
     }
   }, [projectId]);
+
+  async function addFirstActivity() {
+    const name = firstActivityName.trim();
+    if (!name) { setAddActivityError("Name the activity first, for example Brick partition."); return; }
+    setAddingActivity(true);
+    setAddActivityError(null);
+    try {
+      const created = await fetchJson<{ id: string }>("/api/work-progress/activities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, name }),
+      });
+      setFirstActivityName("");
+      await loadActivities();
+      if (created?.id) setField("activityId", created.id);
+    } catch (err) {
+      setAddActivityError(err instanceof Error && err.message ? `The activity was not added: ${err.message}` : "The activity was not added.");
+    } finally {
+      setAddingActivity(false);
+    }
+  }
 
   // R67 MERGE (lane F2's F-24). This form used to fetch
   // /api/work-progress/activities while WorkProgressPageClient fetched exactly
@@ -499,6 +525,26 @@ export default function WorkProgressFormClient({
               </Select>
             )}
           </FormField>
+
+          {activities.length === 0 && !activitiesError && (
+            <div data-testid="first-activity" className="sm:col-span-2 rounded-md border border-ct-border p-3">
+              <p className="text-[12px] text-ct-muted">This project has no activities yet. Add the first one to start recording progress.</p>
+              <div className="mt-2 flex flex-wrap items-start gap-2">
+                <Input
+                  aria-label="Name of the first activity"
+                  className="max-w-sm"
+                  placeholder="e.g. Brick partition"
+                  value={firstActivityName}
+                  onChange={(e) => setFirstActivityName(e.target.value)}
+                  disabled={addingActivity}
+                />
+                <button type="button" data-testid="first-activity-add" className="h-9 rounded-md border border-ct-border px-3 text-sm font-medium" onClick={() => void addFirstActivity()} disabled={addingActivity}>
+                  {addingActivity ? "Adding…" : "Add activity"}
+                </button>
+              </div>
+              {addActivityError ? <p role="alert" className="mt-1 text-[12px] text-px-error">{addActivityError}</p> : null}
+            </div>
+          )}
 
           {/* Shown only when the project actually holds more than one BOQ --
               with a single BOQ the choice is not a choice (projexa#94's rule). */}
