@@ -18,6 +18,7 @@
 
 import { durationDays, plannedPercentComplete, taskSlippage, type TaskSlippage } from "@/lib/schedule-progress";
 import type { ShellData } from "../context";
+import { waitingIdsOf } from "./documents-records";
 import { DELIVERY_KINDS, parseBaseline, parseMilestone, parseTask, readKind, type Baseline, type Milestone, type ScheduleTask } from "./delivery-local";
 
 export type TimelineRow = ScheduleTask & {
@@ -109,10 +110,11 @@ export async function loadSchedule(data: ShellData, projectId: string | null, to
     readKind(data, projectId, DELIVERY_KINDS.baselines, parseBaseline),
   ]);
   if (!tasks.synced) return { state: "not_synced", projectId };
+  const waitingMilestones = await waitingIdsOf(data, projectId, DELIVERY_KINDS.milestones);
   const { rows, range } = buildTimeline(tasks.rows, today);
   return {
     state: "local", projectId, rows, range,
-    milestones: milestones.synced ? [...milestones.rows].sort((a, b) => (a.targetDate ?? "9999").localeCompare(b.targetDate ?? "9999")) : null,
+    milestones: milestones.synced ? milestones.rows.map((m) => ({ ...m, waiting: m.waiting || waitingMilestones.has(m.id) })).sort((a, b) => (a.targetDate ?? "9999").localeCompare(b.targetDate ?? "9999")) : null,
     baselines: baselines.synced ? [...baselines.rows].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")) : null,
     syncedAt: tasks.syncedAt,
   };
