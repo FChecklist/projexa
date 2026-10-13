@@ -158,7 +158,7 @@ beforeAll(async () => {
     await approveTimeEntryOffline({ projectId: P, timeEntryId: "ts1" }, access),
     await rejectTimeEntryOffline({ projectId: P, timeEntryId: "ts1", rejectionReason: "wrong day" }, access),
     await amendMinutesOffline(data, { projectId: P, meetingId: "mm1", minutes: "New minutes" }, { outbox }),
-    await createMomOffline(data, { projectId: P, title: "Site meeting", scheduledAt: "2026-10-12T10:30", meetingType: "site", attendees: ["Asha", "Ravi"], agenda: ["Slab", "Safety"], minutes: "Pour agreed." }, { outbox }),
+    await createMomOffline(data, { projectId: P, title: "Site meeting", scheduledAt: "2026-10-12T10:30", meetingType: "site", attendees: ["Asha", "Ravi"], agenda: ["Slab", "Safety"], minutes: "Pour agreed.", actionItems: [{ title: "Order tiles", dueDate: "2026-10-20" }] }, { outbox }),
     await editDocumentDetailsOffline(data, "documents", { projectId: P, documentId: "d1", details: { name: "Contract v2", category: "legal", expiryDate: "2027-01-01" } }, { outbox }),
     // the site cluster (shell/modules/site-writes.ts), every optional field filled
     await createRfiOffline(data, { projectId: P, subject: "Sill", question: "Height?", dueDate: "2026-10-09" }, { outbox }),

@@ -169,6 +169,28 @@ export type CreateMomInput = {
   attendees?: readonly string[];
   agenda?: readonly string[];
   minutes?: string | null;
+  /** What was agreed (R-C04). The server makes each one a task for the person who saves the meeting; an assignee is set online. */
+  actionItems?: readonly { title: string; dueDate?: string | null }[];
+};
+
+/** A real calendar day: 2026-02-30 is not (some engines roll it over, others say invalid; both are refused). */
+const realDay = (v: string): boolean => {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00Z`) : Number.NaN;
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === v;
+};
+
+/** At most 25 (the server's cap), blank titles dropped, a due date only when it is a real day; null when something the server would refuse is there. */
+const cleanActionItems = (items: CreateMomInput["actionItems"]): { title: string; dueDate?: string }[] | null => {
+  const out: { title: string; dueDate?: string }[] = [];
+  for (const item of items ?? []) {
+    const title = typeof item?.title === "string" ? item.title.trim() : "";
+    if (!title) continue;
+    const due = typeof item.dueDate === "string" ? item.dueDate.trim() : "";
+    if (title.length > 200) return null;
+    if (due && !realDay(due)) return null;
+    out.push({ title, ...(due ? { dueDate: due } : {}) });
+  }
+  return out.length <= 25 ? out : null;
 };
 
 /** Trimmed, blanks dropped, at most 50 entries; null when one entry is longer than the server accepts (200 letters). */
@@ -193,6 +215,8 @@ export async function createMomOffline(data: ShellData, input: CreateMomInput, d
   const meetingType = (input.meetingType ?? "").trim() || undefined;
   const minutes = (input.minutes ?? "").trim() || undefined;
   if (minutes && minutes.length > 20000) return { ok: false, message: "The minutes are too long to keep here (up to 20,000 letters)." };
+  const actionItems = cleanActionItems(input.actionItems);
+  if (actionItems === null) return { ok: false, message: "Each action item needs a title (up to 200 letters) and, if you give a date, a real one. At most 25 items." };
   const iso = new Date(when).toISOString();
   try {
     const idb = data.idb ?? (typeof indexedDB === "undefined" ? undefined : indexedDB);
@@ -212,6 +236,7 @@ export async function createMomOffline(data: ShellData, input: CreateMomInput, d
       params: {
         projectId: input.projectId, title, scheduledAt: iso,
         ...(meetingType ? { meetingType } : {}), ...(attendees.length ? { attendees } : {}), ...(agenda.length ? { agenda } : {}), ...(minutes ? { minutes } : {}),
+        ...(actionItems.length ? { actionItems } : {}),
       },
       label: "New meeting",
       creates: { kind: MEETING_MINUTES_KIND, id: tempId },
