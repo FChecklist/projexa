@@ -132,17 +132,22 @@ test("2.19 / R-47 a progress entry that would take a line past 100% never reache
   const stamp = Date.now();
   await A.context.setOffline(true);
   const entry = async (pct: string) => {
+    if (await A.page.getByLabel("Activity").count()) await A.page.getByLabel("Activity").selectOption({ index: 1 });
     await A.page.getByLabel("BOQ line").selectOption({ index: 1 });
-    await A.page.getByText("% complete", { exact: false }).first().click();
-    await A.page.getByLabel("% complete").fill(pct);
+    // The server's 100% rule (R-47) counts QUANTITY entries (construction-progress-service.ts); a "% complete" entry carries no quantity and is not capped,
+    // so this check enters quantities: two entries that together pass the line's own quantity (Emerald EBP-BOQ-001: 4,507 cum).
+    await A.page.getByRole("radio", { name: /^Quantity/ }).check();
+    await A.page.getByRole("textbox", { name: "Quantity done" }).fill(pct);
     await A.page.getByLabel("Remarks").fill(`cap check ${stamp}`);
     await A.page.getByRole("button", { name: "Save entry" }).click();
   };
-  await entry("60");
-  await expect(A.page.getByText(/saved on this laptop|Offline: \d+ change/i).first()).toBeVisible({ timeout: 30_000 });
-  await entry("60");
+  await entry("3000");
+  await expect(A.page.getByTestId("save-note")).toHaveAttribute("data-ok", "1", { timeout: 30_000 });
+  await entry("3000");
+  await A.page.waitForTimeout(1_500);
   // either the laptop's own guard says why at once, or the entry is queued and the server refuses it after reconnect with its reason
-  const blockedHere = await A.page.getByText(/more than 100|would reach|exceed|only .* remains/i).first().isVisible().catch(() => false);
+  const blockedHere = (await A.page.getByTestId("save-note").getAttribute("data-ok")) === "0";
+  if (blockedHere) expect(await A.page.getByTestId("save-note").innerText(), "the laptop says why in words").toMatch(/[a-z]{4,}/i);
   if (!blockedHere) {
     await A.context.setOffline(false);
     await A.page.evaluate(() => window.dispatchEvent(new Event("online")));
@@ -153,4 +158,15 @@ test("2.19 / R-47 a progress entry that would take a line past 100% never reache
     expect(said).toMatch(/\d/);
   }
   await A.context.setOffline(false);
+});
+
+test("2.22 / F60 the laptop's copy refreshes: 'last copied' moves on while the person works, it does not stay at the time of the first copy", async () => {
+  const note = A.page.getByTestId("scope-list-copy-note");
+  await A.page.goto(`/local/scope?projectId=${V}`);
+  await expect(note).toContainText(/last copied/i, { timeout: 120_000 });
+  const before = (await note.innerText()).trim();
+  // a person keeps working online for a while: the laptop checks the server's change feed again and again
+  await expect
+    .poll(async () => { await A.page.evaluate(() => window.dispatchEvent(new Event("online"))); await A.page.waitForTimeout(20_000); await A.page.goto(`/local/scope?projectId=${V}`); return (await A.page.getByTestId("scope-list-copy-note").innerText()).trim(); }, { timeout: 600_000, intervals: [1_000], message: "'last copied' never moved from the time of the first copy" })
+    .not.toBe(before);
 });
