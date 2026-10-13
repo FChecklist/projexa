@@ -1627,6 +1627,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         visible: () => document.visibilityState === "visible",
         activeProject: () => ctx.activeProjectFor(userId),
         syncProject: (projectId) => replica.syncProject(projectId),
+        // 4.3b: the server's project figures, kept on the laptop for the offline dashboard (at most one fetch per project per half hour)
+        topUp: (projectId) => import("@/lib/local-first/shell/modules/dashboard-keep").then((m) => m.topUpProjectDashboard(projectId)),
         syncAll: () => orgChange.syncRecoveringFromOrgChange(() => replica.sync(), () => localDb.openLocalDb(undefined, localDb.localDbNameFor(userId))),
       });
       const go = () => { void run(); };
