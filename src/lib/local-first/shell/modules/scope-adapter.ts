@@ -20,7 +20,7 @@ import { loadLocalFirst, localSyncInfo } from "../../local-reader";
 import type { ShellData } from "../context";
 import { applyPendingEdits, type PendingEdit } from "../pending-edits";
 import { parseProgress, readKind } from "./delivery-local";
-import { DEFAULT_BUDGET_PERCENT, latestProgress } from "./scope-writes";
+import { DEFAULT_BUDGET_PERCENT, cumulativeProgress } from "./scope-writes";
 import { pendingView, readPendingOps } from "./design-change-rows";
 import { vendorNames, type MasterState } from "./org-masters";
 
@@ -225,9 +225,12 @@ export async function loadScopeRevise(data: ShellData, boqId: string, projectId:
     const first = own[0]!;
     const boq: Boq = { id: boqId, projectId: candidate, version: first.boqVersion, title: first.boqTitle, status: first.boqStatus, parentBoqId: null, createdAt: first.createdAt ?? "" };
     const progressRead = await readKind(data, candidate, "progress", parseProgress);
+    const parent = orderLinesForBoq(own).map(toBoqLineItemRow);
+    // F60: the CUMULATIVE figure per line (the server's), not the latest entry's own percent
+    const quantities = new Map(parent.map((r) => [r.id, Number(r.quantity)] as const));
     return {
-      state: "ready", projectId: candidate, boq, parent: orderLinesForBoq(own).map(toBoqLineItemRow),
-      progress: progressRead.synced ? Object.fromEntries(latestProgress(progressRead.rows)) : null,
+      state: "ready", projectId: candidate, boq, parent,
+      progress: progressRead.synced ? Object.fromEntries(cumulativeProgress(progressRead.rows, quantities)) : null,
     };
   }
   return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };

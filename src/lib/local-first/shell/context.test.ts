@@ -80,7 +80,7 @@ describe("the shell's data comes from this laptop", () => {
     expect(chooseProject(projects, null, null)).toBe("p1");
     expect(chooseProject(projects, "someone-elses", "also-not-mine")).toBe("p1");
     expect(chooseProject([], "p1", "p1")).toBeNull();
-    expect(selectedProjectKey("u1")).toBe("px-shell-project:u1");
+    expect(selectedProjectKey("u1")).toBe("veri.rail.project"); // F63: the rail's own key, not a second one
   });
 });
 
