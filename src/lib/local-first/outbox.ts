@@ -315,7 +315,12 @@ export function rejectionMessage(op: Pick<OutboxOp, "functionId" | "label">, err
   const code = asTaskErrorCode(error?.code);
   let sentence: string;
   const own = syncCodeSentence(error?.code);
+  // checklist 2.19 / R-90: "That was not accepted as entered - check the values" is the dictionary's word for ANY business-rule refusal, and hid
+  // the one thing the person needs ("would reach 110 of 100 sqm ... only 5 sqm remains"). When the server sent its own reason and it is safe to
+  // show (no parameter name, id, address), that reason IS the sentence. A specific dictionary code (role, project, conflict ...) keeps its own.
+  const serverReason = code === "REQUEST_REJECTED" && error?.message ? sanitiseBackendMessage(error.message) : null;
   if (own) sentence = own;
+  else if (serverReason && serverReason !== sanitiseBackendMessage("")) sentence = serverReason;
   else if (code) sentence = resolveTaskError({ code, missing: error?.missing ?? null, functionId: op.functionId }).sentence;
   else if (error?.message) sentence = sanitiseBackendMessage(error.message);
   else sentence = "The server did not accept it";

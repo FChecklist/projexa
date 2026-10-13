@@ -15,6 +15,22 @@ export function formatListDate(value: unknown): string {
   return Number.isNaN(d.getTime()) ? String(value) : formatDate(d);
 }
 
+/**
+ * UAT 2026-10-13 (F58): the kit's FormSection shows a `type: "date"` field in DISPLAY mode with `toLocaleDateString()` too ("10/1/2026", month first,
+ * the runtime's locale), so the permit detail read differently from the permits list. In display mode a date column is shown as plain text carrying
+ * the house form (dd-mm-yyyy); in edit mode the columns and values are returned untouched, so the date picker keeps its ISO value.
+ */
+export function houseDateDisplay<C extends ColumnLike>(columns: readonly C[], values: Record<string, unknown>, mode: "display" | "edit"): { columns: C[]; values: Record<string, unknown> } {
+  if (mode !== "display") return { columns: [...columns], values };
+  const shown: Record<string, unknown> = { ...values };
+  const out = columns.map((c) => {
+    if (c.type !== "date") return c;
+    shown[c.field] = formatListDate(values[c.field]);
+    return { ...c, type: "text" };
+  });
+  return { columns: out, values: shown };
+}
+
 /** One renderCell entry per `type: "date"` column. */
 export function dateCellRenderers(columns: readonly ColumnLike[]): Record<string, (row: Record<string, unknown>) => string> {
   const out: Record<string, (row: Record<string, unknown>) => string> = {};
