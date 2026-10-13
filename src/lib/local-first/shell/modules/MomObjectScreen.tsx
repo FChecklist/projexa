@@ -13,6 +13,7 @@ import { formatDate, formatDateTime } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
 import { isPublished, type MomObjectData } from "./moms-adapter";
 import { addMomActionItemOffline, amendMinutesOffline, canProposeEdits } from "./documents-writes";
+import { copyTextToClipboard, momShareText } from "./share-text";
 import { CopyNote, Facts, NOT_SYNCED, NO_PROJECT, OnlineOnly, StateMessage, Waiting, dateText, projectQuery } from "./DocumentsShared";
 
 const BACK = { href: "/moms", label: "Back to Minutes of Meetings" };
@@ -27,6 +28,7 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
   const [itemDue, setItemDue] = useState("");
   const [itemNote, setItemNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [itemSaving, setItemSaving] = useState(false);
+  const [copied, setCopied] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (data.state === "no_project") return <StateMessage testId="mom-object" state="no_project" title="Minutes of Meeting" back={BACK}>{NO_PROJECT}</StateMessage>;
   if (data.state === "not_synced") return <StateMessage testId="mom-object" state="not_synced" title="Minutes of Meeting" back={BACK}>{NOT_SYNCED}</StateMessage>;
@@ -122,6 +124,25 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
               </Button>
             ) : null}
             {locked ? <p className="mt-2 text-xs text-px-muted" data-testid="mom-locked">These minutes are published and locked.</p> : null}
+            <Button
+              className="mt-2 ml-2"
+              variant="outline"
+              size="sm"
+              data-testid="mom-whatsapp"
+              onClick={async () => {
+                const text = momShareText({ title: mom.title, scheduledAt: mom.scheduledAt, status: mom.status, agenda: mom.agenda, minutes: mom.minutes });
+                setCopied({ ok: await copyTextToClipboard(text), text });
+              }}
+            >
+              Copy minutes for WhatsApp
+            </Button>
+            {copied?.ok ? <p className="mt-2 text-xs text-px-ink" role="status" data-testid="mom-copied">Copied. Paste it into WhatsApp.</p> : null}
+            {copied && !copied.ok ? (
+              <div data-testid="mom-copy-manual">
+                <p className="mt-2 text-xs text-px-muted">This browser did not allow copying. Select the text below and copy it.</p>
+                <textarea readOnly rows={8} className="mt-1 w-full rounded border border-black/20 p-2 text-xs" value={copied.text} onFocus={(e) => e.currentTarget.select()} />
+              </div>
+            ) : null}
           </>
         )}
         {note ? <p className="mt-2 text-xs text-px-muted" data-testid="mom-note">{note}</p> : null}
@@ -162,7 +183,7 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
           <p role="status" aria-live="polite" className="mt-2 text-xs text-px-muted" data-testid="mom-item-note" data-ok={itemNote.ok ? "1" : "0"}>{itemNote.text}</p>
         ) : null}
       </div>
-      <OnlineOnly>The AI summary, share links, editing the details, publishing the minutes and the PDF need a connection (publishing locks the minutes, so it is done online). Attendee names of a meeting already on the server are shown online.</OnlineOnly>
+      <OnlineOnly>The public share link, the AI summary, editing the details, publishing the minutes and the PDF need a connection (publishing locks the minutes, so it is done online). Attendee names of a meeting already on the server are shown online.</OnlineOnly>
     </section>
   );
 }

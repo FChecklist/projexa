@@ -259,6 +259,23 @@ describe("with NO network, every screen of the cluster opens from the laptop's o
     expect(document.querySelector('[data-testid="mom-item-form"]')).toBeNull();
   });
 
+  test("R-C04 (checklist 3.4): the minutes can be copied as a WhatsApp message offline, nothing fetched; the public share link is said to need a connection", async () => {
+    let copiedText = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => { copiedText = t; } } });
+    await seedLaptop();
+    setOnline(false);
+    go("/local/moms/m1?projectId=p1");
+    const { findByTestId, getByTestId } = render(<LocalShell />);
+    await findByTestId("mom-object");
+    fireEvent.click(getByTestId("mom-whatsapp"));
+    await waitFor(() => expect(getByTestId("mom-copied").textContent).toContain("Paste it into WhatsApp"));
+    expect(copiedText).toContain("*Meeting m1*");
+    expect(copiedText).toContain("Agreed to pour slab on Monday.");
+    expect(copiedText).toContain("1. 1. Progress");
+    expect(getByTestId("doc-online-only").textContent).toContain("The public share link");
+    expect(fetchCalls).toEqual([]);
+  });
+
   test("saving minutes that were not changed queues nothing", async () => {
     await seedLaptop();
     setOnline(false);
