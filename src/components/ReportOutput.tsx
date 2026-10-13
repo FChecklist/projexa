@@ -9,6 +9,7 @@ import { ReportChart } from "@/components/reports/ReportChart";
 // G-05's, which is a superset.
 import { EMPTY_VALUE, formatDecimal } from "@/lib/format-number";
 import { formatDate, formatDateTime } from "@/lib/format-date";
+import { humanizeKey } from "@/lib/report-run";
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -146,7 +147,7 @@ export function ReportOutput({
         </TabsList>
         <TabsContent value="table">
           <Table>
-            <TableHeader><TableRow>{columns.map((c) => <TableHead key={c}>{c}</TableHead>)}</TableRow></TableHeader>
+            <TableHeader><TableRow>{columns.map((c) => <TableHead key={c}>{fieldLabels?.[c] ?? humanizeKey(c)}</TableHead>)}</TableRow></TableHeader>
             <TableBody>
               {data.map((row, i) => (
                 <TableRow key={i}>
@@ -187,7 +188,7 @@ export function ReportOutput({
               const href = fieldLinks?.[k]?.(data);
               return (
                 <div key={k}>
-                  <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? k}</div>
+                  <div className="text-xs text-px-muted">{fieldLabels?.[k] ?? humanizeKey(k)}</div>
                   {/* R67 D-61: tabular figures, so two stacked values in this
                       grid have digits of the same width and can be compared. */}
                   {href ? (
@@ -202,7 +203,7 @@ export function ReportOutput({
         )}
         {nestedEntries.map(([k, v]) => (
           <div key={k} className="space-y-2">
-            <div className="text-sm font-semibold text-px-ink">{fieldLabels?.[k] ?? k}</div>
+            <div className="text-sm font-semibold text-px-ink">{fieldLabels?.[k] ?? humanizeKey(k)}</div>
             <ReportOutput data={v} fieldLabels={fieldLabels} fieldFormatters={fieldFormatters} omitKeys={omitKeys} rowLinks={rowLinks} fieldLinks={fieldLinks} />
           </div>
         ))}

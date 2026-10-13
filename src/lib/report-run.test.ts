@@ -155,3 +155,16 @@ describe("the copy this screen is held to", () => {
     expect(monthToDateRange(new Date("2026-09-30T00:00:00.000Z"))).toEqual({ from: "2026-09-01", to: "2026-09-30" });
   });
 });
+
+describe("humanizeKey (Sumeet R-C11 readable report headings)", () => {
+  test("camelCase and snake_case keys read as words, with known abbreviations upper-cased", async () => {
+    const { humanizeKey } = await import("./report-run");
+    expect(humanizeKey("byTrade")).toBe("By trade");
+    expect(humanizeKey("totalCost")).toBe("Total cost");
+    expect(humanizeKey("workerDays")).toBe("Worker days");
+    expect(humanizeKey("labour_cost")).toBe("Labour cost");
+    expect(humanizeKey("boqId")).toBe("BOQ ID");
+    expect(humanizeKey("trade")).toBe("Trade");
+    expect(humanizeKey("")).toBe("");
+  });
+});
