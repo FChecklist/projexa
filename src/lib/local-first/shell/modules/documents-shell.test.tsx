@@ -184,6 +184,39 @@ describe("with NO network, every screen of the cluster opens from the laptop's o
     expect(fetchCalls).toEqual([]);
   });
 
+  test("R-C04 a new meeting with attendees, agenda, minutes and action items: saved on the laptop, ONE create_mom op, listed as Waiting to sync; nothing fetched", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/moms/new?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId } = render(<LocalShell />);
+    await findByTestId("mom-new-form");
+    fireEvent.input(getByLabelText("Title"), { target: { value: "Weekly site meeting" } });
+    fireEvent.input(getByLabelText("Attendees"), { target: { value: "Asha, Ravi" } });
+    fireEvent.input(getByLabelText("Agenda"), { target: { value: ["Slab", "Safety"].join(String.fromCharCode(10)) } });
+    fireEvent.input(getByLabelText("Minutes"), { target: { value: "Pour agreed." } });
+    fireEvent.input(getByLabelText("Action item 1"), { target: { value: "Order tiles" } });
+    fireEvent.input(getByLabelText("Due date for action item 1"), { target: { value: "2026-10-20" } });
+    fireEvent.click(getByTestId("mom-new-actions").querySelector("button")!);
+    fireEvent.input(getByLabelText("Action item 2"), { target: { value: "Check props" } });
+    fireEvent.submit(getByTestId("mom-new-form"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"), { timeout: 5_000 });
+    const db = await openLocalDb(idb, localDbNameFor("u1"));
+    const ops = await db.listOps();
+    db.close();
+    expect(ops.map((o) => o.functionId)).toEqual(["create_mom"]);
+    expect(ops[0]!.params).toMatchObject({
+      projectId: "p1", title: "Weekly site meeting", attendees: ["Asha", "Ravi"], agenda: ["Slab", "Safety"], minutes: "Pour agreed.",
+      actionItems: [{ title: "Order tiles", dueDate: "2026-10-20" }, { title: "Check props" }],
+    });
+    cleanup();
+
+    go("/local/moms?projectId=p1");
+    const list = render(<LocalShell />);
+    await list.findByTestId("moms-list");
+    await waitFor(() => expect(list.getAllByTestId("moms-list-row").map((r) => r.textContent!).some((t) => t.includes("Weekly site meeting") && t.includes("Waiting to sync"))).toBe(true));
+    expect(fetchCalls).toEqual([]);
+  });
+
   test("saving minutes that were not changed queues nothing", async () => {
     await seedLaptop();
     setOnline(false);

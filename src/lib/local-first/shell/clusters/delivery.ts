@@ -87,6 +87,14 @@ export const ROUTES: readonly ShellRoute[] = [
     load: () => import("../modules/ScheduleTaskScreen"), adapter: (shell, params, query) => loadScheduleTask(shell.data, params.id!, query.get("projectId"), localDay()),
   }),
   defineShellRoute({
+    pattern: "/schedule/milestones/new", title: "Add a milestone",
+    load: () => import("../modules/MilestoneScreens").then((m) => ({ default: m.MilestoneNewScreen })), adapter: (shell) => loadSchedule(shell.data, shell.projectId, localDay()),
+  }),
+  defineShellRoute({
+    pattern: "/schedule/milestones/:id", title: "Milestone",
+    load: () => import("../modules/MilestoneScreens").then((m) => ({ default: m.MilestoneEditScreen })), adapter: (shell) => loadSchedule(shell.data, shell.projectId, localDay()),
+  }),
+  defineShellRoute({
     pattern: "/schedule/tasks/new", title: "Add a task",
     load: () => import("../modules/ScheduleTaskNewScreen"), adapter: (shell) => loadSchedule(shell.data, shell.projectId, localDay()),
   }),

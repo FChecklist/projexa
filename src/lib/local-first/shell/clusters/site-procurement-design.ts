@@ -10,7 +10,7 @@
 import { defineShellRoute, type ShellRoute } from "../types";
 import type { ServerOnlyData } from "../modules/DocumentsServerOnlyScreen";
 import { loadFfeItemWithVendor } from "../modules/ffe-adapter";
-import { loadDiaries, loadDiary, loadFfeItems, loadPunchItem, loadPunchList, loadRfi, loadRfis, loadSubmittal, loadSubmittals } from "../modules/site-records";
+import { loadDiaries, loadDiary, loadFfeItems, loadSiteInstructions, loadPunchItem, loadPunchList, loadRfi, loadRfis, loadSubmittal, loadSubmittals } from "../modules/site-records";
 import { loadVendor, loadVendors } from "../modules/vendors-adapter";
 
 function serverOnly(pattern: string, title: string, reason: string): ShellRoute<ServerOnlyData> {
@@ -69,6 +69,14 @@ export const ROUTES: readonly ShellRoute[] = [
   defineShellRoute({
     pattern: "/site-diary/:id", title: "Site Diary entry",
     load: () => import("../modules/SiteDiaryScreens").then((m) => ({ default: m.SiteDiaryObjectScreen })), adapter: (shell, params, query) => loadDiary(shell.data, params.id!, query.get("projectId")),
+  }),
+  defineShellRoute({
+    pattern: "/site-instructions", title: "Site Instructions", nav: { label: "Site Instructions", order: 67 },
+    load: () => import("../modules/SiteInstructionScreens").then((m) => ({ default: m.SiteInstructionListScreen })), adapter: (shell) => loadSiteInstructions(shell.data, shell.projectId),
+  }),
+  defineShellRoute({
+    pattern: "/site-instructions/new", title: "New site instruction",
+    load: () => import("../modules/SiteInstructionScreens").then((m) => ({ default: m.SiteInstructionNewScreen })), adapter: (shell) => loadSiteInstructions(shell.data, shell.projectId),
   }),
   serverOnly("/ffe/new", "New FF&E item", "A new FF&E item carries cost and price, so it needs a connection."),
   defineShellRoute({

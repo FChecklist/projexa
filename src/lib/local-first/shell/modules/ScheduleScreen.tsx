@@ -7,7 +7,7 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDurationDays } from "@/lib/schedule-progress";
 import type { ShellScreenProps } from "../types";
-import { CopyNote, DASH, Num, Screen, ServerOnly, StateMessage, Tabs, projectName, withProject } from "./DeliveryParts";
+import { CopyNote, DASH, Num, Screen, ServerOnly, StateMessage, Tabs, Waiting, mayWrite, projectName, withProject } from "./DeliveryParts";
 import type { ScheduleData } from "./schedule-adapter";
 
 const TABS = [
@@ -81,15 +81,25 @@ export default function ScheduleScreen({ shell, query, data }: ShellScreenProps<
           )}
         </>
       ) : tab === "milestones" ? (
-        data.milestones === null ? (
-          <p className="mt-4 text-sm text-px-muted">Milestones have not finished copying to this laptop yet.</p>
-        ) : data.milestones.length === 0 ? (
-          <p className="mt-4 text-sm text-px-muted">No milestones in this project yet.</p>
-        ) : (
-          <ul className="mt-4 space-y-1 text-sm" data-testid="schedule-milestones">
-            {data.milestones.map((m) => <li key={m.id}>{m.targetDate ?? DASH} · {m.name}{m.status ? ` · ${m.status}` : ""}</li>)}
-          </ul>
-        )
+        <>
+          {mayWrite(shell) ? <p className="mt-3 text-sm"><a className="text-px-ink underline underline-offset-2" href={withProject("/schedule/milestones/new", p)}>Add a milestone</a></p> : null}
+          {data.milestones === null ? (
+            <p className="mt-4 text-sm text-px-muted">Milestones have not finished copying to this laptop yet.</p>
+          ) : data.milestones.length === 0 ? (
+            <p className="mt-4 text-sm text-px-muted">No milestones in this project yet.</p>
+          ) : (
+            <ul className="mt-4 space-y-1 text-sm" data-testid="schedule-milestones">
+              {data.milestones.map((m) => (
+                <li key={m.id} data-testid="schedule-milestone-row">
+                  {m.targetDate ?? DASH} ·{" "}
+                  <a className="underline-offset-2 hover:underline" href={withProject(`/schedule/milestones/${encodeURIComponent(m.id)}`, p)}>{m.name}</a>
+                  {m.status ? ` · ${m.status.replace(/_/g, " ")}` : ""}
+                  <Waiting on={m.waiting} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       ) : (
         <div className="mt-4" data-testid={`schedule-${tab}`}>
           <p className="text-sm text-px-muted">{tab === "board" ? "The board needs the status list, which is not on this laptop yet." : tab === "sprints" ? "Phases are not on this laptop yet." : "Time entries are shown online for now."}</p>

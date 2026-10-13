@@ -19,7 +19,7 @@
 import type { ShellData } from "../context";
 import { asRecord, readKind as readRaw, type KindRead } from "./documents-records";
 
-export const SITE_KINDS = { rfis: "rfis", submittals: "submittals", punch: "punch_list", diaries: "site_diaries", ffe: "ffe_items" } as const;
+export const SITE_KINDS = { rfis: "rfis", submittals: "submittals", punch: "punch_list", diaries: "site_diaries", ffe: "ffe_items", siteInstructions: "site_instructions" } as const;
 
 export const isTempId = (id: string): boolean => id.startsWith("local-");
 
@@ -135,6 +135,29 @@ export function toLocalDiary(raw: unknown, ctx: Ctx): LocalDiary | null {
   };
 }
 
+// ─── site instructions (R-C14) ─────────────────────────────────────────────────────────────────────────────────
+
+export type LocalSiteInstruction = {
+  id: string; siNumber: number | null; issueDate: string; toContractor: string | null; description: string; drawingRef: string | null;
+  costImpact: boolean; timeImpact: boolean; boqId: string | null; createdAt: string | null; waiting: boolean;
+};
+export function toLocalSiteInstruction(raw: unknown, ctx: Ctx): LocalSiteInstruction | null {
+  const o = asRecord(raw);
+  const id = o && text(o.id);
+  if (!o || !id) return null;
+  const f = reader(o, ctx.hidden);
+  const issueDate = f("issue_date", day);
+  const description = f("description", text);
+  if (!issueDate || !description) return null;
+  // cost_impact / time_impact are yes/no flags on this table, not amounts
+  const flag = (v: unknown) => v === true;
+  return {
+    id, siNumber: f("si_number", whole), issueDate, toContractor: f("to_contractor", text), description, drawingRef: f("drawing_ref", text),
+    costImpact: f("cost_impact", flag) === true, timeImpact: f("time_impact", flag) === true, boqId: f("boq_id", text), createdAt: f("created_at", stamp),
+    waiting: isTempId(id) || ctx.waiting.has(id),
+  };
+}
+
 // ─── FF&E ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type LocalFfeItem = {
@@ -221,6 +244,10 @@ export const loadPunchItem = (data: ShellData, id: string, projectId: string | n
 export const loadDiaries = (data: ShellData, projectId: string | null) =>
   list(data, projectId, SITE_KINDS.diaries, toLocalDiary, (a, b) => (a.diaryDate === b.diaryDate ? a.id.localeCompare(b.id) : a.diaryDate < b.diaryDate ? 1 : -1));
 export const loadDiary = (data: ShellData, id: string, projectId: string | null) => find(data, id, projectId, SITE_KINDS.diaries, toLocalDiary);
+/** Latest first: a row not yet numbered by the server (made on this laptop) leads, then the highest number. */
+export const loadSiteInstructions = (data: ShellData, projectId: string | null) =>
+  list(data, projectId, SITE_KINDS.siteInstructions, toLocalSiteInstruction, (a, b) =>
+    a.siNumber === b.siNumber ? b.issueDate.localeCompare(a.issueDate) || a.id.localeCompare(b.id) : a.siNumber === null ? -1 : b.siNumber === null ? 1 : b.siNumber - a.siNumber);
 export const loadFfeItems = (data: ShellData, projectId: string | null) =>
   list(data, projectId, SITE_KINDS.ffe, toLocalFfeItem, (a, b) => a.itemName.localeCompare(b.itemName) || a.id.localeCompare(b.id));
 export const loadFfeItem = (data: ShellData, id: string, projectId: string | null) => find(data, id, projectId, SITE_KINDS.ffe, toLocalFfeItem);
