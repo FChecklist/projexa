@@ -36,6 +36,10 @@ export type ExportParams = {
   projectId: string;
   category?: string | null;
   vendorId?: string | null;
+  /** The run's own period / week, so the file covers what the table covered. */
+  from?: string | null;
+  to?: string | null;
+  weekStart?: string | null;
 };
 
 /** The relay URL for one format of one report. Filters ride along, so the file matches the table. */
@@ -45,6 +49,9 @@ export function reportExportHref(reportName: string, format: ExportFormat, param
   // category name may contain a comma.
   if (params.category) qs.append("category", params.category);
   if (params.vendorId) qs.set("vendorId", params.vendorId);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.weekStart) qs.set("weekStart", params.weekStart);
   return `/api/reports/${encodeURIComponent(reportName)}/export?${qs.toString()}`;
 }
 

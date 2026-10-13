@@ -77,6 +77,20 @@ describe("GET /api/reports/[reportName]/export", () => {
     expect(params.get("to")).toBe("2026-08-31");
   });
 
+  test("a weekly or one-day report's own parameters reach VERIDIAN (Sumeet R-C15 / R-C11: every report exports from the run the table showed)", async () => {
+    mockCtx = ctx();
+    lastPath = null;
+
+    await GET(request("projectId=p-1&format=xlsx&weekStart=2026-10-05&date=2026-10-07&trade=Mason"), {
+      params: Promise.resolve({ reportName: "weekly-project" }),
+    });
+
+    const params = upstreamParams();
+    expect(params.get("weekStart")).toBe("2026-10-05");
+    expect(params.get("date")).toBe("2026-10-07");
+    expect(params.get("trade")).toBe("Mason");
+  });
+
   test("a report run with no period forwards no period -- an absent window is not invented as an empty one", async () => {
     mockCtx = ctx();
     lastPath = null;

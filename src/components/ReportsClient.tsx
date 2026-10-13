@@ -604,10 +604,11 @@ function ProjectReportsPanel({
   // R67 E-18: whether VERIDIAN can render this report as a DOCUMENT. False
   // does not mean "no export" -- it means no PDF and no XLSX; the CSV is built
   // here from the rows on screen either way.
-  const serverExport = schema?.serverExport === true;
+  // Sumeet R-C15 / R-C11: every project report is a table on the server, so every one downloads as PDF, XLSX and CSV from that table.
+  const serverExport = true;
   const exportReason = exportDisabledReason({ hasResult: shownResult !== null, tieMessage });
   const shareReason = shareDisabledReason(run.report, shownResult !== null);
-  const exportParams = { projectId: projectId ?? "", category: run.category, vendorId: run.vendorId };
+  const exportParams = { projectId: projectId ?? "", category: run.category, vendorId: run.vendorId, from: run.from, to: run.to, weekStart: run.weekStart };
 
   return (
     <div className="space-y-4">

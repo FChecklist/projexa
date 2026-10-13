@@ -55,7 +55,8 @@ export const GET = withTiming("GET", async function GET(request: NextRequest, { 
   // while the on-screen table showed the selected month. That is precisely the
   // "exported file disagrees with the table it came from" defect R-136 exists
   // to close, so the period is not optional plumbing here.
-  for (const key of ["from", "to"]) {
+  // Sumeet R-C15 / R-C11: every project report exports, so the run's own parameters ride along (week start, one day, one trade, a BOQ).
+  for (const key of ["from", "to", "weekStart", "date", "trade", "boqId", "groupBy"]) {
     const value = searchParams.get(key);
     if (value) upstream.set(key, value);
   }

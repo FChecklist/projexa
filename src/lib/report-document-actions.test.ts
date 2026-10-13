@@ -26,6 +26,12 @@ describe("the export link (R67 E-12)", () => {
     );
   });
 
+  test("the run's period and week ride along, so the file covers what the table covered (Sumeet R-C15)", () => {
+    expect(reportExportHref("weekly-project", "pdf", { projectId: "p-1", from: "2026-10-01", to: "2026-10-13", weekStart: "2026-10-05" })).toBe(
+      "/api/reports/weekly-project/export?projectId=p-1&format=pdf&from=2026-10-01&to=2026-10-13&weekStart=2026-10-05"
+    );
+  });
+
   test("all three formats are server-rendered -- PROJEXA gains no PDF or XLSX library", () => {
     expect([...EXPORT_FORMATS]).toEqual(["pdf", "xlsx", "csv"]);
   });
