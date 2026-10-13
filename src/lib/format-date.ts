@@ -86,9 +86,9 @@ export function formatDayMonthYearNumeric(value: Date | string | number): string
   return `${part("day")}-${part("month")}-${part("year")}`;
 }
 
-/** e.g. "8/25/2026, 2:30 PM" -- identical on server and client, any visitor. */
+/** e.g. "25-08-2026 14:30" -- the house date-and-time (owner decision 2026-10-13: dd-mm-yyyy), identical on server and client, any visitor. */
 export function formatDateTime(value: Date | string | number): string {
-  return new Date(value).toLocaleString(FIXED_LOCALE, { timeZone: FIXED_TIME_ZONE });
+  return formatDateTimeDMY(value);
 }
 
 /** e.g. "2:30:45 PM" -- identical on server and client, any visitor. */

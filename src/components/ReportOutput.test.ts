@@ -38,7 +38,7 @@ describe("cellValue (R67 D-61)", () => {
   });
 
   test("an ISO timestamp renders as a date and time, in UTC, not as raw JSON", () => {
-    expect(cellValue("2026-08-25T14:30:00.000Z")).toBe("8/25/2026, 2:30:00 PM");
+    expect(cellValue("2026-08-25T14:30:00.000Z")).toBe("25-08-2026 14:30");
   });
 
   test("a string that merely starts with digits is left alone", () => {
