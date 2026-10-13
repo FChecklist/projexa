@@ -38,7 +38,7 @@ export default function ScopeAddItemScreen({ shell, data }: ShellScreenProps<Sco
 
   async function save() {
     // the whole set is checked as the server will see it: a repeated item code or a parent code that matches nothing is told in words now
-    const filled = items.filter((l) => l.description.trim() || l.itemCode.trim() || l.quantity.trim() || l.rate.trim());
+    const filled = items.filter((l) => l.description.trim() || (l.itemCode ?? "").trim() || l.quantity.trim() || l.rate.trim());
     if (filled.length === 0) return setError("Write the new scope item first: what it is, its unit, quantity and rate.");
     const errs = validateBoqDraft(boq.title, [...toDrafts([...parent]), ...filled]);
     if (errs.lines) return setError(errs.lines);
