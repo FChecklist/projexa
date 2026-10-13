@@ -546,6 +546,22 @@ export function createReplica(options: ReplicaOptions): Replica {
     throw Object.assign(new Error("The change feed sent more pages than allowed."), { replicaReason: "no_progress" as const });
   }
 
+  /**
+   * The project's change feed was just read to its end: every pair of it that the feed keeps current (a feed kind that was copied to the
+   * end once) is up to date as of NOW, so its "last copied" time moves. Only a pair that already has its marker is touched (the redaction
+   * and hidden fields it carries are kept), and only when the project has a feed position (otherwise nothing was read).
+   */
+  async function stampFeedCovered(db: LocalDb, projectId: string, kinds: Set<string>, isFeedKind: (projectId: string, kind: string) => boolean): Promise<void> {
+    const position = await db.getMeta<{ seq: number } | null>(changeCursorKey(projectId));
+    if (!position || typeof position.seq !== "number") return;
+    const at = now();
+    for (const kind of kinds) {
+      if (!isFeedKind(projectId, kind)) continue;
+      const marker = await db.getMeta<DoneMarker | null>(doneKey(projectId, kind));
+      if (marker && typeof marker.at === "number" && marker.at < at) await db.setMeta(doneKey(projectId, kind), { ...marker, at } satisfies DoneMarker);
+    }
+  }
+
   // ─── reconcile deletes (CONTRACT.md section 1, /ids) ───────────────────────────────────────────────────
 
   async function reconcilePair(db: LocalDb, orgId: string, projectId: string, kind: string, signal: AbortSignal, force: boolean, everyMs = reconcileEveryMs): Promise<{ removed: number; skipped: boolean }> {
@@ -965,6 +981,10 @@ export function createReplica(options: ReplicaOptions): Replica {
           try {
             await applyChanges(db!, orgId, projectId, projectId === ORG_PROJECT ? orgKindSet : kindSet, report, internal.signal);
             feedCheckedAt.set(projectId, now());
+            // UAT 2026-10-13 (F60 / checklist 2.22): "last copied" is the pair's done marker. A feed-covered pair is never pulled again, so
+            // the marker kept the time of the FIRST copy for ever ("last copied 12-10-2026 23:51" all day) although the feed had just
+            // brought the project up to date. The feed was read to its end: every feed-covered pair of this project is current NOW.
+            await stampFeedCovered(db!, projectId, projectId === ORG_PROJECT ? orgKindSet : kindSet, isFeedKind);
             noteTransport();
             if (projectId === ORG_PROJECT) await db!.setMeta(ORG_CHECK_KEY, { at: now() });
           } catch (err) {

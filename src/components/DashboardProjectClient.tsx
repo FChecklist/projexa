@@ -324,6 +324,8 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
         .then((data) => {
           setDashboard({ state: "ready", data, error: null });
           setDashboardStatus(null);
+          // 4.3b: keep the server's answer on this laptop (no extra request) so the offline dashboard can show it "As of <date>" instead of nothing.
+          void import("@/lib/local-first/shell/modules/dashboard-keep").then((m) => m.keepProjectDashboard(projectId, data)).catch(() => {});
           // R67 F-27 (lane F1) -- THE PANEL COMES WITH THE PAYLOAD. The recent
           // progress entries used to be their own /api/work-progress round
           // trip, which pulled the project's whole progress log to show five

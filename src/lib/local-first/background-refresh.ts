@@ -15,6 +15,11 @@ export type RefreshDeps = {
   activeProject: () => string | null;
   syncProject: (projectId: string) => Promise<unknown>;
   syncAll: () => Promise<unknown>;
+  /**
+   * After a sync of the open project: bring the server's own figures for it (the dashboard snapshot) onto the laptop, so the offline dashboard has
+   * something to show "As of <date>". The callback decides itself whether it is due (dashboard-keep.ts topUpProjectDashboard); a failure is silent.
+   */
+  topUp?: (projectId: string) => Promise<unknown>;
   everyMs?: number;
   fullEveryMs?: number;
 };
@@ -41,9 +46,11 @@ export function createBackgroundRefresh(d: RefreshDeps): () => Promise<"skipped"
       if (!project || t - lastFull >= fullEveryMs) {
         await d.syncAll();
         lastFull = t;
+        if (project) await d.topUp?.(project).catch(() => {});
         return "all";
       }
       await d.syncProject(project);
+      await d.topUp?.(project).catch(() => {});
       return "project";
     } catch {
       return "failed";

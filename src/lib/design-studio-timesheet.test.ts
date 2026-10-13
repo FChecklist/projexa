@@ -90,9 +90,11 @@ describe("hours formatting and totals", () => {
 });
 
 describe("day labels", () => {
-  test("formatDayLabel renders the item's own '2 Sep 2026' shape", () => {
-    expect(formatDayLabel("2026-09-02")).toBe("2 Sep 2026");
-    expect(formatDayLabel("2026-01-09")).toBe("9 Jan 2026");
+  // F54 (UAT 2026-10-13): the list read "13 Oct 2026"; the house date form is dd-mm-yyyy.
+  test("formatDayLabel renders the house date form, dd-mm-yyyy", () => {
+    expect(formatDayLabel("2026-09-02")).toBe("02-09-2026");
+    expect(formatDayLabel("2026-10-13")).toBe("13-10-2026");
+    expect(formatDayLabel("2026-01-09")).toBe("09-01-2026");
   });
 
   test("an unparseable value is returned unchanged rather than becoming 'NaN undefined'", () => {
@@ -106,7 +108,7 @@ describe("day labels", () => {
 
   test("the footer total says 'today' only when it really is today", () => {
     expect(dayTotalLabel(7.5, "2026-09-02", "2026-09-02")).toBe("Total today: 7.50 h");
-    expect(dayTotalLabel(7.5, "2026-09-01", "2026-09-02")).toBe("Total for 1 Sep 2026: 7.50 h");
+    expect(dayTotalLabel(7.5, "2026-09-01", "2026-09-02")).toBe("Total for 01-09-2026: 7.50 h");
   });
 });
 
@@ -123,7 +125,7 @@ describe("the primary action label", () => {
 
 describe("the empty state names the day and says what to do", () => {
   test("renders the item's exact string", () => {
-    expect(emptyDayMessage("2026-09-02")).toBe("No hours logged for 2 Sep 2026. Add a row below.");
+    expect(emptyDayMessage("2026-09-02")).toBe("No hours logged for 02-09-2026. Add a row below.");
   });
 });
 
@@ -167,7 +169,7 @@ describe("the delete confirmation states the blast radius, not 'Are you sure?'",
 
   test("a submitted entry names the manager who will lose sight of it -- the item's exact sentence", () => {
     expect(deleteConfirmation({ ...base, approvalStatus: "submitted" }))
-      .toBe("Delete entry TS-000123 - 3.00 h on #12 Joinery shop drawings, 2 Sep 2026? It is Submitted; your manager will no longer see it.");
+      .toBe("Delete entry TS-000123 - 3.00 h on #12 Joinery shop drawings, 02-09-2026? It is Submitted; your manager will no longer see it.");
   });
 
   test("an approved entry names the cost that stops counting -- a different consequence, so a different sentence", () => {
@@ -181,7 +183,7 @@ describe("the delete confirmation states the blast radius, not 'Are you sure?'",
 
   test("an entry whose task could not be resolved still produces a readable sentence", () => {
     expect(deleteConfirmation({ ...base, issue: null, approvalStatus: "draft" }))
-      .toContain("3.00 h on this task, 2 Sep 2026?");
+      .toContain("3.00 h on this task, 02-09-2026?");
   });
 });
 

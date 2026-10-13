@@ -137,7 +137,7 @@ export type FunctionContext = {
 };
 export type FunctionOutcome =
   | { ok: true; kind: string; id: string; data: Record<string, unknown>; route?: string }
-  | { rejected: string; missing?: string[] }
+  | { rejected: string; missing?: string[]; message?: string }
   | { failed: string }
   | { needsServer: true };
 export type FunctionHandler = (ctx: FunctionContext) => FunctionOutcome;
@@ -585,7 +585,7 @@ export function createFakeSyncServer(opts: FakeServerOptions = {}): FakeSyncServ
       const outcome = handlers.get(String(op.function_id))!({ server, functionId: String(op.function_id), projectId, params: op.params as Record<string, unknown>, target: live });
       if ("rejected" in outcome) {
         ledger.set(opId, { hash: decision.hash, status: "rejected", error_code: outcome.rejected });
-        results.push({ op_id: opId, status: "rejected", error: { code: outcome.rejected, missing: outcome.missing ?? [] } });
+        results.push({ op_id: opId, status: "rejected", error: { code: outcome.rejected, missing: outcome.missing ?? [], ...(outcome.message ? { message: outcome.message } : {}) } });
         continue;
       }
       // `failed` is the WIRE status (nothing written, kept and retried). Which pipeline codes the real handler turns into `failed` rather

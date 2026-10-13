@@ -1600,13 +1600,9 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
     }
   }, [railProject, router]);
 
-  // UAT 2026-10-12 (offline finding): the offline shell remembers its project in its own key and only wrote it when the person used ITS
-  // switcher, so after working in Riverside online the offline shell opened another project ("AI Test Tower RENAMED"). Keep that key in step
-  // with the project this screen shows, so offline opens the project the person was just working in (and auto-sync reads it first).
-  useEffect(() => {
-    if (!userId || !railProject?.id || !isLocalFirstEnabled()) return;
-    try { window.localStorage.setItem(`px-shell-project:${userId}`, railProject.id); } catch { /* storage blocked: nothing to remember */ }
-  }, [userId, railProject?.id]);
+  // UAT 2026-10-13 (F63 / checklist 2.23): the offline shell used to keep its project in its OWN key (a per-user "shell project" key), copied
+  // from the rail by an effect here -- two stores that could disagree. There is now ONE: the offline shell reads and writes the rail's
+  // `veri.rail.project` (lib/local-first/shell/context.ts selectedProjectKey), so there is nothing to keep in step.
 
   // UAT 2026-10-12 (offline finding): bring the laptop copy up to date while the person works on the normal pages (see lib/local-first/background-refresh.ts
   // for why this is not the auto-sync scheduler). Never before the laptop is prepared; nothing offline or while the tab is hidden.
@@ -1631,6 +1627,8 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         visible: () => document.visibilityState === "visible",
         activeProject: () => ctx.activeProjectFor(userId),
         syncProject: (projectId) => replica.syncProject(projectId),
+        // 4.3b: the server's project figures, kept on the laptop for the offline dashboard (at most one fetch per project per half hour)
+        topUp: (projectId) => import("@/lib/local-first/shell/modules/dashboard-keep").then((m) => m.topUpProjectDashboard(projectId)),
         syncAll: () => orgChange.syncRecoveringFromOrgChange(() => replica.sync(), () => localDb.openLocalDb(undefined, localDb.localDbNameFor(userId))),
       });
       const go = () => { void run(); };

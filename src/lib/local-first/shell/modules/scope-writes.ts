@@ -145,6 +145,40 @@ export function latestProgress(entries: readonly { boqLineItemId: string | null;
   return new Map([...best].map(([id, v]) => [id, v.pct]));
 }
 
+type ProgressLike = { boqLineItemId: string | null; entryDate: string; percentComplete: number | null; createdAt: string | null; quantityDone?: number | null; entryBasis?: string | null };
+
+/**
+ * The CUMULATIVE percent complete per BOQ line, which is the figure the server's own screens show (UAT 2026-10-13, F60 / checklist 2.22).
+ * A progress entry is "today's work" by default (DELTA: its percent is the share done in THAT entry and its quantity adds up), so the latest
+ * entry's own percent is not how far the line is: a line with 80 of 100 m3 done through five entries read "15% complete" from the last one.
+ *   - DELTA entries (and old entries with no basis) add their quantity: done = sum of quantityDone; percent = done / the line's quantity;
+ *   - a SNAPSHOT entry is "total to date": the latest one's percent stands;
+ *   - the larger of the two wins (never above 100); a line with entries but no usable quantity falls back to the latest entry's percent,
+ *     as before, so nothing that used to read as having progress reads as having none.
+ * `lineQuantity` maps a line id to its quantity (the revision's parent lines).
+ */
+export function cumulativeProgress(entries: readonly ProgressLike[], lineQuantity: ReadonlyMap<string, number>): Map<string, number> {
+  const byLine = new Map<string, ProgressLike[]>();
+  for (const e of entries) {
+    if (!e.boqLineItemId) continue;
+    const list = byLine.get(e.boqLineItemId) ?? [];
+    list.push(e);
+    byLine.set(e.boqLineItemId, list);
+  }
+  const out = new Map<string, number>();
+  for (const [id, list] of byLine) {
+    const qty = lineQuantity.get(id) ?? 0;
+    const done = list.filter((e) => e.entryBasis !== "SNAPSHOT").reduce((s, e) => s + (e.quantityDone ?? 0), 0);
+    const fromQuantity = qty > 0 && done > 0 ? (done / qty) * 100 : 0;
+    const snapshots = list.filter((e) => e.entryBasis === "SNAPSHOT");
+    const fromSnapshot = latestProgress(snapshots).get(id) ?? 0;
+    let pct = Math.max(fromQuantity, fromSnapshot);
+    if (pct <= 0) pct = latestProgress(list).get(id) ?? 0; // no quantity to measure against: the latest entry's own percent, as before
+    out.set(id, Math.min(100, Math.round(pct * 10) / 10));
+  }
+  return out;
+}
+
 /** The lines as the optimistic `boqs` row keeps them (the server's snake_case column names, amounts as the laptop computed them for display). */
 function localLines(tempId: string, lines: LineItemDraft[]) {
   return lines.map((l, i) => ({

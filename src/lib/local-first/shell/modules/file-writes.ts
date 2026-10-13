@@ -71,6 +71,30 @@ export function checkFields<K extends FileJobKind>(kind: K, f: FileRecordFields[
   return { ok: true, fields: { name, category, ...(expiry ? { expiryDate: expiry } : {}) } };
 }
 
+/**
+ * What the person has not given yet, in the form's own words and its order (UAT 2026-10-13, checklist 2.20). The form used to rely on the
+ * browser's `required` block, which stops the click without a word on some screens ("Save permit" with no file did nothing and said nothing).
+ */
+export function missingFileRecordParts(kind: FileJobKind, fields: Record<string, unknown>, file: Blob | null | undefined): string[] {
+  const has = (key: string) => typeof fields[key] === "string" && (fields[key] as string).trim() !== "";
+  const out: string[] = [];
+  if (!has("name")) out.push("name");
+  if (kind === "permit") {
+    if (!has("permitNumber")) out.push("permit number");
+    if (!has("permitAuthority")) out.push("who issued it");
+    if (!has("expiryDate")) out.push("expiry date");
+  }
+  if (kind === "document" && !has("category")) out.push("category");
+  if (!file || file.size <= 0) out.push("the file");
+  return out;
+}
+
+/** "Still needed to save this permit: expiry date, the file." or null when nothing is missing. */
+export function missingFileRecordMessage(kind: FileJobKind, fields: Record<string, unknown>, file: Blob | null | undefined): string | null {
+  const missing = missingFileRecordParts(kind, fields, file);
+  return missing.length === 0 ? null : `Still needed to save this ${FILE_KIND_WORDS[kind].one}: ${missing.join(", ")}.`;
+}
+
 const FUNCTION_FOR: Record<FileJobKind, string> = { permit: "create_permit", drawing: "create_drawing", document: "create_document" };
 
 /** The op a finished job becomes. Exported for the contract test. */

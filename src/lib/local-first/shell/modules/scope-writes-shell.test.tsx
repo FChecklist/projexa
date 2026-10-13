@@ -3,7 +3,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createIdentityStore, type DurableIdentity } from "../../identity";
 import { openDeviceMeta } from "../../device-meta";
@@ -258,6 +258,23 @@ describe("New Revision with NO network", () => {
     expect(fetchCalls).toEqual([]);
   });
 
+  // F62 (UAT 2026-10-13): adding a sub-task moves the variation (all line amounts) but NOT the BOQ total (main lines only). Each figure says what it counts.
+  test("a sub-task changes the variation but not the BOQ total, and each figure says what it counts", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/scope/b1/revise?projectId=p1");
+    const { findByTestId, getByTestId } = render(<LocalShell />);
+    await findByTestId("scope-revise-screen");
+    fireEvent.click(getByTestId("scope-revise-add"));
+    type(getByTestId("scope-revise-3-description"), "Part of blockwork");
+    type(getByTestId("scope-revise-3-itemCode"), "A1.1");
+    type(getByTestId("scope-revise-3-parentItemCode"), "A1");
+    type(getByTestId("scope-revise-3-breakdownPercentage"), "30"); // 30% of A1 (100 x 50 = 5000) = 1500
+    expect(getByTestId("scope-revise-variation-amount").textContent).toBe("+1,500.00");
+    expect(getByTestId("scope-revise-variation-basis").textContent).toBe("(all line amounts, sub-tasks included)");
+    expect(getByTestId("scope-revise-total-note").textContent).toContain("change 0.00 on main lines only");
+  });
+
   test("R-C13: removing, or reducing, a line that has progress is REFUSED with the lines named; Save is off; nothing is queued", async () => {
     await seedLaptop();
     setOnline(false);
@@ -337,6 +354,10 @@ describe("Line budgets with NO network (R-C09)", () => {
     expect(getByTestId("scope-budget-li1-budget").textContent).toBe("2,000.00");
     fireEvent.click(getByTestId("scope-budget-li1-save"));
     expect((await findByTestId("scope-budget-li1-waiting")).textContent).toBe("Waiting to sync");
+    // the row shows the NEW figures at once, not the server's old ones beside "Waiting to sync" (UAT 2026-10-13)
+    await waitFor(() => expect((getByTestId("scope-budget-li1-pct") as HTMLInputElement).value).toBe("40"));
+    expect(getByTestId("scope-budget-li1-budget").textContent).toBe("2,000.00");
+    expect((getByTestId("scope-budget-li1-vamount") as HTMLInputElement).value).toBe("3500");
     const [op] = await ops();
     expect(op).toMatchObject({ functionId: "update_line_item_budget", projectId: "p1", params: { projectId: "p1", boqLineItemId: "li1", budgetPercentage: 40, vendorId: "v1", vendorAmount: 3500 } });
     expect(op!.record).toMatchObject({ kind: "boq_lines", id: "li1" });

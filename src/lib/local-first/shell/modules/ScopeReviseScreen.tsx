@@ -86,8 +86,10 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
           <p className="text-xs text-px-muted" data-testid="scope-revise-progress-unknown">Site progress has not been copied to this laptop yet, so the server checks it when this is sent.</p>
         ) : null}
         <div className="rounded border border-black/10 p-3 text-sm" data-testid="scope-revise-variation">
-          <p>Variation against {revisionLabel(boq.version)}: <strong data-testid="scope-revise-variation-amount">{signed(variation.variation)}</strong></p>
-          <p className="text-xs text-px-muted" data-testid="scope-revise-total">BOQ total {money(variation.newTotal)} (was {money(variation.previousTotal)}; sub-tasks are inside their root line)</p>
+          {/* F62: the server's variation counts EVERY line (sub-tasks too); the BOQ total counts main lines only. Both are shown, each named, so
+              the two changes are never read as one figure. */}
+          <p>Variation against {revisionLabel(boq.version)} <span className="text-xs text-px-muted" data-testid="scope-revise-variation-basis">(all line amounts, sub-tasks included)</span>: <strong data-testid="scope-revise-variation-amount">{signed(variation.variation)}</strong></p>
+          <p className="text-xs text-px-muted" data-testid="scope-revise-total-note">BOQ total {money(variation.newTotal)} (was {money(variation.previousTotal)}; change {signed(variation.newTotal - variation.previousTotal)} on main lines only, sub-task amounts are inside their main line)</p>
         </div>
         {reductions.length > 0 ? (
           <div role="alert" className="rounded border border-px-error-border bg-px-error-light p-3 text-sm text-px-error" data-testid="scope-revise-blocked">

@@ -382,6 +382,29 @@ describe("G-15: a permit, a drawing and a document are added OFFLINE with their 
     expect(fetchCalls).toEqual([]);
   });
 
+  // checklist 2.20: "Save permit" with no file did nothing and said nothing (the browser's own required-field block). It must say, in words,
+  // everything that is still missing -- when the person presses the real Save button, not only on a scripted submit.
+  test("permit: pressing Save with nothing filled in says in words what is still needed (no silent browser block); nothing is stored", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/permits/new?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId, getByText } = render(<LocalShell />);
+    const form = (await findByTestId("permit-new-form")) as HTMLFormElement;
+    expect(form.noValidate).toBe(true);
+    fireEvent.click(getByText("Save permit"));
+    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("0"));
+    expect(getByTestId("save-note").textContent).toBe("Still needed to save this permit: name, permit number, who issued it, expiry date, the file.");
+
+    fireEvent.input(getByLabelText("Name"), { target: { value: "Fit-out permit" } });
+    fireEvent.input(getByLabelText("Permit number"), { target: { value: "FP-1" } });
+    fireEvent.input(getByLabelText("Issued by"), { target: { value: "Municipality" } });
+    fireEvent.input(getByLabelText("Expiry date"), { target: { value: "2027-01-31" } });
+    fireEvent.click(getByText("Save permit")); // only the file is missing now
+    await waitFor(() => expect(getByTestId("save-note").textContent).toBe("Still needed to save this permit: the file."));
+    expect(await storedJobs()).toEqual([]);
+    expect(fetchCalls).toEqual([]);
+  });
+
   test("drawing and document: same two steps; the document form offers the app's categories", async () => {
     await seedLaptop();
     setOnline(false);

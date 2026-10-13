@@ -25,7 +25,8 @@ import { getConnectivity, reportServerFailure, reportServerSuccess, useConnectiv
 import { deviceMetaStore, openDeviceMeta, personMetaStore } from "../device-meta";
 import { createIdentityStore, getDurableIdentity, mirrorSession, type DurableIdentity } from "../identity";
 import { BOQ_LINES_KIND } from "../boq-local";
-import { chooseProject, noteShownProject, readShellData, selectedProjectKey, type ShellData } from "./context";
+import { chooseProject, noteShownProject, readSelectedProject, readShellData, writeSelectedProject, type ShellData } from "./context";
+import { writeStoredProjectId } from "../../project-preference";
 import { LOCAL_DATA_CHANGED_EVENT } from "../peer/status";
 import { serverPageUrl, type ShellLocation } from "./paths";
 import { createFileQueue, type FileQueue } from "./file-queue";
@@ -112,7 +113,7 @@ export default function LocalShell() {
   useEffect(() => {
     if (!userId) return;
     try {
-      setRemembered(localStorage.getItem(selectedProjectKey(userId)));
+      setRemembered(readSelectedProject());
     } catch {
       setRemembered(null);
     }
@@ -127,8 +128,7 @@ export default function LocalShell() {
     const shown = chooseProject(boot.data.projects, new URLSearchParams(location.search).get("projectId"), remembered);
     if (!shown) return;
     try {
-      const key = selectedProjectKey(boot.data.userId);
-      if (localStorage.getItem(key) !== shown) localStorage.setItem(key, shown);
+      writeSelectedProject(shown); // the rail's own store: one answer to "which project" for the shell AND the normal pages
     } catch {
       /* the choice just is not remembered */
     }
@@ -348,7 +348,7 @@ export default function LocalShell() {
     projectId,
     setProjectId(id) {
       try {
-        localStorage.setItem(selectedProjectKey(data.userId), id);
+        writeStoredProjectId(id);
       } catch {
         /* the choice just is not remembered */
       }
