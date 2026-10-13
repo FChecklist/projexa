@@ -166,3 +166,41 @@ describe("Project360Client: confirm the baseline", () => {
     expect(queryByText("Confirm baseline")).toBeNull();
   });
 });
+
+describe("Project360Client: download (Sumeet R-99 / R-100)", () => {
+  test("Download CSV produces a file carrying the figures the screen shows", async () => {
+    const blobs: Blob[] = [];
+    const realCreate = URL.createObjectURL;
+    URL.createObjectURL = ((b: Blob) => { blobs.push(b); return "blob:test"; }) as typeof URL.createObjectURL;
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {};
+    try {
+      const { findByTestId } = renderClient();
+      fireEvent.click(await findByTestId("project360-download-csv"));
+      expect(blobs).toHaveLength(1);
+      const text = await blobs[0].text();
+      const lines = text.split("\n");
+      expect(lines[0]).toContain("Project 360 analysis - Villa 21 - Whitefield");
+      expect(text).toContain("Expected profit (at first confirmation)");
+      expect(text).toContain("Variation impact");
+      expect(text).toContain("Billing milestones overdue,1");
+      expect(text).toContain("Activities on the critical path,1");
+    } finally {
+      URL.createObjectURL = realCreate;
+      HTMLAnchorElement.prototype.click = realClick;
+    }
+  });
+
+  test("Print / save as PDF opens the browser's print dialog", async () => {
+    let printed = 0;
+    const realPrint = window.print;
+    window.print = (() => { printed += 1; }) as typeof window.print;
+    try {
+      const { findByTestId } = renderClient();
+      fireEvent.click(await findByTestId("project360-print"));
+      expect(printed).toBe(1);
+    } finally {
+      window.print = realPrint;
+    }
+  });
+});
