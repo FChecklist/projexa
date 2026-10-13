@@ -97,6 +97,40 @@ export async function amendMinutesOffline(
   }
 }
 
+// ─── add_meeting_action_item ────────────────────────────────────────────────────────────────────────────────────
+
+export type AddMomActionItemInput = { projectId: string; meetingId: string; title: string; dueDate?: string | null };
+
+/**
+ * An action item for a meeting that already exists (checklist 2.9b, R-C04): a title and an optional due date. The server makes it a task for
+ * the person who saves it (the owner is chosen online: the people list is not kept on the laptop) and links it to the meeting. The row is not
+ * patched (the item is a task on the server, which this laptop does not copy); the screen lists what is still waiting from the outbox.
+ * The rules are the server's own (executors/meetings.ts): a title that is not blank, at most 2,000 letters, a due date that is a real day.
+ */
+export async function addMomActionItemOffline(data: ShellData, input: AddMomActionItemInput, deps: { outbox?: OutboxPort } = {}): Promise<WriteResult> {
+  if (!canProposeEdits(data.role)) return { ok: false, message: "Your role can read these minutes but not add an action item." };
+  const title = input.title.trim();
+  if (!title) return { ok: false, message: "Write what was agreed." };
+  if (title.length > 2000) return { ok: false, message: "That action item is too long (up to 2,000 letters)." };
+  const due = (input.dueDate ?? "").trim();
+  if (due && !realDay(due)) return { ok: false, message: "The due date is not a real day. Choose it from the calendar." };
+  try {
+    const row = await editableRow(data, input.projectId, MEETING_MINUTES_KIND, input.meetingId);
+    if (!row) return { ok: false, message: NOT_HERE };
+    const outbox = deps.outbox ?? (await defaultOutbox(data.userId));
+    // No `record`: adding a task to a meeting does not change the meeting row, so a newer version of the meeting is no conflict.
+    const { opId } = await outbox.enqueue({
+      functionId: "add_meeting_action_item",
+      projectId: input.projectId,
+      params: { projectId: input.projectId, meetingId: input.meetingId, title, ...(due ? { dueDate: due } : {}) },
+      label: "Your action item",
+    });
+    return { ok: true, opId };
+  } catch {
+    return { ok: false, message: "This action item could not be kept on this laptop. Nothing was lost on the server; try again." };
+  }
+}
+
 // ─── update_document_metadata ───────────────────────────────────────────────────────────────────────────────────
 
 /** Which details each screen may send (what its online screen edits, intersected with what the function takes). */
@@ -243,7 +277,7 @@ export async function createMomOffline(data: ShellData, input: CreateMomInput, d
       optimistic: async (tx) => {
         await tx.putRecord({
           id: `${MEETING_MINUTES_KIND}:${tempId}`, type: MEETING_MINUTES_KIND, orgId: data.orgId!, projectId: input.projectId,
-          data: { id: tempId, title, meeting_type: meetingType ?? "team", scheduled_at: iso, status: "draft", published_at: null, agenda, minutes: minutes ?? null, attendee_count: attendees.length },
+          data: { id: tempId, title, meeting_type: meetingType ?? "team", scheduled_at: iso, status: "draft", published_at: null, agenda, minutes: minutes ?? null, attendee_count: attendees.length, attendee_names: attendees },
         });
       },
     });

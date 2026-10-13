@@ -9,6 +9,7 @@
 // NOT ON THE LAPTOP (GAPS): attendee names, action items and their tasks, the meeting number (systemId), the AI summary / key decisions,
 // share links, and the PDF export. The object screen says so rather than leaving holes that look like "none".
 
+import { localDbNameFor, openLocalDb, type OutboxOpStatus } from "../../local-db";
 import type { ShellData } from "../context";
 import { asRecord, readKind } from "./documents-records";
 
@@ -26,6 +27,8 @@ export type LocalMom = {
   agenda: string[] | null;
   minutes: string | null;
   attendeeCount: number | null;
+  /** Only for a meeting made on this laptop and not yet confirmed by the server: the names the person typed. The server's list is not copied here. */
+  attendeeNames: string[] | null;
   createdAt: string | null;
   waiting: boolean;
 };
@@ -39,7 +42,14 @@ export type MomObjectData =
   | { state: "no_project" }
   | { state: "not_synced"; projectId: string | null }
   | { state: "not_found"; projectId: string | null }
-  | { state: "local"; projectId: string; syncedAt: number | null; mom: LocalMom };
+  | { state: "local"; projectId: string; syncedAt: number | null; mom: LocalMom; pendingActionItems: PendingActionItem[] };
+
+/**
+ * An action item added on THIS laptop (add_meeting_action_item) and not yet confirmed by the server. The meeting's action items live on the
+ * server (they are tasks) and are not copied here, so this list is only what this laptop is still holding; once the server has taken an item it
+ * leaves this list and is read online.
+ */
+export type PendingActionItem = { opId: string; title: string; dueDate: string | null; status: OutboxOpStatus };
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : null);
 
@@ -73,6 +83,7 @@ export function toLocalMom(v: unknown, projectId: string, hidden: ReadonlySet<st
     agenda: field("agenda", agendaOf),
     minutes: field("minutes", (x) => (typeof x === "string" ? x : null)),
     attendeeCount: count,
+    attendeeNames: field("attendee_names", (x) => (Array.isArray(x) ? x.filter((n): n is string => typeof n === "string" && n.trim() !== "") : null)),
     createdAt: field("created_at", text),
     waiting: waitingIds.has(id),
   };
@@ -113,7 +124,32 @@ export async function loadMomObject(data: ShellData, id: string, projectId: stri
     if (!synced) continue;
     anySynced = true;
     const mom = moms.find((m) => m.id === id);
-    if (mom) return { state: "local", projectId: candidate, syncedAt, mom };
+    if (mom) return { state: "local", projectId: candidate, syncedAt, mom, pendingActionItems: await loadPendingActionItems(data, candidate, id) };
   }
   return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };
+}
+
+/** The action items this person added to one meeting that are still in the outbox, oldest first. A failure reads as "none", never as an error. */
+export async function loadPendingActionItems(data: ShellData, projectId: string, meetingId: string): Promise<PendingActionItem[]> {
+  const idb = data.idb ?? (typeof indexedDB === "undefined" ? undefined : indexedDB);
+  if (!idb) return [];
+  try {
+    const db = await openLocalDb(idb, localDbNameFor(data.userId));
+    try {
+      return (await db.listOps())
+        .filter((op) => op.functionId === "add_meeting_action_item" && op.projectId === projectId && op.params.meetingId === meetingId)
+        .sort((a, b) => a.seq - b.seq)
+        .map((op) => ({
+          opId: op.opId,
+          title: typeof op.params.title === "string" ? op.params.title : "",
+          dueDate: typeof op.params.dueDate === "string" ? op.params.dueDate : null,
+          status: op.status,
+        }))
+        .filter((item) => item.title !== "");
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
+  }
 }

@@ -13,7 +13,7 @@ import {
   approveTimeEntryOffline, createChangeOrderOffline, recordTimeEntryOffline, rejectTimeEntryOffline, submitChangeOrderOffline, submitTimeEntryOffline,
 } from "../shell/modules/design-change-writes";
 import { createBoqOffline, reviseBoqOffline, setLineBudgetOffline } from "../shell/modules/scope-writes";
-import { amendMinutesOffline, createMomOffline, editDocumentDetailsOffline } from "../shell/modules/documents-writes";
+import { addMomActionItemOffline, amendMinutesOffline, createMomOffline, editDocumentDetailsOffline } from "../shell/modules/documents-writes";
 import {
   advanceFfeOffline, answerRfiOffline, closeRfiOffline, createPunchItemOffline, createRfiOffline, createSiteDiaryOffline, createSiteInstructionOffline, createSubmittalOffline,
   markPunchReadyOffline, reviewSubmittalOffline, verifyPunchClosedOffline,
@@ -161,6 +161,7 @@ beforeAll(async () => {
     await rejectTimeEntryOffline({ projectId: P, timeEntryId: "ts1", rejectionReason: "wrong day" }, access),
     await amendMinutesOffline(data, { projectId: P, meetingId: "mm1", minutes: "New minutes" }, { outbox }),
     await createMomOffline(data, { projectId: P, title: "Site meeting", scheduledAt: "2026-10-12T10:30", meetingType: "site", attendees: ["Asha", "Ravi"], agenda: ["Slab", "Safety"], minutes: "Pour agreed.", actionItems: [{ title: "Order tiles", dueDate: "2026-10-20" }] }, { outbox }),
+    await addMomActionItemOffline(data, { projectId: P, meetingId: "mm1", title: "Order tiles", dueDate: "2026-10-20" }, { outbox }),
     await editDocumentDetailsOffline(data, "documents", { projectId: P, documentId: "d1", details: { name: "Contract v2", category: "legal", expiryDate: "2027-01-01" } }, { outbox }),
     // the site cluster (shell/modules/site-writes.ts), every optional field filled
     await createRfiOffline(data, { projectId: P, subject: "Sill", question: "Height?", dueDate: "2026-10-09" }, { outbox }),
@@ -202,9 +203,9 @@ afterAll(() => {
 const RECREATE_TASK: Captured = { functionId: "create_schedule_task", params: { projectId: P, title: "T", startDate: "2026-10-01", description: "D", priority: "high", dueDate: "2026-10-05" } };
 
 describe("every write the laptop builds uses the live registry's parameter names", () => {
-  test("the rig queued every writer (36 ops, 33 function ids)", () => {
-    expect(captured).toHaveLength(36);
-    expect(new Set(captured.map((c) => c.functionId)).size).toBe(33);
+  test("the rig queued every writer (37 ops, 34 function ids)", () => {
+    expect(captured).toHaveLength(37);
+    expect(new Set(captured.map((c) => c.functionId)).size).toBe(34);
   });
 
   test("each built op: a live write, every param a declared name, every required name present", () => {

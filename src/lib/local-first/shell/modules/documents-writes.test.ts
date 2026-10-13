@@ -4,7 +4,7 @@ import { createFakeSyncServer, type FakeSyncServer } from "../../__fixtures__/fa
 import { localDbNameFor, openLocalDb } from "../../local-db";
 import { createOutbox, type Outbox } from "../../outbox";
 import { createReplica } from "../../replica";
-import { amendMinutesOffline, canProposeEdits, createMomOffline, editDocumentDetailsOffline } from "./documents-writes";
+import { addMomActionItemOffline, amendMinutesOffline, canProposeEdits, createMomOffline, editDocumentDetailsOffline } from "./documents-writes";
 import { loadMomObject, loadMomsList } from "./moms-adapter";
 import { loadDocumentObject } from "./documents-adapter";
 import { docRow, momRow, shellData } from "./documents-test-fixtures";
@@ -152,6 +152,90 @@ test("the laptop database is this person's own: the queued op lives in projexa-l
   const db = await openLocalDb(r.idb as never, localDbNameFor("u1"));
   expect((await db.listOps()).map((o) => o.functionId)).toEqual(["update_mom_minutes"]);
   db.close();
+});
+
+describe("an action item for a meeting that already exists, offline (add_meeting_action_item, checklist 2.9b / R-C04)", () => {
+  async function itemRig() {
+    const r = await rig();
+    // the server's answer stands in for the task it makes; the meeting row itself is not changed by an action item
+    r.server.registerFunction("add_meeting_action_item", ({ params }) =>
+      typeof params.title === "string" && params.title.trim() ? { ok: true, kind: "meeting_minutes", id: String(params.meetingId), data: momRow(String(params.meetingId)) } : { rejected: "TITLE_REQUIRED", missing: ["title"] });
+    return r;
+  }
+
+  test("kept on the laptop at once and listed as waiting; nothing sent until a flush; then ONE op with the registry's params and no record version", async () => {
+    const r = await itemRig();
+    const data = shellData(r.idb as never);
+    const result = await addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "  Order tiles ", dueDate: "2026-10-20" }, { outbox: r.outbox });
+    expect(result).toEqual({ ok: true, opId: "op-1" });
+    expect(pushed(r)).toEqual([]);
+
+    const shown = await loadMomObject(data, "m1", "p1");
+    if (shown.state !== "local") throw new Error("unreachable");
+    expect(shown.pendingActionItems).toEqual([{ opId: "op-1", title: "Order tiles", dueDate: "2026-10-20", status: "pending" }]);
+
+    await r.outbox.flush();
+    expect(pushed(r)).toEqual([expect.objectContaining({ op_id: "op-1", function_id: "add_meeting_action_item", project_id: "p1", params: { projectId: "p1", meetingId: "m1", title: "Order tiles", dueDate: "2026-10-20" } })]);
+    expect(pushed(r)[0]!.record).toBeUndefined();
+    // the server took it: it leaves the laptop's waiting list
+    const after = await loadMomObject(data, "m1", "p1");
+    if (after.state !== "local") throw new Error("unreachable");
+    expect(after.pendingActionItems).toEqual([]);
+  });
+
+  test("the due date is optional and is not sent when blank; a published meeting still takes a follow-up item", async () => {
+    const r = await itemRig();
+    const data = shellData(r.idb as never);
+    expect((await addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "Check props", dueDate: "" }, { outbox: r.outbox })).ok).toBe(true);
+    expect((await addMomActionItemOffline(data, { projectId: "p1", meetingId: "m2", title: "Send the signed minutes" }, { outbox: r.outbox })).ok).toBe(true);
+    await r.outbox.flush();
+    expect(pushed(r).map((o) => o.params)).toEqual([
+      { projectId: "p1", meetingId: "m1", title: "Check props" },
+      { projectId: "p1", meetingId: "m2", title: "Send the signed minutes" },
+    ]);
+  });
+
+  test("refused in words with nothing queued: no title, a title over 2,000 letters, a due date that is not a real day", async () => {
+    const r = await itemRig();
+    const data = shellData(r.idb as never);
+    const bad = [
+      addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "   " }, { outbox: r.outbox }),
+      addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "x".repeat(2001) }, { outbox: r.outbox }),
+      addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "ok", dueDate: "2026-02-30" }, { outbox: r.outbox }),
+      addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "ok", dueDate: "20-10-2026" }, { outbox: r.outbox }),
+    ];
+    for (const res of await Promise.all(bad)) {
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.message.length).toBeGreaterThan(10);
+    }
+    expect(r.enqueued()).toBe(0);
+  });
+
+  test("a meeting the laptop does not hold, another person, another project or organisation, or a read-only role: nothing queued", async () => {
+    const r = await itemRig();
+    const data = shellData(r.idb as never);
+    const input = { projectId: "p1", meetingId: "m1", title: "Order tiles" };
+    expect((await addMomActionItemOffline(data, { ...input, meetingId: "nope" }, { outbox: r.outbox })).ok).toBe(false);
+    expect((await addMomActionItemOffline(shellData(r.idb as never, "u2"), input, { outbox: r.outbox })).ok).toBe(false);
+    expect((await addMomActionItemOffline(data, { ...input, projectId: "p2" }, { outbox: r.outbox })).ok).toBe(false);
+    expect((await addMomActionItemOffline(shellData(r.idb as never, "u1", "orgB"), input, { outbox: r.outbox })).ok).toBe(false);
+    expect((await addMomActionItemOffline(shellData(r.idb as never, "u1", "orgA", "viewer"), input, { outbox: r.outbox })).ok).toBe(false);
+    expect(r.enqueued()).toBe(0);
+  });
+
+  test("a refusal by the server is not shown as waiting or as done: the person's text is kept as a draft they can send again", async () => {
+    const r = await itemRig();
+    r.server.registerFunction("add_meeting_action_item", () => ({ rejected: "RECORD_NOT_FOUND" }));
+    const data = shellData(r.idb as never);
+    await addMomActionItemOffline(data, { projectId: "p1", meetingId: "m1", title: "Order tiles" }, { outbox: r.outbox });
+    await r.outbox.flush();
+    const shown = await loadMomObject(data, "m1", "p1");
+    if (shown.state !== "local") throw new Error("unreachable");
+    expect(shown.pendingActionItems).toEqual([]);
+    const draft = await r.outbox.getDraft("op-1");
+    expect(draft?.functionId).toBe("add_meeting_action_item");
+    expect(draft?.params).toMatchObject({ meetingId: "m1", title: "Order tiles" });
+  });
 });
 
 describe("a new meeting offline (create_mom, G-15)", () => {
