@@ -14,6 +14,7 @@ import { formatDateTime } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
 import type { ScopeObjectData } from "./scope-adapter";
 import { useRowWindow } from "./use-row-window";
+import { mayOffer, projectQuery } from "./DesignChangeShared";
 
 function Message({ state, children }: { state: string; children: string }) {
   return (
@@ -149,6 +150,43 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   if (data.state === "not_synced") return <Message state="not_synced">This BOQ&apos;s project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online.</Message>;
   if (data.state === "not_found") return <Message state="not_found">This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</Message>;
 
+  if (data.state === "waiting") {
+    // A BOQ or revision made on this laptop, not yet accepted by the server: its lines as the person typed them, marked as waiting.
+    const w = data.waiting;
+    return (
+      <section data-testid="scope-object" data-state="waiting" data-boq-id={w.id}>
+        <h1 className="font-heading text-2xl text-px-ink" data-testid="boq-local-title">{w.title}</h1>
+        <p className="mt-1 text-sm text-px-muted">
+          {revisionLabel(w.version)} · <span data-testid="boq-waiting-mark">Waiting to sync</span> · {w.lines.length} {w.lines.length === 1 ? "line" : "lines"}
+        </p>
+        <p className="mt-1 text-xs text-px-muted">Saved on this laptop. It will be sent to the server when you are connected, and the server may still refuse it.</p>
+        <div className="mt-4 overflow-x-auto rounded-lg border border-black/10 bg-white">
+          <Table data-testid="boq-waiting-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead><TableHead>Description</TableHead><TableHead>Unit</TableHead>
+                <TableHead className="text-right">Quantity</TableHead><TableHead className="text-right">Rate</TableHead><TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {w.lines.map((l) => (
+                <TableRow key={l.id} data-testid="boq-waiting-line">
+                  <TableCell>{l.itemCode ?? ""}</TableCell>
+                  <TableCell className={l.parentItemCode ? "pl-6" : undefined}>{l.description}</TableCell>
+                  <TableCell>{l.unit}</TableCell>
+                  <TableCell className="text-right">{l.quantity}</TableCell>
+                  <TableCell className="text-right">{formatAmount(l.rate)}</TableCell>
+                  <TableCell className="text-right">{formatAmount(l.amount)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <p className="mt-3 text-right text-sm font-medium text-px-ink" data-testid="boq-local-total">Total {formatAmount(w.total)}</p>
+      </section>
+    );
+  }
+
   const { boq, lines } = data;
   const waiting = new Set(data.waitingLineIds);
   const conflicts = new Map((data.conflicts ?? []).map((c) => [c.lineId, c]));
@@ -159,6 +197,11 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
       <p className="mt-1 text-sm text-px-muted">
         {revisionLabel(boq.version)} · <span className="capitalize">{boq.status}</span> · {lines.length} {lines.length === 1 ? "line" : "lines"}
       </p>
+      {boq.status !== "superseded" && mayOffer(shell.data.role, "create_boq_revision") ? (
+        <p className="mt-1 text-sm">
+          <a className="text-px-ink underline underline-offset-2" data-testid="boq-local-revise" href={`/scope/${encodeURIComponent(boq.id)}/revise${projectQuery(boq.projectId)}`}>New revision</a>
+        </p>
+      ) : null}
       <p className="mt-1 text-xs text-px-muted" data-testid="boq-local-copy-note">
         Saved on this laptop{data.syncedAt ? ` · last copied ${formatDateTime(data.syncedAt)}` : ""}
       </p>
