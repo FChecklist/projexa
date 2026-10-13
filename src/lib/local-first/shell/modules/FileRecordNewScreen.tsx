@@ -11,7 +11,7 @@ import type { FileJobKind } from "../file-queue";
 import type { ShellScreenProps } from "../types";
 import { CopyNote, ReadOnlyNote, Screen, StateMessage, fieldClass, mayWrite, projectName, textHandlers, withProject } from "./DeliveryParts";
 import { FilesWaiting } from "./FilesWaiting";
-import { FILE_KIND_WORDS, addFileRecordOffline } from "./file-writes";
+import { FILE_KIND_WORDS, addFileRecordOffline, missingFileRecordMessage } from "./file-writes";
 
 type ListData = { state: "no_project" } | { state: "not_synced"; projectId: string } | { state: "local"; projectId: string; syncedAt: number | null };
 
@@ -40,6 +40,14 @@ export default function FileRecordNewScreen({ kind, shell, data }: { kind: FileJ
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Everything that is still missing, in words, at once (checklist 2.20) -- the browser's required-field block says nothing on some screens.
+    const typed: Record<string, string> =
+      kind === "permit" ? { name, permitNumber: number, permitAuthority: authority, expiryDate: expiry } : kind === "drawing" ? { name } : { name, category };
+    const missing = missingFileRecordMessage(kind, typed, file);
+    if (missing) {
+      setNote({ ok: false, text: missing });
+      return;
+    }
     setSaving(true);
     try {
       const r =
@@ -70,7 +78,8 @@ export default function FileRecordNewScreen({ kind, shell, data }: { kind: FileJ
       {!mayWrite(shell) ? (
         <ReadOnlyNote />
       ) : (
-        <form onSubmit={submit} className="mt-4 max-w-xl rounded-lg border border-black/10 bg-white p-4" data-testid={`${testId}-form`}>
+        // noValidate: the browser's own `required` block stops the click and, on some screens, says nothing. submit() names what is missing.
+        <form noValidate onSubmit={submit} className="mt-4 max-w-xl rounded-lg border border-black/10 bg-white p-4" data-testid={`${testId}-form`}>
           <label className="block text-sm">
             Name
             <input aria-label="Name" className={fieldClass} value={name} {...textHandlers(setName)} required />
