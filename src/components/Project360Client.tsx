@@ -24,10 +24,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Download, Loader2, Printer } from "lucide-react";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { project360ToCsv } from "@/lib/project-360-export";
+import { formatDate } from "@/lib/format-date";
 
 type MoneyFigure = number | "NOT_SET";
 
@@ -163,11 +165,59 @@ export default function Project360Client({ projectId, projectName }: { projectId
   const criticalTaskCount = tasks.filter((t) => t.isCritical).length;
   const overdueBillingClaims = billingClaims.filter((c) => c.isOverdue).length;
 
+  // The file carries exactly what the cards below show, formatted by the same functions.
+  function downloadCsv() {
+    const csv = project360ToCsv(projectName, formatDate(new Date().toISOString().slice(0, 10)), {
+      profit: [
+        ["Expected profit (at first confirmation)", fmt(analysis!.expectedProfitGross)],
+        ["Actual profit (gross)", fmt(analysis!.actualProfit.profitOnGross)],
+        ["Actual profit (gross) margin", fmtPercent(analysis!.actualProfit.profitOnGrossPercent)],
+        ["Actual profit (net receivable)", fmt(analysis!.actualProfit.profitOnNetReceivable)],
+        ["Actual profit (net receivable) margin", fmtPercent(analysis!.actualProfit.profitOnNetReceivablePercent)],
+        ["Vs. quoted margin", fmt(analysis!.profitVsExpectedDelta)],
+      ],
+      boq: [
+        ["Contract at first confirmation", fmt(analysis!.contractAtFirstConfirmation)],
+        ["Contract now", fmt(analysis!.contractValueNow)],
+        ["Variation impact", fmt(analysis!.contractVariance)],
+        ["Approved revisions", String(analysis!.approvedVariationCount)],
+        ["Committed vs baseline", SIGN_LABEL[analysis!.commitmentDriftSign]],
+        ["Spent vs baseline", SIGN_LABEL[analysis!.costPerformanceSign]],
+      ],
+      counts: [
+        ["Scope changes", String(changeOrders.length)],
+        ["Scope changes pending decision", String(pendingChangeOrders.length)],
+        ["Scope change total cost impact", fmt(totalScopeChangeImpact)],
+        ["Milestones", String(milestones.length)],
+        ["Milestones average completion", `${avgMilestoneCompletion}%`],
+        ["Milestones completed", String(milestonesByStatus.completed ?? 0)],
+        ["Timeline activities", String(tasks.length)],
+        ["Activities on the critical path", String(criticalTaskCount)],
+        ["Billing milestones", String(billingClaims.length)],
+        ["Billing milestones overdue", String(overdueBillingClaims)],
+      ],
+    });
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `project-360-${projectId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
       <p className="text-sm text-px-muted">
         {projectName} — did we make the margin we quoted, and where did it go, combined with scope changes, billing milestones and schedule slippage.
       </p>
+      <div className="flex flex-wrap gap-2 print:hidden">
+        <Button type="button" variant="outline" size="sm" onClick={downloadCsv} data-testid="project360-download-csv">
+          <Download className="size-4" /> Download CSV
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => window.print()} data-testid="project360-print">
+          <Printer className="size-4" /> Print / save as PDF
+        </Button>
+      </div>
 
       {/* THE ANSWER (Sumeet #8: Profit & Loss) */}
       <Card className="shadow-card">
