@@ -8,13 +8,13 @@ import { answerRfiLocally, createRfiLocally, updateTaskLocally } from "../local-
 import type { EnqueueInput, Outbox } from "../outbox";
 import { createReplica } from "../replica";
 import type { ShellData } from "../shell/context";
-import { addWorkerOffline, createMaterialOffline, createTaskOffline, markAttendanceOffline, recordIssueOffline, recordProgressOffline, recordReceiptOffline } from "../shell/modules/delivery-writes";
+import { addWorkerOffline, createMaterialOffline, createMilestoneOffline, createTaskOffline, markAttendanceOffline, recordIssueOffline, recordProgressOffline, recordReceiptOffline, updateMilestoneOffline } from "../shell/modules/delivery-writes";
 import {
   approveTimeEntryOffline, createChangeOrderOffline, recordTimeEntryOffline, rejectTimeEntryOffline, submitChangeOrderOffline, submitTimeEntryOffline,
 } from "../shell/modules/design-change-writes";
 import { amendMinutesOffline, createMomOffline, editDocumentDetailsOffline } from "../shell/modules/documents-writes";
 import {
-  advanceFfeOffline, answerRfiOffline, closeRfiOffline, createPunchItemOffline, createRfiOffline, createSiteDiaryOffline, createSubmittalOffline,
+  advanceFfeOffline, answerRfiOffline, closeRfiOffline, createPunchItemOffline, createRfiOffline, createSiteDiaryOffline, createSiteInstructionOffline, createSubmittalOffline,
   markPunchReadyOffline, reviewSubmittalOffline, verifyPunchClosedOffline,
 } from "../shell/modules/site-writes";
 import { LIVE_FUNCTION_IDS, LIVE_SOURCE_COMMIT, LIVE_WRITES, type LiveWrite } from "./__fixtures__/live-registry-contract";
@@ -96,7 +96,7 @@ describe("function-registry.json (the browser AI's copy) equals the live registr
 type Captured = { functionId: string; params: Record<string, unknown> };
 
 const P = "p1";
-const KINDS = ["tasks", "rfis", "roster", "attendance", "materials", "material_receipts", "material_issues", "activities", "boq_lines", "progress", "change_orders", "timesheets", "documents", "meeting_minutes", "submittals", "punch_list", "site_diaries", "ffe_items"].map((kind) => ({ kind }));
+const KINDS = ["milestones", "site_instructions", "tasks", "rfis", "roster", "attendance", "materials", "material_receipts", "material_issues", "activities", "boq_lines", "progress", "change_orders", "timesheets", "documents", "meeting_minutes", "submittals", "punch_list", "site_diaries", "ffe_items"].map((kind) => ({ kind }));
 
 const captured: Captured[] = [];
 let idb: IDBFactory;
@@ -117,6 +117,7 @@ beforeAll(async () => {
   idb = new IDBFactory();
   const server = createFakeSyncServer({ kinds: KINDS });
   server.upsert({ kind: "tasks", projectId: P, id: "t1", data: { title: "Pour slab", statusId: "s1", priority: "medium", completionPercentage: 10 } });
+  server.upsert({ kind: "milestones", projectId: P, id: "ms1", data: { id: "ms1", name: "Handover", status: "planned", target_date: "2026-12-01" } });
   server.upsert({ kind: "rfis", projectId: P, id: "r1", data: { subject: "Door", question: "Which?", status: "open", answer: null } });
   server.upsert({ kind: "roster", projectId: P, id: "w1", data: { id: "w1", name: "Ravi", trade: "mason", is_active: true, daily_rate: null } });
   server.upsert({ kind: "materials", projectId: P, id: "m1", data: { id: "m1", name: "Cement", unit: "bag", is_active: true, unit_cost: null } });
@@ -170,6 +171,10 @@ beforeAll(async () => {
     await verifyPunchClosedOffline(data, { projectId: P, itemId: "x2" }, { outbox }),
     await reviewSubmittalOffline(data, { projectId: P, submittalId: "s1", status: "approved_as_noted", comments: "see mark-up" }, { outbox }),
     await advanceFfeOffline(data, { projectId: P, itemId: "f1", status: "ordered" }, { outbox }),
+    // R-94 milestones and R-C14 site instructions, every optional field filled
+    await createMilestoneOffline(data, { projectId: P, title: "Slab cast L2", targetDate: "2026-11-15", description: "Pour" }, { outbox }),
+    await updateMilestoneOffline(data, { projectId: P, milestoneId: "ms1", title: "Handover", targetDate: "2026-12-10", description: "Keys", status: "in_progress" }, { outbox }),
+    await createSiteInstructionOffline(data, { projectId: P, issueDate: "2026-10-05", toContractor: "Ace", description: "Change the lintel", drawingRef: "A-201", costImpact: true, timeImpact: true }, { outbox }),
   ];
   // A writer that refused would hide its params from this check: every one must have queued.
   const refused = results.map((r, i) => ({ i, r })).filter(({ r }) => !r || ("queued" in r ? r.queued !== true : (r as { ok?: boolean }).ok !== true));
@@ -184,9 +189,9 @@ afterAll(() => {
 const RECREATE_TASK: Captured = { functionId: "create_schedule_task", params: { projectId: P, title: "T", startDate: "2026-10-01", description: "D", priority: "high", dueDate: "2026-10-05" } };
 
 describe("every write the laptop builds uses the live registry's parameter names", () => {
-  test("the rig queued every writer (30 ops, 27 function ids)", () => {
-    expect(captured).toHaveLength(30);
-    expect(new Set(captured.map((c) => c.functionId)).size).toBe(27);
+  test("the rig queued every writer (33 ops, 30 function ids)", () => {
+    expect(captured).toHaveLength(33);
+    expect(new Set(captured.map((c) => c.functionId)).size).toBe(30);
   });
 
   test("each built op: a live write, every param a declared name, every required name present", () => {
