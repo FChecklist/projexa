@@ -9,7 +9,7 @@ describe("a meeting_minutes row is untrusted input until it looks like a MoM", (
   test("the real projection is read field by field; the agenda is one item per line", () => {
     expect(toLocalMom(momRow("m1"), "p1")).toEqual({
       id: "m1", projectId: "p1", title: "Meeting m1", meetingType: "team", scheduledAt: "2026-04-01T09:00:00Z", status: "draft", publishedAt: null,
-      agenda: ["1. Progress", "2. Safety"], minutes: "Agreed to pour slab on Monday.", attendeeCount: 4, createdAt: "2026-04-01T08:00:00Z", waiting: false,
+      agenda: ["1. Progress", "2. Safety"], minutes: "Agreed to pour slab on Monday.", attendeeCount: 4, attendeeNames: null, createdAt: "2026-04-01T08:00:00Z", waiting: false,
     });
     expect(toLocalMom(momRow("m1", { agenda: ["a", 3, { x: 1 }, " b "] }), "p1")!.agenda).toEqual(["a", "b"]);
   });

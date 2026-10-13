@@ -3,7 +3,8 @@
 // LOCAL-FIRST shell, overview cluster: REPORTS on this laptop. The list of the online Reports screen; a report opens the server's last
 // answer kept here ("As of ..., from this laptop"), refreshed from the same endpoint while the laptop is online. Export (CSV) works
 // whenever that answer is on the laptop -- it is the same reportResultToCsv the online screen uses -- and otherwise says plainly that it
-// needs the server once.
+// needs the server once. "Copy text for WhatsApp" (R-C15) works the same way with no network: the saved answer as a short message to paste; the public
+// link and the PDF are made by the server, and the screen says that in words.
 
 import { useState } from "react";
 import { formatDateTime } from "@/lib/format-date";
@@ -14,6 +15,8 @@ import { prefetchReportSnapshots } from "./reports-prefetch";
 import type { ReportsData } from "./reports-adapter";
 import { isReportBody } from "./reports-adapter";
 import { OverviewBody, downloadText } from "./OverviewBody";
+import { ServerOnly } from "./DeliveryParts";
+import { copyTextToClipboard, reportShareText } from "./share-text";
 import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-refresh";
 
 export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<ReportsData>) {
@@ -28,6 +31,7 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
   const prefetchProject = data.state === "local" ? data.projectId : null;
   const prefetchReports = data.state === "local" ? data.reports.filter((r) => r.value !== selected?.value) : null;
   const [keeping, setKeeping] = useState<"idle" | "running" | "done" | "stopped">("idle");
+  const [copied, setCopied] = useState<{ ok: boolean; text: string } | null>(null);
   async function keepAllReports() {
     if (!online || !prefetchProject || !prefetchReports) return;
     setKeeping("running");
@@ -103,7 +107,26 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
                     >
                       Export CSV
                     </button>
+                    <button
+                      type="button"
+                      data-testid="overview-report-whatsapp"
+                      className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
+                      onClick={async () => {
+                        const text = reportShareText({ title: selected.label, projectName: project?.name ?? null, savedAt: snap.fetchedAt, body: snap.body });
+                        setCopied({ ok: await copyTextToClipboard(text), text });
+                      }}
+                    >
+                      Copy text for WhatsApp
+                    </button>
                   </div>
+                  {copied?.ok ? <p className="text-xs text-px-ink" role="status" data-testid="overview-report-copied">Copied. Paste it into WhatsApp.</p> : null}
+                  {copied && !copied.ok ? (
+                    <div data-testid="overview-report-copy-manual">
+                      <p className="text-xs text-px-muted">This browser did not allow copying. Select the text below and copy it.</p>
+                      <textarea readOnly rows={8} className="mt-1 w-full rounded border border-black/20 p-2 text-xs" value={copied.text} onFocus={(e) => e.currentTarget.select()} />
+                    </div>
+                  ) : null}
+                  <ServerOnly shell={shell} what="A public link to this report, and its PDF, are made once you are online (the Share and Export buttons of the Reports screen). Until then, copy the text above into WhatsApp." path="/reports" />
                   <OverviewBody body={snap.body} />
                 </div>
               ) : (

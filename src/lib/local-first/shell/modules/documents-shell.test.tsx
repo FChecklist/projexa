@@ -217,6 +217,65 @@ describe("with NO network, every screen of the cluster opens from the laptop's o
     expect(fetchCalls).toEqual([]);
   });
 
+  test("checklist 2.9b: an action item on a meeting that is already there, offline -> listed as Waiting to sync, ONE add_meeting_action_item op, nothing fetched; publish and PDF are said to be online", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/moms/m1?projectId=p1");
+    const { findByTestId, getByLabelText, getByTestId } = render(<LocalShell />);
+    await findByTestId("mom-object");
+    expect(getByTestId("doc-online-only").textContent).toContain("publishing the minutes and the PDF need a connection");
+    // a blank item is refused in words and queues nothing
+    fireEvent.submit(getByTestId("mom-item-form"));
+    await waitFor(() => expect(getByTestId("mom-item-note").getAttribute("data-ok")).toBe("0"));
+    fireEvent.input(getByLabelText("New action item"), { target: { value: "Order tiles" } });
+    fireEvent.input(getByLabelText("Due date for the new action item"), { target: { value: "2026-10-20" } });
+    fireEvent.submit(getByTestId("mom-item-form"));
+    await waitFor(() => expect(getByTestId("mom-item-note").getAttribute("data-ok")).toBe("1"), { timeout: 5_000 });
+    expect(getByTestId("mom-item-note").textContent).toContain("will be sent to the server when you are connected");
+    await waitFor(() => expect(getByTestId("mom-pending-items").textContent).toContain("Order tiles"));
+    expect(getByTestId("mom-pending-items").textContent).toContain("(due 20-10-2026)");
+    expect(getByTestId("mom-pending-items").textContent).toContain("Waiting to sync");
+    const db = await openLocalDb(idb, localDbNameFor("u1"));
+    expect((await db.listOps()).map((o) => [o.functionId, o.params])).toEqual([["add_meeting_action_item", { projectId: "p1", meetingId: "m1", title: "Order tiles", dueDate: "2026-10-20" }]]);
+    db.close();
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("an action item can still be added to PUBLISHED minutes (a follow-up task, as online); a viewer is not offered the form", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/moms/m2?projectId=p1");
+    const published = render(<LocalShell />);
+    await published.findByTestId("mom-object");
+    expect(published.getByTestId("mom-item-form")).toBeTruthy();
+    cleanup();
+    cleanup();
+    idb = new IDBFactory();
+    (globalThis as unknown as { indexedDB: IDBFactory }).indexedDB = idb;
+    await seedLaptop({ role: "viewer" });
+    go("/local/moms/m1?projectId=p1");
+    const viewer = render(<LocalShell />);
+    await viewer.findByTestId("mom-object");
+    expect(document.querySelector('[data-testid="mom-item-form"]')).toBeNull();
+  });
+
+  test("R-C04 (checklist 3.4): the minutes can be copied as a WhatsApp message offline, nothing fetched; the public share link is said to need a connection", async () => {
+    let copiedText = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => { copiedText = t; } } });
+    await seedLaptop();
+    setOnline(false);
+    go("/local/moms/m1?projectId=p1");
+    const { findByTestId, getByTestId } = render(<LocalShell />);
+    await findByTestId("mom-object");
+    fireEvent.click(getByTestId("mom-whatsapp"));
+    await waitFor(() => expect(getByTestId("mom-copied").textContent).toContain("Paste it into WhatsApp"));
+    expect(copiedText).toContain("*Meeting m1*");
+    expect(copiedText).toContain("Agreed to pour slab on Monday.");
+    expect(copiedText).toContain("1. 1. Progress");
+    expect(getByTestId("doc-online-only").textContent).toContain("The public share link");
+    expect(fetchCalls).toEqual([]);
+  });
+
   test("saving minutes that were not changed queues nothing", async () => {
     await seedLaptop();
     setOnline(false);

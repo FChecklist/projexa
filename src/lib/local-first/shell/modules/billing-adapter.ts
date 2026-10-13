@@ -16,7 +16,9 @@
 
 import type { ShellData } from "../context";
 import { loadOrgLocal } from "../../org-local";
-import { day, isHidden, readKind, rowWithId, str, text, type Obj } from "./finance-local";
+import { waitingIdsOf } from "./documents-records";
+import { PROGRESS_CLAIMS_KIND } from "./billing-writes";
+import { day, isHidden, num, readKind, rowWithId, str, text, type Obj } from "./finance-local";
 
 export type ClaimStep = { stage: "Drafted" | "Submitted" | "Approved" | "Rejected" | "Invoiced"; at: string };
 
@@ -29,6 +31,16 @@ export type Claim = {
   customerName: string | null;
   interimBillId: string | null;
   steps: ClaimStep[];
+  /** A milestone made on this laptop and not yet sent, or one the server has but nobody has moved on yet: a draft until a person confirms it online. */
+  waiting: boolean;
+};
+
+/** What the "new billing milestone" form is offered from this laptop's copy. */
+export type BillingChoices = {
+  /** The latest APPROVED BOQ of the project (the one the online screen bills against), or null when there is none yet. */
+  boq: { id: string; title: string | null; version: number | null } | null;
+  /** The organisation's active customers, the ones with a claim on this project first. */
+  customers: { id: string; name: string; billedHere: boolean }[];
 };
 
 export type CustomerNames = "local" | "not_allowed" | "not_synced";
@@ -44,6 +56,7 @@ export type BillingData =
       customerHidden: boolean;
       /** Whether customer names could be looked up on this laptop (the organisation kind), for the calm sentence when they could not. */
       customerNames: CustomerNames;
+      choices: BillingChoices;
       syncedAt: number;
     };
 
@@ -55,7 +68,15 @@ const STEP_COLUMNS = [
   ["invoiced_at", "Invoiced"],
 ] as const;
 
-type RawClaim = Omit<Claim, "customerName"> & { customerId: string | null };
+type RawClaim = Omit<Claim, "customerName" | "waiting"> & { customerId: string | null };
+
+type RawBoq = { id: string; title: string | null; version: number | null; status: string };
+
+function parseBoq(raw: unknown): RawBoq | null {
+  const o: (Obj & { id: string }) | null = rowWithId(raw);
+  const status = o && text(o, "status");
+  return o && status ? { id: o.id, title: text(o, "title"), version: num(o, "version"), status } : null;
+}
 
 function parseClaim(raw: unknown): RawClaim | null {
   const o: (Obj & { id: string }) | null = rowWithId(raw);
@@ -83,12 +104,19 @@ export async function loadBilling(data: ShellData, projectId: string | null): Pr
 
   const org = await loadOrgLocal("customers", { userId: data.userId, idb: data.idb });
   const names = new Map<string, string>();
+  const active = new Set<string>();
   if (org.state === "local") {
     for (const row of org.rows) {
       const name = typeof row.customer_name === "string" && row.customer_name.trim() !== "" ? row.customer_name : null;
-      if (name) names.set(row.id, name);
+      if (name) {
+        names.set(row.id, name);
+        // a row without the flag is active, as the customers list treats it
+        if ((row as Record<string, unknown>).is_active !== false) active.add(row.id);
+      }
     }
   }
+  const waitingIds = await waitingIdsOf(data, projectId, PROGRESS_CLAIMS_KIND);
+  const billedHere = new Set(read.rows.map((c) => c.customerId).filter((id): id is string => id !== null));
 
   const claims: Claim[] = read.rows
     .map((c) => ({
@@ -96,7 +124,21 @@ export async function loadBilling(data: ShellData, projectId: string | null): Pr
       // a hidden column never prints its value, even one a row carries
       customerName: customerHidden || !c.customerId ? null : names.get(c.customerId) ?? null,
       interimBillId: billHidden ? null : c.interimBillId,
+      waiting: waitingIds.has(c.id),
     }))
     .sort((a, b) => (b.scheduledDate ?? "").localeCompare(a.scheduledDate ?? "") || a.id.localeCompare(b.id));
-  return { state: "local", projectId, claims, customerHidden, customerNames: org.state === "local" ? "local" : org.state, syncedAt: read.syncedAt };
+  const choices = await billingChoices(data, projectId, names, active, billedHere);
+  return { state: "local", projectId, claims, customerHidden, customerNames: org.state === "local" ? "local" : org.state, choices, syncedAt: read.syncedAt };
+}
+
+/** The BOQ and customers the new-milestone form may use. A BOQ that exists only on this laptop (not yet accepted) is never offered. */
+async function billingChoices(data: ShellData, projectId: string, names: Map<string, string>, active: Set<string>, billedHere: Set<string>): Promise<BillingChoices> {
+  const boqs = await readKind(data, projectId, "boqs", parseBoq);
+  const approved = boqs.synced ? boqs.rows.filter((b) => b.status === "approved" && !b.id.startsWith("local-")) : [];
+  const latest = [...approved].sort((a, b) => (b.version ?? 0) - (a.version ?? 0) || a.id.localeCompare(b.id))[0];
+  const customers = [...names.entries()]
+    .filter(([id]) => active.has(id))
+    .map(([id, name]) => ({ id, name, billedHere: billedHere.has(id) }))
+    .sort((a, b) => Number(b.billedHere) - Number(a.billedHere) || a.name.localeCompare(b.name));
+  return { boq: latest ? { id: latest.id, title: latest.title, version: latest.version } : null, customers };
 }

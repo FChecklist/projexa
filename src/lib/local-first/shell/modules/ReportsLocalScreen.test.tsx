@@ -97,6 +97,38 @@ describe("reports on this laptop", () => {
     expect(fetchCalls.some((u) => u.includes("/api/reports/work-progress"))).toBe(false);
   });
 
+  test("R-C15: offline, a saved report can be copied as a WhatsApp message (no request), and the screen says the public link and the PDF are made once online", async () => {
+    let copiedText = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => { copiedText = t; } } });
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(reportSnapshotName(STATUS_URL, "p1"), BODY);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    const { getByTestId } = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams()} data={data} />);
+    fireEvent.click(getByTestId("overview-report-whatsapp"));
+    await waitFor(() => expect(getByTestId("overview-report-copied").textContent).toContain("Paste it into WhatsApp"));
+    expect(copiedText).toContain("*Project Status - Cedar Heights*");
+    expect(copiedText).toContain("Contract value: 777,000");
+    expect(copiedText).toContain("- Item Slab, Amount 100");
+    expect(getByTestId("server-only").textContent).toContain("public link to this report, and its PDF, are made once you are online");
+    expect(getByTestId("server-only").textContent).toContain("It will be available here when you are connected.");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("R-C15: if the browser will not copy, the text is shown to select by hand; a report not saved here offers no copy", async () => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } });
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(reportSnapshotName(STATUS_URL, "p1"), BODY);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    const { getByTestId, queryByTestId } = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams()} data={data} />);
+    fireEvent.click(getByTestId("overview-report-whatsapp"));
+    await waitFor(() => expect(queryByTestId("overview-report-copy-manual")).not.toBeNull());
+    expect(queryByTestId("overview-report-copied")).toBeNull();
+    expect((getByTestId("overview-report-copy-manual").querySelector("textarea") as HTMLTextAreaElement).value).toContain("Contract value: 777,000");
+    cleanup();
+    const none = await loadReports(shellData(), "p1", new URLSearchParams("report=kpi"));
+    const again = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams()} data={none} />);
+    expect(again.queryByTestId("overview-report-whatsapp")).toBeNull();
+  });
+
   test("offline the button is not offered", async () => {
     const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
     const { queryByTestId } = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams("report=project-status")} data={data} />);

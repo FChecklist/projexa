@@ -2,15 +2,18 @@
 
 // LOCAL-FIRST shell, one Minutes of Meeting: details, agenda and minutes from the laptop's own copy, and "Amend the minutes" offline
 // (update_mom_minutes through the outbox; the amendment is shown at once and marked "Waiting to sync"). Published minutes are locked, as
-// online. Attendee names, action items, the AI summary, share links, publish, edit details and the PDF need a connection (not synced, or
-// no registered function).
+// online. "Add an action item" works offline too (add_meeting_action_item: a title and an optional due date; the server makes it a task for the
+// person who saves it). The AI summary, share links, publish, edit details and the PDF need a connection (not synced, or no registered
+// function), and the screen says so in words; so do the attendees' names of a meeting that is already on the server (the sync does not
+// carry them: they can hold e-mail addresses).
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
 import { isPublished, type MomObjectData } from "./moms-adapter";
-import { amendMinutesOffline, canProposeEdits } from "./documents-writes";
+import { addMomActionItemOffline, amendMinutesOffline, canProposeEdits } from "./documents-writes";
+import { copyTextToClipboard, momShareText } from "./share-text";
 import { CopyNote, Facts, NOT_SYNCED, NO_PROJECT, OnlineOnly, StateMessage, Waiting, dateText, projectQuery } from "./DocumentsShared";
 
 const BACK = { href: "/moms", label: "Back to Minutes of Meetings" };
@@ -21,14 +24,32 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
   const minutesRef = useRef<HTMLTextAreaElement | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [itemTitle, setItemTitle] = useState("");
+  const [itemDue, setItemDue] = useState("");
+  const [itemNote, setItemNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [itemSaving, setItemSaving] = useState(false);
+  const [copied, setCopied] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (data.state === "no_project") return <StateMessage testId="mom-object" state="no_project" title="Minutes of Meeting" back={BACK}>{NO_PROJECT}</StateMessage>;
   if (data.state === "not_synced") return <StateMessage testId="mom-object" state="not_synced" title="Minutes of Meeting" back={BACK}>{NOT_SYNCED}</StateMessage>;
   if (data.state === "not_found") return <StateMessage testId="mom-object" state="not_found" title="Minutes of Meeting" back={BACK}>This meeting is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</StateMessage>;
 
-  const { mom, projectId } = data;
+  const { mom, projectId, pendingActionItems } = data;
   const locked = isPublished(mom);
   const mayAmend = !locked && canProposeEdits(shell.data.role);
+  // an action item is a follow-up task: it can be added after the minutes are published, as it can online
+  const mayAddItem = canProposeEdits(shell.data.role);
+
+  async function addItem() {
+    setItemSaving(true);
+    const result = await addMomActionItemOffline(shell.data, { projectId, meetingId: mom.id, title: itemTitle, dueDate: itemDue });
+    setItemSaving(false);
+    if (!result.ok) return setItemNote({ ok: false, text: result.message });
+    setItemTitle("");
+    setItemDue("");
+    setItemNote({ ok: true, text: shell.connectivity === "online" ? "Saved on this laptop and being sent." : "Saved on this laptop. It will be sent to the server when you are connected." });
+    shell.refresh();
+  }
 
   async function save() {
     const draft = minutesRef.current?.value ?? "";
@@ -56,7 +77,12 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
           ["When", mom.scheduledAt && Number.isFinite(Date.parse(mom.scheduledAt)) ? formatDateTime(mom.scheduledAt) : "-"],
           ["Type", mom.meetingType ?? "-"],
           ["Published", dateText(mom.publishedAt)],
-          ["Attendees", mom.attendeeCount === null ? "-" : `${mom.attendeeCount} invited (names are shown online)`],
+          [
+            "Attendees",
+            mom.attendeeNames && mom.attendeeNames.length > 0
+              ? `${mom.attendeeNames.join(", ")} (typed on this laptop)`
+              : mom.attendeeCount === null ? "-" : `${mom.attendeeCount} invited (names are shown online)`,
+          ],
         ]}
       />
       <div className="mt-5">
@@ -98,11 +124,66 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
               </Button>
             ) : null}
             {locked ? <p className="mt-2 text-xs text-px-muted" data-testid="mom-locked">These minutes are published and locked.</p> : null}
+            <Button
+              className="mt-2 ml-2"
+              variant="outline"
+              size="sm"
+              data-testid="mom-whatsapp"
+              onClick={async () => {
+                const text = momShareText({ title: mom.title, scheduledAt: mom.scheduledAt, status: mom.status, agenda: mom.agenda, minutes: mom.minutes });
+                setCopied({ ok: await copyTextToClipboard(text), text });
+              }}
+            >
+              Copy minutes for WhatsApp
+            </Button>
+            {copied?.ok ? <p className="mt-2 text-xs text-px-ink" role="status" data-testid="mom-copied">Copied. Paste it into WhatsApp.</p> : null}
+            {copied && !copied.ok ? (
+              <div data-testid="mom-copy-manual">
+                <p className="mt-2 text-xs text-px-muted">This browser did not allow copying. Select the text below and copy it.</p>
+                <textarea readOnly rows={8} className="mt-1 w-full rounded border border-black/20 p-2 text-xs" value={copied.text} onFocus={(e) => e.currentTarget.select()} />
+              </div>
+            ) : null}
           </>
         )}
         {note ? <p className="mt-2 text-xs text-px-muted" data-testid="mom-note">{note}</p> : null}
       </div>
-      <OnlineOnly>Attendee names, action items, the AI summary, share links, editing the details, publishing and the PDF need a connection.</OnlineOnly>
+      <div className="mt-5" data-testid="mom-actions">
+        <h2 className="text-sm font-medium text-px-ink">Action items</h2>
+        {pendingActionItems.length > 0 ? (
+          <ul className="mt-1 list-disc pl-5 text-sm" data-testid="mom-pending-items">
+            {pendingActionItems.map((item) => (
+              <li key={item.opId} data-status={item.status}>
+                {item.title}
+                {item.dueDate ? ` (due ${formatDate(item.dueDate)})` : ""}
+                <span className="ml-2 rounded bg-px-concrete px-1.5 py-0.5 text-xs text-px-muted">
+                  {item.status === "pending" ? "Waiting to sync" : "Not confirmed by the server yet (see the sync panel)"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <p className="mt-1 text-xs text-px-muted" data-testid="mom-items-note">
+          Action items already on the server are shown online. An item you add here becomes a task for you when it reaches the server; who owns it is set online.
+        </p>
+        {mayAddItem ? (
+          <form
+            className="mt-2 grid max-w-xl grid-cols-[1fr_auto_auto] items-center gap-2"
+            data-testid="mom-item-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addItem();
+            }}
+          >
+            <input aria-label="New action item" className="rounded border border-black/20 p-2 text-sm" value={itemTitle} onChange={(e) => setItemTitle(e.currentTarget.value)} onInput={(e) => setItemTitle(e.currentTarget.value)} />
+            <input aria-label="Due date for the new action item" type="date" className="rounded border border-black/20 p-2 text-sm" value={itemDue} onChange={(e) => setItemDue(e.currentTarget.value)} onInput={(e) => setItemDue(e.currentTarget.value)} />
+            <Button type="submit" size="sm" data-testid="mom-item-save" disabled={itemSaving}>Add action item</Button>
+          </form>
+        ) : null}
+        {itemNote ? (
+          <p role="status" aria-live="polite" className="mt-2 text-xs text-px-muted" data-testid="mom-item-note" data-ok={itemNote.ok ? "1" : "0"}>{itemNote.text}</p>
+        ) : null}
+      </div>
+      <OnlineOnly>The public share link, the AI summary, editing the details, publishing the minutes and the PDF need a connection (publishing locks the minutes, so it is done online). Attendee names of a meeting already on the server are shown online.</OnlineOnly>
     </section>
   );
 }

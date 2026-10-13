@@ -42,6 +42,13 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     load: () => import("./modules/ScopeReviseScreen"),
     adapter: (shell, params, query) => loadScopeRevise(shell.data, params.id!, query.get("projectId")),
   }),
+  // R-96 / R-98: add a scope item (a revision that keeps every line and adds the new ones), optionally because of an approved change order.
+  defineShellRoute({
+    pattern: "/scope/:id/add-item",
+    title: "Add a scope item",
+    load: () => import("./modules/ScopeAddItemScreen"),
+    adapter: (shell, params, query) => loadScopeRevise(shell.data, params.id!, query.get("projectId")),
+  }),
   // R-C09: the budget overlay of a BOQ's lines (budget %, vendor, vendor amount), update_line_item_budget, manager rank.
   defineShellRoute({
     pattern: "/scope/:id/budget",
@@ -77,6 +84,13 @@ export const SHELL_ROUTES: readonly ShellRoute[] = [
     title: "Billing Milestones",
     nav: { label: "Billing", order: 310 },
     load: () => import("./modules/BillingMilestonesScreen"),
+    adapter: (shell) => loadBilling(shell.data, shell.projectId),
+  }),
+  // R-95 (checklist 2.14): a new billing milestone made with no network, a draft until a person with the billing role confirms it online.
+  defineShellRoute({
+    pattern: "/billing-milestones/new",
+    title: "New billing milestone",
+    load: () => import("./modules/BillingNewScreen"),
     adapter: (shell) => loadBilling(shell.data, shell.projectId),
   }),
   defineShellRoute({
