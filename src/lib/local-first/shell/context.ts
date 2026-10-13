@@ -7,6 +7,7 @@ import { MANIFEST_KEY, type StoredManifest } from "../replica";
 import type { DurableIdentity } from "../identity";
 import type { MetaStore } from "../release/installer";
 import { readShellManifest, type ShellManifest } from "./manifest-cache";
+import { PROJECT_PREFERENCE_KEY, writeStoredProjectId } from "../../project-preference";
 
 export type ShellProject = { id: string; name: string };
 
@@ -85,7 +86,28 @@ export async function readShellData(deps: { identity: DurableIdentity; deviceMet
 
 // ─── the selected project ───────────────────────────────────────────────────────────────────────
 
-export const selectedProjectKey = (userId: string) => `px-shell-project:${userId}`;
+// ONE SOURCE OF TRUTH (UAT 2026-10-13, F63 / checklist 2.23). The offline shell used to keep its own `px-shell-project:<user>` key while the
+// normal pages' top rail kept `veri.rail.project` (+ the cookie the server pages read). The two could disagree: a page opened by a full
+// reload showed one project while the rail named another, so a write could land in a project the person did not last look at. The shell
+// now reads and writes the RAIL's store (project-preference.ts) and nothing else. The user argument is kept so callers did not change;
+// it is not part of the key (the rail's value is cleared at sign-out and always checked against the person's own project list).
+export const selectedProjectKey = (_userId?: string) => PROJECT_PREFERENCE_KEY;
+
+/** The project the person last chose, as the rail stores it (null: none). Never throws. */
+export function readSelectedProject(storage: Pick<Storage, "getItem"> | null = typeof localStorage === "undefined" ? null : localStorage): string | null {
+  try {
+    const v = storage?.getItem(PROJECT_PREFERENCE_KEY);
+    return v && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers the person's project in the rail's store (localStorage + the cookie the server pages read), so every shell agrees. */
+export function writeSelectedProject(projectId: string): void {
+  if (readSelectedProject() === projectId) return;
+  writeStoredProjectId(projectId);
+}
 
 /** The project a screen works on: the one asked for in the URL, else the one this person last chose, else the first. Only a project they have. */
 export function chooseProject(projects: readonly ShellProject[], requested: string | null, remembered: string | null): string | null {
@@ -116,9 +138,5 @@ export function noteShownProject(userId: string, projectId: string | null): void
 export function activeProjectFor(userId: string, storage: Pick<Storage, "getItem"> | null = typeof localStorage === "undefined" ? null : localStorage): string | null {
   const shown = shownProjects.get(userId);
   if (shown) return shown;
-  try {
-    return storage?.getItem(selectedProjectKey(userId)) ?? null;
-  } catch {
-    return null;
-  }
+  return readSelectedProject(storage);
 }

@@ -32,7 +32,7 @@
 //
 // Everything in this module is PURE -- no React, no fetch -- because the item
 // specifies EXACT user-facing wording ("Total today: 7.50 h", "Submit today
-// (4 rows, 7.50 h)", "No hours logged for 2 Sep 2026. Add a row below.",
+// (4 rows, 7.50 h)", "No hours logged for 02-09-2026. Add a row below.",
 // "Hours must be more than 0") and wording that only lives inside JSX drifts
 // the first time somebody reformats a component.
 
@@ -250,19 +250,20 @@ export function formatHours(hours: number | string): string {
   return Number.isFinite(n) ? n.toFixed(2) : String(hours);
 }
 
-// Pinned month names rather than toLocaleDateString, for the same reason
-// src/lib/format-date.ts pins its locale and time zone: a date rendered on
-// the server and again on the client must be the same string, and an ISO
-// date has no time zone to shift it by if it is never turned into a Date.
-const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+// Never turned into a Date, for the same reason src/lib/format-date.ts pins its locale and time zone: a date rendered on the server and again on
+// the client must be the same string, and an ISO date has no time zone to shift it by if it is never turned into a Date.
 
-/** "2026-09-02" -> "2 Sep 2026". Returns the input unchanged if it is not an ISO date. */
+/**
+ * "2026-09-02" -> "02-09-2026": the house date form (dd-mm-yyyy, owner decision 2026-10-13; UAT finding F54: this list read "13 Oct 2026").
+ * Returns the input unchanged if it is not a real ISO date.
+ */
 export function formatDayLabel(spentOn: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(spentOn);
   if (!m) return spentOn;
-  const month = SHORT_MONTHS[Number(m[2]) - 1];
-  if (!month) return spentOn;
-  return `${Number(m[3])} ${month} ${m[1]}`;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return spentOn;
+  return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 /**
@@ -278,7 +279,7 @@ export function todayIso(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
 
-/** "Total today: 7.50 h" on today, "Total for 1 Sep 2026: 7.50 h" on any other day. */
+/** "Total today: 7.50 h" on today, "Total for 01-09-2026: 7.50 h" on any other day. */
 export function dayTotalLabel(hours: number, spentOn: string, today: string): string {
   return spentOn === today
     ? `Total today: ${formatHours(hours)} h`
@@ -291,7 +292,7 @@ export function submitDayLabel(rows: number, hours: number, spentOn: string, tod
   return `${verb} (${rows} row${rows === 1 ? "" : "s"}, ${formatHours(hours)} h)`;
 }
 
-/** "No hours logged for 2 Sep 2026. Add a row below." */
+/** "No hours logged for 02-09-2026. Add a row below." */
 export function emptyDayMessage(spentOn: string): string {
   return `No hours logged for ${formatDayLabel(spentOn)}. Add a row below.`;
 }

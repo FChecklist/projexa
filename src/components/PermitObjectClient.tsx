@@ -16,6 +16,7 @@ import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
 import { viaPxApi } from "@/lib/px-api";
+import { houseDateDisplay } from "@/lib/list-date-cells";
 
 type Permit = {
   id: string;
@@ -241,6 +242,8 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   // FAIL-AFTER-CLICK"). Computed on every render so the button's disabled
   // state always matches what handleSave would actually reject.
   const missingCount = mode === "edit" ? REQUIRED_COLUMNS.filter((c) => !values[c.field]).length : 0;
+  // F58: the dates read in the house form (dd-mm-yyyy) in display mode, as on the permits list.
+  const shownRequired = houseDateDisplay(REQUIRED_COLUMNS, values, mode);
 
   return (
     <>
@@ -349,8 +352,8 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       )}
       <FormSection
         title="Permit details"
-        columns={REQUIRED_COLUMNS}
-        values={values}
+        columns={shownRequired.columns}
+        values={shownRequired.values}
         mode={mode}
         onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))}
       />

@@ -23,9 +23,9 @@ describe("M24Shell starts the background refresh of the laptop copy", () => {
     expect(source).toContain("clearInterval(tick)");
   });
 
-  test("keeps the offline shell's remembered project in step with the project this screen shows", () => {
-    expect(source).toContain("`px-shell-project:${userId}`");
-    expect(source).toContain("railProject.id");
+  // F63 / checklist 2.23: the offline shell no longer has a project key of its own to keep in step; it reads the rail's store.
+  test("does not keep a second, offline-only project key", () => {
+    expect(source).not.toContain("px-shell-project");
   });
 
   test("a first visit (no project cookie yet) never triggers a full reload: the install screen must be drawn once", () => {

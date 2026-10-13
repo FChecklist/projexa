@@ -108,11 +108,12 @@ describe("the shell opens OFFLINE from the laptop's own copy", () => {
   test("a project opened from a link (?projectId=) becomes the person's open project, so the scheduler catches it up at once, not hourly", async () => {
     await seedLaptop();
     setOnline(false);
-    expect(localStorage.getItem("px-shell-project:u1")).toBeNull();
+    expect(localStorage.getItem("veri.rail.project")).toBeNull();
     go("/local/scope?projectId=p1");
     const { findByTestId } = render(<LocalShell />);
     await findByTestId("scope-list");
-    await waitFor(() => expect(localStorage.getItem("px-shell-project:u1")).toBe("p1"));
+    // F63: the ONE store is the rail's (`veri.rail.project`); the shell no longer keeps a `px-shell-project:<user>` key of its own.
+    await waitFor(() => expect(localStorage.getItem("veri.rail.project")).toBe("p1"));
   });
 
   test("clicking a BOQ opens its screen without a page load; its lines and total come from the laptop; Back works", async () => {

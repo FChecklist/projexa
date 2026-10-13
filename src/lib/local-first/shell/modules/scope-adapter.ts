@@ -20,7 +20,7 @@ import { loadLocalFirst, localSyncInfo } from "../../local-reader";
 import type { ShellData } from "../context";
 import { applyPendingEdits, type PendingEdit } from "../pending-edits";
 import { parseProgress, readKind } from "./delivery-local";
-import { DEFAULT_BUDGET_PERCENT, latestProgress } from "./scope-writes";
+import { DEFAULT_BUDGET_PERCENT, cumulativeProgress } from "./scope-writes";
 import { pendingView, readPendingOps } from "./design-change-rows";
 import { vendorNames, type MasterState } from "./org-masters";
 
@@ -200,6 +200,17 @@ export async function loadScopeBudget(data: ShellData, boqId: string, projectId:
       budgetPercentage: r.budgetPercentage ?? DEFAULT_BUDGET_PERCENT, vendorId: r.vendorId ?? null, vendorAmount: r.vendorAmount ?? null,
       waiting: (view.waitingOn.get(r.id) ?? []).length > 0, trouble: view.troubled.get(r.id) ?? null,
     }));
+    // A budget saved here and not yet accepted shows AT ONCE (it used to keep the server's old figure beside "Waiting to sync"). Only a save still
+    // waiting counts: one the server refused or that is in conflict leaves the line as the server has it, flagged by `trouble`.
+    const waitingBudgets = (await readPendingOps(data, candidate)).filter((op) => op.functionId === "update_line_item_budget" && op.status !== "blocked" && op.status !== "conflict");
+    for (const op of waitingBudgets) {
+      const target = budgetLines.find((l) => l.id === op.params?.boqLineItemId);
+      if (!target) continue;
+      const p = op.params as Record<string, unknown>;
+      if (typeof p.budgetPercentage === "number") target.budgetPercentage = String(p.budgetPercentage);
+      if (typeof p.vendorId === "string") target.vendorId = p.vendorId;
+      if (typeof p.vendorAmount === "number") target.vendorAmount = String(p.vendorAmount);
+    }
     const names = await vendorNames({ userId: data.userId, idb: data.idb });
     const vendors = names.state === "local" ? { state: "local" as const, options: [...names.names].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)) } : { state: names.state };
     return { state: "ready", projectId: candidate, boq, lines: budgetLines, vendors };
@@ -225,9 +236,12 @@ export async function loadScopeRevise(data: ShellData, boqId: string, projectId:
     const first = own[0]!;
     const boq: Boq = { id: boqId, projectId: candidate, version: first.boqVersion, title: first.boqTitle, status: first.boqStatus, parentBoqId: null, createdAt: first.createdAt ?? "" };
     const progressRead = await readKind(data, candidate, "progress", parseProgress);
+    const parent = orderLinesForBoq(own).map(toBoqLineItemRow);
+    // F60: the CUMULATIVE figure per line (the server's), not the latest entry's own percent
+    const quantities = new Map(parent.map((r) => [r.id, Number(r.quantity)] as const));
     return {
-      state: "ready", projectId: candidate, boq, parent: orderLinesForBoq(own).map(toBoqLineItemRow),
-      progress: progressRead.synced ? Object.fromEntries(latestProgress(progressRead.rows)) : null,
+      state: "ready", projectId: candidate, boq, parent,
+      progress: progressRead.synced ? Object.fromEntries(cumulativeProgress(progressRead.rows, quantities)) : null,
     };
   }
   return anySynced ? { state: "not_found", projectId } : { state: "not_synced", projectId };
