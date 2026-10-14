@@ -1,0 +1,320 @@
+import { test as base, expect, type BrowserContext, type Page } from "@playwright/test";
+import { openLaptop, serverCall } from "./support/real-backend";
+
+// SUMEET R-B2 demo gate (TC-01 TC-10 TC-11 TC-30 TC-40 TC-90) on the DEPLOYED site as a user: the same real-click flows as
+// rb2-boq-create-real-click-and-progress-dropdown-env1.spec.ts (read it for the reasoning behind every assertion), but with a fresh browser profile
+// signed in as a documented E2E person (project manager, E2E Meridian org) against https://projexa-ai.com, on the Villa project. Config:
+// playwright.live-offline-users.config.ts (not part of pull-request CI). Run it twice for "pass twice".
+const VILLA = "Villa Fit-Out (Manual Demo)";
+let A: { context: BrowserContext; page: Page };
+let PROJECT_ID = "";
+const test = base.extend<{ page: Page }>({ page: async ({}, provide) => { await provide(A.page); } });
+test.describe.configure({ mode: "serial" });
+test.setTimeout(900_000);
+test.beforeAll(async ({ browser }) => {
+  test.setTimeout(1_800_000);
+  A = await openLaptop(browser, "finance");
+  const manifest = await serverCall<{ projects: { id: string; name?: string }[] }>(A.context, "GET", "/manifest");
+  PROJECT_ID = manifest.projects.find((x) => x.name === VILLA)!.id;
+  expect(PROJECT_ID, "the E2E organisation has the Villa project").toBeTruthy();
+});
+test.afterAll(async () => { await A?.context.close(); });
+
+
+
+test.describe("R-B2 LIVE: real click-through demo gate (TC-01/10/11/30/40/90) and the Daily Entry BOQ-line dropdown", () => {
+  test("TC-01/TC-10/TC-11: creating a parent + 3 weighted children through the real /scope/new form only ever signals success via real navigation + a real, persisted, re-readable BOQ, with the correct amount/status and a real parent-only total", async ({ page }) => {
+    test.slow();
+    const tag = `RB2-${Date.now()}`;
+    const title = `R-B2 spec (${tag})`;
+
+    await page.goto(`/scope/new?projectId=${PROJECT_ID}&px-server=1`, { waitUntil: "networkidle" });
+    await page.getByLabel("Title").fill(title);
+
+    // Root line (line 1): 100 qty x 50 rate = 5000, matching the fault's own
+    // TC-10 shape example.
+    await page.getByLabel("Description, line 1").fill(`${tag} root`);
+    await page.getByLabel("Unit, line 1").fill("sqm");
+    await page.getByLabel("Qty, line 1").fill("100");
+    await page.getByLabel("Rate, line 1").fill("50");
+    await page.getByLabel("Item code, line 1").fill(`${tag}-ROOT`);
+
+    // Three weighted children (40/35/25%), lines 2-4.
+    const children = [
+      { code: `${tag}-A`, pct: "40", desc: `${tag} child A 40%` },
+      { code: `${tag}-B`, pct: "35", desc: `${tag} child B 35%` },
+      { code: `${tag}-C`, pct: "25", desc: `${tag} child C 25%` },
+    ];
+    for (let i = 0; i < children.length; i++) {
+      const lineNum = i + 2;
+      await page.getByRole("button", { name: "+ Add Line" }).click();
+      await page.getByLabel(`Description, line ${lineNum}`).fill(children[i].desc);
+      await page.getByLabel(`Item code, line ${lineNum}`).fill(children[i].code);
+      await page.getByLabel(`Parent code, line ${lineNum}`).fill(`${tag}-ROOT`);
+      await page.getByLabel(`Breakdown %, line ${lineNum}`).fill(children[i].pct);
+    }
+
+    // The Save primary's own label names what's missing (createSaveLabel) --
+    // once the form is genuinely complete it reads bare "Save". Same check
+    // r11's spec already established as the real completeness signal.
+    const saveButton = page.getByRole("button", { name: /^Save/ });
+    await expect(saveButton, "the Save primary must not still be naming a missing field once this form is filled").toHaveText("Save");
+    await saveButton.click();
+
+    // Real navigation is the ONLY real success signal (no toast exists --
+    // see header note). cuid-shaped id (r11's own hard-won fix: NOT a UUID,
+    // and the pattern must require a minimum length so it can't match the
+    // literal "new" segment of the pre-save URL).
+    //
+    // WIDENED 2026-09-12 (PM, real flakiness found running this spec against
+    // local ENV1, same class as r11-boq-create-form-subtask-fields-env1.spec.ts's
+    // own documented 90_000/45_000 navigationTimeout/actionTimeout widening):
+    // test.slow() above triples Playwright's OWN internal timeouts, but does
+    // NOT extend an explicit `{ timeout }` passed directly to waitForURL --
+    // that stays hardcoded regardless. Confirmed via compliance-tracker's dev
+    // server log this was never a real save failure: both POSTs /api/scope
+    // returned 201 every time, and a same-run GET /api/v1/projexa/scope/{id}
+    // was observed taking 8.0s server-side under this machine's real, elevated
+    // local load (RAM pressure from the same E2E session this spec itself
+    // documents needing test.slow() for) -- this test creates TWO full BOQs
+    // via real click-through form-fill, heavier than its siblings, so it is
+    // the one most likely to graze a 30s ceiling under load. Widened to match
+    // this file's own test.slow()-implied budget rather than the pre-widening
+    // default.
+    await page.waitForURL(/\/scope\/[a-z0-9]{10,}(\?|$)/, { timeout: 60_000 });
+    const boqId = page.url().match(/\/scope\/([a-z0-9]{10,})/)?.[1];
+    expect(boqId, "the URL after save must carry the real new BOQ id (not the literal 'new')").toBeTruthy();
+    expect(boqId, "the extracted id must not be the create screen's own path segment").not.toBe("new");
+
+    // Real, freshly-rendered Object Page: all four lines visible, the three
+    // children indented (pl-8) and labelled with their own real "% of
+    // parent", the root labelled with the real running total (100%).
+    // The object page now also shows an editable line grid ("boq-grid-row-*") whose first cell carries the same text; the line-items table is the one that labels "(children: N%)".
+    const rootCell = page.locator("td.font-medium.text-ct-navy", { hasText: `${tag} root` }).filter({ hasText: /\(children:/ });
+    await expect(rootCell, "the root line's own real cell must be visible, un-indented").toBeVisible();
+    await expect(rootCell, "the root's own real cell must show the running total of its children's percentages (40+35+25=100)").toContainText(/\(children:\s*100(\.\d+)?%\)/);
+
+    for (const child of children) {
+      const cell = page.locator("td.pl-8", { hasText: child.desc });
+      await expect(cell, `${child.code}'s own real cell must carry the pl-8 sub-task indentation class`).toBeVisible();
+      await expect(cell, `${child.code} must be labelled with its own real breakdown %`).toContainText(new RegExp(`${child.pct}(\\.\\d+)?% of parent`));
+    }
+
+    // TC-01: real BOQ creation itself -- amount 5,000 (100 qty x 50 rate,
+    // this test's own root line), status draft. Read from the SAME real
+    // Object Page render above (no second BOQ needed -- see this file's own
+    // R-B2 GAP CLOSURE header note on why reusing this fixture is the
+    // stronger test, not a shortcut).
+    //
+    // Status: the real headerStatus badge (ScopeObjectClient.tsx L390,
+    // StatusBadge.tsx) renders boq.status as literal, un-styled text --
+    // "draft" here since this BOQ was never submitted/approved. hasDraft is
+    // always false on this screen (line 389), so there is no competing
+    // "Draft in progress" pencil label to collide with an exact match.
+    await expect(
+      page.getByText("draft", { exact: true }),
+      "TC-01: the real Object Page's own status badge must read the freshly-created BOQ's real status, draft"
+    ).toBeVisible();
+
+    // Amount: the root line's own real, currency-formatted amount cell
+    // (ScopeObjectClient.tsx L595, withCurrency(currencyCode, r.amount)) in
+    // the SAME real table row as the root's own description cell -- proving
+    // 100 qty x 50 rate priced to a real, rendered 5,000, not just a
+    // non-zero number.
+    const rootRow = page.locator("tr", { has: rootCell });
+    await expect(
+      rootRow,
+      "TC-01: the root line's own real rendered amount must be 5,000 (100 qty x 50 rate)"
+    ).toContainText(/5,000\.00/);
+
+    // TC-11: the real "Total (root lines only)" facet (ScopeObjectClient.tsx
+    // L392, withCurrency(currencyCode, boqTotal(rows)) -- boqTotal sums ONLY
+    // root, non-child lines) must read 5,000, never 10,000 -- the real R-33
+    // double-counting bug this session's own sibling API-level spec
+    // (compliance-tracker's demo-gate-smoke-env1.spec.ts) already guards at
+    // the API layer. This is the same invariant, proven here through the
+    // real rendered facet a user actually reads on the Object Page, not a
+    // second raw API call.
+    const totalFacet = page.locator("dl").filter({ hasText: "Total (root lines only)" });
+    await expect(
+      totalFacet,
+      "TC-11: the real 'Total (root lines only)' facet must show 5,000, not 10,000 -- proving the three weighted children (2,000+1,750+1,250=5,000) are not double-counted on top of the root's own 5,000"
+    ).toContainText(/5,000\.00/);
+
+    // Real persistence beyond the immediate post-save render: a HARD RELOAD
+    // of the /scope LIST page (not the object page just rendered) must show
+    // this exact BOQ's own title as a real link row -- this is what a false-
+    // positive success (data accepted client-side, never actually saved)
+    // could not survive.
+    await page.goto(`/scope?projectId=${PROJECT_ID}&px-server=1`, { waitUntil: "networkidle" });
+    // WIDENED 2026-09-12 (PM, same reasoning as this file's waitForURL widen
+    // above): confirmed via compliance-tracker's dev server log the real
+    // create (201) and the real list GET (200) both succeeded server-side --
+    // 15s was simply tight for a full hard-reload + list render under this
+    // machine's real, elevated local load, not a persistence failure.
+    // this project holds a long list of BOQs: a person finds theirs with the Title filter, like the screen offers
+    // the list of BOQs lives on the BOQ tab (the first tab is the current approved Scope of Work)
+    await page.getByRole("tab", { name: "BOQ", exact: true }).click();
+    await page.getByRole("button", { name: /Filter/ }).first().click();
+    await page.locator("#scope-filter-title").fill(title);
+    await expect(
+      page.getByRole("link", { name: title, exact: true }),
+      "the newly created BOQ's own real title must appear as a real link row in the list after a hard reload -- proving the save genuinely persisted, not just a client-side illusion"
+    ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("TC-30: the Daily Entry BOQ-line dropdown offers whichever BOQ is currently selected's own real lines, not a locked-in project-wide set", async ({ page }) => {
+    test.slow();
+    const tag = `RB2T30-${Date.now()}`;
+
+    // BOQ 1 (this test's own "just created" BOQ under test) -- real
+    // authenticated API call for SETUP, same convention r33/r21-r24/r22 use
+    // for their own setup (the UI-click path is what TC-10 above already
+    // covers; re-doing it here would just be redundant, slower setup for a
+    // test about the dropdown, not the create form).
+    const boq1Res = await page.request.post("/api/scope", {
+      data: {
+        projectId: PROJECT_ID,
+        title: `${tag} BOQ One`,
+        lineItems: [{ itemCode: `${tag}-ONE`, description: `${tag} BOQ One root`, unit: "nos", quantity: 10, rate: 100 }],
+      },
+    });
+    expect(boq1Res.ok(), "BOQ One creation must succeed for this spec's own setup").toBe(true);
+    const boq1 = await boq1Res.json();
+    expect(boq1.id, "BOQ One's real id must come back from the create response").toBeTruthy();
+
+    // BOQ 2, distinct real lines -- guarantees the project has >1 BOQ so the
+    // real BOQ <Select> actually renders (WorkProgressFormClient.tsx:
+    // "with a single BOQ the choice is not a choice" -- it's hidden entirely
+    // otherwise), and gives a second, real, DIFFERENT option to switch to.
+    const boq2Res = await page.request.post("/api/scope", {
+      data: {
+        projectId: PROJECT_ID,
+        title: `${tag} BOQ Two`,
+        lineItems: [{ itemCode: `${tag}-TWO`, description: `${tag} BOQ Two root`, unit: "nos", quantity: 5, rate: 200 }],
+      },
+    });
+    expect(boq2Res.ok(), "BOQ Two creation must succeed for this spec's own setup").toBe(true);
+    const boq2 = await boq2Res.json();
+    expect(boq2.id, "BOQ Two's real id must come back from the create response").toBeTruthy();
+
+    await page.goto(`/work-progress?projectId=${PROJECT_ID}&tab=entry&px-server=1`, { waitUntil: "networkidle" });
+
+    const dropdownLabel = "BOQ line item (required - the Work Progress Report is priced off it)";
+    const lineCombobox = page.getByRole("combobox", { name: dropdownLabel });
+    await expect(lineCombobox, "the real BOQ-line-item combobox must be visible on the Daily Entry tab").toBeVisible({ timeout: 20_000 });
+
+    // The real BOQ <Select> only renders when the project has >1 BOQ --
+    // guaranteed true here by the two real BOQs just created above.
+    // FormField (form-field.tsx L67/89) renders <Label htmlFor={id}>BOQ</Label>
+    // and spreads that same `id` onto the SelectTrigger's own render prop
+    // (WorkProgressFormClient.tsx L506-509), so this select's real accessible
+    // name is genuinely "BOQ", properly associated via htmlFor/id -- not
+    // guessed from its rendered option text.
+    const boqSelect = page.getByLabel("BOQ", { exact: true });
+
+    async function selectBoq(title: string) {
+      await boqSelect.click();
+      await page.getByRole("option", { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(v`) }).click();
+    }
+
+    async function optionCodesFor(query: string): Promise<string[]> {
+      await lineCombobox.click();
+      await lineCombobox.fill(query);
+      const listbox = page.getByRole("listbox", { name: dropdownLabel });
+      await listbox.waitFor({ state: "visible", timeout: 10_000 });
+      // FIXED 2026-09-12 (real bug found running this spec for real against
+      // Env-1): SearchSelect.tsx renders the <ul role="listbox"> the instant
+      // it opens (onFocus/onChange), showing a "Searching…" placeholder li
+      // while its own 200ms-debounced /api/scope/lines fetch is still in
+      // flight (SearchSelect.tsx L167, BoqLinePicker.tsx L48-64) -- the
+      // listbox being VISIBLE is not the same claim as its real results
+      // having arrived. `waitFor({ state: "visible" })` above only proves
+      // the former, so a plain, immediate `.innerText()` genuinely raced the
+      // debounce+fetch and could capture "Searching…" instead of the real
+      // options -- confirmed directly: an isolated repro of this exact
+      // click/fill/read sequence captured the correct BOQ-scoped option only
+      // once an explicit extra wait was inserted before reading, and the
+      // real network responses (logged via page.on("response")) show the
+      // correct, BOQ-scoped data arriving anywhere from ~50ms to several
+      // seconds after the listbox first becomes visible. Wait for the
+      // loading placeholder to clear before trusting the text -- the real,
+      // falsifiable claim under test (which BOQ's lines are offered) is
+      // unchanged; this only stops reading the list mid-fetch.
+      //
+      // TIMEOUT RAISED 10_000 -> 30_000 (2026-09-20, PROJEXA-E2E-001 timeout
+      // sweep): unlike `listbox.waitFor({ state: "visible" })` a few lines up
+      // (the listbox itself renders instantly, client-side, per the comment
+      // above -- left untouched), THIS wait is for the real /api/scope/lines
+      // fetch behind it to resolve through the VERIDIAN-proxy path -- the
+      // same documented CI-latency class playwright.config.ts's
+      // actionTimeout/navigationTimeout were raised to 30_000 for.
+      await expect(listbox.getByText("Searching…"), "the listbox's own loading placeholder must clear before its real options are trusted").toHaveCount(0, { timeout: 30_000 });
+      const text = await listbox.innerText();
+      await page.keyboard.press("Escape");
+      return text.split("\n");
+    }
+
+    // With BOQ One selected, its own root item code must be a real,
+    // findable option -- and BOQ Two's must NOT be (proving the dropdown is
+    // scoped to the selected BOQ, not showing every line in the project).
+    await selectBoq(`${tag} BOQ One`);
+    const boq1Options = await optionCodesFor(tag);
+    expect(boq1Options.some((line) => line.includes(`${tag}-ONE`)), "BOQ One's own real line item must appear in the dropdown while BOQ One is selected").toBe(true);
+    expect(boq1Options.some((line) => line.includes(`${tag}-TWO`)), "BOQ Two's line item must NOT appear while BOQ One is selected -- the dropdown must not silently show every BOQ's lines").toBe(false);
+
+    // Switching the BOQ selector to BOQ Two must change which lines the
+    // dropdown offers -- this is the real, falsifiable claim the original
+    // bug (one project-wide "active" BOQ locked in) violated.
+    await selectBoq(`${tag} BOQ Two`);
+    const boq2Options = await optionCodesFor(tag);
+    expect(boq2Options.some((line) => line.includes(`${tag}-TWO`)), "BOQ Two's own real line item must appear in the dropdown once BOQ Two is selected").toBe(true);
+    expect(boq2Options.some((line) => line.includes(`${tag}-ONE`)), "BOQ One's line item must NOT still appear once BOQ Two is selected -- the previous BOQ's lines must not leak through").toBe(false);
+  });
+
+  test("TC-40/TC-90: the real dashboard reflects the project's active BOQ total, AED-formatted, never rupee/lakh", async ({ page }) => {
+    test.slow();
+
+    // Oracle-only real API call -- NOT the assertion under test -- to learn
+    // what the dashboard SHOULD show right now for this shared project. This
+    // mirrors both this file's own TC-30 setup convention (page.request for
+    // setup, real UI for the actual claim) and compliance-tracker's sibling
+    // R-B1 spec's own TC-40 (comparing the dashboard against scopeReport's
+    // own totalValue rather than a hardcoded number, because this shared
+    // project can have a different BOQ win "latest" between runs -- see that
+    // file's header for the full stray-row history).
+    const scopeReportRes = await page.request.get(`/api/reports/scope?projectId=${PROJECT_ID}&format=legacy`);
+    expect(scopeReportRes.ok(), "TC-40 oracle: the scope report must resolve for this project").toBe(true);
+    const scopeReport = await scopeReportRes.json();
+    expect(scopeReport?.totalValue, "TC-40 oracle: the project's active BOQ must carry a real total value").toBeTruthy();
+
+    // en-US grouping deliberately, matching DEFAULT_MONEY_LOCALE
+    // (src/lib/format-money.ts) -- the real money module every screen in
+    // this app routes through, so a dashboard figure and this oracle read
+    // can never legitimately disagree on formatting.
+    const expectedAedText = `AED ${Number(scopeReport.totalValue).toLocaleString("en-US")}`;
+
+    await page.goto(`/dashboard?projectId=${PROJECT_ID}&px-server=1`, { waitUntil: "networkidle" });
+
+    // TC-40: the real dashboard project row (ProjectRow.tsx's own real link,
+    // `{money(project.value)} contract`) must show the SAME total the active
+    // BOQ's own scope report carries -- the real R-50 invariant, proven here
+    // through the actual rendered dashboard rather than comparing two raw
+    // API responses to each other.
+    // The dashboard is now one project's page: the "Contract value" tile (parent BOQ lines only, latest revision) carries the figure, not a project row link.
+    const projectLink = page.getByRole("button", { name: /Contract value/ }).filter({ hasText: expectedAedText });
+    await expect(
+      projectLink,
+      "TC-40: the real dashboard's project row must show the active BOQ's own total"
+    ).toBeVisible({ timeout: 45_000 });
+
+    // TC-90: that same real, rendered figure is AED-prefixed -- and never a
+    // rupee symbol, an INR code, or lakh-style grouping (a 2-digit group
+    // immediately left of the thousands comma, e.g. "2,50,000"). Same
+    // falsifiable claim r60-boq-currency-env1.spec.ts already proved on the
+    // BOQ Object Page; this proves it again on the Dashboard specifically,
+    // through a real Chromium render.
+    const linkText = await projectLink.innerText();
+    expect(linkText, "TC-90: the real dashboard row must not show a rupee symbol, an INR code, or lakh-style grouping").not.toMatch(/₹|INR\b|,\d{2},\d{3}(\D|$)/);
+  });
+});

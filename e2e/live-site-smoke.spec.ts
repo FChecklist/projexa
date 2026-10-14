@@ -76,7 +76,7 @@ async function checkCodeField(page: Page, timeout?: number, tamper?: (page: Page
   await openCodeBox(page, timeout);
   if (tamper) await tamper(page);
   const box = page.locator("#code");
-  await expect(box, "B1-a: the code box takes at most 6 characters").toHaveAttribute("maxlength", "6", { timeout });
+  await expect(box, "B1-a: the code box has a length limit (6 digits, 12 characters when a pasted code carries spaces)").toHaveAttribute("maxlength", /^(6|12)$/, { timeout });
   await expect(box, "B1-b: the code box is a one-time-code box").toHaveAttribute("autocomplete", "one-time-code", { timeout });
   await expect(page.locator("#password"), "B1-f: there is no password box").toHaveCount(0);
   await checkCodeTyping(page);
@@ -92,7 +92,7 @@ async function checkCodeTyping(page: Page) {
 async function checkWrongCodeRefused(page: Page, timeout?: number) {
   await openCodeBox(page, timeout);
   await page.locator("#code").fill("000000");
-  await expect(page.locator("form"), "B1-d: a wrong code is refused with a plain message").toContainText(/not right|expired|already used|too many/i, { timeout: timeout ?? 30_000 });
+  await expect(page.locator("form"), "B1-d: a wrong code is refused with a plain message").toContainText(/did not work|not right|expired|already used|too many/i, { timeout: timeout ?? 30_000 });
   expect(new URL(page.url()).pathname, "B1-e: after a wrong code the person is still on /login").toBe("/login");
 }
 
@@ -116,7 +116,7 @@ test("B1 CONTROL (mutation M1, maxlength 6 -> 8): the code-box check fails on B1
 
 test("B1 CONTROL (mutation M2, the length limit removed): the typing check fails on B1-c (the box keeps all 9 digits)", async ({ page }) => {
   await openCodeBox(page);
-  await page.locator("#code").evaluate((el) => el.removeAttribute("maxlength"));
+  await page.locator("#code").evaluate((el) => { const plain = document.createElement("input"); plain.id = "code"; el.replaceWith(plain); });
   await expect(checkCodeTyping(page)).rejects.toThrow(/B1-c/);
 });
 
