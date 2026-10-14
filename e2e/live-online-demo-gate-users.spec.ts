@@ -8,7 +8,7 @@ import { openLaptop, serverCall } from "./support/real-backend";
 const VILLA = "Villa Fit-Out (Manual Demo)";
 let A: { context: BrowserContext; page: Page };
 let PROJECT_ID = "";
-const test = base.extend<{ page: Page }>({ page: async ({}, use) => { await use(A.page); } });
+const test = base.extend<{ page: Page }>({ page: async ({}, provide) => { await provide(A.page); } });
 test.describe.configure({ mode: "serial" });
 test.setTimeout(900_000);
 test.beforeAll(async ({ browser }) => {
