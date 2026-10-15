@@ -394,15 +394,20 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
   const traditional = viewMode === "traditional";
   const moduleNav = (
         <nav aria-label="Modules" className={traditional ? "flex flex-col gap-1 text-sm" : "mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 text-sm"}>
-          {nav.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className={`${traditional ? "rounded-md" : "rounded-full"} px-3 py-1 transition-colors hover:bg-[#BAE6FD] ${locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`) ? "bg-[#38BDF8] font-semibold text-white" : "text-[#0369A1]"}`}
-            >
-              {item.label}
-            </a>
-          ))}
+          {nav.map((item) => {
+            // Sumeet R-92 (right pane to left rail): the module being shown is marked for a screen reader and for a test, not only by colour
+            const current = locationPath === item.href || (locationPath ?? "").startsWith(`${item.href}/`);
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                aria-current={current ? "page" : undefined}
+                className={`${traditional ? "rounded-md" : "rounded-full"} px-3 py-1 transition-colors hover:bg-[#BAE6FD] ${current ? "bg-[#38BDF8] font-semibold text-white" : "text-[#0369A1]"}`}
+              >
+                {item.label}
+              </a>
+            );
+          })}
         </nav>
   );
   return (
