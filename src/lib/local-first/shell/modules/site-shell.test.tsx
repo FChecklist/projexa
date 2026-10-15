@@ -5,7 +5,9 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 import { afterEach, beforeEach, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 // These tests render whole screens in a DOM on a shared CI runner; one of them took 5.13 s against bun's 5 s default and failed a push run with nothing wrong in the code.
 setDefaultTimeout(30_000);
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+// findBy*/waitFor give up after 1 s by default: on a loaded CI runner "RFIs list -> one RFI" failed on a find that simply needed longer (push run of PR #454, 2026-10-15).
+configure({ asyncUtilTimeout: 10_000 });
+import { cleanup, configure, fireEvent, render, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createIdentityStore, type DurableIdentity } from "../../identity";
 import { openDeviceMeta } from "../../device-meta";
@@ -86,7 +88,7 @@ afterEach(() => {
 
 // The save goes through the laptop database (fake IndexedDB) and the outbox: on a busy CI runner it has taken just over testing-library's
 // default 1 s (RFIs test failed at 1095 ms on PR #388 twice, passed on retry), so the wait is 5 s. The outcome asserted is unchanged.
-const SAVE_WAIT_MS = 5_000;
+const SAVE_WAIT_MS = 15_000; // was 5 s: the save took 5.13 s on a loaded CI runner (push run of #454)
 
 describe("registration", () => {
   test("lists, objects, create paths; 'new' is never read as an id; nav orders 60-79; the unconverted modules are NOT registered", () => {
@@ -118,6 +120,17 @@ describe("with NO network, the site screens open from the laptop's own copy", ()
     expect(fetchCalls).toEqual([]);
     // This test renders three screens and saves once; on a loaded CI runner it passed or hit bun's default 5 s limit on identical code (seen on PRs #440/#441, 2026-10-13).
   }, 30000);
+
+  test("R-92: the module rail marks the module being shown (aria-current), and only that one", async () => {
+    await seedLaptop();
+    setOnline(false);
+    go("/local/rfis?projectId=p1");
+    const { findByTestId, container } = render(<LocalShell />);
+    await findByTestId("rfis-list");
+    const marked = Array.from(container.querySelectorAll('nav[aria-label="Modules"] a[aria-current="page"]')).map((a) => a.getAttribute("href"));
+    expect(marked.length).toBe(1);
+    expect(marked[0]).toContain("rfis");
+  });
 
   test("site diary: list, then a new entry saved on the laptop appears in the list as waiting", async () => {
     await seedLaptop();
