@@ -2,7 +2,9 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 // Registering twice in one process throws, and `bun test` runs every file in ONE process.
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
+// These tests render whole screens in a DOM on a shared CI runner; one of them took 5.13 s against bun's 5 s default and failed a push run with nothing wrong in the code.
+setDefaultTimeout(30_000);
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createIdentityStore, type DurableIdentity } from "../../identity";

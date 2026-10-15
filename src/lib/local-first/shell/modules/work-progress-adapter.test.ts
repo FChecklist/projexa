@@ -108,3 +108,31 @@ describe("CSV export", () => {
     expect(rows.at(-1)).toBe(`2026-09-01,,,,,,,"'=HYPERLINK(""x""), ""quoted""",on server`);
   });
 });
+
+describe("the BOQ line list offered offline follows the server's rule: lines of the LATEST BOQ only", () => {
+  const boqs: SeedPair = { projectId: "p1", kind: "boqs", rows: [
+    { id: "b1", version: 1, created_at: "2026-10-01T08:00:00Z", status: "superseded" },
+    { id: "b2", version: 2, created_at: "2026-10-02T08:00:00Z", status: "approved" },
+    { id: "local-t9", version: 7, local_lines: [], title: "waiting" },
+  ] };
+  const twoRevisions: SeedPair = { projectId: "p1", kind: "boq_lines", rows: [
+    { id: "old1", boq_id: "b1", item_code: "1.1", description: "Child (old revision)", unit: "m2", quantity: "10" },
+    { id: "new1", boq_id: "b2", item_code: "1.1", description: "Child (latest revision)", unit: "m2", quantity: "10" },
+  ] };
+
+  test("a line of an older revision is not offered (it would be refused after reconnect)", async () => {
+    const idb = new IDBFactory();
+    await seedDelivery(idb, [progress(), activities(1), twoRevisions, boqs]);
+    const r = await loadWorkProgress(shellData(idb), "p1");
+    if (r.state !== "local" || r.form.mode !== "offline") throw new Error("expected an offline form");
+    expect(r.form.lines.map((l) => l.id)).toEqual(["new1"]);
+  });
+
+  test("when the laptop does not have the BOQ list, nothing is hidden", async () => {
+    const idb = new IDBFactory();
+    await seedDelivery(idb, [progress(), activities(1), twoRevisions]);
+    const r = await loadWorkProgress(shellData(idb), "p1");
+    if (r.state !== "local" || r.form.mode !== "offline") throw new Error("expected an offline form");
+    expect(r.form.lines.map((l) => l.id).sort()).toEqual(["new1", "old1"]);
+  });
+});
