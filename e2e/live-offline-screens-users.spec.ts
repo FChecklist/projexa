@@ -96,8 +96,15 @@ test("4.4 every money screen offline writes amounts in the organisation's curren
 test("4.1b/4.2 the offline BOQ screen shows the server's own lines (description, quantity, rate) with sub-tasks indented under their parent", async () => {
   const boqs = (await serverRows(A.context, V, "boqs", "")).filter((r) => /"approved"/.test(JSON.stringify(r.data)));
   expect(boqs.length, "the Villa project has an approved BOQ").toBeGreaterThan(0);
-  const boqId = String(boqs[boqs.length - 1].id);
-  const lines = (await serverRows(A.context, V, "boq_lines", boqId)).map((r) => r.data as Record<string, unknown>);
+  // prefer an approved BOQ that has sub-tasks, so indent and "% of parent" (R-30, R-31) are really compared
+  let boqId = String(boqs[boqs.length - 1].id);
+  let lines: Record<string, unknown>[] = [];
+  const pick = (k: Record<string, unknown>, re: RegExp) => Object.entries(k).find(([name, v]) => re.test(name) && v != null && v !== "")?.[1];
+  for (const b of boqs) {
+    const ls = (await serverRows(A.context, V, "boq_lines", String(b.id))).map((r) => r.data as Record<string, unknown>);
+    if (ls.some((l) => pick(l, /parent/i) != null && pick(l, /breakdown/i) != null)) { boqId = String(b.id); lines = ls; break; }
+  }
+  if (!lines.length) lines = (await serverRows(A.context, V, "boq_lines", boqId)).map((r) => r.data as Record<string, unknown>);
   expect(lines.length).toBeGreaterThan(0);
   await A.context.setOffline(true);
   await expect
@@ -108,6 +115,18 @@ test("4.1b/4.2 the offline BOQ screen shows the server's own lines (description,
     const d = String(l.description ?? l.desc ?? "").trim();
     if (d) expect(text, `line "${d}" is on the offline screen`).toContain(d);
   }
+  // R-31: every sub-task says "N% of parent" with the server's own number; R-15: its parent says what the children add up to
+  const subs = lines.filter((l) => pick(l, /parent/i) != null && pick(l, /breakdown/i) != null);
+  expect(subs.length, "the compared BOQ has sub-tasks (the check is not vacuous)").toBeGreaterThan(0);
+  for (const l of subs) {
+    const n = Number(pick(l, /breakdown/i));
+    expect(text, `sub-task "${String(l.description ?? "")}" says ${n}% of parent`).toContain(`${n}% of parent`);
+  }
+  const sum = Math.round(subs.reduce((a, l) => a + Number(pick(l, /breakdown/i)), 0) * 100) / 100;
+  expect(text, "the parent shows its children's total").toContain(`(children: ${sum}%)`);
+  // indent: each sub-task row's description cell is indented (class pl-6), each root's is not
+  const indented = await A.page.locator('[data-testid="boq-local-line"] td.pl-6').count();
+  expect(indented, "sub-task rows are indented").toBe(subs.length);
   await A.context.setOffline(false);
 });
 
@@ -155,6 +174,37 @@ test("2.19 / R-47 a progress entry that would take a line past 100% never reache
     await expect(card.first()).toBeVisible({ timeout: 240_000 });
     const said = await card.first().innerText();
     expect(said, "the card carries the server's reason, not the generic sentence").not.toMatch(/check the values and try again/i);
+    expect(said).toMatch(/\d/);
+  }
+  await A.context.setOffline(false);
+});
+
+test("2.24 / R-47 a '% complete' entry that would take a line past 100% is refused by the server with its reason (offline, then reconnect)", async () => {
+  const manifest = await serverCall<{ projects: { id: string; name?: string }[] }>(A.context, "GET", "/manifest");
+  const E = manifest.projects.find((x) => x.name === "Emerald Business Park - Phase 1")!.id;
+  expect(E).toBeTruthy();
+  await expect
+    .poll(async () => { await A.page.goto(`/local/work-progress?projectId=${E}`); await A.page.waitForTimeout(6_000); return A.page.getByTestId("work-progress-form").count(); }, { timeout: 900_000, intervals: [5_000], message: "the progress form was never offered for Emerald" })
+    .toBeGreaterThan(0);
+  const stamp = Date.now();
+  await A.context.setOffline(true);
+  if (await A.page.getByLabel("Activity").count()) await A.page.getByLabel("Activity").selectOption({ index: 1 });
+  await A.page.getByLabel("BOQ line").selectOption({ index: 1 });
+  await A.page.getByRole("radio", { name: /^% complete/ }).check();
+  await A.page.getByRole("textbox", { name: "% complete" }).fill("60");
+  await A.page.getByLabel("Remarks").fill(`pct cap check ${stamp}`);
+  await A.page.getByRole("button", { name: "Save entry" }).click();
+  await A.page.waitForTimeout(1_500);
+  const blockedHere = (await A.page.getByTestId("save-note").getAttribute("data-ok")) === "0";
+  if (blockedHere) expect(await A.page.getByTestId("save-note").innerText(), "the laptop says why in words").toMatch(/[a-z]{4,}/i);
+  else {
+    await A.context.setOffline(false);
+    await A.page.evaluate(() => window.dispatchEvent(new Event("online")));
+    const card = A.page.getByTestId("outbox-attention");
+    await expect(card.first(), "the server refused the percent entry and the laptop shows it").toBeVisible({ timeout: 240_000 });
+    const said = await card.first().innerText();
+    expect(said).not.toMatch(/check the values and try again/i);
+    expect(said, "the reason names the 100% limit").toMatch(/100|%|left/i);
     expect(said).toMatch(/\d/);
   }
   await A.context.setOffline(false);

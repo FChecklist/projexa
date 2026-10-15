@@ -193,3 +193,23 @@ describe("G-14: a conflict is shown in plain words and the person chooses", () =
     expect(enqueued[0]).toMatchObject({ lineId: "l1", patch: { category: "Civil" }, base: { category: null } });
   });
 });
+
+// Sumeet R-31 ("sub-task rows indented and labelled % of parent") and R-15 ("running total of child percentages shown per parent"), on the offline screen:
+// the online BOQ screen shows both, so the laptop's copy has to say the same (checklist 4.1b).
+describe("ScopeObjectScreen sub-task labels (R-31, R-15)", () => {
+  test("a sub-task says '<n>% of parent', and the parent says what its children add up to", async () => {
+    const base = { unit: "m2", quantity: "100", rate: "50.00", activityId: null, category: null };
+    const lines = [
+      { ...base, id: "root", itemCode: "1", description: "Brick partition", amount: "5000.00", parentLineItemId: null, breakdownPercentage: null },
+      { ...base, id: "c1", itemCode: "1.1", description: "Frame", amount: "1500.00", parentLineItemId: "root", breakdownPercentage: "30" },
+      { ...base, id: "c2", itemCode: "1.2", description: "Boards", amount: "2000.00", parentLineItemId: "root", breakdownPercentage: "40" },
+      { ...base, id: "solo", itemCode: "2", description: "Plaster", amount: "800.00", parentLineItemId: null, breakdownPercentage: null },
+    ];
+    const data = { state: "local", boq: { id: "b1", projectId: "p1", title: "T", version: 1, status: "approved" } as never, lines, total: 5800, syncedAt: null, waitingLineIds: [] } as unknown as Extract<ScopeObjectData, { state: "local" }>;
+    const { getAllByTestId, queryAllByTestId } = render(<ScopeObjectScreen shell={newShell()} params={{}} query={new URLSearchParams()} data={data} />);
+    expect(getAllByTestId("boq-local-pct-of-parent").map((e) => e.textContent)).toEqual(["30% of parent", "40% of parent"]);
+    // the parent with children shows their total (30 + 40 = 70); a line with no children shows nothing
+    expect(getAllByTestId("boq-local-children-sum").map((e) => e.textContent)).toEqual(["(children: 70%)"]);
+    expect(queryAllByTestId("boq-local-children-sum")).toHaveLength(1);
+  });
+});

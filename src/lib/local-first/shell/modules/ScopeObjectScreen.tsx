@@ -30,7 +30,7 @@ function Message({ state, children }: { state: string; children: string }) {
 
 type RowLine = {
   id: string; itemCode?: string | null; description: string; parentLineItemId?: string | null; unit: string; quantity: string | number;
-  rate: string | number; amount: string | number; category?: string | null;
+  rate: string | number; amount: string | number; category?: string | null; breakdownPercentage?: string | number | null;
 };
 
 // AUDIT-100 B15: one memoised row. A keystroke in one Category box used to re-render EVERY row (5,000 lines: a 0.5-0.9 s freeze per key,
@@ -38,8 +38,8 @@ type RowLine = {
 type Conflict = { editId: string; lineId: string; mine: string | null; theirs: string | null };
 const shown = (v: string | null) => (v === null || v === "" ? "(empty)" : `“${v}”`);
 
-const LineRow = memo(function LineRow({ line, index, draft, waiting, conflict, saving, onDraft, onSave, onResolve }: {
-  line: RowLine; index: number; draft: string | undefined; waiting: boolean; conflict?: Conflict; saving: boolean;
+const LineRow = memo(function LineRow({ line, index, childSum, draft, waiting, conflict, saving, onDraft, onSave, onResolve }: {
+  line: RowLine; index: number; childSum: number | null; draft: string | undefined; waiting: boolean; conflict?: Conflict; saving: boolean;
   onDraft: (lineId: string, value: string) => void; onSave: (lineId: string, raw: string) => void;
   onResolve: (editId: string, lineId: string, choice: "mine" | "theirs") => void;
 }) {
@@ -47,7 +47,12 @@ const LineRow = memo(function LineRow({ line, index, draft, waiting, conflict, s
   return (
     <TableRow data-testid="boq-local-line" data-line-id={line.id} data-row-index={index} aria-rowindex={index + 2}>
       <TableCell>{line.itemCode ?? ""}</TableCell>
-      <TableCell className={line.parentLineItemId ? "pl-6" : undefined}>{line.description}</TableCell>
+      <TableCell className={line.parentLineItemId ? "pl-6" : undefined}>
+        {line.description}
+        {/* R-31 / R-15: the same two labels the online screen shows -- a sub-task says "N% of parent", a parent says what its children add up to */}
+        {line.parentLineItemId && line.breakdownPercentage != null && line.breakdownPercentage !== "" ? <span className="ml-2 text-[10px] text-px-muted" data-testid="boq-local-pct-of-parent">{String(line.breakdownPercentage)}% of parent</span> : null}
+        {!line.parentLineItemId && childSum !== null ? <span className="ml-2 text-[10px] text-px-muted" data-testid="boq-local-children-sum">(children: {childSum}%)</span> : null}
+      </TableCell>
       <TableCell>{line.unit}</TableCell>
       <TableCell className="text-right">{line.quantity}</TableCell>
       <TableCell className="text-right">{formatAmount(line.rate)}</TableCell>
@@ -188,6 +193,11 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   }
 
   const { boq, lines } = data;
+  const childSums = new Map<string, number>();
+  for (const l of lines as RowLine[]) {
+    if (!l.parentLineItemId || l.breakdownPercentage == null || l.breakdownPercentage === "") continue;
+    childSums.set(l.parentLineItemId, (childSums.get(l.parentLineItemId) ?? 0) + (Number(l.breakdownPercentage) || 0));
+  }
   const waiting = new Set(data.waitingLineIds);
   const conflicts = new Map((data.conflicts ?? []).map((c) => [c.lineId, c]));
 
@@ -240,7 +250,7 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
               }
               const line = lines[item.index];
               return (
-                <LineRow key={line.id} line={line} index={item.index} draft={drafts[line.id]} waiting={waiting.has(line.id)} conflict={conflicts.get(line.id)} saving={saving === line.id} onDraft={setDraft} onSave={onSave} onResolve={onResolve} />
+                <LineRow key={line.id} line={line} index={item.index} childSum={childSums.has(line.id) ? Math.round((childSums.get(line.id) ?? 0) * 100) / 100 : null} draft={drafts[line.id]} waiting={waiting.has(line.id)} conflict={conflicts.get(line.id)} saving={saving === line.id} onDraft={setDraft} onSave={onSave} onResolve={onResolve} />
               );
             })}
           </TableBody>
