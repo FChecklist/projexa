@@ -16,7 +16,7 @@
 import type { ShellData } from "../context";
 import { progressCanNameActivity } from "./delivery-writes";
 import {
-  DELIVERY_KINDS, parseActivity, parseBoqLineRef, parseProgress, readKind,
+  DELIVERY_KINDS, parseActivity, parseBoqLineRef, parseBoqRef, parseProgress, readKind,
   type Activity, type BoqLineRef, type ProgressEntry,
 } from "./delivery-local";
 
@@ -80,14 +80,19 @@ export async function loadWorkProgress(
   options: { canNameActivity?: boolean } = {}
 ): Promise<WorkProgressData> {
   if (!projectId) return { state: "no_project" };
-  const [progress, activities, lines] = await Promise.all([
+  const [progress, activities, lines, boqs] = await Promise.all([
     readKind(data, projectId, DELIVERY_KINDS.progress, parseProgress),
     readKind(data, projectId, DELIVERY_KINDS.activities, parseActivity),
     readKind(data, projectId, DELIVERY_KINDS.boqLines, parseBoqLineRef),
+    readKind(data, projectId, DELIVERY_KINDS.boqs, parseBoqRef),
   ]);
   if (!progress.synced) return { state: "not_synced", projectId };
   const acts = activities.synced ? activities.rows : [];
-  const ls = lines.synced ? lines.rows : [];
+  // The server records progress against the project's LATEST BOQ only (version, then created_at, newest first), so a line of an older revision would be
+  // refused after reconnect: the form offers the latest revision's lines. When the laptop does not have the BOQ list, or the lines carry no BOQ id, nothing is hidden.
+  const latestBoq = boqs.synced ? [...boqs.rows].sort((a, b) => b.version - a.version || b.createdAt.localeCompare(a.createdAt))[0] : undefined;
+  const allLines = lines.synced ? lines.rows : [];
+  const ls = latestBoq && allLines.some((l) => l.boqId !== null) ? allLines.filter((l) => l.boqId === latestBoq.id) : allLines;
   let form: EntryFormState;
   if (!activities.synced || !lines.synced) form = { mode: "needs_server", reason: "not_synced" };
   else if (acts.length > 1 && !(options.canNameActivity ?? progressCanNameActivity())) form = { mode: "needs_server", reason: "several_activities" };

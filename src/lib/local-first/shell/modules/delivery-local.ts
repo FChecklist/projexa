@@ -103,6 +103,7 @@ export const DELIVERY_KINDS = {
   activities: "activities",
   progress: "progress",
   boqLines: "boq_lines",
+  boqs: "boqs",
   roster: "roster",
   attendance: "attendance",
   materials: "materials",
@@ -149,12 +150,22 @@ export function parseProgress(raw: unknown): ProgressEntry | null {
   };
 }
 
-export type BoqLineRef = { id: string; itemCode: string | null; description: string; unit: string | null; quantity: number | null; activityId: string | null };
+export type BoqLineRef = { id: string; itemCode: string | null; description: string; unit: string | null; quantity: number | null; activityId: string | null; boqId: string | null };
 export function parseBoqLineRef(raw: unknown): BoqLineRef | null {
   const o = withId(raw);
   const description = o && str(o, "description");
   if (!o || description === null) return null;
-  return { id: o.id, itemCode: str(o, "item_code"), description, unit: str(o, "unit"), quantity: num(o, "quantity"), activityId: str(o, "activity_id") };
+  return { id: o.id, itemCode: str(o, "item_code"), description, unit: str(o, "unit"), quantity: num(o, "quantity"), activityId: str(o, "activity_id"), boqId: str(o, "boq_id") };
+}
+
+/** A BOQ revision as the laptop keeps it: just what is needed to tell which one is the latest (the server's own rule: version, then created_at, newest first). */
+export type BoqRef = { id: string; version: number; createdAt: string };
+export function parseBoqRef(raw: unknown): BoqRef | null {
+  const o = withId(raw);
+  if (o && Array.isArray((o as Obj).local_lines)) return null; // a BOQ made on this laptop and still waiting: the server has not got it, so it is not "the latest" yet
+  const version = o && num(o, "version");
+  if (!o || version === null || version === undefined) return null;
+  return { id: o.id, version, createdAt: str(o, "created_at") ?? "" };
 }
 
 export type Worker = { id: string; name: string; trade: string | null; skillLevel: string | null; employeeCode: string | null; isActive: boolean; dailyRate: number | null };

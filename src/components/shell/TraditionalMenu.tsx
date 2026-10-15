@@ -11,7 +11,8 @@ import { VISIBLE_NAV_SECTIONS } from "@/components/AppSidebar";
 
 export default function TraditionalMenu({ projectId }: { projectId?: string | null }) {
   const t = useTranslations("Nav");
-  const pathname = usePathname() ?? "";
+  // The laptop's copy of a module lives under /local/<module> (the offline shell): the rail must mark the module there too (Sumeet R-92, right pane to left rail).
+  const pathname = (usePathname() ?? "").replace(/^\/local(?=\/|$)/, "");
   const withProject = (href: string) => (projectId ? `${href}?projectId=${encodeURIComponent(projectId)}` : href);
   return (
     <nav aria-label="Modules" className="h-full overflow-y-auto py-2" style={{ scrollbarGutter: "stable" }}>

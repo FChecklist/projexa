@@ -6,7 +6,7 @@ import { defineConfig, devices } from "@playwright/test";
 // Not part of pull-request CI: it needs the public internet and tests a deploy, not a change.
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: [/live-offline-writers-users\.spec\.ts/, /live-offline-round3-users\.spec\.ts/, /live-offline-screens-users\.spec\.ts/, /live-online-reports-users\.spec\.ts/, /live-online-demo-gate-users\.spec\.ts/, /live-online-progress-columns-users\.spec\.ts/, /live-offline-boq-rules-users\.spec\.ts/],
+  testMatch: [/live-offline-writers-users\.spec\.ts/, /live-offline-round3-users\.spec\.ts/, /live-offline-screens-users\.spec\.ts/, /live-online-reports-users\.spec\.ts/, /live-online-demo-gate-users\.spec\.ts/, /live-online-progress-columns-users\.spec\.ts/, /live-offline-boq-rules-users\.spec\.ts/, /live-more-rules-users\.spec\.ts/],
   fullyParallel: false,
   retries: 0,
   workers: 1,
