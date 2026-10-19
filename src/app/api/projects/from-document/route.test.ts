@@ -85,15 +85,15 @@ describe("POST /api/projects/from-document", () => {
     expect(await res.json()).toEqual({ duplicate: true, projectId: "proj-9" });
   });
 
-  test("refuses a request with no file or no product before VERIDIAN is called", async () => {
+  test("refuses a request with no file before VERIDIAN is called; a request with no product is forwarded (PROJEXA has no product choice)", async () => {
     reset();
     const noFile = await POST(post({ productId: "prod-1" }));
     expect(noFile.status).toBe(400);
     expect((await noFile.json()).code).toBe("no_file");
-    const noProduct = await POST(post({ file: new File(["x"], "boq.xlsx"), productId: "  " }));
-    expect(noProduct.status).toBe(400);
-    expect((await noProduct.json()).code).toBe("product_required");
     expect(uploads).toHaveLength(0);
+    const noProduct = await POST(post({ file: new File(["x"], "boq.xlsx") }));
+    expect(noProduct.status).toBe(202);
+    expect(uploads).toHaveLength(1);
   });
 
   test("a signed-out request is answered by the guard and forwards nothing", async () => {
