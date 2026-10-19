@@ -49,6 +49,7 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
+    // No productId is sent: the backend files every PROJEXA project under the org's "PROJEXA" product.
     // R67 F-18: the cached list must be cleared or the new row is
     // invisible until the 30 s window expires, which reads as a failed save.
     revalidateTag("projects", "max");

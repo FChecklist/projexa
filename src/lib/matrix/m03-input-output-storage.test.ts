@@ -29,11 +29,11 @@ describe("M03 input validation", () => {
   test("M03-03 receipt is built from the stored row: two-decimal hours, task number and title", () => {
     expect(timeLoggedReceipt({ hours: "3", spentOn: "2026-09-02", taskNumber: 12, taskTitle: "Joinery" })).toContain("3.00 h on #12 Joinery");
   });
-  test("M03-04 project form: both required fields named, whitespace-only counts as empty", () => {
-    expect(missingProjectFields({ productId: " ", name: "" })).toEqual(["Product", "Project Name"]);
-    expect(missingProjectFields({ productId: "p", name: "  x " })).toEqual([]);
+  test("M03-04 project form: the name is the one required field, whitespace-only counts as empty", () => {
+    expect(missingProjectFields({ name: " " })).toEqual(["Project Name"]);
+    expect(missingProjectFields({ name: "  x " })).toEqual([]);
     expect(projectSaveDisabledReason([], true)).toBe("Saving…");
-    expect(projectSaveDisabledReason(["Product"], false)).toBe("Product");
+    expect(projectSaveDisabledReason(["Project Name"], false)).toBe("Project Name");
     expect(projectSaveDisabledReason([], false)).toBeUndefined();
   });
   test("M03-05 activity form: count while several are missing, the name when one is left", () => {

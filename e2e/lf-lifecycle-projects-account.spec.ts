@@ -172,12 +172,10 @@ test("B10: a project made from '+ New project' is saved by the server and reache
   const NAME = "Riverside Annex B1"
   await openShell(page)
 
-  await test.step("the new-project page, opened from the shell, has its products (read on the server)", async () => {
+  await test.step("the new-project page, opened from the shell, opens with only a project name to fill", async () => {
     await page.getByTestId("local-shell-project").selectOption({ label: "+ New project" })
     await expect(page).toHaveURL(/\/projects\/new(\?|$)/, { timeout: 30_000 })
-    await expect(page.getByText(/Couldn.t load products/), "the server could not read the products").toHaveCount(0)
-    await page.locator("#productId").click()
-    await page.getByRole("option", { name: PRODUCT.name }).click()
+    await expect(page.locator("#productId"), "there is no product field").toHaveCount(0)
   })
 
   await test.step("the form sends exactly what the person typed to /api/projects, and the server keeps it", async () => {
@@ -189,7 +187,7 @@ test("B10: a project made from '+ New project' is saved by the server and reache
     await expect(save).toBeEnabled()
     const sent = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/projects")
     await save.click()
-    expect((await sent).postDataJSON()).toEqual({ productId: PRODUCT.id, name: NAME, description: "Ground floor retail fit-out", startDate: "2026-11-02", targetDate: "2027-03-31" })
+    expect((await sent).postDataJSON()).toEqual({ name: NAME, description: "Ground floor retail fit-out", startDate: "2026-11-02", targetDate: "2027-03-31" })
     // the person lands on the project the server made
     await expect(page).toHaveURL(/\/dashboard\/project\?projectId=ov-new-1/, { timeout: 30_000 })
     expect(world.created).toHaveLength(1)

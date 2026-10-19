@@ -4,26 +4,22 @@ import { describe, expect, test } from "bun:test";
 import { missingProjectFields, projectSaveDisabledReason } from "./project-form";
 
 describe("missingProjectFields", () => {
-  test("an untouched form names both required fields, in form order", () => {
-    expect(missingProjectFields({ productId: "", name: "" })).toEqual(["Product", "Project Name"]);
+  test("an untouched form names the required field, in form order", () => {
+    expect(missingProjectFields({ name: "" })).toEqual(["Project Name"]);
   });
 
   test("whitespace is not a value", () => {
-    expect(missingProjectFields({ productId: "  ", name: "   " })).toEqual(["Product", "Project Name"]);
-  });
-
-  test("a chosen product drops only that field from the list", () => {
-    expect(missingProjectFields({ productId: "prod-1", name: "" })).toEqual(["Project Name"]);
+    expect(missingProjectFields({ name: "   " })).toEqual(["Project Name"]);
   });
 
   test("a complete form is saveable", () => {
-    expect(missingProjectFields({ productId: "prod-1", name: "Cedar Heights Villa" })).toEqual([]);
+    expect(missingProjectFields({ name: "Cedar Heights Villa" })).toEqual([]);
   });
 });
 
 describe("projectSaveDisabledReason", () => {
   test("names what is missing rather than staying silent", () => {
-    expect(projectSaveDisabledReason(["Product", "Project Name"], false)).toBe("Product, Project Name");
+    expect(projectSaveDisabledReason(["Project Name"], false)).toBe("Project Name");
   });
 
   test("a live button carries no reason", () => {

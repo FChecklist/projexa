@@ -5,6 +5,7 @@ import { createDurableAuthFetch, hasSessionCookie, isTransientAuthError } from "
 import { checkApiWriteAccess, MUTATING_METHODS } from "./lib/authz/api-write-policy";
 import { requiresAuthenticatedPage } from "./lib/authz/page-access";
 import { isLandingRoute, isStaticPublicRoute, localisedMarketingPath } from "./lib/public-page-cache";
+import { canonicalHostRedirect } from "./lib/canonical-host";
 import { LOCALE_COOKIE, localeFromAcceptLanguage, resolveLocale as resolveLocaleFromCookie } from "./i18n/locales";
 
 // CONFIRMED ROOT CAUSE of the random mid-session logouts + silent write
@@ -79,6 +80,10 @@ function authUnavailableResponse(): NextResponse {
 }
 
 export async function middleware(request: NextRequest) {
+  // One host, one login cookie: www.projexa-ai.com -> projexa-ai.com (see lib/canonical-host.ts).
+  const canonical = canonicalHostRedirect(request.nextUrl);
+  if (canonical) return NextResponse.redirect(canonical, 308);
+
   let supabaseResponse = NextResponse.next({ request });
 
   const locale = resolveLocale(request);
