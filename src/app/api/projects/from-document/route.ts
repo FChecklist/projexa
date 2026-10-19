@@ -35,7 +35,6 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
   try {
     const formData = await request.formData();
     if (!(formData.get("file") instanceof File)) return NextResponse.json({ error: "Choose a file to send.", code: "no_file" }, { status: 400 });
-    if (!String(formData.get("productId") ?? "").trim()) return NextResponse.json({ error: "Choose a product for the project.", code: "product_required" }, { status: 400 });
     const data = await callVeridianUpload<{ duplicate?: boolean }>("/projects/from-document?async=1", formData, { organizationId: ctx.organizationId! });
     return NextResponse.json(data, { status: data && data.duplicate === true ? 200 : 202 });
   } catch (err) {

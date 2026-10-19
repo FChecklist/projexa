@@ -14,10 +14,6 @@ import { listRememberedJobs } from "@/lib/document-job-memory";
 import { DocumentError, parseJob, type DocJob, type FromDocumentClient, type SubmitInput, type SubmitResult } from "@/lib/project-from-document-client";
 
 const SHA = "c".repeat(64);
-const PRODUCTS = [
-  { id: "prod-1", name: "Villa Projects" },
-  { id: "prod-2", name: "Fit-outs" },
-];
 const RECON = { status: "matched", expected: 1596280, actual: 1596280, difference: 0, tolerance: 1, source: "reader", byArea: [] };
 const QUESTION = { kind: "no_rate", sheet: "Table 4", row: 7, text: "Row 7 has a quantity and no rate." };
 
@@ -58,11 +54,10 @@ function scripted(steps: { submit?: SubmitResult | Error; jobs: Array<DocJob | E
 const timing = { intervalMs: 1, timeoutMs: 5000 };
 const workbook = (name = "boq.xlsx") => new File(["PK"], name);
 
-function open(client: FromDocumentClient, props: { role?: string | null; resumeSha256?: string | null; products?: typeof PRODUCTS } = {}) {
+function open(client: FromDocumentClient, props: { role?: string | null; resumeSha256?: string | null } = {}) {
   return render(
     <UploadProjectDocumentScreen
       role={props.role === undefined ? "member" : props.role}
-      products={props.products ?? PRODUCTS}
       resumeSha256={props.resumeSha256}
       client={client}
       timing={timing}
@@ -98,13 +93,12 @@ describe("who sees the screen", () => {
 });
 
 describe("choosing a file", () => {
-  test("Read the file stays off, with the reason, until a file and a product are chosen", async () => {
+  test("Read the file stays off, with the reason, until a file is chosen; there is no product to choose", async () => {
     open(scripted([{ jobs: [] }]));
     expect((screen.getByTestId("doc-read") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId("doc-read-reason").textContent).toBe("Choose a file and a product to continue.");
+    expect(screen.getByTestId("doc-read-reason").textContent).toBe("Choose a file to continue.");
     await pick(workbook());
-    expect(screen.getByTestId("doc-read-reason").textContent).toBe("Choose a product to continue.");
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
+    expect(screen.queryByTestId("doc-product")).toBeNull();
     expect((screen.getByTestId("doc-read") as HTMLButtonElement).disabled).toBe(false);
     expect(screen.queryByTestId("doc-read-reason")).toBeNull();
   });
@@ -121,21 +115,6 @@ describe("choosing a file", () => {
     expect(screen.getByTestId("doc-file-error").textContent).toMatch(/^Too large: 9 MB, limit 4 MB/);
     expect(client.submits).toHaveLength(0);
   });
-
-  test("with one product it is chosen already", async () => {
-    open(scripted([{ jobs: [] }]), { products: [PRODUCTS[0]] });
-    expect((screen.getByTestId("doc-product") as HTMLSelectElement).value).toBe("prod-1");
-  });
-
-  test("without a given list the screen reads the products once, and a failed read says so instead of showing an empty picker", async () => {
-    let reads = 0;
-    render(<UploadProjectDocumentScreen role="member" client={scripted([{ jobs: [] }])} loadProducts={async () => { reads += 1; return PRODUCTS }} timing={timing} />);
-    await waitFor(() => expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Choose a product", "Villa Projects", "Fit-outs"]));
-    expect(reads).toBe(1);
-    cleanup();
-    render(<UploadProjectDocumentScreen role="member" client={scripted([{ jobs: [] }])} loadProducts={async () => { throw new Error("x") }} timing={timing} />);
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Could not load the products: the request did not complete"));
-  });
 });
 
 describe("the whole way: read, answer, create, land on the project", () => {
@@ -147,13 +126,12 @@ describe("the whole way: read, answer, create, land on the project", () => {
     ]);
     open(client);
     await pick(workbook());
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-2" } }));
     act(() => void fireEvent.change(screen.getByTestId("doc-name"), { target: { value: "Zoomies Dubai" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-read")));
 
     await waitFor(() => expect(screen.getByTestId("doc-parked")).toBeTruthy());
     expect(client.submits).toHaveLength(1);
-    expect(client.submits[0]).toMatchObject({ productId: "prod-2", name: "Zoomies Dubai", mode: "prepare" });
+    expect(client.submits[0]).toMatchObject({ name: "Zoomies Dubai", mode: "prepare" });
     expect(client.submits[0].file.name).toBe("boq.xlsx");
     expect(screen.getAllByTestId("doc-question")).toHaveLength(1);
     // nothing has been created and the file waits on this device's list
@@ -166,7 +144,7 @@ describe("the whole way: read, answer, create, land on the project", () => {
 
     await waitFor(() => expect(screen.getByTestId("doc-created")).toBeTruthy());
     expect(client.submits).toHaveLength(2);
-    expect(client.submits[1]).toMatchObject({ productId: "prod-2", name: "Zoomies Dubai", mode: "create", acknowledgeQuestions: true, acknowledgeShortfall: false });
+    expect(client.submits[1]).toMatchObject({ name: "Zoomies Dubai", mode: "create", acknowledgeQuestions: true, acknowledgeShortfall: false });
     // the old parked answer (t1) was read past, not shown as the result of the create
     expect(screen.getByTestId("doc-open-project").getAttribute("href")).toBe(projectHrefFor("proj-42"));
     // a finished job leaves the list of files that wait
@@ -178,7 +156,6 @@ describe("the whole way: read, answer, create, land on the project", () => {
     const client = scripted([{ jobs: [ready] }, { jobs: [ready, job("created", "t2")] }]);
     open(client);
     await pick(workbook());
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-read")));
     await waitFor(() => expect(screen.getByTestId("doc-create")).toBeTruthy());
     await act(async () => void fireEvent.click(screen.getByTestId("doc-create")));
@@ -190,7 +167,6 @@ describe("the whole way: read, answer, create, land on the project", () => {
     const client = scripted([{ submit: { kind: "duplicate", projectId: "proj-7" }, jobs: [] }]);
     open(client);
     await pick(workbook());
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-read")));
     await waitFor(() => expect(screen.getByTestId("doc-created").textContent).toContain("already made a project"));
     expect(screen.getByTestId("doc-open-project").getAttribute("href")).toBe(projectHrefFor("proj-7"));
@@ -203,7 +179,6 @@ describe("refusals", () => {
     const client = scripted([{ submit: new DocumentError("Only .xlsx workbooks are read", 400, "unsupported_file_type"), jobs: [] }]);
     open(client);
     await pick(new File(["x"], "plan.pdf"));
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-read")));
     await waitFor(() => expect(screen.getByTestId("doc-failed")).toBeTruthy());
     expect(screen.getByTestId("doc-failed").textContent).toContain("Only .xlsx workbooks are read");
@@ -217,7 +192,6 @@ describe("refusals", () => {
     const client = scripted([{ jobs: [job("reading", "t0"), rejected] }]);
     open(client);
     await pick(workbook());
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-read")));
     await waitFor(() => expect(screen.getByTestId("doc-failed")).toBeTruthy());
     expect(screen.getByTestId("doc-failed").textContent).toContain("The extraction cites a row the file does not have.");
@@ -231,7 +205,6 @@ describe("refusals", () => {
     const client = scripted([{ jobs: [refused] }, { jobs: [ready] }]);
     open(client);
     await pick(workbook());
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-read")));
     await waitFor(() => expect(screen.getByTestId("doc-accept-shortfall")).toBeTruthy());
     await act(async () => void fireEvent.click(screen.getByTestId("doc-accept-shortfall")));
@@ -262,16 +235,10 @@ describe("opening a job this browser sent earlier", () => {
     await waitFor(() => expect(screen.getByTestId("doc-note").textContent).toContain("not the file that was sent"));
 
     await pick(workbook("boq.xlsx"));
-    // the same file: the product is needed by the server, so the screen asks for it before sending
-    await act(async () => void fireEvent.click(screen.getByTestId("doc-create")));
-    expect(client.submits).toHaveLength(0);
-    expect(screen.getByTestId("doc-note").textContent).toContain("Choose a product");
-
-    act(() => void fireEvent.change(screen.getByTestId("doc-product"), { target: { value: "prod-1" } }));
     await act(async () => void fireEvent.click(screen.getByTestId("doc-create")));
     await waitFor(() => expect(screen.getByTestId("doc-created")).toBeTruthy());
     expect(client.submits).toHaveLength(1);
-    expect(client.submits[0]).toMatchObject({ mode: "create", productId: "prod-1", acknowledgeQuestions: true });
+    expect(client.submits[0]).toMatchObject({ mode: "create", acknowledgeQuestions: true });
     expect(screen.getByTestId("doc-open-project").getAttribute("href")).toBe(projectHrefFor("proj-42"));
   });
 });

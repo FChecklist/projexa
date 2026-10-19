@@ -26,7 +26,7 @@ export type DocumentPhase =
   | { kind: "created"; projectId: string; job: DocJob | null; duplicate: boolean; fileName: string }
   | { kind: "failed"; message: string; code: string | null; issues: string[]; fileName: string }
 
-export type StartInput = { file: File; productId: string; name?: string; acknowledgeShortfall?: boolean }
+export type StartInput = { file: File; productId?: string; name?: string; acknowledgeShortfall?: boolean }
 export type FinishInput = { acknowledgeQuestions: boolean; acknowledgeShortfall: boolean; name?: string; productId?: string }
 
 export type UseDocumentJob = {
@@ -40,7 +40,7 @@ export type UseDocumentJob = {
   /** Reads a job this browser sent earlier. `file` is the file again, when the person has chosen it. */
   resume: (sha256: string, file?: File) => Promise<void>
   /** Hands the file of a resumed job to finish(); refuses a file whose hash is not the job's. Returns the reason, or null when it is accepted. */
-  supplyFile: (file: File, productId: string) => Promise<string | null>
+  supplyFile: (file: File, productId?: string) => Promise<string | null>
   hasFile: boolean
   /** Stops watching. The server keeps reading the file. */
   cancel: () => void
@@ -57,7 +57,7 @@ export function useDocumentJob(client: FromDocumentClient, options: { intervalMs
   const [sha256, setSha256] = useState<string | null>(null)
   const [hasFile, setHasFile] = useState(false)
   const fileRef = useRef<File | null>(null)
-  const productRef = useRef<string>("")
+  const productRef = useRef<string | undefined>(undefined)
   const abortRef = useRef<AbortController | null>(null)
   const aliveRef = useRef(true)
   /** The updatedAt of the parked job the person is answering, so the wait after finish() reads past that old answer. */
@@ -109,7 +109,7 @@ export function useDocumentJob(client: FromDocumentClient, options: { intervalMs
   )
 
   const send = useCallback(
-    async (file: File, productId: string, hash: string, body: { mode: "prepare" | "create"; name?: string; acknowledgeQuestions?: boolean; acknowledgeShortfall?: boolean }, staleUpdatedAt?: string) => {
+    async (file: File, productId: string | undefined, hash: string, body: { mode: "prepare" | "create"; name?: string; acknowledgeQuestions?: boolean; acknowledgeShortfall?: boolean }, staleUpdatedAt?: string) => {
       show({ kind: "sending", fileName: file.name })
       try {
         const result = await client.submit({ file, productId, ...body })
@@ -175,7 +175,7 @@ export function useDocumentJob(client: FromDocumentClient, options: { intervalMs
   )
 
   const supplyFile = useCallback(
-    async (file: File, productId: string): Promise<string | null> => {
+    async (file: File, productId?: string): Promise<string | null> => {
       let hash: string
       try {
         hash = await client.fingerprint(file)

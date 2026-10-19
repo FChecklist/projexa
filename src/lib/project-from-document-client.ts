@@ -2,7 +2,7 @@
 // VERIDIAN's POST /api/v1/projexa/projects/from-document, then reads the job by the SHA-256 of the file until it stops moving.
 //
 // THE JOB CONTRACT (compliance-tracker src/app/api/v1/projexa/projects/from-document/route.ts), reached through /api/projects/from-document
-//   POST multipart  file, productId, name?, mode=prepare|create, acknowledgeQuestions?, acknowledgeShortfall?
+//   POST multipart  file, productId? (optional), name?, mode=prepare|create, acknowledgeQuestions?, acknowledgeShortfall?
 //        the proxy always adds ?async=1, so the answer is quick:
 //          202 {state, jobId}            the file was claimed and is read after the answer
 //          200 {duplicate:true, projectId}   this exact file already made a project; nothing was inserted
@@ -78,7 +78,8 @@ export type DocJob = {
 
 export type SubmitInput = {
   file: File
-  productId: string
+  /** Optional: PROJEXA has no product choice; the server files the project under the org's PROJEXA product. */
+  productId?: string
   name?: string
   mode: "prepare" | "create"
   acknowledgeQuestions?: boolean
@@ -211,7 +212,7 @@ export function createFromDocumentClient(deps: { fetch?: typeof fetch; url?: str
     async submit(input) {
       const form = new FormData()
       form.append("file", input.file, input.file.name)
-      form.append("productId", input.productId)
+      if (input.productId) form.append("productId", input.productId)
       if (input.name && input.name.trim()) form.append("name", input.name.trim())
       form.append("mode", input.mode)
       if (input.acknowledgeQuestions) form.append("acknowledgeQuestions", "true")
@@ -293,18 +294,6 @@ export async function waitForJob(client: FromDocumentClient, sha256: string, opt
     }
     await sleep(interval, options.signal)
   }
-}
-
-export type ProductOption = { id: string; name: string }
-
-/** The organisation's products, from this app's own proxy (the same read as the product picker of /projects/new). */
-export async function loadProductOptions(): Promise<ProductOption[]> {
-  const res = await viaPxApi("/api/products", { cache: "no-store" })
-  if (!res.ok) throw new Error(`products: HTTP ${res.status}`)
-  const body: unknown = await res.json().catch(() => null)
-  const list = isObject(body) ? body.products : null
-  if (!Array.isArray(list)) throw new Error("products: unreadable answer")
-  return list.flatMap((p) => (isObject(p) && typeof p.id === "string" && typeof p.name === "string" ? [{ id: p.id, name: p.name }] : []))
 }
 
 let shared: FromDocumentClient | null = null
