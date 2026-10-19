@@ -41,7 +41,6 @@
 const PUBLIC_PAGE_PATHS: ReadonlySet<string> = new Set([
   "/", // marketing landing
   "/how-it-works",
-  "/disclaimer",
   "/login",
   "/signup",
   // P1: there is no password to forget or reset. Both are one-line redirects onto /login, kept ONLY so an old bookmark or an old reset

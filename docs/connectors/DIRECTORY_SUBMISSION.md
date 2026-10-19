@@ -28,7 +28,7 @@ What the connection can do is decided by the existing PROJEXA AI work link: by d
 
 ## Owner-only items before submitting
 
-- **Privacy policy page.** PROJEXA has `/disclaimer` but no privacy policy page. Both directories ask for one. It needs the owner's text (legal wording is not for an AI to invent).
+- **Privacy policy page.** PROJEXA has no privacy policy page. Both directories ask for one. It needs the owner's text (legal wording is not for an AI to invent).
 - **The demo account's login** for the reviewers.
 - **The directory accounts** themselves (Claude Team/Enterprise admin; OpenAI developer account) and any fees or verification they ask for.
 - **Gemini** has no one-click directory for custom servers yet; users paste the address (see the guide).
