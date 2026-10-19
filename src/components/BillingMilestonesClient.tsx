@@ -106,6 +106,8 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
   const [boqId, setBoqId] = useState<string | null>(null);
   // QA D5: false until the first BOQ lookup settles, so "no approved BOQ" is never shown while it is still loading.
   const [boqChecked, setBoqChecked] = useState(false);
+  // A failed lookup (timeout, 5xx) is NOT "no approved BOQ": it is "could not check". Keep the two apart so a timeout is never shown as a business fact.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [taxLoaded, setTaxLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -127,6 +129,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [claimsRes, customersRes, boqRes] = await Promise.all([
         fetchJson<{ claims?: Claim[] }>(`/api/billing-claims?projectId=${encodeURIComponent(projectId)}&all=true`),
@@ -137,7 +140,9 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
       setCustomers(customersRes.customers ?? []);
       setBoqId(boqRes.row?.boqId ?? null);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load billing milestones"));
+      const message = errorMessage(err, "Couldn't load billing milestones");
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setBoqChecked(true);
       setLoading(false);
@@ -229,12 +234,18 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
     <div className="space-y-4">
       <div className="flex flex-col items-end gap-1">
         {!formOpen ? (
-          <Button onClick={() => setFormOpen(true)} disabled={!boqId} title={boqChecked && !boqId ? NO_APPROVED_BOQ_REASON : undefined}>
+          <Button onClick={() => setFormOpen(true)} disabled={!boqId} title={boqChecked && !boqId && !loadError ? NO_APPROVED_BOQ_REASON : undefined}>
             <Plus className="size-4" /> New Billing Milestone
           </Button>
         ) : null}
         {/* The reason was only a tooltip on a greyed-out button, which a person using touch or a keyboard never sees. Say it on the page. */}
-        {!formOpen && boqChecked && !boqId ? (
+        {!formOpen && loadError ? (
+          <p className="max-w-md text-right text-sm text-px-muted" role="alert" data-testid="billing-load-error">
+            Couldn&apos;t check this project&apos;s BOQ just now: {loadError}{" "}
+            <button type="button" className="underline" onClick={() => void load()}>Retry</button>
+          </p>
+        ) : null}
+        {!formOpen && boqChecked && !boqId && !loadError ? (
           <p className="max-w-md text-right text-sm text-px-muted" data-testid="billing-no-approved-boq">
             {NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.
           </p>
