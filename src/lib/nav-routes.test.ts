@@ -215,11 +215,6 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   // Owner 2026-10-12: the plain "Dashboard" menu entry is hidden; /dashboard stays as the signed-in landing route and is reached by the PROJEXA
   // logo and the "Project Dashboard" entry (/dashboard/hierarchy), not by its own menu item.
   "/dashboard",
-  // Legal/footer-only page (owner-approved Disclaimer, 2026-09-13). Linked
-  // from MarketingFooter on every real page, not from the authenticated
-  // app's sidebar -- same class as /how-it-works above: a real, standalone
-  // page, reachable, just never via AppSidebar.
-  "/disclaimer",
   "/login",
   "/signup",
   // LOCAL-FIRST: the static on-laptop shell. It is not a module: it is the whole app drawn from the laptop's own database, served by the
@@ -456,6 +451,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",
+  // R-C14: site instructions are reached from the BOQ screen they vary (its "Add site instruction" link carries the project and
+  // the BOQ), never from a standalone sidebar item that could carry neither.
+  "/site-instructions",
+  "/site-instructions/[id]",
+  "/site-instructions/new",
   "/submittals/[id]",
   "/submittals/new",
   "/vendors/[id]",
