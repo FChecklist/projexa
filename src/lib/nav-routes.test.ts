@@ -456,6 +456,11 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/scope/new",
   "/site-diary/[id]",
   "/site-diary/new",
+  // R-C14: site instructions are reached from the BOQ screen they vary (its "Add site instruction" link carries the project and
+  // the BOQ), never from a standalone sidebar item that could carry neither.
+  "/site-instructions",
+  "/site-instructions/[id]",
+  "/site-instructions/new",
   "/submittals/[id]",
   "/submittals/new",
   "/vendors/[id]",

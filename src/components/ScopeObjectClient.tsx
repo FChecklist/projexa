@@ -546,6 +546,17 @@ export default function ScopeObjectClient({
           </button>
         </div>
       )}
+      {/* R-C14: the one way in to the site instruction screens. Display mode only; the link carries this BOQ so the new
+          instruction is linked to it. */}
+      {mode === "display" && (
+        <div className="border-b border-ct-border px-4 py-2 text-[12.5px] text-px-ink">
+          Site instructions:{" "}
+          <a className="underline" href={`/site-instructions/new?projectId=${encodeURIComponent(boq.projectId)}&boqId=${encodeURIComponent(boq.id)}`}>
+            Add site instruction
+          </a>{" · "}
+          <a className="underline" href={`/site-instructions?projectId=${encodeURIComponent(boq.projectId)}`}>View all</a>
+        </div>
+      )}
       {predecessor && (
         <div className="border-b border-ct-border px-4 py-2 text-[12.5px] text-px-ink">
           Supersedes {revisionLabel(predecessor.version)} · variation{" "}
