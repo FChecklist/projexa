@@ -170,6 +170,18 @@ describe("ScopeObjectClient per-line budget cells (D-26)", () => {
     expect((getByLabelText("Material amount for Partition") as HTMLInputElement).value).toBe("0");
     expect((getByLabelText("Manpower amount for Partition") as HTMLInputElement).value).toBe("20");
   });
+
+  // R-50 (audit 2026-10-19): VERIDIAN strips the budget overlay for a viewer without cost visibility. The screen must
+  // then show no cost columns, not a made-up 25% / 0 budget.
+  test("when the server withheld the budget fields, no cost columns or invented defaults are rendered", async () => {
+    const { budgetPercentage: _bp, vendorAmount: _va, materialAmount: _ma, manpowerAmount: _mp, ...redacted } = lineItem;
+    const { findByText, queryByLabelText } = mountWithLines([redacted]);
+    await findByText("Villa 21 - Interior Fit-out");
+    const headers = [...document.querySelectorAll("thead th")].map((h) => h.textContent?.trim());
+    for (const h of ["Budget %", "Budget", "Vendor", "Vendor Amt", "Material", "Manpower"]) expect(headers).not.toContain(h);
+    expect(queryByLabelText("Budget % for Partition")).toBeNull();
+    expect(queryByLabelText("Vendor amount for Partition")).toBeNull();
+  });
 });
 
 // QA D2: Approve must not be offered to people the server will refuse.
