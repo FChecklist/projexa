@@ -61,9 +61,13 @@ describe("submitFailure", () => {
   });
 
   test("a timeout names the ceiling it actually waited", () => {
-    expect(submitFailure("timeout", "BOQ").message).toBe(
-      "The server did not answer in 10 s — nothing was saved."
+    const f = submitFailure("timeout", "BOQ");
+    expect(f.message).toBe(
+      "The server did not answer in 10 s — it may have been saved. Check the list before trying again."
     );
+    // The write may have completed upstream; claiming otherwise is what made
+    // "Try again" create duplicates (Sumeet audit R-C08).
+    expect(f.message).not.toMatch(/nothing was saved/i);
   });
 
   test("an unreachable server does NOT claim it waited ten seconds", () => {
@@ -297,7 +301,9 @@ describe("useSubmit", () => {
     expect(result.current.failure?.kind).toBe("timeout");
     // The sentence names the ceiling that actually expired -- with the
     // product default of 10 s that is D-72's own wording, asserted above.
-    expect(result.current.failure?.message).toBe("The server did not answer in 1 s — nothing was saved.");
+    expect(result.current.failure?.message).toBe(
+      "The server did not answer in 1 s — it may have been saved. Check the list before trying again."
+    );
     expect((seenSignal as unknown as AbortSignal).aborted).toBe(true);
     expect(result.current.state).toBe("idle");
   });

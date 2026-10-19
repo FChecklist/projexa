@@ -145,7 +145,11 @@ export function saveFailureSentence(error: unknown): string {
   if (status === 403) return "You do not have permission to save attendance on this project. Nothing was saved.";
   if (status === 404) return "One of these workers is no longer on this project's roster — reload the sheet. Nothing was saved.";
   if (status === 409) return "This sheet changed while you were marking it — reload the sheet. Nothing was saved.";
-  return "The construction data service didn't answer — nothing was saved.";
+  // A 500 is a refusal the server rolled back. No answer at all (0), a bad
+  // gateway or a timeout is different: the save may have gone through, and
+  // saving again blind stores the day twice (Sumeet audit R-C08).
+  if (status === 500) return "The construction data service didn't answer — nothing was saved.";
+  return "The construction data service didn't answer — the sheet may have been saved. Check it before saving again.";
 }
 
 /**
