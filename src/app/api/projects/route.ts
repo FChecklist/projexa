@@ -49,15 +49,7 @@ export const POST = withTiming("POST", async function POST(request: NextRequest)
   if (ctx.response) return ctx.response;
   const body = await request.json();
   try {
-    // PROJEXA has no product concept in its UI; VERIDIAN's schema still needs
-    // one, so a create that names none gets the org's first product.
-    if (!body.productId) {
-      const { products } = await callVeridian<{ products: { id: string }[] }>("/products", { organizationId: ctx.organizationId! });
-      if (!products?.[0]) {
-        return NextResponse.json({ error: "This organisation is not set up to create projects yet. Ask an administrator." }, { status: 409 });
-      }
-      body.productId = products[0].id;
-    }
+    // No productId is sent: the backend files every PROJEXA project under the org's "PROJEXA" product.
     // R67 F-18: the cached list must be cleared or the new row is
     // invisible until the 30 s window expires, which reads as a failed save.
     revalidateTag("projects", "max");
