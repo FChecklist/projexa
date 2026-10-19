@@ -637,6 +637,7 @@ export default function ScopeObjectClient({
               <TableHead>Unit</TableHead>
               <TableHead className="text-right">Qty</TableHead><TableHead className="text-right">Rate</TableHead>
               <TableHead className="text-right">Amount</TableHead>
+              {!isCostHidden(rows) && (<>
               <TableHead className="text-right">Budget %</TableHead><TableHead className="text-right">Budget</TableHead>
               <TableHead>Vendor</TableHead>
               {/* R67 I-03 / D-26: the three committed-cost columns, in the
@@ -645,6 +646,7 @@ export default function ScopeObjectClient({
                   a blank one reads as NOT COSTED rather than as zero. */}
               <TableHead className="text-right">Vendor Amt</TableHead>
               <TableHead className="text-right">Material</TableHead><TableHead className="text-right">Manpower</TableHead>
+              </>)}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -683,6 +685,7 @@ export default function ScopeObjectClient({
                   <TableCell className="text-right">{isSub ? (derived?.qty ?? "—") : r.quantity}</TableCell>
                   <TableCell className="text-right">{isSub ? (derived ? formatAmount(derived.rate) : "—") : formatAmount(r.rate)}</TableCell>
                   <TableCell className="text-right font-medium">{withCurrency(currencyCode, r.amount)}</TableCell>
+                  {!isCostHidden(rows) && (<>
                   <TableCell className="text-right">
                     <Input
                       aria-label={`Budget % for ${r.description}`}
@@ -732,6 +735,7 @@ export default function ScopeObjectClient({
                     onCommit={(amount) => saveLineItemBudget(r.id, { manpowerAmount: amount }, `${r.id}:manpowerAmount`)}
                     readMoneyInput={readMoneyInput}
                   />
+                  </>)}
                 </TableRow>
               );
             })}
@@ -758,6 +762,13 @@ function SavedTick({ shown }: { shown: boolean }) {
  * clearing the box writes null rather than 0. "AED 0" and "–" are different
  * answers and this control keeps them different.
  */
+/** The server strips the budget overlay (computedBudget/budgetPercentage/vendor+material+manpower
+ *  amounts) for a viewer without cost visibility (e.g. client_viewer, R-50). When every line lacks both
+ *  budget fields we render no cost columns at all, rather than a fabricated 25% / 0 default. */
+function isCostHidden(rows: Array<{ computedBudget?: number | null; budgetPercentage?: string | null }>): boolean {
+  return rows.length > 0 && rows.every((r) => r.budgetPercentage === undefined && r.computedBudget === undefined);
+}
+
 function MoneyCostCell({
   label, value, currencyCode, disabled, saved, onCommit, readMoneyInput,
 }: {
