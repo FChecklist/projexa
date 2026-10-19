@@ -135,9 +135,10 @@ describe("CreateScreen", () => {
     // ten-second timeout into a sentence that said "nothing was saved" twice.
     const { container } = renderScreen({ failure: submitFailure("timeout", "Permit") });
     const text = container.textContent ?? "";
-    expect(text).toContain("The server did not answer in 10 s — nothing was saved.");
+    expect(text).toContain("The server did not answer in 10 s — it may have been saved. Check the list before trying again.");
     expect(text).not.toContain("Could not save the permit");
-    expect(text.match(/nothing was saved/gi)?.length).toBe(1);
+    // A timed-out write may have completed upstream, so it must not claim otherwise.
+    expect(text).not.toMatch(/nothing was saved/i);
   });
 
   test("a retryable failure offers Try again, and it re-issues the same save", () => {
