@@ -32,7 +32,9 @@
 //
 // D-72 says: "on timeout or network error the form shows the footer message
 // 'The server did not answer in 10 s — nothing was saved.'" The timeout half
-// is used verbatim. The NETWORK-ERROR half is not, because a DNS failure or
+// was used verbatim until 2026-10-19, when the Sumeet UI audit (R-C08) showed
+// the claim false for a write that outlives the wait: it now says the save may
+// have happened and to check the list first. The NETWORK-ERROR half is not, because a DNS failure or
 // an offline radio rejects in milliseconds, and telling a user their request
 // waited ten seconds when it never left the device is exactly the kind of
 // confident falsehood this programme exists to remove. An unreachable server
@@ -115,7 +117,11 @@ export function submitFailure(
     case "timeout":
       return {
         kind,
-        message: `The server did not answer in ${Math.round(timeoutMs / 1000)} s — nothing was saved.`,
+        // A write that outlives the wait is NOT known to have failed: the backend
+        // usually finishes it anyway (a cold start), and a blind retry then stores
+        // a DUPLICATE (Sumeet UI audit R-C08, three identical rows from one
+        // create). So this must never claim "nothing was saved".
+        message: `The server did not answer in ${Math.round(timeoutMs / 1000)} s — it may have been saved. Check the list before trying again.`,
         retryable: true,
       };
     case "unreachable":

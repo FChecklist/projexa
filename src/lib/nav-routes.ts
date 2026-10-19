@@ -258,6 +258,10 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/site-diary",
   "/site-diary/[id]",
   "/site-diary/new",
+  // R-C14: site instructions. Reached from a BOQ (its "Add site instruction" link), not the sidebar.
+  "/site-instructions",
+  "/site-instructions/[id]",
+  "/site-instructions/new",
   "/submittals",
   "/submittals/[id]",
   "/submittals/new",

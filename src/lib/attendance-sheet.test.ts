@@ -88,9 +88,10 @@ describe("summariseByTrade", () => {
 });
 
 describe("the closed failure vocabulary (D-03)", () => {
-  test("an upstream timeout says the service didn't answer AND that nothing was saved", () => {
+  test("an upstream timeout says the service didn't answer and that the sheet MAY have been saved", () => {
     const sentence = saveFailureSentence(new ApiError("VERIDIAN request timed out", 504, null));
-    expect(sentence).toBe("The construction data service didn't answer — nothing was saved.");
+    expect(sentence).toBe("The construction data service didn't answer — the sheet may have been saved. Check it before saving again.");
+    expect(sentence).not.toMatch(/nothing was saved/i);
   });
 
   test("a 404 tells the user what to do next rather than repeating the backend's row id", () => {
@@ -99,14 +100,17 @@ describe("the closed failure vocabulary (D-03)", () => {
     expect(sentence).not.toContain("roster-abc123");
   });
 
-  test("every save-failure sentence states that nothing was saved", () => {
-    for (const status of [400, 403, 404, 409, 500, 502, 504, 0]) {
+  test("every definite refusal states that nothing was saved; an unanswered write does not claim it", () => {
+    for (const status of [400, 403, 404, 409, 500]) {
       expect(saveFailureSentence(new ApiError("raw backend text", status, null))).toContain("othing was saved");
+    }
+    for (const status of [502, 504, 0]) {
+      expect(saveFailureSentence(new ApiError("raw backend text", status, null))).toContain("may have been saved");
     }
   });
 
   test("a non-ApiError (a dropped connection, a parse failure) still produces a sentence, never '[object Object]'", () => {
-    expect(saveFailureSentence(new Error("fetch failed"))).toBe("The construction data service didn't answer — nothing was saved.");
+    expect(saveFailureSentence(new Error("fetch failed"))).toBe("The construction data service didn't answer — the sheet may have been saved. Check it before saving again.");
     // R67 D-65 merge: a READ failure now speaks the product's ONE shared
     // vocabulary (src/lib/task-errors.ts's describeReadError) rather than this
     // module's own three sentences, so "supabaseKey is required" reads the same
