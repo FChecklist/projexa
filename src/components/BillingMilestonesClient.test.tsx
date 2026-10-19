@@ -182,6 +182,15 @@ describe("BillingMilestonesClient", () => {
     expect(getByText(/no approved BOQ yet/)).toBeDefined();
   });
 
+  test("a failed BOQ lookup says it could not check, never 'no approved BOQ' (audit 2026-10-19)", async () => {
+    const view = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ error: "The construction data service did not respond in time." }, 503),
+    });
+    await waitFor(() => expect(view.getByTestId("billing-load-error")).toBeTruthy());
+    expect(view.queryByTestId("billing-no-approved-boq")).toBeNull();
+    expect(view.getByTestId("billing-load-error").textContent).toContain("Retry");
+  });
+
   test("QA D1: with no tax template the page says what to do, not just a tooltip", async () => {
     const claim = { ...CLAIM_SUBMITTED, status: "client_approved" as const };
     const { findByTestId } = renderClient({
