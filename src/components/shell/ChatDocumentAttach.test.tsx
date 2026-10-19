@@ -60,12 +60,11 @@ const Frame = ({ children }: { children: ReactNode }) => (
 );
 
 const timing = { intervalMs: 1, timeoutMs: 5000 };
-const PRODUCTS = [{ id: "prod-1", name: "Villa Projects" }, { id: "prod-2", name: "Fit-outs" }];
 
-function attach(client: FromDocumentClient, over: { role?: string | null; products?: typeof PRODUCTS } = {}) {
+function attach(client: FromDocumentClient, over: { role?: string | null } = {}) {
   return render(
     <Frame>
-      <ChatDocumentAttach role={over.role === undefined ? "member" : over.role} client={client} loadProducts={async () => over.products ?? PRODUCTS} timing={timing} />
+      <ChatDocumentAttach role={over.role === undefined ? "member" : over.role} client={client} timing={timing} />
     </Frame>,
   );
 }
@@ -107,45 +106,42 @@ describe("attaching a file", () => {
     expect(client.submits).toHaveLength(0);
   });
 
-  test("with one product it reads at once on the button and creates nothing until the confirm; the result and the project show in the chat", async () => {
+  test("it reads on the button, with no product to choose, and creates nothing until the confirm; the result and the project show in the chat", async () => {
     const ready = job("ready", "t1");
     const client = scripted([[job("reading", "t0"), ready], [ready, job("created", "t2")]]);
-    attach(client, { products: [PRODUCTS[0]] });
+    attach(client);
     await pickFile(new File(["PK"], "boq.xlsx"));
     await waitFor(() => expect((screen.getByTestId("chat-doc-read") as HTMLButtonElement).disabled).toBe(false));
     await act(async () => void fireEvent.click(screen.getByTestId("chat-doc-read")));
 
     await waitFor(() => expect(screen.getByTestId("doc-parked")).toBeTruthy());
     expect(client.submits).toHaveLength(1);
-    expect(client.submits[0]).toMatchObject({ mode: "prepare", productId: "prod-1" });
+    expect(client.submits[0]).toMatchObject({ mode: "prepare" });
     expect(screen.getByTestId("doc-stats").textContent).toBe("Read 2 sheets, 30 rows, 12 BOQ lines.");
     expect(screen.getByTestId("region").textContent).not.toContain("Project created from");
 
     await act(async () => void fireEvent.click(screen.getByTestId("doc-create")));
     await waitFor(() => expect(screen.getByTestId("doc-created")).toBeTruthy());
-    expect(client.submits[1]).toMatchObject({ mode: "create", productId: "prod-1", acknowledgeQuestions: false });
+    expect(client.submits[1]).toMatchObject({ mode: "create", acknowledgeQuestions: false });
     expect(screen.getByTestId("region").textContent).toContain("Project created from boq.xlsx [Open the project /dashboard/project?projectId=proj-5]");
     expect(document.querySelector('[data-kind="saved"]')).toBeTruthy();
   });
 
-  test("with several products the person chooses one before the file can be read", async () => {
+  test("there is no product picker and no product is sent", async () => {
     const client = scripted([[job("ready", "t1")]]);
     attach(client);
     await pickFile(new File(["PK"], "boq.xlsx"));
-    await screen.findByTestId("chat-doc-product");
-    expect((screen.getByTestId("chat-doc-read") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Choose a product first.")).toBeTruthy();
-    act(() => void fireEvent.change(screen.getByTestId("chat-doc-product"), { target: { value: "prod-2" } }));
-    expect((screen.getByTestId("chat-doc-read") as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect((screen.getByTestId("chat-doc-read") as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByTestId("chat-doc-product")).toBeNull();
     await act(async () => void fireEvent.click(screen.getByTestId("chat-doc-read")));
     await waitFor(() => expect(client.submits).toHaveLength(1));
-    expect(client.submits[0].productId).toBe("prod-2");
+    expect(client.submits[0].productId).toBeUndefined();
   });
 
   test("a job with questions shows them in the chat and links to the full screen", async () => {
     const parked = job("needs_answers", "t1", { questions: [{ kind: "no_rate", sheet: "Table 4", row: 7, text: "Row 7 has a quantity and no rate." }] });
     const client = scripted([[parked]]);
-    attach(client, { products: [PRODUCTS[0]] });
+    attach(client);
     await pickFile(new File(["PK"], "boq.xlsx"));
     await waitFor(() => expect((screen.getByTestId("chat-doc-read") as HTMLButtonElement).disabled).toBe(false));
     await act(async () => void fireEvent.click(screen.getByTestId("chat-doc-read")));
@@ -156,7 +152,7 @@ describe("attaching a file", () => {
 
   test("removing the chip clears the file and the result", async () => {
     const client = scripted([[job("ready", "t1")]]);
-    attach(client, { products: [PRODUCTS[0]] });
+    attach(client);
     await pickFile(new File(["PK"], "boq.xlsx"));
     await waitFor(() => expect(screen.getByTestId("chat-doc-read")).toBeTruthy());
     act(() => void fireEvent.click(screen.getByLabelText("Remove boq.xlsx")));
