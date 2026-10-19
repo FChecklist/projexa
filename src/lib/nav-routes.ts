@@ -92,7 +92,6 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/design-studio/review",
   "/design-studio/timesheets/[id]",
   "/design-studio/timesheets/new",
-  "/disclaimer",
   "/documents",
   "/documents/[id]",
   "/documents/upload",
