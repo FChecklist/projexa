@@ -32,14 +32,9 @@ const ProjectCreateClient = (await import("./ProjectCreateClient")).default;
 
 afterEach(cleanup);
 
-const PRODUCTS = [
-  { id: "prod-construction", name: "Construction" },
-  { id: "prod-fitout", name: "Fit-out" },
-];
-
 describe("ProjectCreateClient", () => {
   test("it is a create SCREEN -- breadcrumb, title, and no dialog anywhere", () => {
-    const { container } = render(<ProjectCreateClient products={PRODUCTS} productsError={null} />);
+    const { container } = render(<ProjectCreateClient />);
 
     expect(container.textContent).toContain("Dashboard / New Project");
     expect(container.textContent).toContain("New Project");
@@ -48,7 +43,7 @@ describe("ProjectCreateClient", () => {
   });
 
   test("Save is disabled and NAMES the fields still missing, rather than sitting inert", () => {
-    const { container } = render(<ProjectCreateClient products={PRODUCTS} productsError={null} />);
+    const { container } = render(<ProjectCreateClient />);
 
     const save = Array.from(container.querySelectorAll("button")).find((b) =>
       (b.textContent ?? "").startsWith("Save")
@@ -57,40 +52,20 @@ describe("ProjectCreateClient", () => {
     expect(save?.disabled).toBe(true);
     // Not "2 required fields" and not a title attribute nobody hovers: the
     // user's own words for the fields, on the button.
-    expect(save?.textContent).toContain("Product");
     expect(save?.textContent).toContain("Project Name");
   });
 
-  test("a FAILED product read says so in the backend's own words", () => {
-    const { container } = render(
-      <ProjectCreateClient products={[]} productsError="The construction data service did not respond in time." />
-    );
+  test("there is no Product field -- only the project name is asked for", () => {
+    const { container } = render(<ProjectCreateClient />);
 
-    expect(container.textContent).toContain("Couldn't load products:");
-    expect(container.textContent).toContain("The construction data service did not respond in time.");
-    // The load-bearing half: a failed read must never be presented as "this
-    // organisation has no products".
-    expect(container.textContent).not.toContain("No products are set up for this organisation yet.");
-  });
-
-  test("a SUCCESSFUL but empty read says something completely different, and says what to do", () => {
-    const { container } = render(<ProjectCreateClient products={[]} productsError={null} />);
-
-    expect(container.textContent).toContain("No products are set up for this organisation yet.");
-    expect(container.textContent).toContain("An administrator must add a product");
+    expect(container.textContent).not.toContain("Product");
     expect(container.textContent).not.toContain("Couldn't load products:");
-  });
-
-  test("with products, the picker is offered and neither notice is shown", () => {
-    const { container } = render(<ProjectCreateClient products={PRODUCTS} productsError={null} />);
-
-    expect(container.textContent).toContain("Select a product");
-    expect(container.textContent).not.toContain("Couldn't load products:");
-    expect(container.textContent).not.toContain("No products are set up");
+    expect(container.querySelector("#productId")).toBeNull();
+    expect(container.textContent).toContain("Project Name");
   });
 
   test("the optional fields are marked optional, so the required set is unambiguous", () => {
-    const { container } = render(<ProjectCreateClient products={PRODUCTS} productsError={null} />);
+    const { container } = render(<ProjectCreateClient />);
     expect(container.textContent).toContain("Description (optional)");
     expect(container.textContent).toContain("Start Date (optional)");
     expect(container.textContent).toContain("Target Date (optional)");
@@ -116,7 +91,6 @@ import { fieldForProjectError } from "./ProjectCreateClient";
 
 describe("fieldForProjectError -- a refusal lands next to the field it is about", () => {
   test("attributes the backend's own words to the field it names", () => {
-    expect(fieldForProjectError("Couldn't create project: productId is required")).toBe("productId");
     expect(fieldForProjectError("Couldn't create project: name is required")).toBe("name");
     expect(fieldForProjectError("Couldn't create project: target date must be after start date")).toBe("targetDate");
     expect(fieldForProjectError("Couldn't create project: start date is invalid")).toBe("startDate");

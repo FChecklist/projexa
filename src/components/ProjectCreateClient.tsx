@@ -10,12 +10,9 @@
 // "Dashboard / New Project", a Back control, and a Save that is disabled WITH
 // THE REASON, naming the fields still missing (src/lib/project-form.ts).
 //
-// The product list is resolved SERVER-SIDE by the route (decision D-04,
-// Option A: the page fetches, the VERIDIAN key never reaches the browser), so
-// this component does no read of its own -- it receives the list plus, when
-// that read failed, the backend's own words. An empty picker is never
-// presented as "no products": a failed read and a genuinely empty list say
-// different things (src/lib/read-outcome.ts's standing rule).
+// PROJEXA has no "product" concept for the user: the form asks for a project
+// name only. VERIDIAN's schema still requires a productId, so POST
+// /api/projects fills it in server-side (see that route).
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -24,12 +21,8 @@ import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { missingProjectFields, projectSaveDisabledReason } from "@/lib/project-form";
-import { mayAssertEmpty } from "@/lib/read-outcome";
-
-export type ProductOption = { id: string; name: string };
 
 /**
  * R67 D-01 (lane D1, folded into this canonical component under D-11's rule).
@@ -40,23 +33,14 @@ export type ProductOption = { id: string; name: string };
  */
 export function fieldForProjectError(message: string): string | undefined {
   const m = message.toLowerCase();
-  if (m.includes("product")) return "productId";
   if (m.includes("target date")) return "targetDate";
   if (m.includes("start date")) return "startDate";
   if (m.includes("name")) return "name";
   return undefined;
 }
 
-export default function ProjectCreateClient({
-  products,
-  productsError,
-}: {
-  products: ProductOption[];
-  /** The backend's own message when the product read failed; null when it succeeded. */
-  productsError: string | null;
-}) {
+export default function ProjectCreateClient() {
   const router = useRouter();
-  const [productId, setProductId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -64,7 +48,7 @@ export default function ProjectCreateClient({
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const missing = missingProjectFields({ productId, name });
+  const missing = missingProjectFields({ name });
   // R67 D-01: the refusal is shown BOTH in the screen strip and beside the
   // field it is about, when it names one.
   const errorField = saveError ? fieldForProjectError(saveError) : undefined;
@@ -83,7 +67,6 @@ export default function ProjectCreateClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productId,
           name: name.trim(),
           description: description.trim() || undefined,
           startDate: startDate || undefined,
@@ -125,28 +108,6 @@ export default function ProjectCreateClient({
       messages={saveError ? [{ level: "error" as const, text: saveError }] : []}
     >
       <div className="space-y-3 px-4 py-3">
-        <div className="space-y-1.5">
-          {/* R67 D-01: htmlFor/id pairs, so clicking the label reaches the control and a screen reader announces the two together. */}
-          <Label htmlFor="productId">Product</Label>
-          {productsError ? (
-            <p role="alert" className="rounded-md border border-px-error-border bg-px-error-light p-2 text-sm text-px-error">
-              Couldn&apos;t load products: {productsError}
-            </p>
-          ) : mayAssertEmpty(productsError) && products.length === 0 ? (
-            <p role="status" className="rounded-md border border-px-border bg-px-cloud p-2 text-sm text-px-muted">
-              No products are set up for this organisation yet. An administrator must add a product before a
-              project can be created.
-            </p>
-          ) : (
-            <Select value={productId} onValueChange={setProductId}>
-              <SelectTrigger id="productId"><SelectValue placeholder="Select a product" /></SelectTrigger>
-              <SelectContent>
-                {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-          {fieldError("productId") && <p className="text-[12.5px] text-px-error">{fieldError("productId")}</p>}
-        </div>
         <div className="space-y-1.5">
           <Label htmlFor="name">Project Name</Label>
           <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeview Residence — Phase 2" />

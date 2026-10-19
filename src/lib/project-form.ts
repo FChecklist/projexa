@@ -12,11 +12,10 @@
 // primary whose LABEL is the list of what is missing.
 //
 // The field names below are the ones the user actually reads on the form
-// ("Product", "Project Name") -- never the API's own camelCase parameter
+// ("Project Name") -- never the API's own camelCase parameter
 // names, which is the same rule src/lib/task-errors.ts applies to failures.
 
 export type ProjectFormValues = {
-  productId: string;
   name: string;
 };
 
@@ -26,7 +25,6 @@ export type ProjectFormValues = {
  */
 export function missingProjectFields(values: ProjectFormValues): string[] {
   const missing: string[] = [];
-  if (!values.productId.trim()) missing.push("Product");
   if (!values.name.trim()) missing.push("Project Name");
   return missing;
 }
