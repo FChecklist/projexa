@@ -50,9 +50,12 @@
     "/api/drawings/:id/document-url",
     "/api/exceptions",
     "/api/local-first/client-error",
+    "/api/moms/:id",
     "/api/permits/:id",
     "/api/reports/boq-analysis",
+    "/api/scope/:id",
     "/api/scope/line-items/:id",
+    "/api/work-progress/photos",
     "/api/tasks"
   ],
   "install_phase_api_allowlist": [

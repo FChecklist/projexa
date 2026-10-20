@@ -37,7 +37,8 @@ describe("Vercel route inventory (A2/A3)", () => {
   test("the on-laptop shell makes calls to a short, named list of /api routes, and each one is a real route", () => {
     const inv = inventory();
     // 8, +1 (P6): the laptop chat box posts to /api/tasks only while online and only when the organisation allows the internal AI (optional, never on the daily offline path); /api/tasks is an EDGE route, so it adds no Vercel call
-    expect(inv.shell_api_references.length).toBeLessThanOrEqual(9);
+    // 9, +3 (laptop-first parity, R-C04 / R-48 / BOQ approve): three optional, user-clicked, ONLINE-only actions that exist on the online screens and were missing on the laptop one: /api/moms/:id (Export PDF, Share link), /api/scope/:id (Approve; an EDGE route, no Vercel call), /api/work-progress/photos (the follow-up photo upload). None is on the daily offline path (daily_use_api_allowlist and the measured e2e walk are unchanged) and no route was added
+    expect(inv.shell_api_references.length).toBeLessThanOrEqual(12);
     for (const ref of inv.shell_api_references) {
       expect(inv.routes.some((r) => routeMatches(ref, r.route)), `${ref} is not a route`).toBe(true);
     }

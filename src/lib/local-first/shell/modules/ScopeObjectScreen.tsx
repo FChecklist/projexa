@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { APPROVE_SELF_REASON, approveBlockedReason, formatAmount } from "@/lib/boq-helpers";
 import { revisionLabel } from "@/lib/boq-lineage";
 import { formatDateTime } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 import type { ShellScreenProps } from "../types";
 import type { ScopeObjectData } from "./scope-adapter";
 import { useRowWindow } from "./use-row-window";
@@ -186,7 +187,7 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     setApproving(true);
     setApproveNote(null);
     try {
-      const res = await fetch(`/api/scope/${encodeURIComponent(boq.id)}/approve`, { method: "POST" });
+      const res = await viaPxApi(`/api/scope/${encodeURIComponent(boq.id)}/approve`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as { error?: unknown };
       const message = typeof body.error === "string" ? body.error : "";
       if (!res.ok) {
