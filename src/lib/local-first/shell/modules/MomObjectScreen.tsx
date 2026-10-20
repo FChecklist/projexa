@@ -29,6 +29,8 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
   const [itemNote, setItemNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [itemSaving, setItemSaving] = useState(false);
   const [copied, setCopied] = useState<{ ok: boolean; text: string } | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [share, setShare] = useState<{ ok: boolean; text: string; url?: string } | null>(null);
 
   if (data.state === "no_project") return <StateMessage testId="mom-object" state="no_project" title="Minutes of Meeting" back={BACK}>{NO_PROJECT}</StateMessage>;
   if (data.state === "not_synced") return <StateMessage testId="mom-object" state="not_synced" title="Minutes of Meeting" back={BACK}>{NOT_SYNCED}</StateMessage>;
@@ -39,6 +41,27 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
   const mayAmend = !locked && canProposeEdits(shell.data.role);
   // an action item is a follow-up task: it can be added after the minutes are published, as it can online
   const mayAddItem = canProposeEdits(shell.data.role);
+
+  // R-C04 parity with the online page: Export PDF (the same /api/moms/<id>/pdf relay) and Share link (the same share-links route). Both need the
+  // server, so offline (or for a meeting that has not reached the server yet) they are disabled and the reason is written beside them.
+  const serverReason = shell.connectivity !== "online"
+    ? "Needs a connection. Export the PDF or make a share link once you are online."
+    : mom.waiting ? "This meeting is still waiting to sync. It can be exported and shared once the server has it." : null;
+
+  async function makeShareLink() {
+    setShareBusy(true);
+    try {
+      const res = await fetch(`/api/moms/${encodeURIComponent(mom.id)}/share-links`, { method: "POST" });
+      const body = (await res.json().catch(() => null)) as { shareUrl?: string; error?: string } | null;
+      if (!res.ok || !body?.shareUrl) throw new Error(body?.error ?? "The server did not make a share link.");
+      const copiedOk = await copyTextToClipboard(body.shareUrl);
+      setShare({ ok: true, url: body.shareUrl, text: copiedOk ? "Share link made and copied." : "Share link made. Select it below and copy it." });
+    } catch (err) {
+      setShare({ ok: false, text: err instanceof Error ? err.message : "Could not make a share link." });
+    } finally {
+      setShareBusy(false);
+    }
+  }
 
   async function addItem() {
     setItemSaving(true);
@@ -136,6 +159,34 @@ export default function MomObjectScreen({ shell, data }: ShellScreenProps<MomObj
             >
               Copy minutes for WhatsApp
             </Button>
+            {serverReason ? (
+              <>
+                <Button className="mt-2 ml-2" variant="outline" size="sm" disabled data-testid="mom-export-pdf" aria-disabled="true">Export PDF</Button>
+                <Button className="mt-2 ml-2" variant="outline" size="sm" disabled data-testid="mom-share-link" aria-disabled="true">Share link</Button>
+                <p className="mt-2 text-xs text-px-muted" data-testid="mom-server-reason">{serverReason}</p>
+              </>
+            ) : (
+              <>
+                <a
+                  className="mt-2 ml-2 inline-flex h-8 items-center rounded-md border border-black/20 px-3 text-sm text-px-ink"
+                  href={`/api/moms/${encodeURIComponent(mom.id)}/pdf`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="mom-export-pdf"
+                >
+                  Export PDF
+                </a>
+                <Button className="mt-2 ml-2" variant="outline" size="sm" data-testid="mom-share-link" disabled={shareBusy} onClick={() => void makeShareLink()}>
+                  {shareBusy ? "Making the link..." : "Share link"}
+                </Button>
+              </>
+            )}
+            {share ? (
+              <div className="mt-2" role="status" data-testid="mom-share-note" data-ok={share.ok ? "1" : "0"}>
+                <p className="text-xs text-px-ink">{share.text}</p>
+                {share.url ? <input readOnly className="mt-1 w-full rounded border border-black/20 p-2 text-xs" value={share.url} onFocus={(e) => e.currentTarget.select()} data-testid="mom-share-url" /> : null}
+              </div>
+            ) : null}
             {copied?.ok ? <p className="mt-2 text-xs text-px-ink" role="status" data-testid="mom-copied">Copied. Paste it into WhatsApp.</p> : null}
             {copied && !copied.ok ? (
               <div data-testid="mom-copy-manual">

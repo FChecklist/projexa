@@ -153,7 +153,7 @@ describe("flush: applied and duplicate", () => {
     db.close();
     expect(r.outbox.getState().pending).toBe(0);
     const applied = r.events.find((e) => e.type === "applied");
-    expect(applied).toMatchObject({ type: "applied", opId: "op-1", kind: "rfis", created: true });
+    expect(applied).toMatchObject({ type: "applied", opId: "op-1", kind: "rfis", created: true, tempId: "local-1" });
   });
 
   test("when the server sends the row back with its answer, no extra fetch is made", async () => {

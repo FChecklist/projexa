@@ -16,7 +16,8 @@ import { boqTotal } from "@/lib/boq-helpers";
 import type { GatewayBoqLine } from "@/lib/boq-gateway-client";
 import { orderLinesForBoq, toBoqLineItemRow } from "@/lib/boq-read-source";
 import { BOQ_LINES_KIND, BOQS_KIND, linesFromReplica } from "../../boq-local";
-import { loadLocalFirst, localSyncInfo } from "../../local-reader";
+import { loadLocalFirst, localSyncInfo, readLocal } from "../../local-reader";
+import { lookupBoqAlias } from "./boq-alias";
 import type { ShellData } from "../context";
 import { applyPendingEdits, type PendingEdit } from "../pending-edits";
 import { parseProgress, readKind } from "./delivery-local";
@@ -66,9 +67,15 @@ export function toWaitingBoq(raw: unknown): WaitingBoq | null {
   };
 }
 
+/**
+ * The BOQs and revisions made on THIS laptop and not yet accepted (temporary ids). They are read straight from the laptop's own records, NOT
+ * through loadLocalFirst: that insists the `boqs` kind was pulled to the end for the project, and a laptop whose `boqs` copy is missing or
+ * half-done (an older install, a long-lived browser) hid a BOQ the person had just saved and landed them on "BOQ not in the copy on this
+ * laptop" (R-19). A temporary row is the person's own write, written in the same transaction as the outbox op: it needs no sync marker.
+ */
 async function readWaiting(data: ShellData, projectId: string): Promise<WaitingBoq[]> {
-  const read = await loadLocalFirst<unknown>(BOQS_KIND, projectId, async () => [], { userId: data.userId, idb: data.idb });
-  return read.state === "local" ? read.rows.map(toWaitingBoq).filter((w): w is WaitingBoq => w !== null) : [];
+  const rows = await readLocal<unknown>(BOQS_KIND, { projectId, userId: data.userId, idb: data.idb });
+  return rows.map(toWaitingBoq).filter((w): w is WaitingBoq => w !== null);
 }
 
 export type ScopeListData =
@@ -124,6 +131,8 @@ export type ScopeObjectData =
   | { state: "not_found"; projectId: string | null }
   /** A BOQ or revision made on this laptop and not yet accepted by the server. */
   | { state: "waiting"; waiting: WaitingBoq }
+  /** A BOQ made on this laptop that the server has accepted; its lines are still being copied back. */
+  | { state: "sent"; projectId: string | null }
   | {
       state: "local";
       boq: Boq;
@@ -281,6 +290,12 @@ export async function loadScopeObject(
     for (const candidate of candidates) {
       const waiting = (await readWaiting(data, candidate)).find((w) => w.id === boqId);
       if (waiting) return { state: "waiting", waiting };
+    }
+    // The server accepted it while the screen was open: the temporary row is gone and the real BOQ has taken its place (R-19).
+    const alias = await lookupBoqAlias(data, boqId);
+    if (alias) {
+      const real = await loadScopeObject(data, alias, projectId, edits);
+      return real.state === "local" ? real : { state: "sent", projectId };
     }
     return { state: "not_found", projectId };
   }

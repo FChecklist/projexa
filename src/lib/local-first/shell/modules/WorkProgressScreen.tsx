@@ -4,11 +4,12 @@
 // copy, and the Analytics / Report tabs as what they honestly are offline: the server's calculations, recalculated when online, with
 // the laptop's own entries downloadable as CSV in the meantime.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ShellScreenProps } from "../types";
 import { recordProgressOffline } from "./delivery-writes";
+import type { PhotoJob, PhotoNotice } from "../progress-photo-queue";
 import { localDay } from "./delivery-local";
 import { CopyNote, DASH, Num, ReadOnlyNote, SaveNote, Screen, ServerOnly, StateMessage, Tabs, Waiting, fieldClass, mayWrite, projectName, textHandlers, useLocalSave, withProject } from "./DeliveryParts";
 import { progressCsv, type WorkProgressData } from "./work-progress-adapter";
@@ -65,22 +66,40 @@ function EntryForm({ shell, projectId, form }: { shell: ShellScreenProps["shell"
   const [value, setValue] = useState("");
   const [date, setDate] = useState(localDay());
   const [remarks, setRemarks] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoKey, setPhotoKey] = useState(0);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
   const { saving, note, save } = useLocalSave(shell);
   const line = form.lines.find((l) => l.id === lineId);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const n = Number(value);
-    const ok = await save(() =>
-      recordProgressOffline(shell.data, {
+    const chosenPhoto = photo;
+    let savedOpId: string | null = null;
+    setPhotoNote(null);
+    const ok = await save(async () => {
+      const result = await recordProgressOffline(shell.data, {
         projectId, boqLineItemId: lineId, entryDate: date, remarks,
         ...(choosing ? { activityId } : {}),
         ...(by === "quantity" ? { quantityDone: n } : { percent: n }),
-      })
-    );
+      });
+      if (result.queued) savedOpId = result.opId;
+      return result;
+    });
     if (ok) {
       setValue("");
       setRemarks("");
+      if (chosenPhoto && savedOpId && shell.photos) {
+        // the photo cannot ride the outbox: it is kept beside the entry and uploaded once the entry has reached the server
+        const kept = await shell.photos.add({ opId: savedOpId, projectId, file: chosenPhoto, fileName: chosenPhoto.name || "photo.jpg" }).catch(() => null);
+        setPhotoNote(kept
+          ? "The photo is kept on this laptop and will be attached once the entry has reached the server."
+          : "The entry was saved, but the photo could not be kept (it is empty or larger than 25 MB). Add it from the entry while you are online.");
+        shell.refresh();
+      }
+      setPhoto(null);
+      setPhotoKey((k) => k + 1);
     }
   }
 
@@ -126,9 +145,61 @@ function EntryForm({ shell, projectId, form }: { shell: ShellScreenProps["shell"
         Remarks
         <input aria-label="Remarks" className={fieldClass} value={remarks} {...textHandlers(setRemarks)} />
       </label>
+      {shell.photos ? (
+        <label className="mt-3 block text-sm">
+          Site photo (optional)
+          <input
+            key={photoKey}
+            aria-label="Site photo"
+            type="file"
+            accept="image/*"
+            className={fieldClass}
+            data-testid="work-progress-photo"
+            onChange={(e) => setPhoto(e.currentTarget.files?.[0] ?? null)}
+          />
+        </label>
+      ) : null}
       <Button type="submit" className="mt-4" disabled={saving}>{saving ? "Saving…" : "Save entry"}</Button>
       <SaveNote note={note} />
+      {photoNote ? <p className="mt-2 text-xs text-px-muted" role="status" data-testid="work-progress-photo-note">{photoNote}</p> : null}
+      <PhotosWaiting shell={shell} projectId={projectId} />
     </form>
+  );
+}
+
+/** Photos still waiting for their entry or for a connection, and the ones that could not be attached (never a silent drop). */
+function PhotosWaiting({ shell, projectId }: { shell: ShellScreenProps["shell"]; projectId: string }) {
+  const [jobs, setJobs] = useState<PhotoJob[]>([]);
+  const [notices, setNotices] = useState<PhotoNotice[]>([]);
+  useEffect(() => {
+    if (!shell.photos) return;
+    let live = true;
+    void Promise.all([shell.photos.list(), shell.photos.notices()])
+      .then(([j, n]) => {
+        if (!live) return;
+        setJobs(j.filter((x) => x.projectId === projectId));
+        setNotices(n);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [shell.photos, projectId, shell.data]);
+  if (jobs.length === 0 && notices.length === 0) return null;
+  return (
+    <div className="mt-3" data-testid="work-progress-photos-waiting">
+      {jobs.map((j) => (
+        <p key={j.id} className="text-xs text-px-muted" data-testid="work-progress-photo-waiting" data-state={j.state}>
+          Photo waiting to upload: {j.fileName} ({j.state === "ready" ? "the entry is on the server, sending the photo" : "waiting for the entry to reach the server"})
+        </p>
+      ))}
+      {notices.map((n) => (
+        <p key={n.id} role="alert" className="mt-1 text-xs text-px-ink" data-testid="work-progress-photo-notice">
+          {n.message}{" "}
+          <button type="button" className="underline" onClick={() => void shell.photos.dismissNotice(n.id).then(() => shell.refresh())}>Dismiss</button>
+        </p>
+      ))}
+    </div>
   );
 }
 

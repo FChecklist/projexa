@@ -5,6 +5,7 @@ import type { Connectivity } from "../connectivity";
 import type { ShellData } from "./context";
 import type { FileQueue } from "./file-queue";
 import type { ShellWriter } from "./pending-edits";
+import type { PhotoQueue } from "./progress-photo-queue";
 
 /** What the shell offers a screen (and its data adapter). Everything here is local to this laptop. */
 export type ShellApi = {
@@ -17,6 +18,8 @@ export type ShellApi = {
   writer: ShellWriter;
   /** Files waiting to be sent (permits, drawings, documents): kept on the laptop, uploaded first and the record queued after. */
   files: FileQueue;
+  /** Photos for progress entries saved here: kept on the laptop, uploaded once the entry has reached the server (R-48). */
+  photos: PhotoQueue;
   /** Moves to another screen without a page load. Accepts the app's own paths (/scope/abc). */
   navigate(href: string, options?: { replace?: boolean }): void;
   connectivity: Connectivity;
