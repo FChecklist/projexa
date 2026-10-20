@@ -5,6 +5,7 @@ import { PageHeading } from "@/components/PageHeading";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
+import { logRenderError } from "@/lib/client-log/install";
 
 // R46 F_028 fix: /reports is the one project-scoped page that always renders
 // its client tree (ReportsClient -> the "Full Catalog" tab's
@@ -33,6 +34,7 @@ import { RotateCcw } from "lucide-react";
 // tab fires on every load.
 export default function ReportsError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
+    logRenderError(error, "reports");
     console.error("[reports] client render error:", error);
   }, [error]);
 

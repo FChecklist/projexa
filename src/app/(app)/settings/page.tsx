@@ -4,6 +4,8 @@ import { PageHeading } from "@/components/PageHeading";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { getSettingsOrgInfo, getSettingsMembers } from "@/lib/settings-source";
 import SettingsClient from "@/components/SettingsClient";
+import Link from "next/link";
+import { ROLE_GROUPS } from "@/lib/authz/roles";
 
 // PROJEXA-E2E-001 cold-load investigation (2026-09-21). Before this, the
 // page shell rendered instantly but SettingsClient started `loading=true`
@@ -29,6 +31,13 @@ export default async function SettingsPage() {
   return (
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Settings" />
+      {/* Owner / admin only: the System log (device-captured errors and what was done about them). */}
+      {ctx.role && (ROLE_GROUPS.ORG_ADMIN as readonly string[]).includes(ctx.role) && (
+        <p className="text-sm" data-testid="settings-system-log-link">
+          <Link href="/system-log" className="underline">System log</Link>
+          <span className="text-px-muted"> — everything that went wrong while people used PROJEXA, and what was done about it.</span>
+        </p>
+      )}
       <Suspense fallback={<div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>}>
         {ctx.organizationId ? (
           <SettingsSection organizationId={ctx.organizationId} role={ctx.role} user={ctx.user} />
