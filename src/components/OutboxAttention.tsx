@@ -168,7 +168,10 @@ export function OutboxAttention({ outbox: injected, path: pathProp }: { outbox?:
   const shown = useRef<Set<string>>(new Set());
   const lastPath = useRef(path);
   const outboxRef = useRef<Outbox | null>(null);
-  outboxRef.current = view?.outbox ?? null;
+  const activeOutbox = view?.outbox ?? null;
+  useEffect(() => {
+    outboxRef.current = activeOutbox;
+  }, [activeOutbox]);
 
   useEffect(() => {
     if (lastPath.current === path) return;
