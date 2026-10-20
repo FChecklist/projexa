@@ -286,21 +286,35 @@ export function createIdbStore(factory: IDBFactory): OutboxStore {
   };
 }
 
-/** IndexedDB when it opens, else localStorage. Decided once, up front, so a failure later cannot split the events across two places. */
+/**
+ * IndexedDB when it opens, else localStorage. Decided once, up front, so a failure later cannot split the events across two places.
+ * LAZY: the database is not created until the first event is written. A browser that has never had anything to report (a brand-new
+ * machine, a person with no problems) gets no database at all -- zero cost when nothing happens. On start-up an existing database is
+ * read to resume what an earlier page left; if the browser cannot say whether one exists (no indexedDB.databases()), it is opened as before.
+ */
 export function createBestStore(win: { indexedDB?: IDBFactory; localStorage?: Storage }): OutboxStore {
   const ls = createLocalStorageStore(safeLocalStorage(win));
   if (!win.indexedDB) return ls;
-  const idb = createIdbStore(win.indexedDB);
+  const factory = win.indexedDB;
+  const idb = createIdbStore(factory);
   let chosen: Promise<OutboxStore> | null = null;
   const pick = () =>
     (chosen ??= idb
       .loadAll()
       .then(() => idb)
       .catch(() => ls));
+  const exists = async (): Promise<boolean> => {
+    try {
+      if (typeof factory.databases !== "function") return true;
+      return (await factory.databases()).some((d) => d.name === IDB_NAME);
+    } catch {
+      return true;
+    }
+  };
   return {
-    loadAll: async () => (await pick()).loadAll(),
+    loadAll: async () => ((await exists()) ? (await pick()).loadAll() : []),
     put: async (e) => (await pick()).put(e),
-    remove: async (ids) => (await pick()).remove(ids),
+    remove: async (ids) => ((await exists()) ? (await pick()).remove(ids) : undefined),
   };
 }
 

@@ -34,6 +34,9 @@ test("an error thrown in the page offline is kept on the device, then delivered 
     page.evaluate(
       () =>
         new Promise<string[] | null>((resolve) => {
+          // never open a database that is not there yet: that would create it empty and the app could not set it up
+          indexedDB.databases().then((dbs) => {
+          if (!dbs.some((d) => d.name === "px-client-log")) return resolve(null);
           const open = indexedDB.open("px-client-log");
           open.onerror = () => resolve(null);
           open.onsuccess = () => {
@@ -43,6 +46,7 @@ test("an error thrown in the page offline is kept on the device, then delivered 
             q.onsuccess = () => { db.close(); resolve((q.result as Array<{ message: string }>).map((e) => e.message)); };
             q.onerror = () => { db.close(); resolve(null); };
           };
+          }, () => resolve(null));
         })
   );
 

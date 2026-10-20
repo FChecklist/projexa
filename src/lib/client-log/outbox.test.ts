@@ -1,6 +1,6 @@
 /// <reference types="bun-types" />
 import { describe, expect, test } from "bun:test";
-import { ACTION_DELAY_MS, BACKOFF_BASE_MS, ERROR_DELAY_MS, OUTBOX_MAX, createLocalStorageStore, createOutbox, type OutboxStore } from "./outbox";
+import { ACTION_DELAY_MS, BACKOFF_BASE_MS, ERROR_DELAY_MS, OUTBOX_MAX, createBestStore, createLocalStorageStore, createOutbox, type OutboxStore } from "./outbox";
 import type { ClientLogEvent, SendResult } from "./types";
 
 let seq = 0;
@@ -214,5 +214,24 @@ describe("outbox drop policy: the oldest action goes first, an error is never dr
     for (const e of errors) expect(ids.has(e.id)).toBe(true);
     expect(r.outbox.size()).toBe(6);
     expect(OUTBOX_MAX).toBe(500);
+  });
+});
+
+describe("the device database is created only when there is something to keep", () => {
+  test("a browser with nothing to report never gets a database: start-up reads and clean-up do not open one", async () => {
+    let opened = 0;
+    const factory = { databases: async () => [], open: () => { opened++; throw new Error("must not open"); } } as unknown as IDBFactory;
+    const store = createBestStore({ indexedDB: factory });
+    expect(await store.loadAll()).toEqual([]);
+    await store.remove(["x"]);
+    expect(opened).toBe(0);
+  });
+
+  test("an existing database is read at start-up so an earlier page's events are resumed", async () => {
+    let opened = 0;
+    const factory = { databases: async () => [{ name: "px-client-log" }], open: () => { opened++; throw new Error("no real idb here"); } } as unknown as IDBFactory;
+    const store = createBestStore({ indexedDB: factory });
+    await store.loadAll(); // open fails in this fake -> falls back to localStorage, never throws
+    expect(opened).toBe(1);
   });
 });
