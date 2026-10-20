@@ -9,14 +9,15 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { SiteInstructionAddFile } from "./SiteInstructionViews";
 
 const realFetch = globalThis.fetch;
-let calls: Array<{ url: string; hasFile: boolean }>;
+let calls: Array<{ url: string; hasFile: boolean; fields: Record<string, unknown> }>;
 let reply: { status: number; body: unknown };
 
 beforeEach(() => {
   calls = [];
   reply = { status: 201, body: { fileName: "si.pdf" } };
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), hasFile: (init?.body as FormData | undefined)?.get("file") instanceof File });
+    const f = init?.body as FormData | undefined;
+    calls.push({ url: String(input), hasFile: f?.get("file") instanceof File, fields: f ? Object.fromEntries([...f.entries()].filter(([, v]) => typeof v === "string")) : {} });
     return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
 });
@@ -35,7 +36,10 @@ describe("SiteInstructionAddFile", () => {
     fireEvent.click(button);
     await waitFor(() => expect(view.getByTestId("si-add-file-note").getAttribute("data-ok")).toBe("1"));
     expect(view.getByTestId("si-add-file-note").textContent).toBe("Added si.pdf to this instruction");
-    expect(calls).toEqual([{ url: "/api/site-instructions/si%201/file", hasFile: true }]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("/api/documents");
+    expect(calls[0]!.hasFile).toBe(true);
+    expect(calls[0]!.fields).toMatchObject({ name: "si.pdf", category: "site_instruction", linkedEntityType: "construction_site_instruction", linkedEntityId: "si 1" });
   });
 
   test("the server's refusal is shown (the server's words kept) and the file stays chosen", async () => {

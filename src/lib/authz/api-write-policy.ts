@@ -441,7 +441,6 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/screen-drafts/[id]": "FIELD",
   "/site-diary": "FIELD",
   "/site-instructions": "PM_OR_ABOVE",
-  "/site-instructions/[id]/file": "PM_OR_ABOVE", // attach a file to an instruction that already exists (same tier as creating it with a file)
   "/submittals": "FIELD",
   "/submittals/[id]": "FIELD",
   // Logging and submitting your OWN time is self-service (the route supports

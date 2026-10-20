@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { takeScreenMessage, type ScreenMessage } from "@/lib/screen-message";
-import { SI_MAX_FILE_MB, siLabel, siteInstructionFileError } from "@/lib/site-instruction-form";
+import { SI_DOCUMENT_ENTITY_TYPE, SI_MAX_FILE_MB, siLabel, siteInstructionFileError } from "@/lib/site-instruction-form";
 
 export type SiteInstructionRow = {
   id: string;
@@ -75,7 +75,7 @@ export function SiteInstructionsList({ projectId, projectName }: { projectId: st
 
 /**
  * "Add file" on a site instruction that already exists: the PDF or photo for an instruction written on the laptop-first form (which cannot
- * carry a file). Posts to /api/site-instructions/[id]/file, shows the server's own refusal text as it is, and says what was stored.
+ * carry a file). Posts to the existing POST /api/documents, shows the server's own refusal text as it is, and says what was stored.
  */
 export function SiteInstructionAddFile({ id }: { id: string }) {
   const [file, setFile] = useState<File | null>(null);
@@ -92,9 +92,14 @@ export function SiteInstructionAddFile({ id }: { id: string }) {
     setBusy(true);
     setNote(null);
     try {
+      // The same documents write the create form's file makes (POST /api/site-instructions, multipart): a document linked to this instruction.
       const form = new FormData();
       form.set("file", file);
-      await fetchJson(`/api/site-instructions/${encodeURIComponent(id)}/file`, { method: "POST", body: form });
+      form.set("name", file.name);
+      form.set("category", "site_instruction");
+      form.set("linkedEntityType", SI_DOCUMENT_ENTITY_TYPE);
+      form.set("linkedEntityId", id);
+      await fetchJson("/api/documents", { method: "POST", body: form });
       setNote({ ok: true, text: `Added ${file.name} to this instruction` });
       setFile(null);
       setInputKey((k) => k + 1);
