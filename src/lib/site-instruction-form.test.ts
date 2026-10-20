@@ -41,3 +41,13 @@ describe("site instruction form rules (R-C14)", () => {
     expect(() => readCreatedSiteInstruction(null)).toThrow("did not confirm");
   });
 });
+
+describe("readCreatedSiteInstruction after a timeout recovery (Sumeet audit 2026-10-20)", () => {
+  test("a found record lands like a normal save; with a file chosen it asks the user to check the attachment", () => {
+    const found = { id: "si-1", siNumber: 3 };
+    expect(readCreatedSiteInstruction({ siteInstruction: found, recovered: true, fileExpected: false })).toEqual({ id: "si-1", level: "success", text: "Site instruction SI-3 created" });
+    const withFile = readCreatedSiteInstruction({ siteInstruction: found, recovered: true, fileExpected: true });
+    expect(withFile.level).toBe("warning");
+    expect(withFile.text).toContain("check the file is attached");
+  });
+});

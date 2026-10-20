@@ -214,6 +214,14 @@ export type UseSubmitOptions<T> = {
    * from a four-field JSON POST -- not so a screen can opt out of having one.
    */
   timeoutMs?: number;
+  /**
+   * Called ONCE after the ceiling expired (never after a refusal or an unreachable network). A write that outlives the wait has
+   * usually still completed (Sumeet audit R-C08), so the screen re-reads its list and returns the body it would have received
+   * for the record that now exists, or null when none matches. A non-null answer is handled exactly like a 2xx: onSuccess runs
+   * and the form lands on the record instead of showing the "may have been saved" message. The button stays on "Saving" and a
+   * second click is refused while this runs, so recovery cannot itself cause a duplicate.
+   */
+  recoverAfterTimeout?: () => Promise<T | null>;
 };
 
 export type UseSubmit = {
@@ -234,6 +242,7 @@ export function useSubmit<T = unknown>({
   onSuccess,
   onTransportError,
   timeoutMs = SUBMIT_TIMEOUT_MS,
+  recoverAfterTimeout,
 }: UseSubmitOptions<T>): UseSubmit {
   const [state, setState] = useState<SubmitState>("idle");
   const [failure, setFailure] = useState<SubmitFailure | null>(null);
@@ -252,9 +261,9 @@ export function useSubmit<T = unknown>({
   // (every one of the twelve screens does) without the hook re-arming. The
   // ref is refreshed in an effect rather than during render, and effects flush
   // before the browser paints, so a click can never see a stale closure.
-  const opts = useRef({ objectLabel, buildRequest, onSuccess, onTransportError, timeoutMs });
+  const opts = useRef({ objectLabel, buildRequest, onSuccess, onTransportError, timeoutMs, recoverAfterTimeout });
   useEffect(() => {
-    opts.current = { objectLabel, buildRequest, onSuccess, onTransportError, timeoutMs };
+    opts.current = { objectLabel, buildRequest, onSuccess, onTransportError, timeoutMs, recoverAfterTimeout };
   });
 
   const clearFailure = useCallback(() => setFailure(null), []);
@@ -275,6 +284,7 @@ export function useSubmit<T = unknown>({
         onSuccess: done,
         onTransportError: onTransport,
         timeoutMs: ceilingMs,
+        recoverAfterTimeout: recover,
       } = opts.current;
 
       // ONE controller carries both deadlines, and `abortedAs` records which
@@ -367,11 +377,31 @@ export function useSubmit<T = unknown>({
         inFlight.current = false;
       } catch (err) {
         clearTimeout(ceiling);
+        const kind: SubmitFailureKind = abortedAs ?? failureKind(err);
+        // The request that timed out may still be completing on the server. Look for the record it was creating BEFORE
+        // handing the button back (inFlight stays true meanwhile), and land on it if it is there.
+        if (kind === "timeout" && recover && live.current) {
+          let found: T | null = null;
+          try {
+            found = await recover();
+          } catch {
+            found = null;
+          }
+          if (found !== null && found !== undefined) {
+            if (live.current) setState("saved");
+            try {
+              await done(found);
+              inFlight.current = false;
+              return;
+            } catch {
+              // The recovered record could not be used to navigate: fall through to the honest timeout message below.
+            }
+          }
+        }
         inFlight.current = false;
         if (!live.current) return;
         // A deadline we set ourselves is the authority on why the request
         // stopped; only an unexplained rejection is classified from the error.
-        const kind: SubmitFailureKind = abortedAs ?? failureKind(err);
         if (kind === "not-sent") return; // the watchdog already said so
 
         if (onTransport && kind !== "refused") {

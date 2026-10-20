@@ -52,6 +52,8 @@ import { Button } from "@/components/ui/button";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
 import { useSubmit, formFailure } from "@/lib/use-submit";
+import { fetchJson } from "@/lib/fetch-json";
+import { findRecentBoq, lookForCreated, type BoqHeaderRow } from "@/lib/recover-created";
 import {
   emptyLine, childPercentSum, collectLines, toPayloadLineItems,
   // R67 D-24: the per-field sentences, from the same module the incomplete-line
@@ -203,12 +205,22 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   // How many lines the submit sent, so the response can be checked against
   // what was actually asked for rather than against the grid as it stands now.
   const sentLineCount = useRef(0);
+  const sentTitle = useRef("");
 
-  const submit = useSubmit<{ id?: unknown; lineItems?: unknown } | null>({
+  const submit = useSubmit<{ id?: unknown; lineItems?: unknown; recovered?: boolean } | null>({
     objectLabel: "BOQ",
+    // Sumeet audit 2026-10-20: a BOQ save that outlives the wait has usually still committed (one transaction: whole or absent).
+    // Look for a draft with this title made in the last two minutes before telling the user it "may have been saved".
+    recoverAfterTimeout: () =>
+      lookForCreated(async () => {
+        const data = await fetchJson<{ boqs?: BoqHeaderRow[] } | BoqHeaderRow[]>(`/api/scope?projectId=${encodeURIComponent(projectId)}`);
+        const hit = findRecentBoq(Array.isArray(data) ? data : data?.boqs, { title: sentTitle.current });
+        return hit ? { id: hit.id, recovered: true } : null;
+      }),
     buildRequest: () => {
       const { valid: validLines } = collectLines(lines);
       sentLineCount.current = validLines.length;
+      sentTitle.current = (values.title ?? "").trim();
       return {
         input: "/api/scope",
         init: {
@@ -228,7 +240,8 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       if (!data) throw new Error("The server's response was unreadable");
       const savedId = typeof data.id === "string" ? data.id.trim() : "";
       if (!savedId) throw new Error("The server did not return a BOQ id");
-      const savedLineItems = Array.isArray(data.lineItems) ? data.lineItems.length : 0;
+      // A recovered BOQ comes from the list, which carries no lines; the create is one transaction, so it is whole.
+      const savedLineItems = data.recovered ? sentLineCount.current : Array.isArray(data.lineItems) ? data.lineItems.length : 0;
       if (savedLineItems < sentLineCount.current) {
         throw new Error(
           `${sentLineCount.current} line item(s) were submitted but only ${savedLineItems} came back saved`

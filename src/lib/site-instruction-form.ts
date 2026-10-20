@@ -43,11 +43,20 @@ export function siLabel(siNumber: number | null | undefined): string {
 export function readCreatedSiteInstruction(body: {
   siteInstruction?: { id?: string; siNumber?: number };
   attachmentError?: string;
+  /** Set when the save timed out and the record was then FOUND by re-reading the list (see recover-created.ts). */
+  recovered?: boolean;
+  /** With `recovered`: a file was chosen, and whether it was attached is not known from the list. */
+  fileExpected?: boolean;
 } | null | undefined): { id: string; level: "success" | "warning"; text: string } {
   const created = body?.siteInstruction;
   const id = typeof created?.id === "string" ? created.id : "";
   if (!id) throw new Error("The server did not confirm a saved site instruction");
   const label = siLabel(created?.siNumber);
+  if (body?.recovered) {
+    return body.fileExpected
+      ? { id, level: "warning", text: `Site instruction ${label} created. The server was slow, so open it and check the file is attached.` }
+      : { id, level: "success", text: `Site instruction ${label} created` };
+  }
   return body?.attachmentError
     ? { id, level: "warning", text: `Site instruction ${label} created, but the file was not attached: ${body.attachmentError}` }
     : { id, level: "success", text: `Site instruction ${label} created` };

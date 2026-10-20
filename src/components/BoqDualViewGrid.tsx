@@ -57,6 +57,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { projectSideHidden } from "@/lib/cost-hidden";
 import { Input } from "@/components/ui/input";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
@@ -199,7 +200,8 @@ function fetchBoq(boqId: string, view?: "customer"): Promise<DualViewBoq> {
   return readBoqDualView<DualViewBoq>(boqId, view);
 }
 
-export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
+/** costHidden: the parent screen already saw the server withhold the budget overlay (same predicate as its own cost columns). */
+export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent = false }: { boqId: string; costHidden?: boolean }) {
   const [internal, setInternal] = useState<DualViewBoq | null>(null);
   const [customer, setCustomer] = useState<DualViewBoq | null>(null);
   const [view, setView] = useState<"internal" | "customer">("internal");
@@ -403,6 +405,9 @@ export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
   }
 
   const contractLocked = internal.hasConfirmedBaseline === true;
+  // R-50: a viewer without cost visibility gets no project-side keys at all, so the cost group, the variance columns and the
+  // cost summary are not drawn (not blank, not NOT_SET: absent), and the same goes when the parent saw the budget overlay withheld.
+  const costHidden = costHiddenByParent || projectSideHidden(internal);
 
   return (
     <div className="border-b border-ct-border" data-testid="boq-dual-view-grid">
@@ -434,7 +439,7 @@ export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
         ? <CustomerView boq={customer} loading={customerLoading} orgMoney={orgMoney} />
         : (
           <>
-            <PartCBlock boq={internal} drafts={drafts} lines={lines} orgMoney={orgMoney} />
+            <PartCBlock boq={internal} drafts={drafts} lines={lines} orgMoney={orgMoney} costHidden={costHidden} />
             {contractLocked && (
               <p className="border-b border-ct-border bg-px-cloud px-4 py-2 text-[12px] text-ct-muted">
                 🔒 Contract side locked — confirmed as baseline v{internal.latestBaselineVersion}. Project-side (cost) cells stay editable.
@@ -449,14 +454,14 @@ export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
                     <th className="px-3 py-2" rowSpan={2}>Description</th>
                     <th className="px-3 py-2" rowSpan={2}>Unit</th>
                     {/* 2-01: project and contract GROUPED, visually distinct, side by side -- never a tab/toggle/collapse (A9 S-1, C-8). */}
-                    <th className="border-l border-ct-border px-3 py-1 text-center" colSpan={2}>Project (cost)</th>
+                    {!costHidden && <th className="border-l border-ct-border px-3 py-1 text-center" colSpan={2}>Project (cost)</th>}
                     <th className="border-l border-ct-border px-3 py-1 text-center" colSpan={2}>Contract (customer)</th>
-                    <th className="border-l border-ct-border px-3 py-2 text-right" rowSpan={2}>Variance</th>
-                    <th className="px-3 py-2 text-right" rowSpan={2}>Variance %</th>
+                    {!costHidden && <th className="border-l border-ct-border px-3 py-2 text-right" rowSpan={2}>Variance</th>}
+                    {!costHidden && <th className="px-3 py-2 text-right" rowSpan={2}>Variance %</th>}
                   </tr>
                   <tr className="border-b border-ct-border text-right text-[11px] font-medium uppercase tracking-wide text-ct-muted">
-                    <th className="border-l border-ct-border px-3 py-1">Qty</th>
-                    <th className="px-3 py-1">Rate</th>
+                    {!costHidden && <th className="border-l border-ct-border px-3 py-1">Qty</th>}
+                    {!costHidden && <th className="px-3 py-1">Rate</th>}
                     <th className="border-l border-ct-border px-3 py-1">Qty</th>
                     <th className="px-3 py-1">Rate</th>
                   </tr>
@@ -478,23 +483,24 @@ export default function BoqDualViewGrid({ boqId }: { boqId: string }) {
                       onPasteColumn={onPasteColumn}
                       onCellKeyDown={onCellKeyDown}
                       orgMoney={orgMoney}
+                      costHidden={costHidden}
                     />
                   ))}
                 </tbody>
               </table>
             </div>
-            <SortControls sort={sort} onChange={setSort} />
+            <SortControls sort={sort} onChange={setSort} costHidden={costHidden} />
           </>
         )}
     </div>
   );
 }
 
-function SortControls({ sort, onChange }: { sort: { key: SortKey; dir: "asc" | "desc" } | null; onChange: (s: { key: SortKey; dir: "asc" | "desc" } | null) => void }) {
+function SortControls({ sort, onChange, costHidden }: { sort: { key: SortKey; dir: "asc" | "desc" } | null; onChange: (s: { key: SortKey; dir: "asc" | "desc" } | null) => void; costHidden: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-1 px-4 py-2 text-[11.5px]">
       <span className="text-ct-muted">Sort:</span>
-      {(Object.keys(SORT_LABEL) as SortKey[]).map((key) => {
+      {(Object.keys(SORT_LABEL) as SortKey[]).filter((key) => !costHidden || key === "contractValue").map((key) => {
         const active = sort?.key === key;
         return (
           <button
@@ -512,7 +518,7 @@ function SortControls({ sort, onChange }: { sort: { key: SortKey; dir: "asc" | "
 
 function GridRow({
   line, rootIndex, subLines, draft, lockedContract, savingCell, cellWarning, cellRefs,
-  onCellChange, onCommitCell, onPasteColumn, onCellKeyDown, orgMoney,
+  onCellChange, onCommitCell, onPasteColumn, onCellKeyDown, orgMoney, costHidden,
 }: {
   line: DualViewLine;
   rootIndex: number;
@@ -527,6 +533,7 @@ function GridRow({
   onPasteColumn: (e: React.ClipboardEvent<HTMLInputElement>, rootIndex: number, field: keyof DualViewInput) => void;
   onCellKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, rootIndex: number, field: keyof DualViewInput) => void;
   orgMoney: ReturnType<typeof useOrgMoney>;
+  costHidden: boolean;
 }) {
   const money = computeLineMoneyView(draft);
   // 2-06: a NEGATIVE variance is visually distinct AS IT IS TYPED -- driven
@@ -562,25 +569,29 @@ function GridRow({
       <tr className={`border-b border-ct-border ${isLoss ? "bg-px-error-light" : ""}`} data-testid={`boq-grid-row-${line.id}`} data-loss={isLoss ? "true" : "false"}>
         <td className="px-3 py-2 font-medium text-ct-navy">{line.description}</td>
         <td className="px-3 py-2 text-ct-muted">{line.unit}</td>
-        {cell("qtyProject", false)}
-        {cell("rateProject", false)}
+        {!costHidden && cell("qtyProject", false)}
+        {!costHidden && cell("rateProject", false)}
         {cell("qtyContract", lockedContract, "The contract side is locked — this BOQ was confirmed. Post-confirmation contract changes need a cited evidence artefact and a new baseline version.")}
         {cell("rateContract", lockedContract, "The contract side is locked — this BOQ was confirmed. Post-confirmation contract changes need a cited evidence artefact and a new baseline version.")}
-        <td className={`border-l border-ct-border px-3 py-2 text-right tabular-nums ${isLoss ? "font-semibold text-px-error" : ""}`}>
-          {isLoss ? "LOSS " : typeof money.variance === "number" ? "PROFIT " : ""}
-          {formatFigure(money.variance, orgMoney.money, true)}
-        </td>
-        <td className={`px-3 py-2 text-right tabular-nums ${isLoss ? "font-semibold text-px-error" : ""}`}>
-          {formatFigure(money.variancePercent, orgMoney.money)}
-        </td>
+        {!costHidden && (
+          <td className={`border-l border-ct-border px-3 py-2 text-right tabular-nums ${isLoss ? "font-semibold text-px-error" : ""}`}>
+            {isLoss ? "LOSS " : typeof money.variance === "number" ? "PROFIT " : ""}
+            {formatFigure(money.variance, orgMoney.money, true)}
+          </td>
+        )}
+        {!costHidden && (
+          <td className={`px-3 py-2 text-right tabular-nums ${isLoss ? "font-semibold text-px-error" : ""}`}>
+            {formatFigure(money.variancePercent, orgMoney.money)}
+          </td>
+        )}
       </tr>
       {subLines.map((child) => (
         <tr key={child.id} className="border-b border-ct-border text-ct-muted">
           <td className="pl-8 pr-3 py-1.5">{child.description}{child.breakdownPercentage ? ` — ${child.breakdownPercentage}% of parent` : ""}</td>
           <td className="px-3 py-1.5">{child.unit}</td>
-          <td className="border-l border-ct-border px-3 py-1.5 text-right text-[11px]" colSpan={4}>sub-task — excluded from the money model (A7/R-32, same rule as the roll-up)</td>
-          <td className="border-l border-ct-border px-3 py-1.5" />
-          <td className="px-3 py-1.5" />
+          <td className="border-l border-ct-border px-3 py-1.5 text-right text-[11px]" colSpan={costHidden ? 2 : 4}>sub-task — excluded from the money model (A7/R-32, same rule as the roll-up)</td>
+          {!costHidden && <td className="border-l border-ct-border px-3 py-1.5" />}
+          {!costHidden && <td className="px-3 py-1.5" />}
         </tr>
       ))}
     </>
@@ -598,7 +609,7 @@ function GridRow({
  * or gross/net endpoint exists in compliance-tracker as of this pass) -- so
  * this block does not invent placeholder numbers for them.
  */
-function PartCBlock({ boq, drafts, lines, orgMoney }: { boq: DualViewBoq; drafts: Record<string, DualViewInput>; lines: DualViewLine[]; orgMoney: ReturnType<typeof useOrgMoney> }) {
+function PartCBlock({ boq, drafts, lines, orgMoney, costHidden }: { boq: DualViewBoq; drafts: Record<string, DualViewInput>; lines: DualViewLine[]; orgMoney: ReturnType<typeof useOrgMoney>; costHidden: boolean }) {
   const rootLines = lines.filter((l) => !l.parentLineItemId);
   let projectSum = 0, projectAny = false, contractSum = 0, contractAny = false;
   let coveredContractValue = 0, totalContractValue = 0, anyContract = false;
@@ -634,6 +645,7 @@ function PartCBlock({ boq, drafts, lines, orgMoney }: { boq: DualViewBoq; drafts
         <span className="text-[12.5px] text-ct-muted">Contract value (root lines)</span>
         <span className="font-medium tabular-nums">{formatFigure(contractValue, orgMoney.money, true)}</span>
       </div>
+      {!costHidden && (<>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <span className="text-[12.5px] text-ct-muted">Project value (cost, root lines)</span>
         <span className="font-medium tabular-nums">{formatFigure(projectValue, orgMoney.money, true)}</span>
@@ -651,6 +663,7 @@ function PartCBlock({ boq, drafts, lines, orgMoney }: { boq: DualViewBoq; drafts
         Cost coverage: {coverageRatio === NOT_SET ? NOT_SET : `${formatNumber(coverageRatio, { fractionDigits: 1 })}%`} of contract value has a project-side rate entered
         {partial ? " — profit shown above is PARTIAL, not complete." : ""}
       </p>
+      </>)}
     </div>
   );
 }
