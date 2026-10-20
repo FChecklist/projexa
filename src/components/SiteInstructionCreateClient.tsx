@@ -5,13 +5,15 @@
 // POST /api/site-instructions: the record is created first and the optional PDF or photo is attached to it afterwards, so a failed
 // upload leaves a real instruction behind (the route answers 207 and names both halves; this screen says so and still lands on the
 // instruction). The form shape is the industry-standard Architect/Site Instruction record, not a format Sumeet supplied.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setScreenMessage } from "@/lib/screen-message";
-import { useSubmit } from "@/lib/use-submit";
+import { useSubmit, SUBMIT_TIMEOUT_MS } from "@/lib/use-submit";
+import { fetchJson } from "@/lib/fetch-json";
+import { findRecentSiteInstruction, lookForCreated, type SiteInstructionRow } from "@/lib/recover-created";
 import {
   SI_MAX_FILE_MB,
   missingSiteInstructionFields,
@@ -20,7 +22,10 @@ import {
   siteInstructionFileError,
 } from "@/lib/site-instruction-form";
 
-type CreatedBody = { siteInstruction?: { id?: string; siNumber?: number }; attachmentError?: string };
+type CreatedBody = { siteInstruction?: { id?: string; siNumber?: number }; attachmentError?: string; recovered?: boolean; fileExpected?: boolean };
+
+// A save with a file attached is a multi-step write (record, then upload), so it is given longer than a plain JSON POST.
+const SUBMIT_WITH_FILE_TIMEOUT_MS = 25_000;
 
 export default function SiteInstructionCreateClient({
   projectId,
@@ -43,9 +48,24 @@ export default function SiteInstructionCreateClient({
   const [costImpact, setCostImpact] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
+  // What the last request actually carried, so the lookup after a timeout matches THAT save even if a field was edited since.
+  const sent = useRef<{ issueDate: string; toContractor: string; description: string; hasFile: boolean } | null>(null);
+
   const submit = useSubmit<CreatedBody>({
     objectLabel: "Site instruction",
+    timeoutMs: file ? SUBMIT_WITH_FILE_TIMEOUT_MS : SUBMIT_TIMEOUT_MS,
+    // Sumeet audit 2026-10-20: on a cold server the save outlived the wait although the record and file were stored. Look for it
+    // before telling the user it "may have been saved", and land on it when it is there.
+    recoverAfterTimeout: () =>
+      lookForCreated(async () => {
+        const s = sent.current;
+        if (!s) return null;
+        const data = await fetchJson<{ siteInstructions?: SiteInstructionRow[] }>(`/api/site-instructions?projectId=${encodeURIComponent(projectId)}`);
+        const hit = findRecentSiteInstruction(data?.siteInstructions, s);
+        return hit ? { siteInstruction: { id: hit.id, siNumber: hit.siNumber ?? undefined }, recovered: true, fileExpected: s.hasFile } : null;
+      }),
     buildRequest: () => {
+      sent.current = { issueDate, toContractor: toContractor.trim(), description: description.trim(), hasFile: !!file };
       const formData = new FormData();
       formData.set("projectId", projectId);
       formData.set("issueDate", issueDate);

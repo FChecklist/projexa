@@ -56,6 +56,7 @@ import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySel
 // into. Rendered unconditionally below, at every BOQ stage/status -- never
 // behind a tab, toggle or collapse (2-01).
 import BoqDualViewGrid from "@/components/BoqDualViewGrid";
+import { budgetOverlayHidden } from "@/lib/cost-hidden";
 import { viaPxApi } from "@/lib/px-api";
 
 // Real StatusTone values only ("needs-you" | "running" | "waiting" | "done" |
@@ -619,7 +620,7 @@ export default function ScopeObjectClient({
 
       {/* R-50, Phase 2: THE GRID -- see BoqDualViewGrid.tsx's own header for
           the full spec this wires into. Always visible, every stage. */}
-      <BoqDualViewGrid boqId={boqId} />
+      <BoqDualViewGrid boqId={boqId} costHidden={isCostHidden(rows)} />
 
       {/* U-33 (E-10): the project line search. Its index lives in a Web Worker and is filled by load() above. */}
       {filterClient && screenLoad && screenLoad.indexedLines > 0 && (
@@ -777,7 +778,7 @@ function SavedTick({ shown }: { shown: boolean }) {
  *  amounts) for a viewer without cost visibility (e.g. client_viewer, R-50). When every line lacks both
  *  budget fields we render no cost columns at all, rather than a fabricated 25% / 0 default. */
 function isCostHidden(rows: Array<{ computedBudget?: number | null; budgetPercentage?: string | null }>): boolean {
-  return rows.length > 0 && rows.every((r) => r.budgetPercentage === undefined && r.computedBudget === undefined);
+  return budgetOverlayHidden(rows);
 }
 
 function MoneyCostCell({

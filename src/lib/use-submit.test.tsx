@@ -308,6 +308,76 @@ describe("useSubmit", () => {
     expect(result.current.state).toBe("idle");
   });
 
+  // Sumeet audit 2026-10-20: the write outlived the wait but the record exists. The form must land on it, not show the
+  // "may have been saved" message.
+  function hangingFetch() {
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const e = new Error("aborted");
+          e.name = "AbortError";
+          reject(e);
+        });
+      })) as typeof globalThis.fetch;
+  }
+
+  test("after a timeout, a record found by recoverAfterTimeout is treated as a success", async () => {
+    hangingFetch();
+    const landed: unknown[] = [];
+    const { result } = renderHook(() =>
+      useSubmit<{ id: string }>({
+        objectLabel: "Site instruction",
+        buildRequest: () => PERMIT,
+        onSuccess: (body) => { landed.push(body); },
+        timeoutMs: 300,
+        recoverAfterTimeout: async () => ({ id: "si-1" }),
+      })
+    );
+    act(() => result.current.submit());
+    await waitFor(() => expect(landed).toEqual([{ id: "si-1" }]), { timeout: 4_000 });
+    expect(result.current.failure).toBeNull();
+    expect(result.current.state).toBe("saved");
+  });
+
+  test("after a timeout, nothing found keeps the honest message; a second click is refused while the search runs", async () => {
+    hangingFetch();
+    let release: (() => void) | null = null;
+    let searches = 0;
+    const { result } = renderHook(() =>
+      useSubmit<{ id: string }>({
+        objectLabel: "Site instruction",
+        buildRequest: () => PERMIT,
+        onSuccess: () => {},
+        timeoutMs: 300,
+        recoverAfterTimeout: () => { searches++; return new Promise((r) => { release = () => r(null); }); },
+      })
+    );
+    act(() => result.current.submit());
+    await waitFor(() => expect(searches).toBe(1), { timeout: 4_000 });
+    expect(result.current.saving).toBe(true);
+    act(() => result.current.submit());
+    expect(searches).toBe(1);
+    act(() => release?.());
+    await waitFor(() => expect(result.current.failure?.kind).toBe("timeout"), { timeout: 4_000 });
+    expect(result.current.state).toBe("idle");
+  });
+
+  test("a refusal never goes looking for a record", async () => {
+    stub(400, { error: "no" });
+    let searches = 0;
+    const { result } = renderHook(() =>
+      useSubmit<{ id: string }>({
+        objectLabel: "Site instruction",
+        buildRequest: () => PERMIT,
+        onSuccess: () => {},
+        recoverAfterTimeout: async () => { searches++; return null; },
+      })
+    );
+    act(() => result.current.submit());
+    await waitFor(() => expect(result.current.failure?.kind).toBe("refused"));
+    expect(searches).toBe(0);
+  });
+
   test("a 2xx whose body confirms nothing is reported as unconfirmed, never as a refusal", async () => {
     stub(201, { ok: true });
     const { result } = renderHook(() =>
