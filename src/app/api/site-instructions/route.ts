@@ -3,6 +3,7 @@ import { requireAuth, requireRole, ROLE_GROUPS } from "@/lib/supabase/auth-guard
 import { callVeridian, callVeridianUpload, VeridianApiError } from "@/lib/veridian-client";
 import { veridianErrorResponse } from "@/lib/veridian-response";
 import { withTiming } from "@/lib/with-timing";
+import { SI_DOCUMENT_ENTITY_TYPE } from "@/lib/site-instruction-form";
 
 // R39/R-C14: Architect/Site Instruction (SI) -- SCHEMA-ASSUMED-INDUSTRY-
 // STANDARD, see the VERIDIAN-side schema.ts comment for the full explanation.
@@ -37,7 +38,6 @@ export const GET = withTiming("GET", async function GET(request: NextRequest) {
  * the upload fails the response is a 207 naming both halves, so the caller can
  * say exactly what happened instead of reporting a whole failure.
  */
-const SI_DOCUMENT_ENTITY_TYPE = "construction_site_instruction";
 
 export const POST = withTiming("POST", async function POST(request: NextRequest) {
   const ctx = await requireAuth();
