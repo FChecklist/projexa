@@ -21,7 +21,7 @@ const sample = {
   route: "/budgets/41", project_id: "p1", api_path: "/api/budgets/41", http_method: "PATCH", http_status: 500, request_id: "req-9", duration_ms: 812, user_id: "u1",
   breadcrumbs, context: { platform: "Android", screen: "390x800@3", language: "en-IN", online: true, appVersion: "abc123", userAgent: "UA" }, occurred_at: "2026-10-20T09:00:06Z",
 };
-const openIssue = { id: "iss-open", fingerprint: "f1", title: "x", first_seen_at: "2026-10-19T09:00:00Z", last_seen_at: "2026-10-20T09:00:06Z", occurrences: 7, status: "open", severity: "error", project_ids: ["p1"], routes: ["/budgets/41"], reopened_count: 0, sample_event: sample };
+const openIssue = { id: "iss-open", fingerprint: "f1", title: "x", first_seen_at: "2026-10-19T09:00:00Z", last_seen_at: "2026-10-20T09:00:06Z", occurrences: 7, people: 2, last_event_at: "2026-10-20T09:00:06Z", status: "open", severity: "error", project_ids: ["p1"], routes: ["/budgets/41"], reopened_count: 0, sample_event: sample };
 const reopened = { ...openIssue, id: "iss-re", status: "reopened", reopened_count: 2, occurrences: 3 };
 const fixedIssue = {
   ...openIssue, id: "iss-fixed", status: "fixed", fixed_at: "2026-10-18T10:00:00Z", fix_commit: "0123456789abcdef",
@@ -38,7 +38,6 @@ function api(overrides: Record<string, unknown> = {}) {
       return v;
     }
     if (url.startsWith("/api/client-logs/issues?")) return { issues: [openIssue, reopened, fixedIssue] };
-    if (url.startsWith("/api/client-logs/issues/")) return { issue: openIssue, events: [{ user_id: "u1" }, { user_id: "u2" }, { user_id: "u2" }] };
     if (url === "/api/projects") return { projects: [{ id: "p1", name: "Cedar Heights" }, { id: "p2", name: "Lake View" }] };
     if (url.startsWith("/api/client-logs/timeline")) {
       return {
@@ -62,7 +61,7 @@ describe("System log: Open problems", () => {
     expect(cards.length).toBe(2); // open + reopened, not the fixed one
     const first = cards[0]!;
     expect(within(first).getByTestId("issue-title").textContent).toBe("Saving or changing Budgets did not work: the server had a problem");
-    await waitFor(() => expect(within(first).getByTestId("issue-facts").textContent).toContain("to 2 people"));
+    expect(within(first).getByTestId("issue-facts").textContent).toContain("to 2 people");
     const facts = within(first).getByTestId("issue-facts").textContent!;
     expect(facts).toContain("Happened 7 times");
     expect(facts).toContain("Project: Cedar Heights");
@@ -96,7 +95,6 @@ describe("System log: Open problems", () => {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => void (copied = t) } });
     const view = render(<SystemLogClient load={api().load} />);
     const first = (await view.findAllByTestId("issue-card"))[0]!;
-    await waitFor(() => expect(within(first).getByTestId("issue-facts").textContent).toContain("2 people"));
     fireEvent.click(within(first).getByTestId("copy-report"));
     await waitFor(() => expect(within(first).getByTestId("copy-report").textContent).toBe("Copied"));
     for (const must of [
@@ -112,6 +110,18 @@ describe("System log: Open problems", () => {
     fireEvent.click(within(first).getByTestId("copy-report"));
     const box = (await within(first).findByTestId("manual-copy")) as HTMLTextAreaElement;
     expect(box.value).toContain("PROJEXA PROBLEM REPORT");
+  });
+});
+
+describe("System log: people count", () => {
+  test("no detail request is made per card; an older backend without people just leaves the count out", async () => {
+    const { people: _p, ...old } = openIssue as Record<string, unknown>;
+    const a = api({ "/api/client-logs/issues?status=all&limit=200": { issues: [old] } });
+    const view = render(<SystemLogClient load={a.load} />);
+    const card = await view.findByTestId("issue-card");
+    expect(within(card).getByTestId("issue-facts").textContent).not.toContain("person");
+    expect(within(card).getByTestId("issue-facts").textContent).toContain("Happened 7 times.");
+    expect(a.calls.some((c) => c.startsWith("/api/client-logs/issues/"))).toBe(false);
   });
 });
 

@@ -34,6 +34,8 @@ export type Issue = {
   occurrences: number;
   firstSeenAt: string;
   lastSeenAt: string;
+  /** Time of the newest sighting (last_event_at), when the backend sends it. */
+  lastEventAt: string;
   projectIds: string[];
   routes: string[];
   reopenedCount: number;
@@ -134,6 +136,7 @@ export function normaliseIssue(raw: unknown): Issue {
     occurrences: num(r.occurrences) ?? 1,
     firstSeenAt: str(r.first_seen_at),
     lastSeenAt: str(r.last_seen_at),
+    lastEventAt: str(r.last_event_at),
     projectIds: arr(r.project_ids).map(str).filter(Boolean),
     routes: arr(r.routes).map(str).filter(Boolean),
     reopenedCount: num(r.reopened_count) ?? 0,
@@ -185,7 +188,7 @@ export function buildCopyReport(issue: Issue, opts: { projectNames?: Record<stri
   lines.push("PROJEXA PROBLEM REPORT");
   lines.push(`Problem: ${issue.title}`);
   lines.push(`Status: ${issue.status}${issue.reopenedCount ? ` (came back ${issue.reopenedCount} time(s) after a fix)` : ""}`);
-  lines.push(`Happened: ${issue.occurrences} time(s)${opts.people != null ? ` to ${opts.people} person(s)` : ""}; first ${issue.firstSeenAt || "?"}, last ${issue.lastSeenAt || "?"}`);
+  lines.push(`Happened: ${issue.occurrences} time(s)${opts.people != null ? ` to ${opts.people} person(s)` : ""}; first ${issue.firstSeenAt || "?"}, last ${issue.lastEventAt || issue.lastSeenAt || "?"}`);
   lines.push(`Screen: ${s?.route || issue.routes.join(", ") || "unknown"}`);
   lines.push(`Project(s): ${projects}`);
   if (s?.apiPath) lines.push(`Server call: ${s.httpMethod || "?"} ${s.apiPath} -> HTTP ${s.httpStatus ?? "?"}${s.durationMs != null ? ` after ${s.durationMs} ms` : ""}${s.requestId ? ` (request id ${s.requestId})` : ""}`);

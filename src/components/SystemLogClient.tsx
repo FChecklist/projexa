@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   buildCopyReport,
-  distinctPeople,
   formatWhen,
   normaliseIssue,
   timelineEntries,
@@ -28,8 +27,6 @@ type ProjectOption = { id: string; name: string };
 const TIMELINE_PAGE = 200;
 
 const defaultLoad: Loader = (url) => fetchJson(url);
-// The list read carries no "how many people" count, so only the first cards ask the detail read for it (one request each) -- not all 200 at once.
-const PEOPLE_LOOKUPS = 10;
 
 export default function SystemLogClient({ load = defaultLoad }: { load?: Loader }) {
   const [tab, setTab] = useState<Tab>("open");
@@ -104,8 +101,8 @@ export default function SystemLogClient({ load = defaultLoad }: { load?: Loader 
           <Empty title="Nothing has gone wrong yet" body="When something breaks for anyone using PROJEXA, it shows up here by itself, with the steps that led to it." />
         ) : (
           <ul className="space-y-3" data-testid="open-list">
-            {open.map((i, n) => (
-              <IssueCard key={i.id} issue={i} names={names} load={load} lookupPeople={n < PEOPLE_LOOKUPS} />
+            {open.map((i) => (
+              <IssueCard key={i.id} issue={i} names={names} />
             ))}
           </ul>
         )
@@ -116,8 +113,8 @@ export default function SystemLogClient({ load = defaultLoad }: { load?: Loader 
           <Empty title="No fixes recorded yet" body="When a problem is fixed, what was changed and where is written down here." />
         ) : (
           <ul className="space-y-3" data-testid="fixed-list">
-            {fixed.map((i, n) => (
-              <IssueCard key={i.id} issue={i} names={names} load={load} lookupPeople={n < PEOPLE_LOOKUPS} fixedView />
+            {fixed.map((i) => (
+              <IssueCard key={i.id} issue={i} names={names} fixedView />
             ))}
           </ul>
         )
@@ -139,27 +136,11 @@ function Empty({ title, body }: { title: string; body: string }) {
   );
 }
 
-function IssueCard({ issue, names, load, lookupPeople, fixedView = false }: { issue: Issue; names: Record<string, string>; load: Loader; lookupPeople: boolean; fixedView?: boolean }) {
-  const [people, setPeople] = useState<number | null>(issue.people);
+function IssueCard({ issue, names, fixedView = false }: { issue: Issue; names: Record<string, string>; fixedView?: boolean }) {
+  // "How many people" comes with each issue in the list (people); when an older backend omits it the sentence simply leaves it out.
+  const people = issue.people;
   const [copied, setCopied] = useState<"idle" | "ok" | "manual">("idle");
   const projectNames = issue.projectIds.map((p) => names[p] ?? `project ${p.slice(0, 8)}`);
-
-  // "How many people" needs the sightings, which only the detail read has: fetched when the card is first shown.
-  useEffect(() => {
-    if (!lookupPeople || issue.people != null) return;
-    let live = true;
-    void (async () => {
-      try {
-        const d = (await load(`/api/client-logs/issues/${encodeURIComponent(issue.id)}`)) as { events?: unknown[] };
-        if (live) setPeople(distinctPeople(d.events));
-      } catch {
-        /* the count is optional */
-      }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [issue.id, issue.people, lookupPeople, load]);
 
   const report = useMemo(() => buildCopyReport(issue, { projectNames: names, people }), [issue, names, people]);
   const copy = async () => {
@@ -190,7 +171,7 @@ function IssueCard({ issue, names, load, lookupPeople, fixedView = false }: { is
 
           <p className="text-sm text-px-muted" data-testid="issue-facts">
             Happened {issue.occurrences} time{issue.occurrences === 1 ? "" : "s"}
-            {people != null && people > 0 ? `, to ${people} ${people === 1 ? "person" : "people"}` : ""}. Last seen {formatWhen(issue.lastSeenAt)}.
+            {people != null && people > 0 ? `, to ${people} ${people === 1 ? "person" : "people"}` : ""}. Last seen {formatWhen(issue.lastEventAt || issue.lastSeenAt)}.
             {projectNames.length ? ` Project: ${projectNames.join(", ")}.` : ""}
           </p>
 
