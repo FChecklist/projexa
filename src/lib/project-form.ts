@@ -20,13 +20,25 @@ export type ProjectFormValues = {
 };
 
 /**
- * The visible labels of the required fields that are still empty, in the order
- * they appear on the form. An empty array means the form can be saved.
+ * The visible labels of the required fields that are still empty. NOTHING is required any more (owner order: never block the user): an empty name
+ * becomes "New project <date>" on save, and can be renamed later. Kept as a function so the screen's gating reads the same way and a field can be
+ * made required again in one place.
  */
 export function missingProjectFields(values: ProjectFormValues): string[] {
-  const missing: string[] = [];
-  if (!values.name.trim()) missing.push("Project Name");
-  return missing;
+  void values;
+  return [];
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "New project 20 Oct 2026" -- the name given when the person leaves Project Name empty. */
+export function defaultProjectName(now: Date = new Date()): string {
+  return `New project ${String(now.getDate()).padStart(2, "0")} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+}
+
+/** The trimmed name the person typed, else the default name. */
+export function resolveProjectName(name: string, now: Date = new Date()): string {
+  return name.trim() || defaultProjectName(now);
 }
 
 /**

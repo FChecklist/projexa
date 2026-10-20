@@ -13,6 +13,14 @@ function ctxWithRole(role: string | null): AuthContext {
   return { user: { id: "u1", email: "u1@example.com" }, organizationId: "org1", role, response: null };
 }
 
+// requireAuth() silently provisions a person with no organisation; these tests are about membership resolution, so the live-invitation outcome
+// (no auto-provisioning) is used to keep the pre-existing "no membership -> 400" contract under test.
+mock.module("@/lib/org/auto-provision", () => ({
+  PROVISION_FAILED_MESSAGE: "x",
+  PROVISION_FAILED_CODE: "ORG_PROVISION_FAILED",
+  autoProvisionOrganization: async () => ({ ok: false, reason: "invite_pending" }),
+}));
+
 describe("requireRole", () => {
   test("site_engineer is rejected from a PM_OR_ABOVE (budget-mutating) route", () => {
     const result = requireRole(ctxWithRole("site_engineer"), ROLE_GROUPS.PM_OR_ABOVE);
