@@ -12,15 +12,20 @@ import ClaimInvoiceAction from "./ClaimInvoiceAction";
 const realFetch = globalThis.fetch;
 let calls: Array<{ url: string; method: string; body: unknown }>;
 let patch: { status: number; body: unknown };
+let templates: Array<{ id: string; name: string; isDefault?: boolean }>;
+let hang = false;
 
 beforeEach(() => {
   calls = [];
+  hang = false;
+  templates = [{ id: "t1", name: "GST 18%" }];
   patch = { status: 200, body: { claim: {}, bill: { id: "b1" }, invoice: { id: "inv9", invoiceNumber: 41 } } };
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null });
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-    return url.includes("tax-templates") ? json(200, { taxTemplates: [{ id: "t1", name: "GST 18%" }] }) : json(patch.status, patch.body);
+    if (hang && init?.method === "PATCH") return new Promise<Response>((_, reject) => init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+    return url.includes("tax-templates") ? json(200, { taxTemplates: templates }) : json(patch.status, patch.body);
   }) as typeof fetch;
 });
 afterEach(() => { cleanup(); globalThis.fetch = realFetch; });
@@ -65,12 +70,44 @@ describe("ClaimInvoiceAction", () => {
     expect(view.queryByTestId("claim-invoice-receipt")).toBeNull();
   });
 
-  test("without a tax template chosen nothing is sent", async () => {
+  test("without a tax template chosen nothing is sent (several templates, none marked default)", async () => {
+    templates = [{ id: "t1", name: "GST 18%" }, { id: "t2", name: "GST 12%" }];
     const view = render(<ClaimInvoiceAction claimId="c1" />);
     fireEvent.click(view.getByTestId("claim-invoice-open"));
-    await waitFor(() => expect(view.getByLabelText("Tax template").querySelectorAll("option").length).toBe(2));
+    await waitFor(() => expect(view.getByLabelText("Tax template").querySelectorAll("option").length).toBe(3));
     fireEvent.click(view.getByTestId("claim-invoice-confirm"));
     expect(view.getByTestId("claim-invoice-error").textContent).toBe("Choose the tax template");
     expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  test("R-94/95 live: the only tax template and today's date are prefilled, so Confirm goes straight to the server and its refusal is shown word for word", async () => {
+    patch = { status: 400, body: { error: "No new progress to bill" } };
+    const view = render(<ClaimInvoiceAction claimId="c1" />);
+    fireEvent.click(view.getByTestId("claim-invoice-open"));
+    await waitFor(() => expect((view.getByLabelText("Tax template") as HTMLSelectElement).value).toBe("t1"));
+    expect((view.getByLabelText("Bill date") as HTMLInputElement).value).toBe(new Date().toISOString().slice(0, 10));
+    expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(view.getByTestId("claim-invoice-confirm"));
+    await waitFor(() => view.getByTestId("claim-invoice-error"));
+    expect(view.getByTestId("claim-invoice-error").textContent).toBe("No new progress to bill");
+  });
+
+  test("R-94/95 live: of several templates the one the organisation marked default is chosen", async () => {
+    templates = [{ id: "t1", name: "GST 18%" }, { id: "t2", name: "GST 12%", isDefault: true }];
+    const view = render(<ClaimInvoiceAction claimId="c1" />);
+    fireEvent.click(view.getByTestId("claim-invoice-open"));
+    await waitFor(() => expect((view.getByLabelText("Tax template") as HTMLSelectElement).value).toBe("t2"));
+  });
+
+  test("R-94/95 live: a server that never answers does not leave the button disabled for ever; the person is told and can try again", async () => {
+    hang = true;
+    const view = render(<ClaimInvoiceAction claimId="c1" requestTimeoutMs={50} />);
+    fireEvent.click(view.getByTestId("claim-invoice-open"));
+    await waitFor(() => expect((view.getByLabelText("Tax template") as HTMLSelectElement).value).toBe("t1"));
+    fireEvent.click(view.getByTestId("claim-invoice-confirm"));
+    expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => view.getByTestId("claim-invoice-error"));
+    expect(view.getByTestId("claim-invoice-error").textContent).toContain("may already have been raised");
+    expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(false);
   });
 });

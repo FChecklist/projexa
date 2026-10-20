@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Download, Loader2, Printer } from "lucide-react";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { ApiError, fetchJson, errorMessage } from "@/lib/fetch-json";
 import { project360ToCsv } from "@/lib/project-360-export";
 import { formatDate } from "@/lib/format-date";
 
@@ -76,6 +76,9 @@ const SIGN_VARIANT: Record<ProjectAnalysisRow["commitmentDriftSign"], "default" 
   unknown: "outline",
 };
 
+/** Gap between re-reads of the analysis after a baseline was confirmed and the first read still said "no baseline". */
+const BASELINE_REREAD_DELAY_MS = 300;
+
 export default function Project360Client({ projectId, projectName }: { projectId: string; projectName: string }) {
   const orgMoney = useOrgMoney();
   const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? "Not yet baselined" : orgMoney.money(v, { fractionDigits: 0 }));
@@ -92,24 +95,56 @@ export default function Project360Client({ projectId, projectName }: { projectId
   const [evidence, setEvidence] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmedNote, setConfirmedNote] = useState<{ at: string; evidence: string } | null>(null);
+
+  // Re-reads ONLY the analysis row, never from a cache. Resolves to whether it now says a baseline exists (a failed read is "not known": false).
+  async function rereadAnalysis(): Promise<boolean> {
+    try {
+      const res = await fetchJson<{ row: ProjectAnalysisRow }>(`/api/reports/boq-analysis?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" });
+      setAnalysis(res.row);
+      return res.row.hasBaseline;
+    } catch {
+      return false;
+    }
+  }
 
   async function confirmBaseline(boqId: string) {
-    if (!evidence.trim()) {
+    const ref = evidence.trim();
+    if (!ref) {
       setConfirmError("Name the evidence first — a PO, a signed proposal, an email — so the baseline can be checked later.");
       return;
     }
     setConfirming(true);
     setConfirmError(null);
+    const done = (at: string) => {
+      setEvidence("");
+      setConfirmedNote({ at, evidence: ref });
+    };
     try {
-      await fetchJson(`/api/scope/${encodeURIComponent(boqId)}/revisions?action=baseline`, {
+      const res = await fetchJson<{ confirmedAt?: string }>(`/api/scope/${encodeURIComponent(boqId)}/revisions?action=baseline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ evidenceArtefactRef: evidence.trim() }),
+        body: JSON.stringify({ evidenceArtefactRef: ref }),
       });
-      setEvidence("");
-      setReloadKey((n) => n + 1);
+      done(typeof res?.confirmedAt === "string" ? res.confirmedAt : new Date().toISOString());
+      // The write is done; the figures follow it. A read that still says "no baseline" is read again a few times before giving up quietly.
+      for (let i = 0; i < 4; i += 1) {
+        if (await rereadAnalysis()) break;
+        await new Promise((r) => setTimeout(r, BASELINE_REREAD_DELAY_MS));
+      }
     } catch (err) {
-      setConfirmError(errorMessage(err, "The baseline was not confirmed"));
+      const status = err instanceof ApiError ? err.status : 0;
+      const reason = errorMessage(err, "The baseline was not confirmed");
+      if (status === 0 || status === 408 || status >= 500) {
+        // The server can finish a write after it has stopped answering: look before saying it failed.
+        if (await rereadAnalysis()) {
+          done(new Date().toISOString());
+        } else {
+          setConfirmError(`${reason}. It may still have been saved — the figures were re-checked and the baseline is not there yet. Wait a moment and press Confirm baseline again only if it still shows "Not yet baselined".`);
+        }
+      } else {
+        setConfirmError(reason);
+      }
     } finally {
       setConfirming(false);
     }
@@ -245,6 +280,11 @@ export default function Project360Client({ projectId, projectName }: { projectId
               </p>
             </div>
           </div>
+          {confirmedNote && (
+            <p role="status" className="mt-3 text-sm text-px-ink" data-testid="project360-baseline-confirmed">
+              Baseline confirmed by you on {new Date(confirmedNote.at).toLocaleString()} (evidence: {confirmedNote.evidence}).
+            </p>
+          )}
           {!analysis.hasBaseline && (
             <div className="mt-3 space-y-2">
               <p className="text-xs text-px-muted">No baseline has been confirmed for this project's BOQ yet — the figures above will read "Not yet baselined" until one is.</p>
