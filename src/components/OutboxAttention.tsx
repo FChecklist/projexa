@@ -17,8 +17,9 @@
 //
 // Mounted once, in (app)/layout.tsx, as a small card in the bottom-right corner.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useOutboxState } from "@/lib/local-first/use-outbox-state";
 import { draftHref, draftText } from "@/lib/local-first/outbox-drafts";
@@ -138,14 +139,64 @@ function DraftCard({ draft, outbox }: { draft: OutboxDraft; outbox: Outbox }) {
   );
 }
 
-export function OutboxAttention({ outbox: injected }: { outbox?: Outbox } = {}) {
+// A turned-down change is REPORTED once: after the person has had the card in front of them and moved to another screen, it is
+// marked as reported (kept on this device, so a reload or a replay of the same rejection does not raise it again) and its
+// notice is dismissed. What they typed stays saved in the draft store; only the repeated message stops.
+const REPORTED_KEY = "px.outbox.reported-rejections";
+function readReported(): Set<string> {
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(REPORTED_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+function writeReported(ids: Set<string>): void {
+  try {
+    localStorage.setItem(REPORTED_KEY, JSON.stringify([...ids].slice(-200)));
+  } catch {
+    /* storage refused: the in-memory set still stops repeats for this visit */
+  }
+}
+
+export function OutboxAttention({ outbox: injected, path: pathProp }: { outbox?: Outbox; path?: string } = {}) {
   const view = useOutboxState({ outbox: injected });
+  const livePath = usePathname();
+  const path = pathProp ?? livePath ?? "";
+  const [reported, setReported] = useState<Set<string>>(() => readReported());
+  const shown = useRef<Set<string>>(new Set());
+  const lastPath = useRef(path);
+  const outboxRef = useRef<Outbox | null>(null);
+  outboxRef.current = view?.outbox ?? null;
+
+  useEffect(() => {
+    if (lastPath.current === path) return;
+    lastPath.current = path;
+    const ids = [...shown.current];
+    shown.current = new Set();
+    if (ids.length === 0) return;
+    setReported((prev) => {
+      const next = new Set([...prev, ...ids]);
+      writeReported(next);
+      return next;
+    });
+    for (const id of ids) void outboxRef.current?.dismissNotice(id).catch(() => {});
+  }, [path]);
+
+  const visibleDrafts = (view?.state.drafts ?? []).filter((d) => !reported.has(d.opId));
+  const visibleNotices = (view?.state.notices ?? []).filter((n) => !reported.has(n.opId) && !(view?.state.drafts ?? []).some((d) => d.opId === n.opId));
+  useEffect(() => {
+    for (const d of visibleDrafts) shown.current.add(d.opId);
+    for (const n of visibleNotices) shown.current.add(n.opId);
+  });
+
   if (!view) return null;
   const { outbox, state } = view;
   const changes = (n: number) => `${n} ${n === 1 ? "change" : "changes"}`;
   const checking = state.checking ?? [];
   const attention = state.attention ?? [];
-  const drafts = state.drafts ?? [];
+  const drafts = visibleDrafts;
 
   const waitingLine =
     state.updateRequired
@@ -163,8 +214,7 @@ export function OutboxAttention({ outbox: injected }: { outbox?: Outbox } = {}) 
     : null;
 
   // A notice that has a draft is said by the draft's card (one card per change, never two).
-  const draftIds = new Set(drafts.map((d) => d.opId));
-  const notices = state.notices.filter((n) => !draftIds.has(n.opId));
+  const notices = visibleNotices;
 
   const nothing = !waitingLine && !storageLine && state.conflicts.length === 0 && state.blocked.length === 0 && notices.length === 0
     && drafts.length === 0 && checking.length === 0 && attention.length === 0;

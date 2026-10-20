@@ -2,6 +2,7 @@
 // complete plain-text report the owner pastes to an AI. Pure functions: no React, no network.
 
 import { routePattern } from "./fingerprint";
+import { plainActionName } from "./plain-action";
 
 type Row = Record<string, unknown>;
 const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -164,7 +165,7 @@ export function timelineEntries(raw: unknown): TimelineEntry[] {
     const isError = kind !== "action";
     const text = isError
       ? plainTitle(kind, str(e.message), str(e.route), str(e.api_path), num(e.http_status), str(e.http_method))
-      : `${str(e.action_name) || "An action"} — ${str(e.outcome) === "failed" ? "did not go through" : "done"}${num(e.duration_ms) != null ? ` (${Math.round((num(e.duration_ms) ?? 0) / 100) / 10} s)` : ""}`;
+      : `${plainActionName(str(e.action_name)) || "An action"} — ${str(e.outcome) === "failed" ? "failed" : "worked"}${num(e.duration_ms) != null ? ` (${Math.round((num(e.duration_ms) ?? 0) / 100) / 10} s)` : ""}`;
     return { id: str(e.id), time: str(e.occurred_at), isError, text, project: str(e.project_id) || null, who: str(e.user_id) || null, severity: str(e.severity), outcome: str(e.outcome) };
   });
 }
