@@ -44,6 +44,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { backendMessage } from "@/lib/fetch-json";
 import { isTaskErrorCode, messageFor } from "@/lib/task-errors";
 import { viaPxApi } from "@/lib/px-api";
+import { markSubmitSignal } from "@/lib/client-log/fetch-capture";
+import { logAction } from "@/lib/client-log/install";
 
 /** The ceiling on a write. Ten seconds, per R-277. */
 export const SUBMIT_TIMEOUT_MS = 10_000;
@@ -332,6 +334,10 @@ export function useSubmit<T = unknown>({
 
       issued = true;
       clearTimeout(watchdog);
+      // Device log: this write is reported below as ONE named action ("Create Permit"), so the generic write line is not also written for it.
+      const startedAt = Date.now();
+      const actionName = `Create ${label}`;
+      markSubmitSignal(guard.signal);
 
       const init = request.init ?? {};
       const ceiling = setTimeout(() => {
@@ -353,6 +359,7 @@ export function useSubmit<T = unknown>({
           // and never "boqLineItemId". Applied HERE rather than in one
           // screen's handler, so every create form gets it and none of them
           // can render a coded refusal as prose.
+          logAction(actionName, "failed", Date.now() - startedAt);
           setFailure(submitFailure("refused", label, refusalReason(body, res.status)));
           setState("idle");
           return;
@@ -368,12 +375,14 @@ export function useSubmit<T = unknown>({
           // onSuccess is where a screen checks that the 2xx actually carried
           // the record it claimed to save. Its refusal is a different fact
           // from a transport failure and must not be classified as one.
+          logAction(actionName, "failed", Date.now() - startedAt);
           inFlight.current = false;
           if (!live.current) return;
           setFailure(submitFailure("unconfirmed", label, err instanceof Error ? err.message : null));
           setState("idle");
           return;
         }
+        logAction(actionName, "ok", Date.now() - startedAt);
         inFlight.current = false;
       } catch (err) {
         clearTimeout(ceiling);
@@ -398,6 +407,7 @@ export function useSubmit<T = unknown>({
             }
           }
         }
+        if (kind !== "not-sent") logAction(actionName, "failed", Date.now() - startedAt);
         inFlight.current = false;
         if (!live.current) return;
         // A deadline we set ourselves is the authority on why the request

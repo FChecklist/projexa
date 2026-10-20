@@ -458,6 +458,9 @@ const ROUTES_INTENTIONALLY_NOT_IN_NAV: ReadonlySet<string> = new Set([
   "/site-instructions/new",
   "/submittals/[id]",
   "/submittals/new",
+  // Device log: the owner's System log. A Settings-area screen for owners and admins only, reached by the "System log" link at the top of /settings
+  // (settings/page.tsx renders it for ORG_ADMIN roles only); a sidebar item would show a screen most roles are refused.
+  "/system-log",
   "/vendors/[id]",
   "/vendors/new",
   "/wiki/[id]",

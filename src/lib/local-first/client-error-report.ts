@@ -3,6 +3,13 @@
 // reportClientError) and sends a small, data-free line to this site's /api/local-first/client-error (one greppable runtime-log line).
 // A report that cannot be sent (offline, signed out) is kept in localStorage (max 20) and sent with the next one / when back online.
 
+// DEVICE LOG (2026-10): errors are no longer sent as one-line reports from here. window errors, unhandled rejections, failed /api calls, console
+// errors and every caught error now go through src/lib/client-log (complete report with the steps before it, kept on the device until delivered
+// to /api/client-logs). What is left in this file is the old line channel, kept so (a) old bundles' /api/local-first/client-error keeps working,
+// (b) anything still pending from an old bundle is delivered once, and (c) the data-free "usage" telemetry lines keep their channel.
+
+import { installClientLog, logClientError } from "@/lib/client-log/install";
+
 export const ERR_PENDING_KEY = "px-client-errors-pending";
 const MAX_PENDING = 20;
 const MAX_PER_MINUTE = 5;
@@ -60,23 +67,22 @@ function shared() {
 
 /** For any code that catches an error it would otherwise swallow (sync, outbox, peer, offline). Never throws. */
 export function reportClientError(kind: string, err: unknown, where?: string): void {
-  try { void shared()?.report(kind, err, where).catch(() => {}); } catch { /* reporting must never break the app */ }
+  try {
+    if (kind === "usage") void shared()?.report(kind, err, where).catch(() => {}); // data-free telemetry keeps the old line channel
+    else logClientError(kind, err, where); // everything else is a real error: complete report through the device log
+  } catch { /* reporting must never break the app */ }
 }
 
-/** Installs the global listeners once. Returns an uninstall function. */
+/** Installs the device log once (window errors, rejections, failed API calls, steps) and delivers anything an old bundle left pending. Returns an uninstall function. */
 export function installClientErrorReporting(): () => void {
   const s = shared();
   if (!s) return () => {};
-  const onError = (e: ErrorEvent) => reportClientError("window_error", e.error ?? e.message, e.filename ? `${e.filename}:${e.lineno}` : undefined);
-  const onRejection = (e: PromiseRejectionEvent) => reportClientError("unhandled_rejection", e.reason);
+  const uninstallLog = installClientLog();
   const onOnline = () => { void s.flush().catch(() => {}); };
-  window.addEventListener("error", onError);
-  window.addEventListener("unhandledrejection", onRejection);
   window.addEventListener("online", onOnline);
   void s.flush().catch(() => {});
   return () => {
-    window.removeEventListener("error", onError);
-    window.removeEventListener("unhandledrejection", onRejection);
     window.removeEventListener("online", onOnline);
+    uninstallLog();
   };
 }

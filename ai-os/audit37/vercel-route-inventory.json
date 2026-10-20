@@ -1,6 +1,6 @@
 {
   "_about": "AUDIT-100 A2/A3. Every PROJEXA route that runs on Vercel (src/app/api/**/route.ts), why it is still there, and its plan. Checked by src/lib/vercel-route-inventory.test.ts on every test run; rewrite with `node scripts/vercel-route-inventory.mjs --write` (hand-written why/plan are kept).",
-  "max_routes": 316,
+  "max_routes": 320,
   "edge_functions": {
     "projexa-sync": [
       "manifest",
@@ -43,7 +43,7 @@
     ]
   },
   "shell_vercel_routes_budget": 1,
-  "vercel_served_routes_budget": 78,
+  "vercel_served_routes_budget": 82,
   "shell_api_references": [
     "/api/dashboard/project",
     "/api/documents/:id",
@@ -384,6 +384,54 @@
       "file": "src/app/api/classify/route.ts",
       "methods": [
         "POST"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/client-logs",
+      "file": "src/app/api/client-logs/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/client-logs/issues",
+      "file": "src/app/api/client-logs/issues/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/client-logs/issues/:id",
+      "file": "src/app/api/client-logs/issues/[id]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "backend": "veridian-proxy",
+      "shell_reachable": false,
+      "served_by": "vercel",
+      "why": "online-only screen: the work runs in the VERIDIAN backend (a thin proxy on Vercel); the screen is not on the laptop's copy or is only used while online",
+      "plan": "keep on Vercel until its screen is on the laptop; a thin proxy costs one invocation per use"
+    },
+    {
+      "route": "/api/client-logs/timeline",
+      "file": "src/app/api/client-logs/timeline/route.ts",
+      "methods": [
+        "GET"
       ],
       "backend": "veridian-proxy",
       "shell_reachable": false,
