@@ -107,6 +107,17 @@ describe("POST /api/assistant", () => {
     }
   });
 
+  // R-81 (live audit 2026-10-20): both pills that can reach a model get a model-sized budget; the plain ones keep the default.
+  test.each(["generate_construction_progress_summary", "detect_construction_budget_schedule_risk"])("%s gets the 55 s model budget", async (codeReference) => {
+    await POST(post({ codeReference, inputs: { projectId: "p" } }));
+    expect(calls[0].options.timeoutMs).toBe(55_000);
+  });
+
+  test("a plain read keeps the default budget", async () => {
+    await POST(post({ codeReference: "get_construction_budget_status", inputs: { projectId: "p" } }));
+    expect(calls[0].options.timeoutMs).toBeUndefined();
+  });
+
   test("an unauthenticated caller never reaches VERIDIAN", async () => {
     const { NextResponse } = await import("next/server");
     mockCtx = { user: null, organizationId: null, role: null, response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
