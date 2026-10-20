@@ -147,7 +147,7 @@ export type OutboxState = {
 
 export type OutboxEvent =
   | { type: "changed" }
-  | { type: "applied"; opId: string; functionId: string; projectId: string; kind: string | null; recordId: string | null; created: boolean }
+  | { type: "applied"; opId: string; functionId: string; projectId: string; kind: string | null; recordId: string | null; created: boolean; /** The temporary id the laptop gave a row this op created (the screen may still be showing it). */ tempId?: string | null }
   | { type: "conflict"; opId: string; functionId: string; projectId: string }
   | { type: "rejected"; opId: string; functionId: string; projectId: string; message: string }
   | { type: "blocked"; opId: string; functionId: string; projectId: string }
@@ -608,7 +608,7 @@ export function createOutbox(options: OutboxOptions): Outbox {
       }
       return true;
     });
-    if (done) emit({ type: "applied", opId: op.opId, functionId: op.functionId, projectId: op.projectId, kind, recordId, created: !!op.creates });
+    if (done) emit({ type: "applied", opId: op.opId, functionId: op.functionId, projectId: op.projectId, kind, recordId, created: !!op.creates, tempId: op.creates?.id ?? null });
     return done ? refetch : null;
   }
 

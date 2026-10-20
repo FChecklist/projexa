@@ -30,6 +30,8 @@ import { writeStoredProjectId } from "../../project-preference";
 import { LOCAL_DATA_CHANGED_EVENT } from "../peer/status";
 import { serverPageUrl, type ShellLocation } from "./paths";
 import { createFileQueue, type FileQueue } from "./file-queue";
+import { rememberBoqAlias } from "./modules/boq-alias";
+import { createPhotoQueue, type PhotoQueue } from "./progress-photo-queue";
 import { createSignedUploader } from "./upload-client";
 import { enqueueFileRecord } from "./modules/file-writes";
 import { createEditQueue, createFlushScheduler, type FlushResult, type ShellWriter } from "./pending-edits";
@@ -279,11 +281,72 @@ export default function LocalShell() {
     };
   }, [userId, refresh]);
 
+  // R-19: a BOQ (or revision) made here is opened by a temporary id; when the server accepts it, remember what it became so the screen the
+  // person is on follows it to the real BOQ instead of saying it is not on this laptop.
+  useEffect(() => {
+    if (!outbox || boot.status !== "ready") return;
+    const data = boot.data;
+    return outbox.subscribe((event) => {
+      if (event.type !== "applied" || !event.created || !event.tempId || !event.recordId) return;
+      if (event.functionId !== "create_boq" && event.functionId !== "create_boq_revision") return;
+      const tempId = event.tempId;
+      const serverId = event.recordId;
+      const projectId = event.projectId;
+      void rememberBoqAlias(data, tempId, serverId)
+        .then(() => {
+          refresh();
+          // the new BOQ's lines come with the next copy of this project's lines: ask for it now rather than at the next poll
+          return import("../replica-shared").then((m) => m.revalidateViaSharedReplica({ kind: "boq_lines", projectId, userId: data.userId }));
+        })
+        .then(() => refresh())
+        .catch(() => {});
+    });
+  }, [outbox, boot, refresh]);
+
+  // R-48: photos for progress entries saved here. The outbox cannot carry a file, so a photo waits for its entry's op; when the outbox
+  // says the entry reached the server (its id is in the event) the photo is uploaded to the same route the online form uses.
+  const photoSchedulerRef = useRef<ReturnType<typeof createFlushScheduler> | null>(null);
+  const photos = useMemo<PhotoQueue | null>(() => {
+    if (boot.status !== "ready") return null;
+    const base = createPhotoQueue({ meta: personMetaStore(boot.data.userId, boot.data.idb), onChange: () => refresh() });
+    return {
+      ...base,
+      async add(input) {
+        const job = await base.add(input);
+        if (job) photoSchedulerRef.current?.nudge();
+        return job;
+      },
+    };
+  }, [boot, refresh]);
+  useEffect(() => {
+    if (!photos || !outbox) return;
+    const send = async (): Promise<FlushResult> => {
+      const r = await photos.flush();
+      return { sent: r.sent, rejected: r.dropped, kept: r.kept, stoppedBecause: r.stoppedBecause };
+    };
+    const scheduler = createFlushScheduler({ writer: { list: photos.list, flush: send }, isOnline: () => getConnectivity() === "online" });
+    photoSchedulerRef.current = scheduler;
+    const unsubscribe = outbox.subscribe((event) => {
+      if (event.type === "applied" && event.functionId === "record_work_progress" && event.recordId) {
+        void photos.entryApplied(event.opId, event.recordId).then(() => scheduler.nudge({ immediate: true }));
+      } else if (event.type === "rejected" && event.functionId === "record_work_progress") {
+        void photos.entryRejected(event.opId);
+      }
+    });
+    scheduler.nudge();
+    return () => {
+      unsubscribe();
+      scheduler.stop();
+      photoSchedulerRef.current = null;
+    };
+  }, [photos, outbox]);
+
   // Back online: send what waited. The person coming back to the tab is a good moment to try again too (one try, no timer storm).
   useEffect(() => {
     if (connectivity === "online") {
       schedulerRef.current?.nudge({ immediate: true });
       fileSchedulerRef.current?.nudge({ immediate: true });
+      photoSchedulerRef.current?.nudge({ immediate: true });
       outboxRef.current?.nudge();
     }
   }, [connectivity]);
@@ -360,6 +423,7 @@ export default function LocalShell() {
     },
     writer: writer!,
     files: files!,
+    photos: photos!,
     navigate,
     connectivity,
     refresh,

@@ -8,9 +8,10 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatAmount } from "@/lib/boq-helpers";
+import { APPROVE_SELF_REASON, approveBlockedReason, formatAmount } from "@/lib/boq-helpers";
 import { revisionLabel } from "@/lib/boq-lineage";
 import { formatDateTime } from "@/lib/format-date";
+import { viaPxApi } from "@/lib/px-api";
 import type { ShellScreenProps } from "../types";
 import type { ScopeObjectData } from "./scope-adapter";
 import { useRowWindow } from "./use-row-window";
@@ -101,6 +102,12 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  // Approve (R-... BOQ detail parity): the same /api/scope/<id>/approve the online page calls. The server decides who may approve; the
+  // laptop only declines to offer it to a role it knows cannot, and shows the server's "independent approver" refusal in words.
+  const [approving, setApproving] = useState(false);
+  const [approved, setApproved] = useState(false);
+  const [selfBlocked, setSelfBlocked] = useState(false);
+  const [approveNote, setApproveNote] = useState<{ ok: boolean; text: string } | null>(null);
   /** `value` must be read from the event by the caller, synchronously (see the category input below). */
   const setDraft = useCallback((lineId: string, value: string) => setDrafts((d) => ({ ...d, [lineId]: value })), []);
 
@@ -147,6 +154,56 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     if (choice === "mine") void sh.writer.flush();
   }, []);
 
+  // A BOQ somebody has just submitted is still "draft" in this laptop's copy until the next copy arrives: on opening a BOQ that is not approved
+  // yet, while online, bring this project's BOQ headers and lines up to date once, so the Approve button is there within seconds rather than
+  // at the next background refresh.
+  const openBoqId = data.state === "local" ? data.boq.id : null;
+  const openProjectId = data.state === "local" ? data.boq.projectId : null;
+  const openStatus = data.state === "local" ? data.boq.status : null;
+  const isOnline = shell.connectivity === "online";
+  const userIdForCopy = shell.data.userId;
+  const refreshShell = shell.refresh;
+  useEffect(() => {
+    if (!openBoqId || !openProjectId || !isOnline || openStatus === "approved" || openStatus === "superseded") return;
+    let live = true;
+    void (async () => {
+      try {
+        const m = await import("../../replica-shared");
+        await m.revalidateViaSharedReplica({ kind: "boqs", projectId: openProjectId, userId: userIdForCopy });
+        await m.revalidateViaSharedReplica({ kind: "boq_lines", projectId: openProjectId, userId: userIdForCopy });
+        if (live) refreshShell();
+      } catch {
+        /* the copy stays as it was: the next refresh tries again */
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [openBoqId, openProjectId, openStatus, isOnline, userIdForCopy, refreshShell]);
+
+  async function approve() {
+    if (data.state !== "local") return;
+    const { boq } = data;
+    setApproving(true);
+    setApproveNote(null);
+    try {
+      const res = await viaPxApi(`/api/scope/${encodeURIComponent(boq.id)}/approve`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+      const message = typeof body.error === "string" ? body.error : "";
+      if (!res.ok) {
+        if (res.status === 403 && /independent approver/i.test(message)) setSelfBlocked(true);
+        throw new Error(message || "Could not approve this BOQ.");
+      }
+      setApproved(true);
+      setApproveNote({ ok: true, text: "Approved." });
+      shell.refresh();
+    } catch (err) {
+      setApproveNote({ ok: false, text: err instanceof Error ? err.message : "Could not approve this BOQ." });
+    } finally {
+      setApproving(false);
+    }
+  }
+
   // AUDIT-100 B15: a long BOQ draws only the lines on screen (plus a margin), not all of them: drawing 5,000 real rows took 5-9 s
   // (e2e/lf-lifecycle-large-project.spec.ts). See use-row-window.ts for what keeps working (focus, printing, the row count for a screen reader).
   const { plan: rows, windowed, gapHeight, attachBody, onFocus: onBodyFocus, onBlur: onBodyBlur } = useRowWindow(data.state === "local" ? data.lines.length : 0);
@@ -154,6 +211,8 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   if (data.state === "no_project") return <Message state="no_project">There is no project on this laptop yet. Open PROJEXA once while you are online.</Message>;
   if (data.state === "not_synced") return <Message state="not_synced">This BOQ&apos;s project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online.</Message>;
   if (data.state === "not_found") return <Message state="not_found">This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</Message>;
+
+  if (data.state === "sent") return <Message state="sent">This BOQ has been sent to the server. It is being copied back to this laptop and will open here in a moment.</Message>;
 
   if (data.state === "waiting") {
     // A BOQ or revision made on this laptop, not yet accepted by the server: its lines as the person typed them, marked as waiting.
@@ -205,8 +264,27 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
     <section data-testid="scope-object" data-state="local" data-boq-id={boq.id}>
       <h1 className="font-heading text-2xl text-px-ink" data-testid="boq-local-title">{boq.title}</h1>
       <p className="mt-1 text-sm text-px-muted">
-        {revisionLabel(boq.version)} · <span className="capitalize">{boq.status}</span> · {lines.length} {lines.length === 1 ? "line" : "lines"}
+        {revisionLabel(boq.version)} · <span className="capitalize" data-testid="boq-local-status">{approved ? "approved" : boq.status}</span> · {lines.length} {lines.length === 1 ? "line" : "lines"}
       </p>
+      {boq.status === "submitted" && !approved ? (() => {
+        const blocked = approveBlockedReason(shell.data.role ?? undefined, selfBlocked);
+        const offline = shell.connectivity !== "online";
+        const reason = offline ? "Approving needs a connection. Approve it when you are online." : blocked;
+        return (
+          <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="boq-local-approve-bar">
+            <Button type="button" size="sm" data-testid="boq-local-approve" disabled={approving || reason !== null} title={reason ?? undefined} onClick={() => void approve()}>
+              {approving ? "Approving…" : "Approve"}
+            </Button>
+            {reason ? <span className="text-xs text-px-muted" data-testid="boq-local-approve-blocked">{reason}</span> : null}
+          </div>
+        );
+      })() : null}
+      {approveNote ? (
+        <p role={approveNote.ok ? "status" : "alert"} className="mt-2 text-sm text-px-ink" data-testid="boq-local-approve-note" data-ok={approveNote.ok ? "1" : "0"}>
+          {approveNote.text}
+          {!approveNote.ok && selfBlocked && !approveNote.text.includes(APPROVE_SELF_REASON) ? ` ${APPROVE_SELF_REASON}` : ""}
+        </p>
+      ) : null}
       {boq.status !== "superseded" && mayOffer(shell.data.role, "create_boq_revision") ? (
         <p className="mt-1 text-sm">
           <a className="text-px-ink underline underline-offset-2" data-testid="boq-local-revise" href={`/scope/${encodeURIComponent(boq.id)}/revise${projectQuery(boq.projectId)}`}>New revision</a>
