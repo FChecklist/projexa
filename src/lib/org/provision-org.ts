@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { db, veridianCredentials } from "@/lib/db";
-import { getVeridianApiKey, provisionVeridianOrg, VeridianApiError } from "@/lib/veridian-client";
+// Namespace import on purpose: requireAuth() reaches this module, and a test that mocks veridian-client partially (no VeridianApiError) must not
+// fail at link time for routes that never provision.
+import * as veridian from "@/lib/veridian-client";
 
 // The ONE implementation of "create this person's organisation", shared by POST /api/org/provision (the sign-up / login path) and by requireAuth()'s
 // silent auto-provisioning of a signed-in person who has no membership (the e-mail-code sign-in creates the auth user and nothing else).
@@ -17,6 +19,10 @@ import { getVeridianApiKey, provisionVeridianOrg, VeridianApiError } from "@/lib
 export type SupabaseLike = { from(table: string): any }; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export type ProvisionOutcome = { status: number; body: Record<string, unknown> };
+
+function isVeridianError(err: unknown): err is { status: number; message: string } {
+  return typeof veridian.VeridianApiError === "function" && err instanceof veridian.VeridianApiError;
+}
 
 function slugify(name: string) {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "org";
@@ -46,7 +52,7 @@ async function provisionLocked(supabase: SupabaseLike, userId: string, orgName: 
   if (existingMembership) {
     // R48 UAT: "has a membership" does not mean "is provisioned" -- report the real state and point at the repair path (POST /api/org/repair).
     const organizationId = existingMembership.organization_id as string;
-    const veridianConnected = (await getVeridianApiKey(organizationId)) !== null;
+    const veridianConnected = (await veridian.getVeridianApiKey(organizationId)) !== null;
     return {
       status: 200,
       body: {
@@ -61,14 +67,14 @@ async function provisionLocked(supabase: SupabaseLike, userId: string, orgName: 
   // Step 1: VERIDIAN first. If this fails nothing is created on the PROJEXA side.
   let veridianResult;
   try {
-    veridianResult = await provisionVeridianOrg({ customerOrgName: orgName });
+    veridianResult = await veridian.provisionVeridianOrg({ customerOrgName: orgName });
   } catch (err) {
     console.error("[org/provision] VERIDIAN provisioning failed:", err instanceof Error ? err.message : err);
     return {
-      status: err instanceof VeridianApiError ? err.status : 502,
+      status: isVeridianError(err) ? err.status : 502,
       body: {
         error:
-          err instanceof VeridianApiError
+          isVeridianError(err)
             ? `Could not provision your PROJEXA workspace: ${err.message}`
             : "Could not provision your PROJEXA workspace. Please try again.",
       },
