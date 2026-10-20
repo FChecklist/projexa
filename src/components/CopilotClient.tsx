@@ -11,6 +11,7 @@ import { Loader2, LayoutDashboard, Clock, Wallet, AlertTriangle, Target, FileTex
 import { useVeriChat } from "@/components/veri-chat/veri-chat-context";
 import { ReportOutput } from "@/components/ReportOutput";
 import { formatDateTime } from "@/lib/format-date";
+import { historyEntryView } from "@/lib/copilot-history";
 
 // This page is deliberately NOT a second chat UI. The real AI Copilot --
 // Discuss chat, every registered tool (not just construction's 7), team
@@ -154,15 +155,21 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
             <p className="py-6 text-center text-sm text-px-muted">No construction Copilot queries yet — run one above.</p>
           ) : (
             <div className="space-y-2">
-              {history.map((q) => (
-                <div key={q.id} className="flex items-center justify-between rounded-lg border border-px-border px-3 py-2 text-sm">
-                  <span className="text-px-ink">{q.breadcrumb}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-px-muted">{formatDateTime(q.created_at)}</span>
-                    <Badge variant={q.status === "done" ? "default" : q.status === "error" ? "destructive" : "secondary"}>{q.status}</Badge>
+              {history.map((q) => {
+                const view = historyEntryView(q);
+                return (
+                  <div key={q.id} className="rounded-lg border border-px-border px-3 py-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-px-ink">{q.breadcrumb}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-px-muted">{formatDateTime(q.created_at)}</span>
+                        <Badge variant={view.variant}>{view.label}</Badge>
+                      </div>
+                    </div>
+                    {view.reason ? <p data-testid="copilot-history-reason" className="mt-1 text-xs text-px-muted">{view.reason}</p> : null}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
