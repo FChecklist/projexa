@@ -3,6 +3,8 @@
 // description, optional drawing reference, cost/time impact, optional linked BOQ) plus an optional PDF or photo.
 // The form shape is the industry-standard Architect/Site Instruction record, not a format Sumeet supplied.
 
+/** The documents row of an instruction's file points at the instruction with this type (same mechanism as construction work-progress photos). */
+export const SI_DOCUMENT_ENTITY_TYPE = "construction_site_instruction";
 export const SI_MAX_FILE_MB = 10;
 export const SI_FILE_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg"] as const;
 

@@ -2,8 +2,11 @@
 
 // LOCAL-FIRST shell, Site Instructions (R-C14): the project's formal instructions to contractors read from the laptop's own copy, and a new
 // one kept on the laptop at once (create_site_instruction through the outbox). The SI number is the server's, so a new row says "Waiting to
-// sync" with no number until it has been sent. A PDF or photo for the instruction, and the BOQ it varies, are added online: the file is
-// linked to the instruction's server id, which does not exist until the server has the instruction.
+// sync" with no number until it has been sent. After a save the screen lands on the list, where the new row shows "Waiting to sync" (the online
+// form lands on the created item; an unsent one has no server id yet, so its row in the list is the item). A PDF or photo for the instruction, and
+// the BOQ it varies, are added online: the registry's create_site_instruction takes no file address (unlike create_permit / create_drawing /
+// create_document, whose externalUrl is what the file queue feeds), and the file is linked to the instruction's server id, which does not exist
+// until the server has the instruction. So the form says so, and the sent instruction's page (a link on its number) has an "Add file" action.
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -38,7 +41,10 @@ export function SiteInstructionListScreen({ shell, data }: ShellScreenProps<List
             <TableBody>
               {data.rows.map((si) => (
                 <TableRow key={si.id} data-testid="si-row" data-si-id={si.id}>
-                  <TableCell>{si.siNumber === null ? DASH : `SI-${si.siNumber}`}<Waiting on={si.waiting} /></TableCell>
+                  <TableCell>
+                    {si.siNumber === null ? DASH : si.waiting ? `SI-${si.siNumber}` : <a className={BACK_LINK} data-testid="si-open" href={withProject(`/site-instructions/${si.id}`, data.projectId)}>{`SI-${si.siNumber}`}</a>}
+                    <Waiting on={si.waiting} />
+                  </TableCell>
                   <TableCell>{dateText(si.issueDate)}</TableCell>
                   <TableCell>{si.toContractor ?? DASH}</TableCell>
                   <TableCell className="max-w-xs truncate">{si.description}</TableCell>
@@ -68,7 +74,10 @@ export function SiteInstructionNewScreen({ shell, data }: ShellScreenProps<ListD
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const ok = await save(() => createSiteInstructionOffline(shell.data, { projectId, issueDate, toContractor, description, drawingRef, costImpact, timeImpact }));
-    if (ok) { setToContractor(""); setDescription(""); setDrawingRef(""); setCostImpact(false); setTimeImpact(false); }
+    if (ok) {
+      setToContractor(""); setDescription(""); setDrawingRef(""); setCostImpact(false); setTimeImpact(false);
+      shell.navigate(withProject("/site-instructions", projectId)); // the list, where the new row says "Waiting to sync"
+    }
   }
 
   return (
@@ -87,7 +96,7 @@ export function SiteInstructionNewScreen({ shell, data }: ShellScreenProps<ListD
           <SaveNote note={note} />
         </form>
       )}
-      <NeedsConnection>A PDF or photo for the instruction, and the BOQ it varies, are added while you are online. The number is given by the server.</NeedsConnection>
+      <NeedsConnection>A PDF or photo cannot be attached while writing the instruction here. Save it, and once it has been sent (it then has its SI number) open it from the list and choose Add file. The BOQ it varies is also set online. The number is given by the server.</NeedsConnection>
       <p className="mt-3 text-sm"><a className={BACK_LINK} href={withProject("/site-instructions", projectId)}>Back to the site instructions</a></p>
     </Screen>
   );

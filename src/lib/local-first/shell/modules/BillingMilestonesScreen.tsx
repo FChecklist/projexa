@@ -7,7 +7,8 @@
 
 import { formatDate } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
-import { CopyNote, DASH, Screen, ServerOnly, StateMessage, projectName, withProject } from "./DeliveryParts";
+import ClaimInvoiceAction from "@/components/ClaimInvoiceAction";
+import { CopyNote, DASH, Screen, ServerOnly, StateMessage, mayWrite, projectName, withProject } from "./DeliveryParts";
 import type { BillingData } from "./billing-adapter";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,7 +31,7 @@ export default function BillingMilestonesScreen({ shell, data }: ShellScreenProp
         <a className="text-px-ink underline underline-offset-2" href={withProject("/billing-milestones/new", data.projectId)}>New billing milestone</a>
         {" — it works with no network and stays a draft until a person with the billing role confirms it online."}
       </p>
-      <ServerOnly shell={shell} what="Drafting, submitting, approving, rejecting or invoicing a milestone is done on the server, by a person: no money is posted from the laptop." path="/billing-milestones" />
+      <ServerOnly shell={shell} what="Drafting, submitting, approving or rejecting a milestone is done on the server, by a person. An approved milestone can be invoiced from here while you are connected; no money is posted from the laptop." path="/billing-milestones" />
       {!data.customerHidden && data.customerNames !== "local" && data.claims.length > 0 ? (
         <p className="mt-2 text-xs text-px-muted" data-testid="billing-customers-note">
           {data.customerNames === "not_allowed"
@@ -57,6 +58,15 @@ export default function BillingMilestonesScreen({ shell, data }: ShellScreenProp
                 <p className="mt-1 text-xs text-px-muted" data-testid="billing-steps">
                   {c.steps.map((s) => `${s.stage} ${formatDate(s.at)}`).join(" · ")}
                 </p>
+              ) : null}
+              {c.status === "client_approved" && !c.waiting && mayWrite(shell) ? (
+                <div className="mt-2" data-testid="billing-invoice-action">
+                  {shell.connectivity === "online" ? (
+                    <ClaimInvoiceAction claimId={c.id} onInvoiced={() => shell.refresh()} />
+                  ) : (
+                    <p className="text-xs text-px-muted" data-testid="billing-invoice-offline">Invoicing needs a connection. It will be offered here when you are connected.</p>
+                  )}
+                </div>
               ) : null}
               {c.interimBillId ? (
                 <p className="mt-1 text-xs">

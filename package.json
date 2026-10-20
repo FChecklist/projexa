@@ -11,6 +11,8 @@
     "start": "next start -p 3100",
     "lint": "eslint .",
     "perf": "bun scripts/perf-harness.mjs",
+    "errors:pull": "node scripts/error-triage/pull-errors.mjs",
+    "errors:fix-record": "node scripts/error-triage/record-fix.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"

@@ -93,7 +93,9 @@ describe("site instructions, offline, in the shell", () => {
     fireEvent.input(getByLabelText("Instruction"), { target: { value: "Change the lintel to 200 mm" } });
     fireEvent.click(getByLabelText("Changes the cost"));
     fireEvent.submit(getByTestId("si-form"));
-    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"), { timeout: SAVE_WAIT_MS });
+    // after a good save the form is left for the list (the online form lands on the created item); the new row is there, waiting
+    await waitFor(() => expect(getByTestId("si-list")).toBeTruthy(), { timeout: SAVE_WAIT_MS });
+    expect(window.location.pathname).toBe("/local/site-instructions");
     const ops = await outbox.listPending();
     expect(ops.map((o) => o.functionId)).toEqual(["create_site_instruction"]);
     expect(ops[0]!.params).toMatchObject({ projectId: "p1", toContractor: "Ace Builders", description: "Change the lintel to 200 mm", costImpact: true });
@@ -106,6 +108,10 @@ describe("site instructions, offline, in the shell", () => {
     const rows = list.getAllByTestId("si-row").map((r) => r.textContent!);
     expect(rows.find((t) => t.includes("Change the lintel"))).toContain("Waiting to sync");
     expect(rows.find((t) => t.includes("Change the lintel"))).not.toContain("SI-");
+    // a sent instruction (SI-3) opens its page, where Add file lives; the waiting one has no server page yet, so no link
+    const links = list.getAllByTestId("si-open");
+    expect(links).toHaveLength(1);
+    expect(links[0]!.getAttribute("href")).toBe("/site-instructions/si1?projectId=p1");
     expect(fetchCalls).toEqual([]);
   });
 
@@ -119,6 +125,7 @@ describe("site instructions, offline, in the shell", () => {
     await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("0"), { timeout: SAVE_WAIT_MS });
     expect(await outbox.listPending()).toEqual([]);
     expect(fetchCalls).toEqual([]);
+    expect(window.location.pathname).toBe("/local/site-instructions/new"); // a refused save stays on the form
   });
 
   test("the screen says plainly that the file and the BOQ are added online, and a read-only role gets no form", async () => {
@@ -127,6 +134,7 @@ describe("site instructions, offline, in the shell", () => {
     const a = render(<LocalShell />);
     await a.findByTestId("si-form");
     expect(a.getByTestId("needs-connection").textContent).toContain("PDF or photo");
+    expect(a.getByTestId("needs-connection").textContent).toContain("Add file");
     cleanup();
 
     idb = new IDBFactory();
