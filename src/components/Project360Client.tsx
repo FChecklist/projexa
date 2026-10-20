@@ -29,7 +29,7 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
 import { ApiError, fetchJson, errorMessage } from "@/lib/fetch-json";
 import { project360ToCsv } from "@/lib/project-360-export";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 
 type MoneyFigure = number | "NOT_SET";
 
@@ -282,7 +282,7 @@ export default function Project360Client({ projectId, projectName }: { projectId
           </div>
           {confirmedNote && (
             <p role="status" className="mt-3 text-sm text-px-ink" data-testid="project360-baseline-confirmed">
-              Baseline confirmed by you on {new Date(confirmedNote.at).toLocaleString()} (evidence: {confirmedNote.evidence}).
+              Baseline confirmed by you on {formatDateTime(confirmedNote.at)} (evidence: {confirmedNote.evidence}).
             </p>
           )}
           {!analysis.hasBaseline && (
