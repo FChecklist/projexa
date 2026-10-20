@@ -160,6 +160,59 @@ describe("Project360Client: confirm the baseline", () => {
     expect((await findByRole("alert")).textContent).toContain("Forbidden: manager role required");
   });
 
+  test("R-100 live: after confirming, a visible 'Baseline confirmed' line says who and when, and stays on screen", async () => {
+    let confirmed = false;
+    const { getByLabelText, getByText, findByText, queryByText } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: confirmed ? { ...ANALYSIS_ROW, boqId: "boq-9" } : NO_BASELINE }),
+      "/api/scope/boq-9/revisions": async () => { confirmed = true; return jsonRes({ id: "b1", version: 1, confirmedAt: "2026-10-21T09:30:00.000Z" }, 201); },
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-2026-114");
+    fireEvent.click(getByText("Confirm baseline"));
+    const line = await findByText(/Baseline confirmed/);
+    expect(line.textContent).toContain("by you");
+    expect(line.textContent).toContain("PO-2026-114");
+    expect(queryByText("Confirm baseline")).toBeNull();
+    expect(getByText("25.9% margin")).toBeDefined();
+  });
+
+  test("R-100 live: a first re-read that is still stale is read again, so the figures do appear", async () => {
+    let reads = 0;
+    const { getByLabelText, getByText, findByText } = renderClient({
+      "/api/reports/boq-analysis": () => { reads += 1; return jsonRes({ row: reads >= 3 ? { ...ANALYSIS_ROW, boqId: "boq-9" } : NO_BASELINE }); },
+      "/api/scope/boq-9/revisions": () => jsonRes({ id: "b1", version: 1 }, 201),
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-7");
+    fireEvent.click(getByText("Confirm baseline"));
+    expect(await findByText("25.9% margin", {}, { timeout: 4000 })).toBeDefined();
+  });
+
+  test("R-100 live: a write that answers 503 but was committed is found by re-reading, and reported as confirmed", async () => {
+    let committed = false;
+    const { getByLabelText, getByText, findByText } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: committed ? { ...ANALYSIS_ROW, boqId: "boq-9" } : NO_BASELINE }),
+      "/api/scope/boq-9/revisions": () => { committed = true; return jsonRes({ error: "The construction data service did not respond in time." }, 503); },
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-8");
+    fireEvent.click(getByText("Confirm baseline"));
+    expect((await findByText(/Baseline confirmed/)).textContent).toContain("PO-8");
+  });
+
+  test("R-100 live: a 503 that was NOT committed shows the server's words and says it may not have been saved", async () => {
+    const { getByLabelText, getByText, findByRole } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: NO_BASELINE }),
+      "/api/scope/boq-9/revisions": () => jsonRes({ error: "The construction data service did not respond in time." }, 503),
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-9");
+    fireEvent.click(getByText("Confirm baseline"));
+    const alert = (await findByRole("alert")).textContent ?? "";
+    expect(alert).toContain("did not respond in time");
+    expect(alert).toContain("not there yet");
+  });
+
   test("not offered once a baseline exists", async () => {
     const { getByText, queryByText } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: { ...ANALYSIS_ROW, boqId: "boq-9" } }) });
     await waitFor(() => expect(getByText("Profit & Loss — the answer")).toBeDefined());
