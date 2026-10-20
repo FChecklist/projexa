@@ -66,6 +66,9 @@ export async function api(cfg, method, urlPath, body) {
     throw new TriageError("The error log refused the API key (it is wrong, expired, or not an owner/admin key). Put a valid owner key in VERIDIAN_API_KEY in .env.local and try again.");
   }
   if (res.status === 404) throw new TriageError("That error was not found in the log. Check the issue number.");
+  if (res.status === 400 && json?.field) {
+    throw new TriageError(`The error log rejected this because "${json.field}" is missing or not valid${json.error?.message || typeof json.error==="string" ? ` (${json.error?.message ?? json.error})` : ""}. Fix that and run the command again.`);
+  }
   if (!res.ok) {
     const detail = (json && (json.error?.message ?? json.error ?? json.message)) || text.slice(0, 200);
     throw new TriageError(`The error log answered with a problem (HTTP ${res.status}): ${typeof detail === "string" ? detail : JSON.stringify(detail)}`);

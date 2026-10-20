@@ -14,14 +14,14 @@ type Req = { method: string; url: string; auth: string | undefined; body: any };
 let server: Server;
 let base = "";
 let seen: Req[] = [];
-let mode: "ok" | "401" = "ok";
+let mode: "ok" | "401" | "400" = "ok";
 let work = "";
 let veridian = "";
 
 const issue = (o: any) => ({
   id: "i-1", title: "Crash", status: "open", occurrences: 1, severity: "high", project_ids: ["p1"], routes: [],
   first_seen_at: "2026-10-01", last_seen_at: "2026-10-02", reopened_count: 0,
-  sample: { message: "boom", stack: "Error: boom\n at x", route: "/projects/abc/tasks", breadcrumbs: ["clicked Save"], context: {} },
+  sample_event: { message: "boom", stack: "Error: boom\n at x", route: "/projects/abc/tasks", breadcrumbs: ["clicked Save"], context: {} },
   ...o,
 });
 const ISSUES = [
@@ -29,7 +29,7 @@ const ISSUES = [
   issue({ id: "hi-few", title: "High few", severity: "high", occurrences: 2 }),
   issue({
     id: "hi-many", title: "High many", severity: "high", occurrences: 40, reopened_count: 1,
-    sample: {
+    sample_event: {
       message: "Failed to load", stack: "TypeError: x is undefined", route: "/projects/abc/tasks", http_method: "GET",
       api_path: "/api/v1/projexa/tasks/77", http_status: 500, request_id: "req-9",
       breadcrumbs: [{ ts: "10:00", type: "click", label: "Open tasks" }, "typed a name"],
@@ -44,6 +44,7 @@ beforeAll(async () => {
     req.on("data", (c) => (raw += c));
     req.on("end", () => {
       seen.push({ method: req.method!, url: req.url!, auth: req.headers.authorization, body: raw ? JSON.parse(raw) : null });
+      if (mode === "400") { res.statusCode = 400; return res.end(JSON.stringify({ error: "invalid", field: "fix_files" })); }
       if (mode === "401") { res.statusCode = 401; return res.end("{}"); }
       const u = new URL(req.url!, "http://x");
       res.setHeader("content-type", "application/json");
@@ -155,6 +156,14 @@ describe("record-fix", () => {
     expect(r.code).toBe(1);
     expect(r.err).toContain("without at least one changed file");
     expect(seen).toHaveLength(0);
+  });
+
+  test("a 400 from the server names the missing field in plain words", async () => {
+    mode = "400";
+    const r = await run(FIX, ["--issue", "abc", "--summary", "s", "--file", "f.ts", "--change", "c"], good());
+    mode = "ok";
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("\"fix_files\" is missing or not valid");
   });
 
   test("--ignore needs a reason and sends status ignored", async () => {

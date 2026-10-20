@@ -138,6 +138,7 @@ export async function fetchIssues(cfg, { limit, project }) {
     all.push(...list);
   }
   const seen = new Set();
+  for (const x of all) if (!x.sample && x.sample_event) x.sample = x.sample_event;
   const uniq = all.filter((x) => (seen.has(x.id) ? false : seen.add(x.id)));
   uniq.sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || (b.occurrences ?? 0) - (a.occurrences ?? 0));
   const top = uniq.slice(0, limit);
@@ -147,7 +148,7 @@ export async function fetchIssues(cfg, { limit, project }) {
     const d = unwrap(await api(cfg, "GET", `issues/${encodeURIComponent(it.id)}`));
     const full = d?.issue ?? d;
     const ev = (d?.events ?? [])[0];
-    it.sample = { ...(ev ?? {}), ...(full?.sample ?? it.sample ?? {}) };
+    it.sample = { ...(ev ?? {}), ...(full?.sample_event ?? full?.sample ?? it.sample ?? {}) };
     if (!it.sample.breadcrumbs && ev?.breadcrumbs) it.sample.breadcrumbs = ev.breadcrumbs;
     for (const k of ["fix_summary", "fix_commit", "reopened_count"]) if (full?.[k] !== undefined) it[k] = full[k];
   }
