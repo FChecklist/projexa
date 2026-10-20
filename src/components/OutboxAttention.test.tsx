@@ -295,3 +295,31 @@ describe("where it is mounted", () => {
     expect(layout.match(/<OutboxAttention \/>/g)).toHaveLength(1);
   });
 });
+
+describe("OutboxAttention: a rejection is reported once", () => {
+  test("shown on the screen where it happened, gone after the person moves on, not back after a reload", async () => {
+    localStorage.removeItem("px.outbox.reported-rejections");
+    const r = await rig();
+    await editTask(r.outbox, { title: " " });
+    await r.outbox.flush();
+    const view = render(<OutboxAttention outbox={r.outbox} path="/scope/a" />);
+    expect((await view.findByTestId("outbox-draft")).textContent).toContain("was not saved");
+    // still there while the person stays on that screen
+    view.rerender(<OutboxAttention outbox={r.outbox} path="/scope/a" />);
+    expect(view.queryByTestId("outbox-draft")).not.toBeNull();
+    // moves to an unrelated screen: the message is gone
+    view.rerender(<OutboxAttention outbox={r.outbox} path="/work-progress" />);
+    await waitFor(() => expect(view.queryByTestId("outbox-draft")).toBeNull());
+    expect(view.queryByTestId("outbox-notice")).toBeNull();
+    // the notice itself is dismissed from the store (no replay from persisted state) ...
+    await waitFor(async () => expect((await r.outbox.refresh()).notices.length).toBe(0));
+    // ... what the person typed is still kept
+    expect((await r.outbox.refresh()).drafts.length).toBe(1);
+    // a fresh mount (reload) with the same stored rejection does not raise it again
+    cleanup();
+    const again = render(<OutboxAttention outbox={r.outbox} path="/tasks" />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)); });
+    expect(again.queryByTestId("outbox-draft")).toBeNull();
+    expect(again.queryByTestId("outbox-notice")).toBeNull();
+  });
+});
