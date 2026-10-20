@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { takeScreenMessage, type ScreenMessage } from "@/lib/screen-message";
-import { siLabel } from "@/lib/site-instruction-form";
+import { SI_MAX_FILE_MB, siLabel, siteInstructionFileError } from "@/lib/site-instruction-form";
 
 export type SiteInstructionRow = {
   id: string;
@@ -73,6 +73,59 @@ export function SiteInstructionsList({ projectId, projectName }: { projectId: st
   );
 }
 
+/**
+ * "Add file" on a site instruction that already exists: the PDF or photo for an instruction written on the laptop-first form (which cannot
+ * carry a file). Posts to /api/site-instructions/[id]/file, shows the server's own refusal text as it is, and says what was stored.
+ */
+export function SiteInstructionAddFile({ id }: { id: string }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [inputKey, setInputKey] = useState(0);
+  const fileError = siteInstructionFileError(file ? { name: file.name, size: file.size } : null);
+
+  async function add() {
+    if (!file || fileError) {
+      setNote({ ok: false, text: fileError ?? "Choose the file to add" });
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      await fetchJson(`/api/site-instructions/${encodeURIComponent(id)}/file`, { method: "POST", body: form });
+      setNote({ ok: true, text: `Added ${file.name} to this instruction` });
+      setFile(null);
+      setInputKey((k) => k + 1);
+    } catch (err) {
+      setNote({ ok: false, text: errorMessage(err, "The file could not be added") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5 border-t border-black/10 pt-3" data-testid="si-add-file">
+      <label htmlFor="si-add-file-input" className="text-px-muted">Add file (PDF or photo, up to {SI_MAX_FILE_MB} MB)</label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          key={inputKey}
+          id="si-add-file-input"
+          type="file"
+          accept="application/pdf,image/png,image/jpeg"
+          onChange={(e) => { setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null); setNote(null); }}
+        />
+        <button type="button" data-testid="si-add-file-button" disabled={busy || !file} onClick={() => void add()} className="rounded-md bg-ct-navy px-3 py-1.5 text-sm text-white disabled:opacity-50">
+          {busy ? "Adding…" : "Add file"}
+        </button>
+      </div>
+      {fileError ? <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{fileError}</p> : null}
+      {note ? <p role={note.ok ? "status" : "alert"} data-testid="si-add-file-note" data-ok={note.ok ? "1" : "0"} className="text-sm">{note.text}</p> : null}
+    </div>
+  );
+}
+
 export function SiteInstructionView({ id, projectId }: { id: string; projectId?: string | null }) {
   const [si, setSi] = useState<SiteInstructionRow | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +170,7 @@ export function SiteInstructionView({ id, projectId }: { id: string; projectId?:
           </dl>
           <div><p className="text-px-muted">Instruction</p><p className="whitespace-pre-wrap">{si.description ?? DASH}</p></div>
           {si.boqId ? <p><Link className="underline" href={`/scope/${si.boqId}`}>Open the linked BOQ</Link></p> : null}
+          <SiteInstructionAddFile id={si.id} />
         </div>
       ) : null}
     </div>
