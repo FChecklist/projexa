@@ -117,6 +117,19 @@ describe("analysis on this laptop", () => {
     expect(offline.getByTestId("baseline-needs-connection").textContent).toContain("needs a connection");
   });
 
+  // Sumeet R-100 (live audit 2026-10-20: "no baseline-confirm control in the laptop variant"): a copy of the analysis saved before the server sent
+  // boqId carries hasBaseline:false but no boqId, and the control used to vanish silently. The online screen resolves the BOQ itself, so the
+  // link must not depend on the cached boqId.
+  test("project 360 with no baseline and a saved copy that has no boqId: still offers the way to confirm", async () => {
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(boqAnalysisSnapshotName("p1"), { row: { hasBaseline: false } });
+    const data = await loadProject360(shellData(), "p1");
+    const online = render(<Project360LocalScreen shell={fakeShell("online")} {...props} data={data} />);
+    expect(online.getByTestId("baseline-open-online").getAttribute("href")).toBe("/analysis/project-360?projectId=p1&px-server=1");
+    cleanup();
+    const offline = render(<Project360LocalScreen shell={fakeShell("offline")} {...props} data={data} />);
+    expect(offline.getByTestId("baseline-needs-connection").textContent).toContain("needs a connection");
+  });
+
   test("project 360 with a baseline: no baseline control at all", async () => {
     await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(boqAnalysisSnapshotName("p1"), { row: { hasBaseline: true, boqId: "boq-1" } });
     const data = await loadProject360(shellData(), "p1");

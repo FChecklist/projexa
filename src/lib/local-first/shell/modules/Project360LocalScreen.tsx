@@ -67,8 +67,10 @@ export default function Project360LocalScreen({ shell, data }: ShellScreenProps<
           // Sumeet R-100: no baseline yet -> confirming one is a SERVER action (the server records who confirmed it and on what evidence), so the
           // control lives on the online page (components/Project360Client.tsx). This screen only points there, and only while online: a new /api call
           // from the laptop would break the Vercel budget (vercel-route-inventory.test.ts shell_api_references).
-          const row = snap?.body.row as { hasBaseline?: unknown; boqId?: unknown } | undefined;
-          if (!row || row.hasBaseline !== false || typeof row.boqId !== "string" || !row.boqId) return null;
+          // boqId is NOT required here (live audit 2026-10-20): a saved copy from before the server sent it made this control vanish. The online screen
+          // resolves the BOQ itself and says plainly if the project has none.
+          const row = snap?.body.row as { hasBaseline?: unknown } | undefined;
+          if (!row || row.hasBaseline !== false) return null;
           if (shell.connectivity !== "online") return <p data-testid="baseline-needs-connection" className="mt-2 text-xs text-px-muted">No baseline is confirmed for this project yet. Confirming one needs a connection: the server records who confirmed it and on what evidence.</p>;
           const projectId = data.state === "local" ? data.projectId : "";
           return (

@@ -23,6 +23,7 @@ import { Loader2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDate } from "@/lib/format-date";
 import TaxTemplateForm from "@/components/TaxTemplateForm";
+import { invoiceLabel, invoicePath, readInvoiceReceipt } from "@/lib/billing-invoice";
 
 export type ClaimStatus = "milestone_achieved" | "drafted" | "submitted" | "client_approved" | "invoiced" | "rejected";
 
@@ -191,12 +192,16 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
   async function transition(claimId: string, action: "draft" | "submit" | "approve" | "reject" | "invoice", extra: Record<string, unknown> = {}) {
     setBusyId(claimId);
     try {
-      await fetchJson(`/api/billing-claims/${encodeURIComponent(claimId)}`, {
+      const result = await fetchJson(`/api/billing-claims/${encodeURIComponent(claimId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...extra }),
       });
-      toast.success(`Billing milestone ${action === "draft" ? "drafted" : action === "submit" ? "submitted" : action === "approve" ? "approved" : action === "reject" ? "rejected" : "invoiced"}`);
+      if (action === "invoice") {
+        // R-95: say which invoice was raised and link to it (a success with nothing behind it is never shown).
+        const r = readInvoiceReceipt(result);
+        toast.success(`${invoiceLabel(r.invoiceNumber)} raised`, { action: { label: "Open invoice", onClick: () => router.push(invoicePath(r.invoiceId)) } });
+      } else toast.success(`Billing milestone ${action === "draft" ? "drafted" : action === "submit" ? "submitted" : action === "approve" ? "approved" : action === "reject" ? "rejected" : "invoiced"}`);
       setRejectingId(null); setRejectionReason("");
       setInvoicingId(null);
       await load();

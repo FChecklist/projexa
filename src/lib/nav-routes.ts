@@ -265,6 +265,8 @@ export const SHIPPED_ROUTES: readonly string[] = [
   "/submittals",
   "/submittals/[id]",
   "/submittals/new",
+  // Device log: the owner's "System log" (everything that went wrong, and what was fixed). Reached from Settings, owner/admin only.
+  "/system-log",
   "/vendors",
   "/vendors/[id]",
   "/vendors/new",

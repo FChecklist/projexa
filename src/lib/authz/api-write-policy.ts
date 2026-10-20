@@ -266,6 +266,9 @@ export const API_WRITE_POLICY: Readonly<Record<string, WriteTier>> = {
   "/moms/share-links/[linkId]": "PM_OR_ABOVE",
   "/local-first/prepare-report": "ANY_ROLE",
   "/local-first/client-error": "ANY_ROLE",
+  // DEVICE LOG intake: every member's phone/laptop sends its own error + action log here, a client_viewer's included (their errors matter just as much).
+  // The reads under /client-logs (issues, timeline) are GET-only and gated to owner/admin inside each route.
+  "/client-logs": "ANY_ROLE",
   "/mood-boards": "PM_OR_ABOVE",
   "/mood-boards/[id]": "PM_OR_ABOVE",
   "/mood-boards/[id]/items/[itemId]": "PM_OR_ABOVE",

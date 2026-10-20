@@ -30,6 +30,7 @@ import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 import { sanitiseBackendMessage } from "@/lib/task-errors";
+import { logRenderError } from "@/lib/client-log/install";
 
 export function CreateRouteError({
   module,
@@ -48,6 +49,7 @@ export function CreateRouteError({
   useEffect(() => {
     // The real exception still reaches the console for whoever is debugging;
     // what the USER sees is the sanitised sentence below.
+    logRenderError(error, `${moduleHref} create form`);
     console.error(`[${moduleHref}] create route error:`, error);
   }, [error, moduleHref]);
 

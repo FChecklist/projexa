@@ -142,7 +142,7 @@ describe("Expenses, Billing Milestones and Customers open OFFLINE from the lapto
     expect(rows[1]!.getAttribute("data-status")).toBe("submitted");
     expect(getAllByTestId("billing-steps")[0]!.textContent).toContain("Drafted");
     expect(getByTestId("billing").querySelectorAll("button")).toHaveLength(0);
-    expect(getByTestId("server-only").textContent).toContain("approving, rejecting or invoicing");
+    expect(getByTestId("server-only").textContent).toContain("approving or rejecting");
     expect(fetchCalls).toEqual([]);
     expect(noDialog()).toBe(true);
   });
