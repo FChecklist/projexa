@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
+import { withTiming } from "@/lib/with-timing";
 
 // R67 WS-A (A-17) -- THE ONE LINK OUT OF PROJEXA.
 //
@@ -21,8 +22,8 @@ import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
 // caller-supplied URL would be an open redirect, and a per-area path table
 // would have to invent VERIDIAN routes this repo cannot verify. It opens
 // VERIDIAN's own front door and stops there.
-export async function GET() {
+export const GET = withTiming("GET", async function GET() {
   const ctx = await requireAuth();
   if (ctx.response) return ctx.response;
   return NextResponse.redirect(VERIDIAN_ORIGIN, { status: 307 });
-}
+});

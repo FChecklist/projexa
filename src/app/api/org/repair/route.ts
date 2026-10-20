@@ -52,7 +52,7 @@ export const dynamic = "force-dynamic";
 // empty". Those two look identical today, which is a large part of why the
 // broken state went unnoticed.
 export const GET = withTiming("GET", async function GET() {
-  const ctx = await requireAuth();
+  const ctx = await requireAuth({ autoProvision: false });
   if (ctx.response) return ctx.response;
 
   const forbidden = requireRole(ctx, ROLE_GROUPS.ORG_ADMIN);
@@ -70,7 +70,7 @@ export const GET = withTiming("GET", async function GET() {
 });
 
 export const POST = withTiming("POST", async function POST() {
-  const ctx = await requireAuth();
+  const ctx = await requireAuth({ autoProvision: false });
   if (ctx.response) return ctx.response;
 
   // Provisioning credentials is a privileged act: it mints a VERIDIAN tenant

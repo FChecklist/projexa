@@ -78,6 +78,7 @@ mock.module("@/lib/db", () => ({
   veridianCredentials: CRED_TABLE,
   organizations: ORG_TABLE,
   memberships: {},
+  orgInvites: {},
   db: {
     select: () => ({
       from: (t: { __t: string }) => ({
