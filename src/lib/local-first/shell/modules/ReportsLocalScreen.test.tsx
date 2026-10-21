@@ -167,3 +167,65 @@ describe("reports on this laptop", () => {
     }
   });
 });
+
+// R-C15 (final audit 2026-10-22): Export PDF and a public link must be reachable from this screen.
+describe("reports on this laptop: Export PDF and the public link (R-C15)", () => {
+  test("before a report is run the outputs are SHOWN but disabled, with the reason in words (never absent)", async () => {
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    globalThis.fetch = (async () => new Promise(() => {})) as typeof fetch; // the run never answers
+    const { getByTestId } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams()} data={data} />);
+    expect((getByTestId("overview-report-pdf") as HTMLButtonElement).disabled).toBe(true);
+    expect((getByTestId("overview-report-public-link") as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId("overview-report-outputs-reason").textContent).toContain("Run the report first");
+  });
+
+  test("after a run, Export PDF prints and Create public link posts to the share route and shows the URL with a Copy button", async () => {
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(reportSnapshotName(STATUS_URL, "p1"), BODY);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    let posted: { url: string; body: Record<string, string> } | null = null;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "POST" && url.includes("/share")) {
+        posted = { url, body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ url: "https://projexa-ai.com/share/report/tok123", expiresAt: "2026-11-01T00:00:00Z" }), { status: 201 });
+      }
+      return new Response(JSON.stringify(BODY), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    let printed = 0;
+    const realPrint = window.print;
+    window.print = (() => { printed += 1; }) as typeof window.print;
+    const { getByTestId, findByTestId } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams()} data={data} />);
+    fireEvent.click(getByTestId("overview-report-pdf"));
+    expect(printed).toBe(1);
+    window.print = realPrint;
+    fireEvent.click(getByTestId("overview-report-public-link"));
+    const input = (await findByTestId("overview-report-link-url")) as HTMLInputElement;
+    expect(input.value).toBe("https://projexa-ai.com/share/report/tok123");
+    expect(getByTestId("overview-report-link-copy")).toBeTruthy();
+    expect(posted!.url).toBe("/api/reports/project-status/share");
+    expect(posted!.body.projectId).toBe("p1");
+    expect(posted!.body.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(posted!.body.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test("a report with no public page says so instead of offering a dead link", async () => {
+    const url = (reportDestination("kpi", { projectId: "p1" }) as { path: string }).path;
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(reportSnapshotName(url, "p1"), BODY);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=kpi"));
+    const { getByTestId } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams()} data={data} />);
+    expect((getByTestId("overview-report-public-link") as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId("overview-report-link-reason").textContent).toContain("no public view");
+  });
+
+  test("a refused link shows the server's words and a Retry", async () => {
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(reportSnapshotName(STATUS_URL, "p1"), BODY);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    globalThis.fetch = (async (_i: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
+      ? new Response(JSON.stringify({ error: "Failed to create share link" }), { status: 502 })
+      : new Response(JSON.stringify(BODY), { status: 200 })) as typeof fetch;
+    const { getByTestId, findByTestId } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams()} data={data} />);
+    fireEvent.click(getByTestId("overview-report-public-link"));
+    expect((await findByTestId("overview-report-link-error")).textContent).toContain("Failed to create share link");
+    expect(getByTestId("overview-report-link-retry")).toBeTruthy();
+  });
+});

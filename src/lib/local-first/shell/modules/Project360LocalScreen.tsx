@@ -5,6 +5,7 @@
 // exactly: change orders, milestones and progress claims by status -- their amounts are never added up here. The schedule's critical
 // path is recalculated by the server when online.
 
+import { baselineControlState } from "@/lib/baseline-control";
 import type { ShellScreenProps } from "../types";
 import { asOfLabel } from "../snapshot-cache";
 import { boqAnalysisSnapshotName, boqAnalysisUrl, isBoqAnalysisBody, type Project360Data } from "./analysis-adapter";
@@ -67,8 +68,8 @@ export default function Project360LocalScreen({ shell, data }: ShellScreenProps<
           // from the laptop would break the Vercel budget (vercel-route-inventory.test.ts shell_api_references).
           // boqId is NOT required here (live audit 2026-10-20): a saved copy from before the server sent it made this control vanish. The online screen
           // resolves the BOQ itself and says plainly if the project has none.
-          const row = snap?.body.row as { hasBaseline?: unknown } | undefined;
-          if (!row || row.hasBaseline !== false) return null;
+          const row = snap?.body.row as { hasBaseline?: boolean; baselineHasFigures?: boolean } | undefined;
+          if (!row || baselineControlState(row) === "none") return null;
           if (shell.connectivity !== "online") return (
             <div data-testid="baseline-needs-connection" className="mt-2 max-w-3xl">
               <ActionFailurePanel

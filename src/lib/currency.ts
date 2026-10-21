@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 
 import { viaPxApi } from "@/lib/px-api";
+import { forgetOrgCurrency, rememberOrgCurrency } from "@/lib/org-currency-memory";
 export type Currency = { id: string; code: string; name: string; symbol: string | null; isBaseCurrency: boolean };
 
 // R51 go-to-market (requirement R-62, "Dashboard and other screens show AED";
@@ -110,6 +111,7 @@ function readCachedCurrencies(): Currency[] | null {
 function writeCachedCurrencies(currencies: Currency[]): void {
   try {
     sessionStorage.setItem(CURRENCIES_SESSION_KEY, JSON.stringify(currencies));
+    rememberOrgCurrency(currencies.find((c) => c.isBaseCurrency)?.code);
   } catch {
     // Storage full or unavailable: the in-memory promise above still dedupes
     // for the life of this page, which is the larger half of the win.
@@ -147,6 +149,7 @@ export function loadCurrencies(): Promise<Currency[]> {
  */
 export function clearCurrenciesCache(): void {
   currenciesPromise = null;
+  forgetOrgCurrency();
   try {
     sessionStorage.removeItem(CURRENCIES_SESSION_KEY);
   } catch {

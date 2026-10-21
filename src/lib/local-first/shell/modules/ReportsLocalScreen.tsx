@@ -17,6 +17,7 @@ import { isReportBody } from "./reports-adapter";
 import { OverviewBody, downloadText } from "./OverviewBody";
 import { ServerOnly } from "./DeliveryParts";
 import { copyTextToClipboard, reportShareText } from "./share-text";
+import { createReportShareLink, isShareableReport } from "@/lib/report-share-link";
 import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-refresh";
 
 export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<ReportsData>) {
@@ -34,6 +35,18 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
   const prefetchReports = data.state === "local" ? data.reports.filter((r) => r.value !== selected?.value) : null;
   const [keeping, setKeeping] = useState<"idle" | "running" | "done" | "stopped">("idle");
   const [copied, setCopied] = useState<{ ok: boolean; text: string } | null>(null);
+  // R-C15: a public link, made by the server on request (never automatically); shown with a Copy button.
+  const [link, setLink] = useState<{ state: "idle" | "making" | "done" | "failed"; url?: string; error?: string; copied?: boolean }>({ state: "idle" });
+  async function makePublicLink() {
+    if (!selected || selected.kind !== "fetch" || !prefetchProject) return;
+    setLink({ state: "making" });
+    try {
+      const made = await createReportShareLink({ report: selected.value, projectId: prefetchProject, reportUrl: selected.url });
+      setLink({ state: "done", url: made.url });
+    } catch (err) {
+      setLink({ state: "failed", error: err instanceof Error ? err.message : "The link was not made." });
+    }
+  }
   async function keepAllReports() {
     if (!online || !prefetchProject || !prefetchReports) return;
     setKeeping("running");
@@ -112,37 +125,76 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
                   <button type="button" data-testid="reports-retry" onClick={() => setRunKey((k) => k + 1)} className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink">Retry</button>
                 ) : null}
               </div>
+              <div className="flex flex-wrap items-center gap-3" data-testid="overview-report-outputs">
+                {snap ? (
+                <button
+                  type="button"
+                  data-testid="overview-report-export"
+                  className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
+                  onClick={() => downloadText(`${selected.value}.csv`, reportResultToCsv(snap.body, `${selected.label}${project ? ` - ${project.name}` : ""} (${asOfLabel(snap.fetchedAt)})`))}
+                >
+                  Export CSV
+                </button>
+                ) : null}
+                <button
+                  type="button"
+                  data-testid="overview-report-pdf"
+                  disabled={!snap}
+                  className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink disabled:opacity-60"
+                  onClick={() => window.print()}
+                >
+                  Export PDF
+                </button>
+                {snap ? (
+                <button
+                  type="button"
+                  data-testid="overview-report-whatsapp"
+                  className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink "
+                  onClick={async () => {
+                    if (!snap) return;
+                    const text = reportShareText({ title: selected.label, projectName: project?.name ?? null, savedAt: snap.fetchedAt, body: snap.body });
+                    setCopied({ ok: await copyTextToClipboard(text), text });
+                  }}
+                >
+                  Share: copy text for WhatsApp
+                </button>
+                ) : null}
+                <button
+                  type="button"
+                  data-testid="overview-report-public-link"
+                  disabled={!snap || !online || !isShareableReport(selected.value) || link.state === "making"}
+                  className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink disabled:opacity-60"
+                  onClick={() => void makePublicLink()}
+                >
+                  {link.state === "making" ? "Creating the link…" : "Create public link"}
+                </button>
+                {!snap ? <span className="text-xs text-px-muted" data-testid="overview-report-outputs-reason">Run the report first; then these buttons work.</span> : null}
+                {snap && !isShareableReport(selected.value) ? <span className="text-xs text-px-muted" data-testid="overview-report-link-reason">This report has no public view yet: copy the text for WhatsApp instead.</span> : null}
+                {snap && isShareableReport(selected.value) && !online ? <span className="text-xs text-px-muted" data-testid="overview-report-link-reason">A public link is made by the server: connect to create one.</span> : null}
+              </div>
+              {link.state === "done" && link.url ? (
+                <div className="flex flex-wrap items-center gap-2" data-testid="overview-report-link">
+                  <input readOnly aria-label="Public link" data-testid="overview-report-link-url" className="min-w-0 flex-1 rounded border border-black/20 p-1 text-xs" value={link.url} onFocus={(e) => e.currentTarget.select()} />
+                  <button
+                    type="button"
+                    data-testid="overview-report-link-copy"
+                    className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
+                    onClick={async () => { const ok = await copyTextToClipboard(link.url as string); setLink({ ...link, copied: ok }); }}
+                  >
+                    Copy
+                  </button>
+                  {link.copied ? <span className="text-xs text-px-ink" role="status">Link copied.</span> : null}
+                </div>
+              ) : null}
+              {link.state === "failed" ? (
+                <div role="alert" className="text-xs text-px-ink" data-testid="overview-report-link-error">
+                  The link was not made: {link.error} <button type="button" data-testid="overview-report-link-retry" className="underline" onClick={() => void makePublicLink()}>Retry</button>
+                </div>
+              ) : null}
               {snap ? (
                 <div data-state="snapshot" className="space-y-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-xs text-px-muted" data-testid="overview-report-asof">{asOfLabel(snap.fetchedAt)}</p>
-                    <button
-                      type="button"
-                      data-testid="overview-report-export"
-                      className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
-                      onClick={() => downloadText(`${selected.value}.csv`, reportResultToCsv(snap.body, `${selected.label}${project ? ` - ${project.name}` : ""} (${asOfLabel(snap.fetchedAt)})`))}
-                    >
-                      Export CSV
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="overview-report-whatsapp"
-                      className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
-                      onClick={async () => {
-                        const text = reportShareText({ title: selected.label, projectName: project?.name ?? null, savedAt: snap.fetchedAt, body: snap.body });
-                        setCopied({ ok: await copyTextToClipboard(text), text });
-                      }}
-                    >
-                      Share: copy text for WhatsApp
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="overview-report-pdf"
-                      className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
-                      onClick={() => window.print()}
-                    >
-                      Export PDF
-                    </button>
                   </div>
                   {copied?.ok ? <p className="text-xs text-px-ink" role="status" data-testid="overview-report-copied">Copied. Paste it into WhatsApp.</p> : null}
                   {copied && !copied.ok ? (

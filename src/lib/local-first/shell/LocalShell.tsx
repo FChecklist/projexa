@@ -15,6 +15,7 @@ import { PeerSyncMarker } from "@/components/PeerSyncMarker";
 import { GuidedNavigationContext } from "@/components/GuidedError";
 import { ReturnStrip } from "@/components/ReturnStrip";
 import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker";
+import { ReleaseUpdateNotice } from "@/components/local-first/ReleaseUpdateNotice";
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
 import { AiAttach } from "../ai/AiAttach";
@@ -530,6 +531,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         {traditional ? null : moduleNav}
       </header>
       {/* GUIDED ERRORS: the way back after a "Fix it now" trip, and the ?focus= arrival, on the laptop screens too (the web layout mounts the same strip) */}
+      <ReleaseUpdateNotice />
       <ReturnStrip />
       {traditional ? (
         <div className="mx-auto flex max-w-7xl gap-4 p-4">
