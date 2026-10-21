@@ -36,7 +36,7 @@ async function typePercent(page: Page, lineId: string, value: string) {
 
 test.describe("G4 laptop faults", () => {
   test("offline write: queued, the row says 'Waiting to sync', the corner note explains it; back online it is sent and both go away", async ({ page, context }) => {
-    const l = await laptop(page, context, "pm");
+    const l = await laptop(page, context, "manager");
     await openBudget(page);
     await goOffline(context, l.net, l.app);
     await typePercent(page, "dl-line-1", "40");
@@ -54,7 +54,7 @@ test.describe("G4 laptop faults", () => {
   });
 
   test("a queued change the server turns down: 'Line budget was not saved' names the line, shows the typed value, and one button re-enters it", async ({ page, context }) => {
-    const l = await laptop(page, context, "pm");
+    const l = await laptop(page, context, "manager");
     l.sync.answers.set("update_line_item_budget", { status: "rejected", code: "VALIDATION_FAILED" });
     await openBudget(page);
     await typePercent(page, "dl-line-1", "55");
@@ -91,7 +91,7 @@ test.describe("G4 laptop faults", () => {
   });
 
   test("a sync conflict: both values are shown with Keep mine / Keep theirs inside the guided panel", async ({ page, context }) => {
-    const l = await laptop(page, context, "pm");
+    const l = await laptop(page, context, "manager");
     l.sync.answers.set("update_line_item_budget", { status: "conflict" });
     await openBudget(page);
     await typePercent(page, "dl-line-1", "35");
