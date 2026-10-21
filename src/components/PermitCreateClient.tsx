@@ -12,6 +12,7 @@
 // not fit the generic JSON screen_drafts payload; see permits/new/page.tsx.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { GuidedSubmitFailure } from "@/components/GuidedError";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -183,9 +184,7 @@ export default function PermitCreateClient({
 
   // The hook's own failure, in this screen's message band -- one place for
   // every sentence, whether it came from a field rule or from the server.
-  const bandMessages: FieldMessage[] = submit.failure
-    ? [...messages, { level: "error" as const, text: submit.failure.message }]
-    : messages;
+  const bandMessages: FieldMessage[] = messages; // the hook's failure is shown by <GuidedSubmitFailure> below
 
   const backToList = () => router.push(`/permits?projectId=${projectId}`);
 
@@ -215,6 +214,7 @@ export default function PermitCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
         {!storageConfigured && (
           <p
             role="alert"

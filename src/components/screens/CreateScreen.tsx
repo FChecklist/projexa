@@ -41,7 +41,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +55,8 @@ import { ProjectBreadcrumb } from "@/components/ProjectBreadcrumb";
 import { createSaveLabel, missingCreateFields, type CreateField, type CreateFiles, type CreateValues } from "@/lib/create-screen";
 import { saveDisabledReason } from "@/lib/save-label";
 import type { SubmitFailure } from "@/lib/use-submit";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromFailure } from "@/lib/error-guide/context";
 
 export type CreateScreenProps = {
   /** "Permits", "Minutes of Meeting" -- what the breadcrumb and Back point at. */
@@ -369,26 +371,7 @@ export function CreateScreen({
             {/* The failure, in place, above the buttons, with every value
                 still on the form behind it -- and its own way out. */}
             {failure && (
-              <div role="alert" className="rounded-lg border border-px-error-border bg-px-error-light p-3 text-sm">
-                <p className="flex items-start gap-2 text-px-error">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  <span>
-                    {failure.message}
-                    {failure.retryable && onRetry && (
-                      <>
-                        {" "}
-                        <button
-                          type="button"
-                          onClick={onRetry}
-                          className="font-medium underline underline-offset-2"
-                        >
-                          Try again
-                        </button>
-                      </>
-                    )}
-                  </span>
-                </p>
-              </div>
+              <GuidedError ctx={contextFromFailure(failure)} message={failure.message} retryable={failure.retryable} onRetry={onRetry} />
             )}
 
             <div className="flex flex-wrap items-center justify-end gap-2">

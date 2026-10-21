@@ -21,6 +21,7 @@
 // server-side.
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { GuidedSubmitFailure } from "@/components/GuidedError";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -325,9 +326,7 @@ export default function DrawingCreateClient({
   }
 
   // Field rules and the hook's own failure share ONE message band.
-  const bandMessages: FieldMessage[] = submit.failure
-    ? [...messages, { level: "error" as const, text: submit.failure.message }]
-    : messages;
+  const bandMessages: FieldMessage[] = messages; // the hook's failure is shown by <GuidedSubmitFailure> below
 
   const backToList = () => router.push(resolvedId ? `/drawings?projectId=${resolvedId}` : "/drawings");
 
@@ -351,6 +350,7 @@ export default function DrawingCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
         {/* R67 D-78: stated BEFORE the file field, because it is the one thing
             on this screen that makes filling the form in pointless. */}
         {!storageConfigured && (

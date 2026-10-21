@@ -247,7 +247,8 @@ export async function middleware(request: NextRequest) {
   if (!userId && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("redirectTo", request.nextUrl.pathname);
+    // The whole address, query included: a deep link (?projectId=..&focus=..) must come back exactly as it was.
+    url.searchParams.set("redirectTo", request.nextUrl.pathname + request.nextUrl.search);
     return withLocaleCookie(NextResponse.redirect(url), request, locale);
   }
 

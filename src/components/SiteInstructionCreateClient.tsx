@@ -7,6 +7,7 @@
 // instruction). The form shape is the industry-standard Architect/Site Instruction record, not a format Sumeet supplied.
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { GuidedSubmitFailure } from "@/components/GuidedError";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -99,7 +100,7 @@ export default function SiteInstructionCreateClient({
     submit.submit();
   }
 
-  const bandMessages: FieldMessage[] = submit.failure ? [...messages, { level: "error" as const, text: submit.failure.message }] : messages;
+  const bandMessages: FieldMessage[] = messages; // the hook's failure is shown by <GuidedSubmitFailure> below
   const backToList = () => router.push(`/site-instructions?projectId=${encodeURIComponent(projectId)}`);
 
   return (
@@ -116,6 +117,7 @@ export default function SiteInstructionCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
         <div className="space-y-1.5">
           <Label htmlFor="issueDate">Issue date</Label>
           <Input id="issueDate" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />

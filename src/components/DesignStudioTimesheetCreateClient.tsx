@@ -37,6 +37,7 @@
 // untouched and its other twelve screens are unaffected.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { GuidedSubmitFailure } from "@/components/GuidedError";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -151,8 +152,9 @@ export default function DesignStudioTimesheetCreateClient({
       // D-72, carried over: a refusal, a timeout and a click that sent nothing
       // are three different sentences, written once in the hook and shown IN
       // PLACE with every value still on the form -- never a fading toast.
-      messages={submit.failure ? [{ level: "error", text: submit.failure.message }] : []}
+      messages={[]}
     >
+      <div className="px-4 pt-3 empty:hidden"><GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} /></div>
       {tasksError && (
         <div className="px-4 pt-3">
           <PaneErrorCard entity="this project's tasks" error={tasksError} onRetry={() => void loadTasks()} />
