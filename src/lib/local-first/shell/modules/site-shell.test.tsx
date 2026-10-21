@@ -113,8 +113,9 @@ describe("with NO network, the site screens open from the laptop's own copy", ()
     const box = getByLabelText("Answer") as HTMLTextAreaElement;
     fireEvent.input(box, { target: { value: "Use 200mm." } });
     fireEvent.submit(getByTestId("rfi-answer-form"));
-    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("1"), { timeout: SAVE_WAIT_MS });
-    await waitFor(() => expect(getByTestId("rfi-object").textContent).toContain("Waiting to sync"));
+    // The "Saved" note under the form is transient: once the answer is saved the screen refreshes and the form (and its note) is replaced, so a wait on the note raced the refresh.
+    // The outcome that matters is the persisted one -- the RFI reads answered and waiting to sync, with the typed answer.
+    await waitFor(() => expect(getByTestId("rfi-object").textContent).toContain("Waiting to sync"), { timeout: SAVE_WAIT_MS });
     expect(getByTestId("rfi-object").textContent).toContain("Use 200mm.");
     expect(document.querySelector('[role="dialog"], [role="alertdialog"], [role="alert"]')).toBeNull();
     expect(fetchCalls).toEqual([]);
