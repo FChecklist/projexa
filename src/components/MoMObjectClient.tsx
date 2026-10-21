@@ -102,6 +102,11 @@ import {
 } from "@/lib/org-user-picker";
 
 import { viaPxApi } from "@/lib/px-api";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { httpError } from "@/lib/guided-form";
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
 type Meeting = {
@@ -188,6 +193,12 @@ export default function MoMObjectClient({
   const [minutesState, setMinutesState] = useState<MinutesState>({ status: "idle" });
   const [busy, setBusy] = useState<string | null>(null);
   const [notices, setNotices] = useState<FieldMessage[]>([]);
+  // G3 guided errors: the failure on screen (full panel: what happened, why, steps, the exact place to fix it, the way back), and the unsaved
+  // minutes + half-typed action item, kept so a "Fix it now" detour, a reload or a sign-in that ran out loses nothing.
+  const [guided, setGuided] = useState<{ field: string; ctx: GuideContext; message: string; retry?: () => void } | null>(null);
+  const draftKey = `mom-object:${meetingId}`;
+  const mdraft = useDraft<{ minutes: string; actionTitle: string; actionDueDate: string; actionAssignee: OrgUser | null }>(draftKey, { minutes: "", actionTitle: "", actionDueDate: "", actionAssignee: null });
+  const draftApplied = useRef(false);
 
   const [actionTitle, setActionTitle] = useState("");
   const [actionAssignee, setActionAssignee] = useState<OrgUser | null>(null);
@@ -276,12 +287,18 @@ export default function MoMObjectClient({
     return () => { cancelled = true; clearTimeout(timer); };
   }, [pickerQuery, peopleRetry]);
 
-  function note(message: FieldMessage) {
+  function note(message: FieldMessage, err?: unknown, retry?: () => void) {
     setNotices((prev) => [...prev.filter((n) => n.field !== message.field), message]);
+    if (message.level === "error" && err !== undefined && message.field) {
+      setGuided({ field: message.field, ctx: contextFromError(err, { entityId: meetingId, entityType: "mom" }), message: message.text, retry });
+    } else if (message.level === "success") {
+      setGuided((g) => (g && g.field === message.field ? null : g));
+    }
   }
 
   function clearNote(field: string) {
     setNotices((prev) => prev.filter((n) => n.field !== field));
+    setGuided((g) => (g && g.field === field ? null : g));
   }
 
   // Synced in an effect, never during render: writing a ref while rendering
@@ -341,7 +358,7 @@ export default function MoMObjectClient({
         body: JSON.stringify(meetingPatchBody(draft)),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Failed to save meeting");
+      if (!res.ok) throw httpError(res, data, "Failed to save meeting", "PATCH", `/api/moms/${meetingId}`);
       // R67 D-17: the receipt is a PERSISTENT message, not a toast that is
       // gone before the user has looked up from the field they were typing.
       clearNote("edit");
@@ -354,7 +371,7 @@ export default function MoMObjectClient({
       setMode("display");
       await load();
     } catch (err) {
-      note({ field: "edit", level: "error", text: errorMessage(err, "Couldn't save meeting") });
+      note({ field: "edit", level: "error", text: errorMessage(err, "Couldn't save meeting") }, err, () => void saveEdit());
     } finally {
       setSaving(false);
     }
@@ -383,15 +400,16 @@ export default function MoMObjectClient({
         body: JSON.stringify({ minutes: text }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Couldn't save minutes");
+      if (!res.ok) throw httpError(res, data, "Couldn't save minutes", "PATCH", `/api/moms/${meetingId}`);
       savedMinutesRef.current = text;
       setMeeting((prev) => (prev ? { ...prev, minutes: text } : prev));
       retryRef.current.attempt = 0;
+      mdraft.set({ minutes: "" });
       clearNote("minutes");
       setMinutesState({ status: "saved", at: new Date() });
     } catch (err) {
       // The text stays in the box. The failure is stated once, persistently.
-      note({ field: "minutes", level: "error", text: errorMessage(err, "Couldn't save minutes") });
+      note({ field: "minutes", level: "error", text: errorMessage(err, "Couldn't save minutes") }, err);
       setMinutesState({ status: "retrying" });
       const attempt = Math.min(retryRef.current.attempt + 1, RETRY_BACKOFF_MS.length);
       retryRef.current.attempt = attempt;
@@ -404,7 +422,23 @@ export default function MoMObjectClient({
   function onMinutesChange(value: string) {
     latestMinutesRef.current = value;
     setMinutesDraft(value);
+    mdraft.set({ minutes: value });
   }
+
+  // Put the unsaved minutes and the half-typed action item back once the meeting has loaded (the server's text is the base; a draft that
+  // differs from it is what the person typed and had not saved yet).
+  useEffect(() => {
+    if (!meeting || !mdraft.restored || draftApplied.current) return;
+    draftApplied.current = true;
+    const d = mdraft.value;
+    if (!isPublished && d.minutes && d.minutes !== (meeting.minutes ?? "")) {
+      setMinutesDraft(d.minutes);
+      latestMinutesRef.current = d.minutes;
+    }
+    if (d.actionTitle) setActionTitle(d.actionTitle);
+    if (d.actionDueDate) setActionDueDate(d.actionDueDate);
+    if (d.actionAssignee) setActionAssignee(d.actionAssignee);
+  }, [meeting, mdraft.restored, mdraft.value, isPublished]);
 
   // Derived from state, not from savedMinutesRef: meeting.minutes IS the last
   // value the server confirmed (patchMinutes writes it back on success), and a
@@ -431,11 +465,11 @@ export default function MoMObjectClient({
         body: JSON.stringify({ action: "publish" }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Failed to publish meeting");
+      if (!res.ok) throw httpError(res, data, "Failed to publish meeting", "PATCH", `/api/moms/${meetingId}`);
       note({ field: "publish", level: "success", text: `Published and locked at ${formatClock(new Date())}` });
       await load();
     } catch (err) {
-      note({ field: "publish", level: "error", text: errorMessage(err, "Couldn't publish meeting") });
+      note({ field: "publish", level: "error", text: errorMessage(err, "Couldn't publish meeting") }, err);
     } finally {
       setPublishing(false);
     }
@@ -464,12 +498,12 @@ export default function MoMObjectClient({
     try {
       const res = await viaPxApi(`/api/moms/${meetingId}/generate-intelligence`, { method: "POST" });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Failed to generate AI summary");
+      if (!res.ok) throw httpError(res, data, "Failed to generate AI summary", "POST", `/api/moms/${meetingId}/generate-intelligence`);
       clearNote("ai");
       note({ field: "ai", level: "success", text: "AI summary generated" });
       await load();
     } catch (err) {
-      note({ field: "ai", level: "error", text: errorMessage(err, "Couldn't generate AI summary") });
+      note({ field: "ai", level: "error", text: errorMessage(err, "Couldn't generate AI summary") }, err, () => void generateSummary());
     } finally {
       setBusy(null);
     }
@@ -500,13 +534,14 @@ export default function MoMObjectClient({
         body: JSON.stringify({ title: actionTitle.trim(), assigneeUserId: actionAssignee!.id, dueDate: actionDueDate || undefined }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Failed to add action item");
+      if (!res.ok) throw httpError(res, data, "Failed to add action item", "POST", `/api/moms/${meetingId}/action-items`);
       clearNote("action");
       note({ field: "action", level: "success", text: `Action item added for ${displayNameOf(actionAssignee!)}` });
       setActionTitle(""); setActionAssignee(null); setActionDueDate(""); setPickerQuery("");
+      mdraft.set({ actionTitle: "", actionAssignee: null, actionDueDate: "" });
       await load();
     } catch (err) {
-      note({ field: "action", level: "error", text: errorMessage(err, "Couldn't add action item") });
+      note({ field: "action", level: "error", text: errorMessage(err, "Couldn't add action item") }, err, () => void addActionItem());
     } finally {
       setBusy(null);
     }
@@ -530,7 +565,7 @@ export default function MoMObjectClient({
     try {
       const res = await fetch(`/api/moms/${meetingId}/share-links`, { method: "POST" });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.shareUrl) throw new Error(data?.error ?? "Failed to create a share link");
+      if (!res.ok || !data?.shareUrl) throw httpError(res, data, "Failed to create a share link", "POST", `/api/moms/${meetingId}/share-links`);
       // The new link joins the list below, where it can be revoked.
       clearNote("share");
       note({
@@ -540,7 +575,7 @@ export default function MoMObjectClient({
       await load();
       return data.shareUrl as string;
     } catch (err) {
-      note({ field: "share", level: "error", text: errorMessage(err, "Couldn't create a share link") });
+      note({ field: "share", level: "error", text: errorMessage(err, "Couldn't create a share link") }, err, () => void shareUrlFactory());
       return null;
     } finally {
       setBusy(null);
@@ -552,12 +587,12 @@ export default function MoMObjectClient({
     try {
       const res = await viaPxApi(`/api/moms/share-links/${linkId}`, { method: "DELETE" });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error ?? "Failed to revoke share link");
+      if (!res.ok) throw httpError(res, data, "Failed to revoke share link", "DELETE", `/api/moms/share-links/${linkId}`);
       clearNote("share");
       note({ field: "share", level: "success", text: "Share link revoked - it no longer opens" });
       await load();
     } catch (err) {
-      note({ field: "share", level: "error", text: errorMessage(err, "Couldn't revoke share link") });
+      note({ field: "share", level: "error", text: errorMessage(err, "Couldn't revoke share link") }, err);
     } finally {
       setBusy(null);
     }
@@ -669,9 +704,14 @@ export default function MoMObjectClient({
       messages={[
         ...(isPublished ? [{ level: "info" as const, text: "This meeting is published and locked -- its details and minutes cannot be edited." }] : []),
         ...(actionAttempted && addDisabledReason ? [{ field: "action-validation", level: "warning" as const, text: ACTION_ITEM_VALIDATION_MESSAGE }] : []),
-        ...notices,
+        ...notices.filter((n) => !(n.level === "error" && guided?.field === n.field)),
       ]}
     >
+      {guided && (
+        <div className="px-4 pt-3">
+          <GuidedError ctx={guided.ctx} message={guided.message} onRetry={guided.retry} draftKey={draftKey} />
+        </div>
+      )}
       {!isPublished && mode === "display" && (
         <div className="flex items-center gap-2 border-b border-ct-border px-4 py-3">
           <Button
@@ -752,6 +792,8 @@ export default function MoMObjectClient({
             </div>
             <Textarea
               data-focus="minutes"
+              id="mom-minutes"
+              name="minutes"
               ref={minutesBoxRef}
               value={minutesDraft}
               onChange={(e) => onMinutesChange(e.target.value)}
@@ -817,7 +859,7 @@ export default function MoMObjectClient({
               </ul>
             )}
             <div className="flex flex-wrap items-end gap-2">
-              <div className="space-y-1.5"><Label htmlFor="mom-action-title">Title</Label><Input id="mom-action-title" className="w-52" value={actionTitle} onChange={(e) => setActionTitle(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label htmlFor="mom-action-title">Title</Label><Input id="mom-action-title" className="w-52" value={actionTitle} onChange={(e) => { setActionTitle(e.target.value); mdraft.set({ actionTitle: e.target.value }); }} /></div>
 
               {/* D-19: a real people picker. This used to be a text box
                   captioned "paste a known VERIDIAN user ID". */}
@@ -872,14 +914,14 @@ export default function MoMObjectClient({
                         {groups.inMeeting.length > 0 && (
                           <CommandGroup heading="In this meeting">
                             {groups.inMeeting.map((user) => (
-                              <PersonRow key={user.id} user={user} onPick={() => { setActionAssignee(user); setPickerOpen(false); }} />
+                              <PersonRow key={user.id} user={user} onPick={() => { setActionAssignee(user); mdraft.set({ actionAssignee: user }); setPickerOpen(false); }} />
                             ))}
                           </CommandGroup>
                         )}
                         {groups.others.length > 0 && (
                           <CommandGroup heading={groups.inMeeting.length > 0 ? "Everyone else" : "People"}>
                             {groups.others.map((user) => (
-                              <PersonRow key={user.id} user={user} onPick={() => { setActionAssignee(user); setPickerOpen(false); }} />
+                              <PersonRow key={user.id} user={user} onPick={() => { setActionAssignee(user); mdraft.set({ actionAssignee: user }); setPickerOpen(false); }} />
                             ))}
                           </CommandGroup>
                         )}
@@ -889,7 +931,7 @@ export default function MoMObjectClient({
                 </Popover>
               </div>
 
-              <div className="space-y-1.5"><Label htmlFor="mom-action-due">Due Date (optional)</Label><Input id="mom-action-due" type="date" className="w-40" value={actionDueDate} onChange={(e) => setActionDueDate(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label htmlFor="mom-action-due">Due Date (optional)</Label><Input id="mom-action-due" type="date" className="w-40" value={actionDueDate} onChange={(e) => { setActionDueDate(e.target.value); mdraft.set({ actionDueDate: e.target.value }); }} /></div>
               <Button size="sm" disabled={!!addDisabledReason} title={addDisabledReason} onClick={() => void addActionItem()}>
                 Add
                 {addDisabledReason && <span className="ml-1.5 text-[11px] font-normal">({addDisabledReason})</span>}

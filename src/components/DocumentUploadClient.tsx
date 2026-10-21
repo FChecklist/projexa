@@ -53,6 +53,11 @@ import {
 } from "@/lib/document-intake";
 
 import { viaPxApi } from "@/lib/px-api";
+import { GuidedError } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { fault, useFormDraft } from "@/lib/guided-form";
 export const DROP_ZONE_LABEL = `Drop a PDF, image or email here, or Choose File - up to ${DOCUMENT_MAX_MB} MB`;
 
 type RelatesToOption = { type: "project" | "permit" | "rfi" | "mom"; id: string; label: string };
@@ -103,11 +108,19 @@ export default function DocumentUploadClient({
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rechosen = useRef(false);
   const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("other");
-  const [email, setEmail] = useState<EmailHeaders>({ from: "", receivedOn: "", subject: "" });
-  const [relatesTo, setRelatesTo] = useState(`project:${projectId}`);
+  // G3 guided errors: what was typed (everything except the file itself, which a browser never lets a page restore) survives a "Fix it now"
+  // detour, a reload and a sign-in that ran out; thrown away after a successful upload.
+  const draftKey = `document-new:${projectId}`;
+  const draft = useFormDraft(draftKey, { name: "", category: "other", from: "", receivedOn: "", subject: "", relatesTo: `project:${projectId}` });
+  const { name, category, relatesTo } = draft.values;
+  const email: EmailHeaders = { from: draft.values.from, receivedOn: draft.values.receivedOn, subject: draft.values.subject };
+  const setName = (v: string) => draft.onChange("name", v);
+  const setCategory = (v: string) => draft.onChange("category", v);
+  const setRelatesTo = (v: string) => draft.onChange("relatesTo", v);
+  const setEmail = (e: EmailHeaders) => draft.patch({ from: e.from, receivedOn: e.receivedOn, subject: e.subject });
+  const [failure, setFailure] = useState<{ ctx: GuideContext; message?: string } | null>(null);
   const [options, setOptions] = useState<RelatesToOption[]>([]);
   const [dragging, setDragging] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -154,7 +167,17 @@ export default function DocumentUploadClient({
 
   const acceptFile = useCallback(async (chosen: File | null) => {
     setFile(chosen);
+    setFailure(null);
     if (!chosen) return;
+    // A file that can never be accepted is explained the moment it is chosen, in full, not only as a disabled Save.
+    const bad = chosen.size === 0 ? { code: "EMPTY_FILE", text: `The file ${chosen.name} is empty (0 bytes), so there is nothing to upload.` } : documentTypeError(chosen.name) ?? documentSizeError(chosen.size) ? { code: "FILE_REJECTED", text: (documentTypeError(chosen.name) ?? documentSizeError(chosen.size)) as string } : null;
+    if (bad) setFailure({ ctx: contextFromFailure(fault(bad.code, "document-drop-zone", bad.text), { projectId }) });
+    // Choosing the file again after a detour must not wipe what the person had already typed.
+    if (draft.restored && draft.values.name.trim() && !rechosen.current) {
+      rechosen.current = true;
+      return;
+    }
+    rechosen.current = true;
     // The name defaults to the file's stem -- the hint under the field says so,
     // because a default nobody was told about is indistinguishable from a value
     // the user typed and forgot.
@@ -176,7 +199,7 @@ export default function DocumentUploadClient({
     } else {
       setEmail({ from: "", receivedOn: "", subject: "" });
     }
-  }, []);
+  }, [draft.restored, draft.values.name, projectId]);
 
   async function handleSave() {
     // R67 D-72 (lane D0, folded in). This guard used to be a bare
@@ -186,13 +209,22 @@ export default function DocumentUploadClient({
     // returns silently is the exact fail-after-click D-72 exists to remove: it
     // SPEAKS now, in the screen's own message band.
     if (!file) {
-      setMessages([{ level: "error", text: "Nothing was sent — choose a file and try again." }]);
+      setFailure({ ctx: contextFromFailure(fault("NO_FILE", "document-drop-zone", "Nothing was sent: no file has been chosen yet."), { projectId }) });
+      return;
+    }
+    if (file.size === 0) {
+      setFailure({ ctx: contextFromFailure(fault("EMPTY_FILE", "document-drop-zone", `The file ${file.name} is empty (0 bytes), so there is nothing to upload.`), { projectId }) });
       return;
     }
     if (fileError) {
-      setMessages([{ level: "error", text: fileError }]);
+      setFailure({ ctx: contextFromFailure(fault("FILE_REJECTED", "document-drop-zone", fileError), { projectId }) });
       return;
     }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setFailure({ ctx: contextFromFailure(fault("OFFLINE", undefined, "This device is offline, so the file cannot be uploaded."), { projectId, method: "POST", apiPath: "/api/documents", status: 0 }) });
+      return;
+    }
+    setFailure(null);
     const relation = decodeRelatesTo(relatesTo);
     const formData = new FormData();
     formData.set("file", file);
@@ -214,14 +246,22 @@ export default function DocumentUploadClient({
     try {
       const res = await viaPxApi("/api/documents", { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Failed to upload document");
+      if (!res.ok) {
+        const serverMessage = typeof data?.error === "string" && data.error ? data.error : "Failed to upload document";
+        setFailure({
+          ctx: { ...contextFromFailure({ kind: "refused", message: serverMessage, serverMessage, status: res.status, code: typeof data?.code === "string" ? data.code : undefined, apiPath: "/api/documents", method: "POST" }, { projectId }) },
+          message: `Could not save the document — ${serverMessage.replace(/[.!?]$/, "")}. Nothing was saved.`,
+        });
+        return;
+      }
       writeLastCategory(category);
+      draft.clear();
       // The receipt is handed to the screen that replaces this one, not shown
       // in a toast that vanishes during the navigation.
       setScreenMessage("documents.object", { level: "success", text: `Document ${name.trim() || file.name} added` });
       router.push(`/documents/${data.id}`);
     } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't upload document" }]);
+      setFailure({ ctx: contextFromError(err, { projectId, apiPath: "/api/documents", method: "POST" }), message: err instanceof TypeError ? undefined : err instanceof Error ? err.message : undefined });
     } finally {
       setSaving(false);
     }
@@ -247,6 +287,13 @@ export default function DocumentUploadClient({
       messages={messages}
     >
       <div className="space-y-4 px-4 py-3">
+        <DraftRestoredNote draft={draft} />
+        {draft.restored && !file && (
+          <p role="status" data-testid="document-rechoose" className="text-[13px] text-ct-muted">
+            Your entries are back. A browser cannot keep a chosen file, so choose the file again.
+          </p>
+        )}
+        {failure && <GuidedError ctx={failure.ctx} message={failure.message} draftKey={draftKey} onRetry={file ? () => void handleSave() : undefined} />}
         {!storageConfigured && (
           <p
             role="alert"
@@ -266,6 +313,7 @@ export default function DocumentUploadClient({
               void acceptFile(e.dataTransfer.files?.[0] ?? null);
             }}
             onClick={() => fileInputRef.current?.click()}
+            data-testid="document-drop-zone"
             className={`cursor-pointer rounded-md border border-dashed px-4 py-6 text-center text-[13px] ${
               dragging ? "border-ct-teal bg-ct-cloud" : "border-ct-border2 text-ct-muted"
             }`}

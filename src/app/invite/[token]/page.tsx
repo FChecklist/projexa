@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { httpError } from "@/lib/guided-form";
 
 // R48_NO_INVITE_UI_01, redemption half.
 //
@@ -39,7 +43,8 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
 
   const [preview, setPreview] = useState<Preview | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // G3 guided errors: the failure as a full panel (what happened, why, steps, the exact place, the way back), built from the real answer.
+  const [error, setError] = useState<{ message: string; ctx: GuideContext } | null>(null);
   const [accepting, setAccepting] = useState(false);
 
   useEffect(() => {
@@ -53,7 +58,8 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
       const body = await res.json().catch(() => ({}));
       if (cancelled) return;
       if (!res.ok) {
-        setError((body as { error?: string }).error ?? "This invitation link is not valid.");
+        const e = httpError(res, body, "This invitation link is not valid.", "GET", "/api/org/invites/preview");
+        setError({ message: e.message, ctx: contextFromError(e) });
         return;
       }
       setPreview((body as { invite: Preview }).invite);
@@ -66,14 +72,22 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
   const accept = useCallback(async () => {
     setAccepting(true);
     setError(null);
-    const res = await fetch("/api/org/invites/accept", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/org/invites/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+    } catch (err) {
+      setError({ message: "The request never reached the server, so you have not joined yet.", ctx: contextFromError(err, { apiPath: "/api/org/invites/accept", method: "POST" }) });
+      setAccepting(false);
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError((body as { error?: string }).error ?? "Could not accept this invitation.");
+      const e = httpError(res, body, "Could not accept this invitation.", "POST", "/api/org/invites/accept");
+      setError({ message: e.message, ctx: contextFromError(e) });
       setAccepting(false);
       return;
     }
@@ -90,11 +104,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
-            <p role="alert" className="text-sm text-px-error">
-              {error}
-            </p>
-          )}
+          {error && <GuidedError ctx={error.ctx} message={error.message} onRetry={preview?.is_open && signedIn ? () => void accept() : undefined} />}
 
           {!error && !preview && <p className="text-sm text-px-muted">Checking this invitation…</p>}
 
