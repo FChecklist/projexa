@@ -235,7 +235,10 @@ describe("AttendanceSheetClient -- saving", () => {
       expect(getByText("One of these workers is no longer on this project's roster — reload the sheet. Nothing was saved.")).toBeDefined()
     );
     expect(queryByText(/roster-abc123/)).toBeNull();
-    expect(getByText("Retry")).toBeDefined();
+    // the failure is now a full guided panel (what happened, why, the steps, the exact place to fix it); "Try again" appears when trying again is
+    // honest, and a vanished worker is not one of those cases -- reloading the sheet is
+    expect(getByTestId("guided-error")).toBeDefined();
+    expect(getByTestId("guided-error-steps")).toBeDefined();
   });
 });
 

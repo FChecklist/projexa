@@ -41,6 +41,8 @@ afterEach(() => {
   cleanup();
   push.mockClear();
   try { window.localStorage.clear(); } catch { /* storage unavailable */ }
+  // G3: the form draft lives in sessionStorage; every test starts with no earlier test's typing in it.
+  try { window.sessionStorage.clear(); } catch { /* storage unavailable */ }
 });
 
 describe("AttendanceCreateClient (D-80)", () => {

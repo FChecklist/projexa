@@ -32,7 +32,7 @@
 // failed" -- now read differently, which is what
 // e2e/schedule-task-type-signage.spec.ts asserts in a browser.
 import { readCurrentBoqLines } from "@/lib/scope-list-reads";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
@@ -122,30 +122,6 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
    * onto the start date (a milestone IS a zero-length activity) and unticking
    * hands the finish date back.
    */
-  const handleChange = (name: string, value: string) => {
-    checkedRef.current?.clearFault();
-    const v = values;
-    const next = { ...v, [name]: value };
-    if (name === "isMilestone") {
-      if (value === "true") next.dueDate = next.startDate ?? "";
-    } else if (v.isMilestone === "true") {
-      // A milestone has no duration to preserve: its finish IS its start.
-      if (name === "startDate") next.dueDate = value;
-    } else if (name === "durationDays") {
-      const derived = dueDateFromDuration(next.startDate ?? "", value);
-      if (derived) next.dueDate = derived;
-    } else if (name === "dueDate") {
-      next.durationDays = durationFieldValue(next.startDate ?? "", value);
-    } else if (name === "startDate") {
-      if (next.dueDate) next.durationDays = durationFieldValue(value, next.dueDate);
-      else if (next.durationDays) {
-        const derived = dueDateFromDuration(value, next.durationDays);
-        if (derived) next.dueDate = derived;
-      }
-    }
-    draft.patch(next);
-  };
-  const checkedRef = useRef<{ clearFault: () => void } | null>(null);
 
   const loadTypes = useCallback(async () => {
     setTypesState("loading");
@@ -346,8 +322,31 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
     }
     return null;
   });
-  checkedRef.current = checked;
   const noTypes = typesState === "empty";
+
+  const handleChange = (name: string, value: string) => {
+    checked.clearFault();
+    const v = values;
+    const next = { ...v, [name]: value };
+    if (name === "isMilestone") {
+      if (value === "true") next.dueDate = next.startDate ?? "";
+    } else if (v.isMilestone === "true") {
+      // A milestone has no duration to preserve: its finish IS its start.
+      if (name === "startDate") next.dueDate = value;
+    } else if (name === "durationDays") {
+      const derived = dueDateFromDuration(next.startDate ?? "", value);
+      if (derived) next.dueDate = derived;
+    } else if (name === "dueDate") {
+      next.durationDays = durationFieldValue(next.startDate ?? "", value);
+    } else if (name === "startDate") {
+      if (next.dueDate) next.durationDays = durationFieldValue(value, next.dueDate);
+      else if (next.durationDays) {
+        const derived = dueDateFromDuration(value, next.durationDays);
+        if (derived) next.dueDate = derived;
+      }
+    }
+    draft.patch(next);
+  };
 
   return (
     <CreateScreen

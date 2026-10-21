@@ -117,10 +117,10 @@ export const materialsGuides = guides([
   {
     id: "materials-issue-more-than-stock", source: "validation", match: { code: "ISSUE_EXCEEDS_STOCK" },
     title: "You are issuing more than is in stock",
-    what: "The quantity to issue is larger than the stock recorded.",
-    why: "Stock cannot go below zero.",
-    steps: ["Check the stock shown for this material.", "Record the missing receipt first, or issue a smaller quantity."],
-    fix: { label: "Record a receipt", to: proj("/materials/receipts/new"), where: "Materials > Receipt > New" },
+    what: "{serverMessage}",
+    why: "Stock cannot go below zero, so you cannot issue more than has been received and not yet issued.",
+    steps: ["Look at the stock figure in the message above.", "Type that figure, or a smaller quantity, in the quantity box.", "If material arrived that was never recorded, record that receipt first (Materials, Receipt), then come back."],
+    fix: { label: "Fix the quantity", to: here, where: "This screen > Quantity" },
     severity: "warn", returnLabel: "Back to the issue form",
   },
   {

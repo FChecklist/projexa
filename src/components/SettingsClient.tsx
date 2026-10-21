@@ -111,7 +111,6 @@ export default function SettingsClient({
       })
       .catch((err) => setProblem({ ctx: contextFromError(err, { apiPath: "/api/organization", method: "GET" }), message: "Couldn't load the organisation settings.", retry: () => window.location.reload() }))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialOrgInfo is a mount-time seed, not a reactive dependency; re-fetching if it changed later would fight the user's own edits.
   }, []);
 
   // R48_NO_CURRENCY_UI_01: independent of the load above -- a currency-fetch
