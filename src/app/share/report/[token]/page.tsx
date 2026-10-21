@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { ExpiredShareNotice } from "@/components/ExpiredShareNotice";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
 import { buildWorkProgressReport, formatParentOnlyPercent, sumRootAmtTotal, type BoqLineItem, type Activity, type Category, type ProgressEntry } from "@/lib/work-progress-report";
 import { formatMoney } from "@/lib/format-money";
@@ -145,7 +145,7 @@ function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
 export default async function SharedReportPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const data = await fetchSharedReport(token);
-  if (!data) notFound();
+  if (!data) return <main><ExpiredShareNotice kind="report" token={token} /></main>;
 
   if (data.reportType === "project_status") return <SharedProjectStatus data={data} />;
 

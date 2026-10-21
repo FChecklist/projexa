@@ -33,6 +33,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus } from "lucide-react";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { GuidedError } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { fault, useFormDraft } from "@/lib/guided-form";
 
 export type Milestone = {
   id: string;
@@ -84,10 +89,19 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [targetDate, setTargetDate] = useState("");
+  // G3 guided errors: the typed values survive a "Fix it now" detour, a reload and a sign-in that ran out (the form re-opens by itself when
+  // there is something to put back); cleared after a successful save. A failure is a full panel, never a fading toast.
+  const draftKey = `milestone-new:${projectId}`;
+  const draft = useFormDraft(draftKey, { name: "", description: "", targetDate: "" });
+  const { name, description, targetDate } = draft.values;
+  const setName = (v: string) => { setProblem(null); draft.onChange("name", v); };
+  const setDescription = (v: string) => draft.onChange("description", v);
+  const setTargetDate = (v: string) => { setProblem(null); draft.onChange("targetDate", v); };
+  const [problem, setProblem] = useState<{ ctx: GuideContext; message?: string; retry?: () => void } | null>(null);
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (draft.restored) setFormOpen(true);
+  }, [draft.restored]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,7 +111,7 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
       );
       setMilestones(data.milestones ?? []);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't load milestones"));
+      setProblem({ ctx: contextFromError(err, { projectId, apiPath: "/api/milestones", method: "GET" }), message: errorMessage(err, "Couldn't load milestones"), retry: () => void load() });
     } finally {
       setLoading(false);
     }
@@ -107,6 +121,11 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
 
   async function createMilestone() {
     if (!name.trim()) return;
+    if (!targetDate) {
+      setProblem({ ctx: contextFromFailure(fault("MILESTONE_NO_DATE", "milestone-target-date", "This milestone has no target date. A milestone is a date the project must reach, so it needs one."), { projectId }) });
+      return;
+    }
+    setProblem(null);
     setSaving(true);
     try {
       await fetchJson("/api/milestones", {
@@ -115,11 +134,12 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
         body: JSON.stringify(buildMilestoneCreatePayload(projectId, name, description, targetDate)),
       });
       toast.success(`Milestone "${name.trim()}" created`);
-      setName(""); setDescription(""); setTargetDate("");
+      draft.clear();
+      draft.startFresh();
       setFormOpen(false);
       await load();
     } catch (err) {
-      toast.error(errorMessage(err, "The milestone was not created"));
+      setProblem({ ctx: contextFromError(err, { projectId, apiPath: "/api/milestones", method: "POST" }), message: errorMessage(err, "The milestone was not created"), retry: () => void createMilestone() });
     } finally {
       setSaving(false);
     }
@@ -135,7 +155,7 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
       });
       setMilestones((prev) => prev.map((m) => (m.id === milestoneId ? { ...m, ...updated } : m)));
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't update the milestone's status"));
+      setProblem({ ctx: contextFromError(err, { projectId, apiPath: `/api/milestones/${milestoneId}`, method: "PATCH", entityId: milestoneId }), message: errorMessage(err, "Couldn't update the milestone's status"), retry: () => void changeStatus(milestoneId, status) });
     } finally {
       setStatusSavingId(null);
     }
@@ -145,6 +165,7 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
+      {problem && <GuidedError ctx={problem.ctx} message={problem.message} onRetry={problem.retry} draftKey={draftKey} />}
       <div className="flex justify-end">
         {!formOpen ? (
           <Button onClick={() => setFormOpen(true)}><Plus className="size-4" /> New Milestone</Button>
@@ -154,6 +175,7 @@ export default function MilestonesClient({ projectId }: { projectId: string }) {
       {formOpen && (
         <Card className="shadow-card">
           <CardContent className="space-y-3 p-4">
+            <DraftRestoredNote draft={draft} />
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="milestone-name">Name</Label>

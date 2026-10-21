@@ -14,7 +14,7 @@ export const documentsGuides = guides([
     what: "No file is chosen yet.",
     why: "Upload needs a file from your device.",
     steps: ["Press Choose file.", "Pick the PDF, photo or document.", "Press Upload."],
-    fix: { label: "Choose a file", to: up, where: "Documents > Upload > Choose file" },
+    fix: { label: "Choose a file", to: up, where: "Documents > Upload > Choose file", focus: "document-drop-zone" },
     severity: "warn", returnLabel: BACK,
   },
   {
@@ -124,5 +124,23 @@ export const documentsGuides = guides([
     steps: ["Reconnect to the internet.", "Choose the file again.", "Press Upload."],
     retry: true, severity: "warn", returnLabel: BACK,
     fix: { label: "Back to Upload", to: up, where: "Documents > Upload" },
+  },
+  {
+    id: "file-empty", source: "validation", match: { code: "EMPTY_FILE" },
+    title: "That file is empty",
+    what: "{serverMessage}",
+    why: "A file of 0 bytes has no content, so uploading it would store nothing useful. It is usually a copy that did not finish.",
+    steps: ["Open the original file on your device and check that it has content.", "Choose the file again, or a different file.", "Press Save again."],
+    fix: { label: "Choose another file", to: here, where: "This screen > the file box" },
+    severity: "block", returnLabel: "Back to the form",
+  },
+  {
+    id: "file-rejected", source: "validation", match: { code: "FILE_REJECTED" },
+    title: "That file cannot be uploaded",
+    what: "{serverMessage}",
+    why: "This box only takes the file types and sizes listed under it, so the file was stopped before anything was sent.",
+    steps: ["Read the limit under the file box.", "Choose a different file, or save the file again in an accepted type or at a smaller size.", "Press Save again."],
+    fix: { label: "Choose another file", to: here, where: "This screen > the file box" },
+    severity: "block", returnLabel: "Back to the form",
   },
 ]);

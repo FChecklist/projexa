@@ -26,7 +26,7 @@
 //     SERVER's response, not from this component's own running total -- the
 //     server recomputes every cost from the roster's dailyRate, so quoting the
 //     local total would be quoting an unverified number.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +37,11 @@ import SkeletonTable from "@/components/SkeletonTable";
 import { PageHeading } from "@/components/PageHeading";
 import { fetchJson } from "@/lib/fetch-json";
 import { formatDayMonthYear } from "@/lib/format-date";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { fault, notANumber, todayLocalIso } from "@/lib/guided-form";
+import type { SubmitFailure } from "@/lib/use-submit";
 
 import { useOrgMoney } from "@/lib/use-org-money";
 import {
@@ -92,6 +97,15 @@ export default function AttendanceSheetClient({
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // G3 guided errors: the failure itself (for its guide), the sheet's own check result, and the marks draft. EVERY row the supervisor marked
+  // survives a "Fix it now" detour, a reload and a sign-in that ran out; the draft is thrown away after a successful save.
+  const [saveErr, setSaveErr] = useState<unknown>(null);
+  const [sheetFault, setSheetFault] = useState<SubmitFailure | null>(null);
+  const draftKey = `attendance-sheet:${projectId}:${attendanceDate}`;
+  const sheetDraft = useDraft<{ marks: Record<string, Mark> }>(draftKey, { marks: {} });
+  const draftApplied = useRef(false);
+  // set by the person's own marking only, so loading the server's rows never writes a draft
+  const edited = useRef(false);
   const [savedLine, setSavedLine] = useState<string | null>(null);
 
   // A past date is a record: it opens read-only and takes an explicit Edit.
@@ -136,6 +150,23 @@ export default function AttendanceSheetClient({
 
   useEffect(() => { void load(); }, [load]);
 
+  // Every mark the person makes is kept on this device until the sheet is saved.
+  useEffect(() => {
+    if (edited.current) sheetDraft.set({ marks });
+  }, [marks]);
+
+  // Put the unsaved marks back once the sheet has loaded (the server's rows come first, the person's own marks win over them).
+  useEffect(() => {
+    if (loading || !sheetDraft.restored || draftApplied.current) return;
+    draftApplied.current = true;
+    const saved = sheetDraft.value.marks ?? {};
+    if (Object.keys(saved).length > 0) {
+      setMarks((prev) => ({ ...prev, ...saved }));
+      // a past day opens read-only; unsaved marks put back on it are edits in progress, so it opens for editing
+      setEditing(true);
+    }
+  }, [loading, sheetDraft.restored, sheetDraft.value]);
+
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
 
   const totals = useMemo(
@@ -145,10 +176,14 @@ export default function AttendanceSheetClient({
 
   function setStatus(rosterId: string, status: AttendanceStatus) {
     if (!editing) return;
+    setSheetFault(null);
+    edited.current = true;
     setMarks((prev) => ({ ...prev, [rosterId]: { status, hoursWorked: prev[rosterId]?.hoursWorked ?? "" } }));
   }
 
   function setHours(rosterId: string, hoursWorked: string) {
+    setSheetFault(null);
+    edited.current = true;
     setMarks((prev) => ({ ...prev, [rosterId]: { status: prev[rosterId]?.status ?? null, hoursWorked } }));
   }
 
@@ -174,6 +209,21 @@ export default function AttendanceSheetClient({
       }));
     if (rows.length === 0) return;
 
+    // The sheet's own checks, before anything is sent. Each names the exact input so "Fix it now" highlights it.
+    setSaveErr(null);
+    if (attendanceDate > todayLocalIso()) {
+      setSheetFault(fault("ATTENDANCE_FUTURE_DATE", undefined, `This sheet is for ${formatDayMonthYear(attendanceDate)}, which is in the future. Attendance can only be marked for today or an earlier day.`));
+      return;
+    }
+    for (const w of roster) {
+      const h = (marks[w.id]?.hoursWorked ?? "").trim();
+      if (marks[w.id]?.status && h !== "" && (notANumber(h) || Number(h) < 0 || Number(h) > 24)) {
+        setSheetFault(fault("HOURS_RANGE", `hours-${w.id}`, `The hours "${h}" for ${w.name} are not possible. Hours worked must be a number from 0 to 24, for example 8.`));
+        return;
+      }
+    }
+    setSheetFault(null);
+
     setSaving(true);
     setSaveError(null);
     try {
@@ -187,8 +237,11 @@ export default function AttendanceSheetClient({
       );
       // The sheet stays on screen in display mode: the supervisor's next act
       // is usually to check what was recorded, not to start again.
+      edited.current = false;
+      sheetDraft.clear();
       setEditing(false);
     } catch (err) {
+      setSaveErr(err);
       setSaveError(saveFailureSentence(err));
     } finally {
       setSaving(false);
@@ -198,6 +251,8 @@ export default function AttendanceSheetClient({
   function discardEdits() {
     setConfirmingDiscard(false);
     setEditing(false);
+    edited.current = false;
+    sheetDraft.clear();
     void load();
   }
 
@@ -331,6 +386,7 @@ export default function AttendanceSheetClient({
                             max="24"
                             className="ml-auto h-9 w-20 text-right"
                             aria-label={`Hours for ${worker.name}`}
+                            data-testid={`hours-${worker.id}`}
                             value={mark?.hoursWorked ?? ""}
                             onChange={(event) => setHours(worker.id, event.target.value)}
                           />
@@ -372,13 +428,9 @@ export default function AttendanceSheetClient({
 
       {/* The persistent message area: a receipt that survives, not a toast
           that disappears before the supervisor has read it. */}
+      {sheetFault && <GuidedError ctx={contextFromFailure(sheetFault, { projectId })} message={sheetFault.message} draftKey={draftKey} />}
       {saveError && (
-        <Card role="alert" className="border-px-error-border bg-px-error-light">
-          <CardContent className="flex flex-wrap items-center gap-3 p-4 text-sm text-px-error">
-            <span>{saveError}</span>
-            <Button size="sm" variant="outline" onClick={() => void saveSheet()}>Retry</Button>
-          </CardContent>
-        </Card>
+        <GuidedError ctx={contextFromError(saveErr, { projectId })} message={saveError} onRetry={() => void saveSheet()} draftKey={draftKey} />
       )}
       {savedLine && !saveError && (
         <p role="status" className="text-[13px] text-px-muted">{savedLine}</p>

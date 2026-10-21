@@ -42,6 +42,7 @@ function stubLookups() {
 }
 
 beforeEach(() => {
+  try { window.sessionStorage.clear(); } catch { /* storage unavailable */ }
   try {
     window.localStorage.clear();
   } catch {
@@ -128,7 +129,8 @@ describe("DocumentUploadClient", () => {
     Object.defineProperty(big, "size", { value: 31 * 1024 * 1024 });
     fireEvent.drop(zone, { dataTransfer: { files: [big] } });
 
-    await waitFor(() => expect(view.getByText("This file is 31 MB; the limit is 25 MB")).toBeTruthy());
+    // shown at the field AND in the guided panel above it
+    await waitFor(() => expect(view.getAllByText("This file is 31 MB; the limit is 25 MB").length).toBeGreaterThanOrEqual(1));
   });
 
   test("an .eml is filed as email and its headers fill From / Received on / Subject", async () => {
@@ -189,7 +191,7 @@ describe("DocumentUploadClient", () => {
 
     fireEvent.click(view.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(view.getByText("File storage is not configured on this server")).toBeTruthy());
+    await waitFor(() => expect(view.getAllByText(/File storage is not configured on this server/).length).toBeGreaterThanOrEqual(1));
     const body = sent as unknown as FormData;
     expect(body.get("linkedEntityType")).toBe("permit");
     expect(body.get("linkedEntityId")).toBe("permit-9");

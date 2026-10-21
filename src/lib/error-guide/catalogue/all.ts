@@ -19,6 +19,7 @@ import { permissionGuides } from "./permissions";
 import { progressGuides } from "./progress";
 import { projectGuides } from "./project";
 import { reportsAnalysisGuides } from "./reports-analysis";
+import { settingsGuides } from "./settings";
 
 /** Module label -> guides, used by the integrity test and the owner-document generator. */
 export const CATALOGUE_MODULES: Record<string, Guide[]> = {
@@ -40,6 +41,7 @@ export const CATALOGUE_MODULES: Record<string, Guide[]> = {
   "Roles and permissions": permissionGuides,
   "Other records": miscGuides,
   "Network and general": networkGuides,
+  "Settings and team": settingsGuides,
 };
 
 export const ALL_GUIDES: Guide[] = Object.values(CATALOGUE_MODULES).flat();
