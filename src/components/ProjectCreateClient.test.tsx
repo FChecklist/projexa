@@ -158,7 +158,7 @@ describe("ProjectCreateClient: guided error recovery", () => {
     await waitFor(() => expect((container.querySelector("#targetDate") as HTMLInputElement).value).toBe("2026-11-01"));
     fireEvent.click(saveButton(container));
     const panel = await findByTestId("guided-error");
-    expect(panel.getAttribute("data-guide-id")).toBe("field-invalid");
+    expect(panel.getAttribute("data-guide-id")).toBe("project-date-order-form");
     expect(panel.textContent).toContain("The target date must be on or after the start date");
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(calls).toBe(0);

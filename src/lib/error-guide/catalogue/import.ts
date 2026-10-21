@@ -6,7 +6,7 @@ import { guides, here, proj, rx } from "./_helpers";
 const BACK = "Back to the import";
 const imp = proj("/scope/import");
 
-export const importGuides = guides([
+const importServerGuides = guides([
   {
     id: "import-no-file", source: "upload", match: { status: 400, messageRegex: rx("^No file provided$|^Choose a file to send")  },
     title: "Choose the spreadsheet first",
@@ -170,3 +170,93 @@ export const importGuides = guides([
     severity: "warn", returnLabel: BACK,
   },
 ]);
+
+// GUIDED ERRORS, GROUP G1 -- faults found by the screens that read a file (Import BOQ from Excel, Make a project from a file, New BOQ > Import from
+// Excel on the laptop) BEFORE or right after the file is sent. Source "validation": the framework takes the person to ctx.field, the file box
+// (import-file on the import screen, name import-file / id doc-file on the from-file screen, scope-new-excel-file on the laptop's New BOQ).
+const IMPORT_BACK = "Back to your import";
+export const importFormGuides = guides([
+  {
+    id: "import-no-file-form", source: "validation", match: { code: "IMPORT_NO_FILE" },
+    title: "Choose a file first",
+    what: "{serverMessage}",
+    why: "The BOQ is read from your spreadsheet, so there must be one to read.",
+    steps: ["Click the file box (it is outlined) and choose the workbook.", "Check the preview it shows.", "Press Save."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "import-wrong-type-form", source: "validation", match: { code: "IMPORT_WRONG_TYPE" },
+    title: "That kind of file cannot be imported",
+    what: "{serverMessage}",
+    why: "Only an Excel workbook (.xlsx) or a .csv file can be read. An old .xls file, a PDF or a photo cannot.",
+    steps: ["Open the file in Excel.", "Choose File > Save As and pick Excel Workbook (.xlsx).", "Choose the new file in the file box (it is outlined)."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "import-empty-file-form", source: "validation", match: { code: "IMPORT_EMPTY_FILE" },
+    title: "That file is empty",
+    what: "{serverMessage}",
+    why: "The file has no content at all (0 bytes), usually because it was not saved properly or the download did not finish.",
+    steps: ["Open the original workbook and save it again as .xlsx.", "Choose the saved file in the file box (it is outlined)."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "import-too-big-form", source: "validation", match: { code: "IMPORT_TOO_BIG" },
+    title: "That file is too big",
+    what: "{serverMessage}",
+    why: "Files up to 10 MB can be read. Pictures and unused sheets inside a workbook make it very large.",
+    steps: ["Remove pictures and sheets that are not the BOQ.", "Save the workbook again.", "Choose it in the file box (it is outlined)."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "import-file-unreadable-form", source: "validation", match: { code: "IMPORT_FILE_UNREADABLE" },
+    title: "That file could not be read",
+    what: "{serverMessage}",
+    why: "It is not a normal Excel workbook, it is damaged, or its heading row cannot be found.",
+    steps: ["Download the template from the import screen.", "Copy your lines into it and save it as .xlsx.", "Choose it in the file box (it is outlined)."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "import-rows-blocked-form", source: "validation", match: { code: "IMPORT_ROWS_BLOCKED" },
+    title: "Some rows in the file cannot be imported",
+    what: "{serverMessage}",
+    why: "Each row listed under the table has a problem, such as a missing description, a quantity that is not a number or a code used twice. Importing the rest would leave the BOQ incomplete.",
+    steps: ["Read the problems listed under the preview; each names its row.", "Correct those rows in the spreadsheet and save it.", "Choose the corrected file in the file box (it is outlined)."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "import-no-rows-form", source: "validation", match: { code: "IMPORT_NO_ROWS" },
+    title: "No lines were found in that file",
+    what: "{serverMessage}",
+    why: "The sheet may be empty, the heading row (Description, Unit, Qty, Rate) may be missing, or the lines may be on another sheet.",
+    steps: ["Download the template from the import screen.", "Copy your lines under its headings and save it.", "Choose the file in the file box (it is outlined)."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > the file box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "doc-file-invalid-form", source: "validation", match: { code: "DOC_FILE_INVALID" },
+    title: "That file cannot be used for a project",
+    what: "{serverMessage}",
+    why: "A project and its BOQ are read from an Excel workbook within the size limit. Other kinds of file are refused with a reason.",
+    steps: ["Click the file box (it is outlined) and choose an Excel (.xlsx) workbook.", "If it is too big, remove pictures and unused sheets first.", "Press Read the file."],
+    fix: { label: "Go to the file box", to: here, where: "This screen > Project file" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+  {
+    id: "proposal-answer-required-form", source: "validation", match: { code: "PROPOSAL_ANSWER_REQUIRED" },
+    title: "Fill in what the service still needs",
+    what: "{serverMessage}",
+    why: "A proposal can only be written when every value it still lacks is given, so nothing is guessed. Nothing has been written yet.",
+    steps: ["Find the box that is outlined in the proposal.", "Type or choose the value it asks for.", "Press Approve again."],
+    fix: { label: "Go to the box", to: here, where: "This screen > the proposal > the outlined box" },
+    severity: "warn", returnLabel: IMPORT_BACK,
+  },
+]);
+
+export const importGuides = guides([...importServerGuides, ...importFormGuides]);
