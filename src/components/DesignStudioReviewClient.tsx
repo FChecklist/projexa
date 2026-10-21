@@ -25,6 +25,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import DataLoadError from "@/components/DataLoadError";
 import DesignStudioTabs from "@/components/DesignStudioTabs";
 import { fetchJson } from "@/lib/fetch-json";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import { withServerCode } from "@/lib/guided-form";
 import { ROLE_GROUPS } from "@/lib/authz/roles";
 import { formatDayLabel, formatHours, groupSubmittedByDesignerDay, rowStatus, totalHours, type DesignerDayGroup } from "@/lib/design-studio-timesheet";
 import type { TimesheetEntry } from "@/components/DesignStudioTimesheetClient";
@@ -50,6 +53,8 @@ export default function DesignStudioReviewClient({
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  // G3 guided errors: the failed decision, shown as a full panel (what happened, why, steps, the exact place, the way back).
+  const [decideErr, setDecideErr] = useState<{ err: unknown; message: string; retry: () => void } | null>(null);
 
   const canReview = !!role && (ROLE_GROUPS.PM_OR_ABOVE as readonly string[]).includes(role);
   const roleReason = canReview ? undefined : "Only a project manager or above can approve or return hours";
@@ -89,6 +94,7 @@ export default function DesignStudioReviewClient({
     const ids = new Set(before.keys());
     setEntries((prev) => prev.map((e) => (ids.has(e.id) ? { ...e, approvalStatus: decision } : e)));
     setBusy(true);
+    setDecideErr(null);
     try {
       const result = await fetchJson<{ decided: number; hours: number; reviewTaskError: string | null }>(
         "/api/timesheets/review-day",
@@ -117,7 +123,8 @@ export default function DesignStudioReviewClient({
       // Roll every row back to exactly what it was, and put the BACKEND's
       // sentence in the footer -- not one this component made up.
       setEntries((prev) => prev.map((e) => (before.has(e.id) ? { ...e, approvalStatus: before.get(e.id)! } : e)));
-      setFooterMessage({ level: "error", text: err instanceof Error ? err.message : "The decision was not recorded" });
+      setFooterMessage(null);
+      setDecideErr({ err, message: err instanceof Error && err.message ? err.message : "The decision was not recorded", retry: () => void decideDay(group, decision, rejectionReason) });
     } finally {
       setBusy(false);
       void load();
@@ -145,6 +152,13 @@ export default function DesignStudioReviewClient({
 
       <div className="space-y-4 p-4">
         <DataLoadError messages={loadErrors} onRetry={() => void load()} />
+        {decideErr && (
+          <GuidedError
+            ctx={contextFromError(decideErr.err, withServerCode(decideErr.err, { projectId, apiPath: "/api/timesheets/review-day", method: "POST" }))}
+            message={`The decision was not recorded: ${decideErr.message}`}
+            onRetry={decideErr.retry}
+          />
+        )}
 
         {loading ? (
           <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
@@ -177,6 +191,11 @@ export default function DesignStudioReviewClient({
                   <div className="min-w-[18rem] flex-1 space-y-1.5">
                     <label htmlFor={`reason-${group.key}`} className="text-[12.5px] text-px-muted">Reason (required, at least {MIN_REJECT_REASON} characters)</label>
                     <Input id={`reason-${group.key}`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="What does the designer need to change?" />
+                    {reason.trim().length > 0 && reason.trim().length < MIN_REJECT_REASON && (
+                      <p role="alert" data-testid="reject-reason-short" className="text-[12.5px] text-px-error">
+                        Type at least {MIN_REJECT_REASON} characters so the designer knows what to change. You have typed {reason.trim().length}.
+                      </p>
+                    )}
                   </div>
                   <Button
                     size="sm"

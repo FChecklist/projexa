@@ -116,19 +116,27 @@ const inventedCodeNames = (code: string, rowId: string) => code === `_row_${rowI
  * reduces. `progress` maps a parent line id to the percent complete of its latest entry. Same rule as findScopeReductionViolations.
  */
 export function scopeReductions(parent: readonly BoqLineItemRow[], progress: ReadonlyMap<string, number>, lines: LineItemDraft[]): string[] {
+  return scopeReductionTargets(parent, progress, lines).map((t) => t.message);
+}
+
+/**
+ * The same lines as scopeReductions, each with WHERE to correct it (GUIDED ERRORS, G1): `lineIndex` is the row of the form whose Qty or Rate was
+ * reduced (the person raises it again), or null when the line was removed altogether (the person adds it back).
+ */
+export function scopeReductionTargets(parent: readonly BoqLineItemRow[], progress: ReadonlyMap<string, number>, lines: LineItemDraft[]): { message: string; lineIndex: number | null }[] {
   const kept = lines.filter((l) => !isBlank(l));
   const draftByKey = new Map(kept.map((l) => [keyOfDraft(l), l]));
-  const out: string[] = [];
+  const out: { message: string; lineIndex: number | null }[] = [];
   for (const row of parent) {
     const pct = progress.get(row.id);
     if (!pct || pct <= 0) continue;
     const next = draftByKey.get(keyOfRow(row)) ?? (row.itemCode ? undefined : kept.find((l) => inventedCodeNames(trim(l.itemCode), row.id)));
     if (!next) {
-      out.push(`"${row.description}" is ${pct}% complete on site and would be removed entirely`);
+      out.push({ message: `"${row.description}" is ${pct}% complete on site and would be removed entirely`, lineIndex: null });
       continue;
     }
     const amount = draftLineAmount(next, kept);
-    if (amount !== null && amount - Number(row.amount) < 0) out.push(`"${row.description}" is ${pct}% complete on site and this revision reduces it`);
+    if (amount !== null && amount - Number(row.amount) < 0) out.push({ message: `"${row.description}" is ${pct}% complete on site and this revision reduces it`, lineIndex: lines.indexOf(next) });
   }
   return out;
 }
@@ -357,6 +365,9 @@ export type BudgetEdit = {
   budgetPercentage: string;
   vendorId: string;
   vendorAmount: string;
+  /** GUIDED ERRORS: the BOQ the line is in, and the line in words ("3.2, Skirting 100 mm"), so a refused budget can say which line and open it again. */
+  boqId?: string;
+  lineLabel?: string;
 };
 export type BudgetErrors = { budgetPercentage?: string; vendorAmount?: string; nothing?: string };
 
@@ -414,6 +425,8 @@ export async function setLineBudgetOffline(input: BudgetEdit, access: DesignChan
       projectId: input.projectId,
       params: { projectId: input.projectId, boqLineItemId: input.lineId, ...budgetPatch(input) },
       label: "Line budget",
+      ...(input.boqId ? { openAt: `/scope/${encodeURIComponent(input.boqId)}/budget?projectId=${encodeURIComponent(input.projectId)}&line=${encodeURIComponent(input.lineId)}` } : {}),
+      ...(input.lineLabel ? { subject: input.lineLabel } : {}),
       record: { kind: BOQ_LINES_KIND, id: input.lineId, baseVersion: row.serverVersion },
     });
     return { queued: true, opId };

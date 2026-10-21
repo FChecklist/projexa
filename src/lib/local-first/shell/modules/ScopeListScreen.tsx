@@ -9,25 +9,17 @@ import { formatDateTime } from "@/lib/format-date";
 import type { ShellScreenProps } from "../types";
 import type { ScopeListData } from "./scope-adapter";
 import { mayOffer, projectQuery } from "./DesignChangeShared";
+// GUIDED ERRORS (G1): a screen that cannot open says why in the guided panel (what happened, why, what to do, the exact place).
+import { ScopeState } from "./ScopeGuided";
 
 export default function ScopeListScreen({ shell, data }: ShellScreenProps<ScopeListData>) {
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
 
   if (data.state === "no_project") {
-    return (
-      <section data-testid="scope-list" data-state="no_project">
-        <h1 className="font-heading text-2xl text-px-ink">Scope of Work (BOQ)</h1>
-        <p className="mt-3 text-sm text-px-muted">There is no project on this laptop yet. Open PROJEXA once while you are online and your projects will be copied here.</p>
-      </section>
-    );
+    return <ScopeState testId="scope-list" state="no_project" title="Scope of Work (BOQ)" sentence="There is no project on this laptop yet. Open PROJEXA once while you are online and your projects will be copied here." />;
   }
   if (data.state === "not_synced") {
-    return (
-      <section data-testid="scope-list" data-state="not_synced">
-        <h1 className="font-heading text-2xl text-px-ink">Scope of Work (BOQ){project ? ` / ${project.name}` : ""}</h1>
-        <p className="mt-3 text-sm text-px-muted">This project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online.</p>
-      </section>
-    );
+    return <ScopeState testId="scope-list" state="not_synced" title={`Scope of Work (BOQ)${project ? ` / ${project.name}` : ""}`} sentence="This project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online." projectId={shell.projectId ?? undefined} />;
   }
 
   return (

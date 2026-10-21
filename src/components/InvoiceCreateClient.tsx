@@ -34,7 +34,7 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 // GUIDED ERRORS (G2): what was typed survives leaving the form; a wrong or missing entry is written beside its box AND explained in the guide panel
 // (nothing is sent while a fault exists); a refusal from the server is the same panel with the server's own words.
 import { GuidedError } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { useDraft } from "@/lib/error-guide/use-draft";
 import { contextFromError } from "@/lib/error-guide/context";
 import { invoiceCreateFaults, messageFor } from "@/lib/error-guide/g2-faults";
@@ -134,7 +134,7 @@ export default function InvoiceCreateClient() {
     >
       <div className="space-y-3 px-4 py-3">
         {draft.restored && !serverFailure && <p role="status" data-testid="inv-draft-restored" className="rounded-md border border-px-info-border bg-px-info-light px-3 py-2 text-[12.5px] text-px-info">We put back the invoice you had typed before you left. Check it, then press Save.</p>}
-        <FaultPanel faults={shown} draftKey="invoice-new" />
+        <FormFaultPanel faults={shown} draftKey="invoice-new" />
         {serverFailure && <GuidedError ctx={serverFailure} onRetry={() => void createInvoice()} draftKey="invoice-new" />}
         <div className="space-y-1.5">
           <Label>Customer</Label>

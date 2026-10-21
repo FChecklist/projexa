@@ -8,13 +8,14 @@
 import { readScopeHeaders } from "@/lib/scope-list-reads";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { ScreenFrame, CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useCurrencies } from "@/lib/currency";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): a comparison that cannot be made is told in the inline panel (what happened, why, what to do, the way to the right place).
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
 import { type Boq, type BoqComparison, formatVariation } from "@/lib/boq-helpers";
 
 const DEFAULT_COMPARE_COLUMNS: ScreenColumn[] = [
@@ -47,7 +48,9 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
   // R67 D-27: the Architect/Site Instruction attached to THIS revision, if any.
   const [siteInstruction, setSiteInstruction] = useState<{ id: string; siNumber: number; boqId: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ActionFailureState | null>(null);
+  // a comparison that failed while the screen itself is fine (the "Against" choice was refused): shown above the table, the screen stays usable
+  const [compareFailure, setCompareFailure] = useState<ActionFailureState | null>(null);
   const currencies = useCurrencies();
   const currencyCode = currencies.find((c) => c.isBaseCurrency)?.code ?? "";
 
@@ -67,8 +70,10 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
       const data = await fetchJson<BoqComparison>(`/api/scope/${boqId}/compare?against=${encodeURIComponent(targetAgainst)}`);
       setComparison(data);
       setLoadError(null);
+      setCompareFailure(null);
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't compare revisions"));
+      setComparison(null);
+      setCompareFailure({ err, at: Date.now(), retry: () => void loadComparison(targetAgainst) });
     } finally {
       setLoading(false);
     }
@@ -84,6 +89,14 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
       const original = findOriginalBoqId(data, listData.boqs ?? []);
       setAgainst(original);
       setLoadError(null);
+      // An original BOQ (no parent) that nothing has been revised from has nothing to be compared with: say so in words instead of comparing it
+      // with itself. (Other, unrelated BOQs of the project do not count: they are different documents.)
+      if (!data.parentBoqId && !(listData.boqs ?? []).some((b) => b.parentBoqId === data.id)) {
+        setComparison(null);
+        setCompareFailure({ err: Object.assign(new Error("This BOQ has no previous revision to compare against"), { status: 400, apiPath: `/api/scope/${boqId}/compare`, method: "GET" }), at: Date.now() });
+        setLoading(false);
+        return;
+      }
       // Non-fatal: a missing or failing instruction lookup must never stop the
       // comparison rendering.
       void fetchJson<{ siteInstructions?: { id: string; siNumber: number; boqId: string | null }[] }>(
@@ -94,7 +107,7 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
       await loadComparison(original);
     } catch (err) {
       setBoq(null);
-      setLoadError(errorMessage(err, "Couldn't load this BOQ"));
+      setLoadError({ err, at: Date.now() });
       setLoading(false);
     }
   }
@@ -104,8 +117,7 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
-        <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+        <ActionFailurePanel failure={loadError} entityType="boq" entityId={boqId} onRetry={() => load()} retryable />
       </div>
     );
   }
@@ -123,6 +135,7 @@ export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: s
       messages={[]}
     >
       <div className="space-y-3 p-4">
+        <ActionFailurePanel failure={compareFailure} entityType="boq" entityId={boqId} projectId={boq.projectId} />
         <div className="max-w-xs space-y-1.5">
           <Label>Against</Label>
           <Select value={against} onValueChange={(v) => { setAgainst(v); void loadComparison(v); }}>

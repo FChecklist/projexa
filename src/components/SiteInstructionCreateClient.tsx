@@ -14,8 +14,9 @@ import { Label } from "@/components/ui/label";
 import { setScreenMessage } from "@/lib/screen-message";
 // GUIDED ERRORS (G2): what was typed survives leaving the form, a wrong or missing entry is written beside its box AND explained in the guide panel
 // (nothing is sent while a fault exists), and a refusal from the server is the same panel with the server's own words.
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { useDraft } from "@/lib/error-guide/use-draft";
+import { siDateFault } from "@/lib/error-guide/g1-faults";
 import { messageFor, siteInstructionFaults, siteInstructionFileFault, type Fault } from "@/lib/error-guide/g2-faults";
 import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
 import { useSubmit, SUBMIT_TIMEOUT_MS } from "@/lib/use-submit";
@@ -47,7 +48,7 @@ export default function SiteInstructionCreateClient({
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<FieldMessage[]>([]);
-  const draftKey = `site-instruction-new:${projectId}`;
+  const draftKey = `site-instruction-new:${projectId}:${boqId ?? ""}`;
   const draft = useDraft(draftKey, { issueDate: todayLocal(), toContractor: "", description: "", drawingRef: "", costImpact: false });
   const { issueDate, toContractor, description, drawingRef, costImpact } = draft.value;
   const setIssueDate = (v: string) => draft.set({ issueDate: v });
@@ -57,6 +58,8 @@ export default function SiteInstructionCreateClient({
   const setCostImpact = (v: boolean) => draft.set({ costImpact: v });
   const [file, setFile] = useState<File | null>(null);
   const [attempted, setAttempted] = useState(false);
+  // the date is judged for a year that cannot be right once the person has left the box (a year is typed digit by digit: 0002, 0020, 0202, 2026)
+  const [dateLeft, setDateLeft] = useState(false);
 
   // What the last request actually carried, so the lookup after a timeout matches THAT save even if a field was edited since.
   const sent = useRef<{ issueDate: string; toContractor: string; description: string; hasFile: boolean } | null>(null);
@@ -97,9 +100,15 @@ export default function SiteInstructionCreateClient({
   const saving = submit.saving;
 
   const fileFault = siteInstructionFileFault(file ? { name: file.name, size: file.size } : null, "file");
-  const faults: Fault[] = [...siteInstructionFaults({ issueDate, toContractor, description }), ...(fileFault ? [fileFault] : [])];
+  const yearFault = siDateFault(issueDate);
+  const faults: Fault[] = [
+    ...(yearFault ? [{ code: yearFault.code, field: "issueDate", message: yearFault.message }] : []),
+    ...siteInstructionFaults({ issueDate, toContractor, description }),
+    ...(fileFault ? [fileFault] : []),
+  ];
   // a missing entry is only shown after the first press of Save; a wrong file or a future date is shown at once
-  const shown = faults.filter((f) => attempted || !/_MISSING$/.test(f.code));
+  // (a year that cannot be right is shown once the box is left, or on Save, never while the year is still being typed)
+  const shown = faults.filter((f) => (attempted || !/_MISSING$/.test(f.code)) && (dateLeft || attempted || f.code !== "SI_DATE_INVALID"));
   const saveDisabled = saving;
 
   function createInstruction() {
@@ -136,11 +145,11 @@ export default function SiteInstructionCreateClient({
             We put back what you had typed here before you left. Check it, then press Save.
           </p>
         )}
-        <FaultPanel faults={shown} draftKey={draftKey} />
+        <FormFaultPanel faults={shown} draftKey={draftKey} />
         <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} draftKey={draftKey} />
         <div className="space-y-1.5">
           <Label htmlFor="issueDate">Issue date</Label>
-          <Input id="issueDate" data-testid="issueDate" type="date" max={todayLocal()} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+          <Input id="issueDate" data-testid="issueDate" type="date" max={todayLocal()} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} onBlur={() => setDateLeft(true)} />
           {messageFor(shown, "issueDate") && <p role="alert" className="text-[12.5px] text-px-error">{messageFor(shown, "issueDate")}</p>}
         </div>
         <div className="space-y-1.5">

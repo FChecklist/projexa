@@ -18,7 +18,7 @@ import { toast } from "sonner";
 // GUIDED ERRORS (G2): a refusal (posting, payment, cancel, load) is the guide panel -- what happened in full, why, numbered steps, the exact place to fix
 // it, the way back -- and a missing or wrong entry is written beside its box and explained, with nothing sent.
 import { GuidedError } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { contextFromError } from "@/lib/error-guide/context";
 import { invoicePostFaults, messageFor, paymentFaults, type Fault } from "@/lib/error-guide/g2-faults";
 import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
@@ -183,7 +183,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
     >
       {(failure || faults.length > 0) && (
         <div className="space-y-2 border-b border-ct-border px-4 py-3">
-          <FaultPanel faults={faults} />
+          <FormFaultPanel faults={faults} />
           {failure && <GuidedError ctx={failure} onRetry={() => void (failure.apiPath?.endsWith("/payments") ? recordPayment() : failure.apiPath?.endsWith("/cancel") ? cancelInvoice() : submitInvoice())} />}
         </div>
       )}

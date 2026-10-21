@@ -167,6 +167,25 @@ describe("OutboxAttention", () => {
       expect(link.getAttribute("href")).toBe("/schedule/tasks/t1?draft=op-1");
     });
 
+    test("GUIDED (G4): a refused 'Line budget' says WHICH line, shows the typed value, and one button opens that line to re-enter it", async () => {
+      const r = await rig();
+      const view = render(<OutboxAttention outbox={r.outbox} />);
+      // the refusal the real server gives for a budget over 100 per cent, as the outbox keeps it (a draft that carries the writer's openAt + subject)
+      const db = await openLocalDb(r.idb, localDbNameFor("u1"));
+      await db.transact(async (tx) => {
+        await tx.putDraft({ opId: "op-lb", functionId: "update_line_item_budget", projectId: "p1", params: { projectId: "p1", boqLineItemId: "l9", budgetPercentage: 130 }, label: "Line budget", openAt: "/scope/b7/budget?projectId=p1&line=l9", subject: "3.2, Skirting 100 mm", message: "Line budget was not saved. Budget percentage must be between 0 and 100. It was undone on this laptop.", at: Date.now() });
+      });
+      await act(async () => { await r.outbox.refresh(); });
+      const card = await view.findByTestId("outbox-draft");
+      expect(card.textContent).toContain("Line budget was not saved");
+      expect(card.textContent).toContain("3.2, Skirting 100 mm");
+      expect(card.textContent).toContain("Budget percentage:");
+      expect(card.textContent).toContain("130");
+      expect(card.textContent).toContain("What to do");
+      const link = view.getByRole("link", { name: "Go to it and re-enter your values" }) as HTMLAnchorElement;
+      expect(link.getAttribute("href")).toBe("/scope/b7/budget?projectId=p1&line=l9&draft=op-lb");
+    });
+
     test("Discard removes the draft (and its notice) for good", async () => {
       const r = await rig();
       await editTask(r.outbox, { title: " " });
@@ -224,7 +243,7 @@ describe("OutboxAttention", () => {
       await outbox.flush();
       const view = render(<OutboxAttention outbox={outbox} />);
       const checking = await view.findByTestId("outbox-checking");
-      expect(checking.textContent).toBe("Checking whether your change to this task reached the server (1 of 5).");
+      expect(checking.textContent).toContain("Checking whether your change to this task reached the server (1 of 5).");
       for (let i = 0; i < 4; i += 1) await act(async () => { clock.now += 10 * 60_000; await outbox.flush(); });
       const card = await view.findByTestId("outbox-needs-you");
       expect(card.textContent).toContain("could not confirm whether it was saved");
@@ -240,8 +259,9 @@ describe("OutboxAttention", () => {
     r.server.failNext({ status: 403, path: "/push", times: 1 });
     const view = render(<OutboxAttention outbox={r.outbox} />);
     await act(async () => { await r.outbox.flush(); });
-    await waitFor(() => expect(view.getByRole("status").textContent).toContain("no longer recognises your sign-in"));
-    expect(view.getByRole("status").textContent).toContain("Nothing is lost");
+    await waitFor(() => expect(view.getByTestId("outbox-waiting").textContent).toContain("no longer recognises your sign-in"));
+    expect(view.getByTestId("outbox-waiting").textContent).toContain("Nothing is lost");
+    expect(view.getByTestId("outbox-waiting").textContent).toContain("What to do");
     fireEvent.click(view.getByRole("button", { name: "Try again" }));
     await act(async () => { await r.outbox.flush(); });
     await waitFor(() => expect(view.queryByTestId("outbox-attention") === null).toBe(true));
@@ -259,17 +279,17 @@ describe("OutboxAttention", () => {
 
     test("offline", async () => {
       const view = await waiting((r) => r.server.failNext({ status: 503, path: "/push", times: 5 }));
-      await waitFor(() => expect(view.getByRole("status").textContent).toBe("Offline: 1 change is saved on this laptop and will be sent when the connection returns."));
+      await waitFor(() => expect(view.getByTestId("outbox-waiting").textContent).toContain("Offline: 1 change is saved on this laptop and will be sent when the connection returns."));
     });
 
     test("signed out", async () => {
       const view = await waiting((r) => { r.server.signedOut = true; });
-      await waitFor(() => expect(view.getByRole("status").textContent).toBe("You are signed out. Sign in again to send 1 change made on this laptop."));
+      await waitFor(() => expect(view.getByTestId("outbox-waiting").textContent).toContain("You are signed out. Sign in again to send 1 change made on this laptop."));
     });
 
     test("this release is too old for the service", async () => {
       const view = await waiting((r) => r.server.requireUpdate({ current: "9", minCompatible: "8" }));
-      await waitFor(() => expect(view.getByRole("status").textContent).toBe("PROJEXA on this laptop must be updated before your changes can be sent. Nothing is lost."));
+      await waitFor(() => expect(view.getByTestId("outbox-waiting").textContent).toContain("PROJEXA on this laptop must be updated before your changes can be sent. Nothing is lost."));
     });
   });
 });

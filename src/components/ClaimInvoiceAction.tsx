@@ -10,7 +10,7 @@ import { invoiceLabel, invoicePath, readInvoiceReceipt, type InvoiceReceipt } fr
 // GUIDED ERRORS (G2): a missing bill date or tax template, and every refusal ("No new progress to bill ..."), is the guide panel: what happened in the
 // server's own words, why, the numbered steps, the exact place to fix it and the way back. Nothing is claimed as raised unless the server confirmed an invoice.
 import { GuidedError } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { contextFromError, currentScreen } from "@/lib/error-guide/context";
 import { invoiceInputFaults, type Fault } from "@/lib/error-guide/g2-faults";
 import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
@@ -114,7 +114,7 @@ export default function ClaimInvoiceAction({ claimId, onInvoiced, requestTimeout
       {templates !== null && templates.length === 0 && open && !failure && faults.length === 0 ? (
         <p className="text-xs text-px-muted" data-testid="claim-invoice-no-template">No tax template is set up for this organisation yet. Create one on the online billing page, then try again.</p>
       ) : null}
-      <FaultPanel faults={faults} />
+      <FormFaultPanel faults={faults} />
       {failure ? <div data-testid="claim-invoice-error"><GuidedError ctx={failure} onRetry={() => void confirm()} /></div> : null}
     </div>
   );

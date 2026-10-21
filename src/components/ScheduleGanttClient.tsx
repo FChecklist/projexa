@@ -81,6 +81,9 @@ import {
 import "@svar-ui/react-gantt/all.css";
 
 import { viaPxApi } from "@/lib/px-api";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
 // Shape returned by compliance-tracker's screen_definitions.columns jsonb --
 // same convention as PermitsListClient.tsx's / ScopeClient.tsx's
 // RegistryColumn.
@@ -196,6 +199,8 @@ export default function ScheduleGanttClient({
   const [baselinesOpen, setBaselinesOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [baselineName, setBaselineName] = useState("");
+  // G3 guided errors: a baseline that could not be captured is a full panel (what happened, why, steps, the exact place, the way back).
+  const [baselineProblem, setBaselineProblem] = useState<{ ctx: GuideContext; message: string } | null>(null);
   // R67 D-56: the inline "% complete" editor. One row at a time, one field, and
   // only on activities no BOQ line owns.
   const [editingPercentId, setEditingPercentId] = useState<string | null>(null);
@@ -329,6 +334,7 @@ export default function ScheduleGanttClient({
     const name = baselineName.trim();
     if (!name) return;
     setCapturing(true);
+    setBaselineProblem(null);
     emitMessage(null);
     try {
       await fetchJson("/api/schedule/baselines", {
@@ -345,7 +351,9 @@ export default function ScheduleGanttClient({
       // the old handler threw away the response entirely and showed
       // "Couldn't capture baseline — try again", which tells a PM nothing about
       // a 403, an empty project or a service that never answered.
-      emitMessage({ level: "error", text: errorMessage(err, "The baseline was not captured") });
+      const text = errorMessage(err, "The baseline was not captured");
+      emitMessage({ level: "error", text });
+      setBaselineProblem({ ctx: contextFromError(err, { projectId, apiPath: "/api/schedule/baselines", method: "POST" }), message: text });
     } finally {
       setCapturing(false);
     }
@@ -633,6 +641,11 @@ export default function ScheduleGanttClient({
             </Button>
           ) : (
             <div className="flex flex-wrap items-end gap-2">
+              {baselineProblem && (
+                <div className="w-full">
+                  <GuidedError ctx={baselineProblem.ctx} message={baselineProblem.message} onRetry={() => void captureBaseline()} />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="baseline-name">Name</Label>
                 <Input

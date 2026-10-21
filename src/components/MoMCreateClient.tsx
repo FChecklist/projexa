@@ -45,6 +45,8 @@
 //  - Nothing told the user what happens after Save. The banner says so, and
 //    the user still lands on the meeting with the minutes box focused (D-17).
 import { useState } from "react";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { fault, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
@@ -115,10 +117,11 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
   // empty on first paint -- an empty required field would read as
   // "Save (Title, Date & time)" for as long as any lookup took.
   const [zone] = useState(() => browserTimeZone());
-  const [values, setValues] = useState<Record<string, string>>(() => ({
-    meetingType: "team",
-    scheduledAt: nextQuarterHourLocalInput(browserTimeZone()),
-  }));
+  // G3 guided errors: every typed value (title, time, attendees, agenda, the minutes) survives a "Fix it now" detour, a reload and a sign-in
+  // that ran out; thrown away after a successful save.
+  const draftKey = `mom-new:${projectId}`;
+  const draft = useFormDraft(draftKey, { meetingType: "team", scheduledAt: nextQuarterHourLocalInput(browserTimeZone()) });
+  const values = draft.values;
 
   const submit = useSubmit<{ id?: unknown }>({
     objectLabel: "Meeting",
@@ -167,9 +170,17 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
       if (!id) throw new Error("The server did not confirm a saved meeting");
       // R67 C-06: the save reports itself back to the shell -- the receipt
       // line lands in the same band a composer write's would.
+      draft.clear();
       pushReceipt({ text: `Saved meeting ${(values.title ?? "").trim()}`, href: `/moms/${id}` });
       router.replace(createdHref("/moms", id, (values.title ?? "").trim()));
     },
+  });
+
+  const checked = useCheckedSubmit(submit, () => {
+    if (!values.scheduledAt || !toOrgInstant(values.scheduledAt)) {
+      return fault("MOM_DATE_INVALID", "scheduledAt", `The meeting date and time "${values.scheduledAt ?? ""}" is not a complete date and time. Choose the day and the time of the meeting.`);
+    }
+    return null;
   });
 
   return (
@@ -179,12 +190,15 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
       objectLabel="Meeting"
       fields={buildFields(timeZoneHint(zone))}
       values={values}
-      onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
-      failure={submit.failure}
-      onRetry={submit.submit}
+      onChange={(name, value) => {
+        checked.clearFault();
+        draft.onChange(name, value);
+      }}
+      failure={checked.failure}
+      onRetry={checked.onRetry}
       saving={submit.saving}
       saved={submit.saved}
-      onSubmit={submit.submit}
+      onSubmit={checked.onSubmit}
       onCancel={() => router.push(`/moms?projectId=${encodeURIComponent(projectId)}`)}
       banner={
         // The one fact this screen exists to keep in front of the user: which
@@ -192,6 +206,7 @@ export default function MoMCreateClient({ projectId, projectName }: { projectId:
         // what happens after Save, stated before the click rather than
         // discovered after it.
         <>
+          <DraftRestoredNote draft={draft} />
           <p className="text-[12px] text-px-muted">
             Project: <span style={{ color: "var(--color-veri-status-context)" }}>{projectName}</span>
           </p>

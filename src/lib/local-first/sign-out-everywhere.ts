@@ -135,7 +135,8 @@ export const SIGNED_OUT_RECHECK_MS = 20_000;
  */
 export async function reactToSignedOut(deps: {
   cleanUp: () => void;
-  goToLogin: () => void;
+  /** Told which kind of sign-out it was, so a sign-out that was NOT the person's own click can return them to the page they were on. */
+  goToLogin: (kind: SignedOutKind) => void;
   classify?: () => Promise<SignedOutKind>;
   /** Default: a timer of SIGNED_OUT_RECHECK_MS. */
   wait?: () => Promise<void>;
@@ -145,7 +146,7 @@ export async function reactToSignedOut(deps: {
   const classify = deps.classify ?? (() => classifySignedOut());
   const finish = (kind: SignedOutKind) => {
     try { deps.cleanUp(); } catch { /* best effort */ }
-    try { deps.goToLogin(); } catch { /* best effort */ }
+    try { deps.goToLogin(kind); } catch { /* best effort */ }
     return kind;
   };
   const first = await classify().catch(() => "ended" as const);

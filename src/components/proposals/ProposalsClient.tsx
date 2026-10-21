@@ -23,6 +23,8 @@ import { formatDateTime } from "@/lib/format-date";
 import { forgetJob, listRememberedJobs, type RememberedJob } from "@/lib/document-job-memory";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { APPROVE_ROLE_NOTE, canApproveProposal } from "@/lib/project-document-access";
+// GUIDED ERRORS (G1): a proposal that cannot be approved, a value still needed and a list that cannot be read are told in the guided panel.
+import { ActionFailurePanel } from "@/components/ActionFailure";
 import { ApprovalError, getApprovalsClient, type ApprovalsClient, type Proposal, type ProposalMissing } from "@/lib/project-approvals-client";
 import { DocumentError, getFromDocumentClient, type DocJob, type FromDocumentClient } from "@/lib/project-from-document-client";
 
@@ -45,6 +47,9 @@ async function inBatches<T>(items: readonly T[], limit: number, task: (item: T) 
   await Promise.all(workers);
 }
 
+/** The DOM id of the box that holds one still-needed value of one proposal: where "Fix it now" arrives. */
+const answerId = (submissionId: string, name: string) => `proposal-${submissionId}-${name}`;
+
 function messageOf(error: unknown): string {
   if (error instanceof ApprovalError || error instanceof DocumentError) return error.message;
   return "Something went wrong. Nothing was changed. Try again in a minute.";
@@ -52,7 +57,7 @@ function messageOf(error: unknown): string {
 
 type ProjectLoad = { name: string; proposals: Proposal[]; error: string | null };
 type FileRow = { file: RememberedJob; job: DocJob | null; error: string | null };
-type CardState = { answers: Record<string, string>; busy: boolean; error: string | null; missing: ProposalMissing[] | null };
+type CardState = { answers: Record<string, string>; busy: boolean; error: string | null; missing: ProposalMissing[] | null; status?: number; code?: string; field?: string };
 
 export function ProposalsScreen({
   role,
@@ -138,23 +143,23 @@ export function ProposalsScreen({
     const answers = state?.answers ?? {};
     const blank = missing.filter((m) => !(answers[m.name] ?? "").trim());
     if (blank.length > 0) {
-      patchCard(proposal.submissionId, { error: `Fill in ${blank.map((m) => m.label).join(", ")} first.` });
+      patchCard(proposal.submissionId, { error: `Fill in ${blank.map((m) => m.label).join(", ")} first.`, code: "PROPOSAL_ANSWER_REQUIRED", status: undefined, field: answerId(proposal.submissionId, blank[0].name) });
       return;
     }
-    patchCard(proposal.submissionId, { busy: true, error: null });
+    patchCard(proposal.submissionId, { busy: true, error: null, code: undefined, status: undefined, field: undefined });
     try {
       const params: Record<string, string> = {};
       for (const m of missing) params[m.name] = (answers[m.name] ?? "").trim();
       const result = await approvals.approve(proposal.projectId, proposal.submissionId, params);
       if (!alive.current) return;
       if (result.kind === "needs_input") {
-        patchCard(proposal.submissionId, { busy: false, missing: result.missing, error: "The service needs these values before it can write the proposal." });
+        patchCard(proposal.submissionId, { busy: false, missing: result.missing, error: "The service needs these values before it can write the proposal.", code: "PROPOSAL_ANSWER_REQUIRED", status: undefined, field: result.missing[0] ? answerId(proposal.submissionId, result.missing[0].name) : undefined });
         return;
       }
       setApproved((prev) => ({ ...prev, [proposal.submissionId]: { boqId: result.boqId, lines: result.lineItemIds.length } }));
       patchCard(proposal.submissionId, { busy: false });
     } catch (error) {
-      if (alive.current) patchCard(proposal.submissionId, { busy: false, error: messageOf(error) });
+      if (alive.current) patchCard(proposal.submissionId, { busy: false, error: messageOf(error), code: undefined, status: error instanceof ApprovalError ? error.status : undefined, field: undefined });
     }
   }
 
@@ -185,11 +190,22 @@ export function ProposalsScreen({
 
         {!mayApprove && role && <p className="text-sm text-muted-foreground" data-testid="approve-role-note">{APPROVE_ROLE_NOTE}</p>}
         {loading && <p className="text-sm text-muted-foreground" aria-busy="true">Loading the proposals of your projects.</p>}
-        {loadError && <p className="text-sm text-px-error" role="alert" data-testid="proposals-load-error">{loadError}</p>}
+        {loadError && (
+          <div data-testid="proposals-load-error">
+            <ActionFailurePanel failure={{ err: Object.assign(new Error(loadError), { apiPath: "/api/projects", method: "GET" }), at: 0 }} sentence={loadError} entityType="project" onRetry={() => void load()} retryable />
+          </div>
+        )}
         {failedProjects.map((p) => (
-          <p key={p.id} className="text-sm text-px-error" role="alert" data-testid="proposals-project-error">
-            Could not read the proposals of {p.name}: {byProject[p.id].error}
-          </p>
+          <div key={p.id} data-testid="proposals-project-error">
+            <ActionFailurePanel
+              failure={{ err: Object.assign(new Error(byProject[p.id].error ?? ""), { apiPath: `/api/projects/${p.id}/approvals`, method: "GET" }), at: 0 }}
+              sentence={`Could not read the proposals of ${p.name}: ${byProject[p.id].error}`}
+              entityType="project"
+              projectId={p.id}
+              onRetry={() => void load()}
+              retryable
+            />
+          </div>
         ))}
         {readsOk && proposals.length === 0 && decided.length === 0 && <p className="text-sm text-muted-foreground" data-testid="proposals-empty">Nothing waits for approval.</p>}
 
@@ -236,6 +252,7 @@ export function ProposalsScreen({
                             className="h-9 rounded-md border border-input bg-transparent px-2"
                             value={card?.answers[m.name] ?? ""}
                             onChange={(e) => patchCard(proposal.submissionId, { answers: { ...(card?.answers ?? {}), [m.name]: e.target.value } })}
+                            id={answerId(proposal.submissionId, m.name)}
                             data-testid="proposal-answer"
                             data-name={m.name}
                           >
@@ -248,6 +265,7 @@ export function ProposalsScreen({
                           <Input
                             value={card?.answers[m.name] ?? ""}
                             onChange={(e) => patchCard(proposal.submissionId, { answers: { ...(card?.answers ?? {}), [m.name]: e.target.value } })}
+                            id={answerId(proposal.submissionId, m.name)}
                             data-testid="proposal-answer"
                             data-name={m.name}
                           />
@@ -256,7 +274,16 @@ export function ProposalsScreen({
                     ))}
                   </div>
                 )}
-                {card?.error && <p className="text-sm text-px-error" role="alert" data-testid="proposal-error">{card.error}</p>}
+                {card?.error && (
+                  <div data-testid="proposal-error">
+                    <ActionFailurePanel
+                      failure={{ err: Object.assign(new Error(card.error), { ...(card.status !== undefined ? { status: card.status } : {}), ...(card.code ? { code: card.code } : {}), apiPath: `/api/projects/${proposal.projectId}/approvals`, method: "POST" }), ...(card.field ? { field: card.field } : {}), at: 0 }}
+                      sentence={card.error}
+                      entityType="import"
+                      projectId={proposal.projectId}
+                    />
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" size="sm" disabled={!mayApprove || card?.busy === true} onClick={() => void approve(proposal)} data-testid="proposal-approve">
                     {card?.busy ? "Approving" : "Approve"}

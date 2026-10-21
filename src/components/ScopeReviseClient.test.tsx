@@ -106,10 +106,11 @@ describe("ScopeReviseClient 409 conflicts (D-27 acceptance)", () => {
   });
 
   test("a 409 with NO conflicts array still blocks, and the label degrades honestly to zero", async () => {
-    const { findByText, getByRole } = mount(() => jsonRes({ error: "Scope reduction blocked" }, 409));
+    const { findByText, getByRole, findByTestId } = mount(() => jsonRes({ error: "Scope reduction blocked" }, 409));
     await findByText(/New Revision — from/);
     fireEvent.click(getByRole("button", { name: "Save" }));
-    expect(await findByText("Scope reduction blocked")).toBeDefined();
+    // GUIDED ERRORS (G1): the server's sentence is in the guided panel (what happened / what to do), the override stays beside the lines.
+    expect((await findByTestId("guided-error")).textContent).toContain("Scope reduction blocked");
     await waitFor(() => expect(getByRole("button", { name: /^Apply anyway - override 0 completed lines/ })).toBeDefined());
   });
 

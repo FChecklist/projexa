@@ -50,7 +50,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 // above are exactly what a generic renderer cannot serve. The frame still
 // owns the breadcrumb, the primary and the message band.
 import { GuidedError, GuidedSubmitFailure } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/error-guide/use-draft";
 import { highlightElement, findFocusTarget } from "@/lib/error-guide/focus";
 import { overHundredField, progressFaults, todayIso as localToday, type Fault } from "@/lib/error-guide/g2-faults";
@@ -610,7 +610,7 @@ export default function WorkProgressFormClient({
             {photoToChoose ? ` Your photo "${photoToChoose}" was too big to keep; choose it again under More details.` : ""}
           </p>
         )}
-        <FaultPanel faults={shownFaults} draftKey={draftKey} />
+        <FormFaultPanel faults={shownFaults} draftKey={draftKey} />
         <GuidedSubmitFailure
           failure={submit.failure ? { ...submit.failure, field: submit.failure.field ?? overHundredField(submit.failure.serverMessage) } : null}
           onRetry={submit.submit}

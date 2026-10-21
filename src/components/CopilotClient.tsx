@@ -12,6 +12,8 @@ import { useVeriChat } from "@/components/veri-chat/veri-chat-context";
 import { ReportOutput } from "@/components/ReportOutput";
 import { formatDateTime } from "@/lib/format-date";
 import { historyEntryView } from "@/lib/copilot-history";
+import { GuidedPanel } from "@/components/GuidedPanel";
+import { alternativeFor } from "@/lib/copilot-alternatives";
 
 // This page is deliberately NOT a second chat UI. The real AI Copilot --
 // Discuss chat, every registered tool (not just construction's 7), team
@@ -46,6 +48,7 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
   const [history, setHistory] = useState<QueryRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [runFailure, setRunFailure] = useState<{ tool: Tool; code: string; message: string } | null>(null);
 
   // R52 / A4S14_copilot_01 (the load half). runTool below already reads res.ok
   // and surfaces the backend's own message, so a 504 on a "Run" card is
@@ -84,18 +87,25 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
         }),
       }));
       if (answer.kind === "own_ai") {
-        toast(answer.sentence);
+        setRunFailure({ tool, code: "AI_PILL_UNAVAILABLE", message: answer.sentence });
         return;
       }
       const res = answer.res;
       const row = answer.body as { error?: string; result?: unknown } | null;
       if (!res.ok || !row) throw new Error(row?.error);
       toast.success(`Done — ${tool.label}`);
+      setRunFailure(null);
       setLastResult({ tool, result: row.result });
       bumpRefresh(); // keeps the docked Queries panel in sync with this page's dispatch
       loadHistory();
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : `Couldn't run ${tool.label}`);
+      // GUIDED ERRORS (G4): no popup. Offline / unreachable = "AI unavailable" with the screen that shows the same facts; anything else = the AI did not reply.
+      const offline = (typeof navigator !== "undefined" && navigator.onLine === false) || err instanceof TypeError;
+      setRunFailure({
+        tool,
+        code: offline ? "AI_PILL_UNAVAILABLE" : "AI_REPLY_FAILED",
+        message: offline ? "This device has no connection to the server." : err instanceof Error && err.message ? err.message : `${tool.label} did not answer.`,
+      });
     } finally {
       setRunning(null);
     }
@@ -134,6 +144,17 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
         })}
       </div>
 
+      {runFailure && (
+        <div data-testid="copilot-run-failure">
+          <GuidedPanel
+            ctx={{ route: "/copilot", search: `?projectId=${encodeURIComponent(projectId)}`, projectId, code: runFailure.code, serverMessage: runFailure.message }}
+            title={runFailure.code === "AI_PILL_UNAVAILABLE" ? `AI unavailable: ${runFailure.tool.label}` : undefined}
+            fix={(() => { const a = alternativeFor(runFailure.tool.codeReference, projectId); return { label: a.label, href: a.href, where: a.where }; })()}
+            actions={[{ id: "retry", label: "Try again", onClick: () => { const t = runFailure.tool; setRunFailure(null); void runTool(t); } }]}
+          />
+        </div>
+      )}
+
       {lastResult && (
         <Card className="shadow-card">
           <CardHeader><CardTitle className="text-base">Result — {lastResult.tool.label}</CardTitle></CardHeader>
@@ -166,7 +187,16 @@ export default function CopilotClient({ projectId }: { projectId: string }) {
                         <Badge variant={view.variant}>{view.label}</Badge>
                       </div>
                     </div>
-                    {view.reason ? <p data-testid="copilot-history-reason" className="mt-1 text-xs text-px-muted">{view.reason}</p> : null}
+                    {view.reason && view.label === "AI unavailable" ? (
+                      <div className="mt-2" data-testid="copilot-history-reason">
+                        <GuidedPanel
+                          ctx={{ route: "/copilot", search: "", projectId, code: "AI_PILL_UNAVAILABLE", serverMessage: view.reason }}
+                          fix={(() => { const a = alternativeFor(q.code_reference, projectId); return { label: a.label, href: a.href, where: a.where }; })()}
+                          noCopy
+                          quiet
+                        />
+                      </div>
+                    ) : view.reason ? <p data-testid="copilot-history-reason" className="mt-1 text-xs text-px-muted">{view.reason}</p> : null}
                   </div>
                 );
               })}

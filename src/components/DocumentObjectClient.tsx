@@ -34,6 +34,8 @@ import { formatDate } from "@/lib/format-date";
 import { takeScreenMessage } from "@/lib/screen-message";
 import { DOCUMENT_ACCEPT, DOCUMENT_CATEGORIES, describeFileSize, documentSizeError, relatesToWord } from "@/lib/document-intake";
 import { viaPxApi } from "@/lib/px-api";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { httpError, useProblem } from "@/lib/guided-form";
 
 type DocVersion = { id: string; name: string; versionNumber: number; createdAt: string; fileType: string | null };
 
@@ -111,6 +113,8 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
   const [saving, setSaving] = useState(false);
   const [disposing, setDisposing] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
+  // G3 guided errors: a refused save / replace / dispose is the full guide (what happened, why, steps, the exact place, the way back).
+  const { problem, show, clear } = useProblem({ entityId: documentId, entityType: "document" });
   const [previewFailed, setPreviewFailed] = useState(false);
   /**
    * A signed storage URL is valid for five minutes. A page left open longer than
@@ -168,7 +172,7 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
         body.set("file", replacement);
         const versionRes = await fetch(`/api/documents/${documentId}/versions`, { method: "POST", body });
         const versionData = await versionRes.json().catch(() => ({}));
-        if (!versionRes.ok) throw new Error(versionData.error ?? "Failed to replace this document's file");
+        if (!versionRes.ok) throw httpError(versionRes, versionData, "Failed to replace this document's file", "POST", `/api/documents/${documentId}/versions`);
         // The new version is a NEW row -- the page must follow it, or it would
         // keep showing the superseded one.
         setReplacement(null);
@@ -183,12 +187,13 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
         body: JSON.stringify(documentPatchBody({ name, category, expiryDate })),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Failed to save document");
+      if (!res.ok) throw httpError(res, data, "Failed to save document", "PATCH", `/api/documents/${documentId}`);
+      clear();
       setMessages([{ level: "success", text: "Saved" }]);
       setMode("display");
       await load();
     } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't save document" }]);
+      show(err, undefined, undefined, err instanceof Error && err.message.includes("the limit is") ? { code: "FILE_REJECTED" } : {});
     } finally {
       setSaving(false);
     }
@@ -199,11 +204,11 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
     try {
       const res = await viaPxApi(`/api/documents/${documentId}/dispose`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Failed to dispose document");
+      if (!res.ok) throw httpError(res, data, "Failed to dispose document", "POST", `/api/documents/${documentId}/dispose`);
       setMessages([{ level: "success", text: `${doc?.name ?? "Document"} disposed` }]);
       await load();
     } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't dispose document" }]);
+      show(err);
     } finally {
       setDisposing(false);
     }
@@ -237,6 +242,8 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
   const saveReason = documentEditSaveReason(name, saving);
 
   return (
+    <>
+    <ProblemPanel problem={problem} className="px-6 pt-4" />
     <ObjectScreen
       breadcrumb="Documents / Document"
       title={doc.name}
@@ -376,5 +383,6 @@ export default function DocumentObjectClient({ documentId }: { documentId: strin
         )}
       </div>
     </ObjectScreen>
+    </>
   );
 }

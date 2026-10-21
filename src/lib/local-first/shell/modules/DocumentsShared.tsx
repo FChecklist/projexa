@@ -6,22 +6,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { ShellStateNote } from "@/components/local-first/ShellStateNote";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import type { ShellApi } from "../types";
 import { FILE_NOT_KEPT_MESSAGE, STORAGE_FULL_MESSAGE, fetchDocumentFile, isQuotaError, openFileCache, type FileSource, type KeptFile } from "./documents-file-cache";
 
 export function StateMessage({ testId, state, title, back, children }: { testId: string; state: string; title: string; back?: { href: string; label: string }; children: ReactNode }) {
-  return (
-    <section data-testid={testId} data-state={state}>
-      <h1 className="font-heading text-2xl text-px-ink">{title}</h1>
-      <p className="mt-3 text-sm text-px-muted">{children}</p>
-      {back ? (
-        <p className="mt-3 text-sm">
-          <a className="text-px-ink underline underline-offset-2" href={back.href}>{back.label}</a>
-        </p>
-      ) : null}
-    </section>
-  );
+  // GUIDED ERRORS (G4): drawn as the full guided panel (what it means, why, steps, where to go), see components/local-first/ShellStateNote.tsx.
+  return <ShellStateNote testId={testId} state={state} title={title} back={back}>{children}</ShellStateNote>;
 }
 
 export const NO_PROJECT = "There is no project on this laptop yet. Open PROJEXA once while you are online and your projects will be copied here.";

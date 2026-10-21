@@ -1,6 +1,6 @@
 // Drawings (DWG/PDF/3D) and permits (PDF), RFIs, submittals, punch list.
 // Server messages: compliance-tracker api/v1/projexa/drawings, permits, construction-field-workflow-service.ts.
-import { ent, guides, proj, rx } from "./_helpers";
+import { ent, guides, here, proj, rx } from "./_helpers";
 
 const DBACK = "Back to Drawings";
 const PBACK = "Back to Permits";
@@ -106,13 +106,13 @@ export const drawingsPermitsGuides = guides([
     severity: "warn", returnLabel: PBACK,
   },
   {
-    id: "permit-expiry-order", source: "validation", match: { code: "EXPIRY_BEFORE_ISSUE", field: "expiryDate" },
-    title: "The permit expires before it starts",
-    what: "The expiry date is earlier than the issue date.",
+    id: "permit-expiry-order", source: "validation", match: { code: "EXPIRY_BEFORE_ISSUE" },
+    title: "The end date is before the issue date",
+    what: "{serverMessage}",
     why: "A permit cannot end before it begins.",
-    steps: ["Check both dates against the permit paper.", "Correct the wrong one.", "Save again."],
-    fix: { label: "Fix the dates", to: proj("/permits/new"), where: "Permits > New > Dates" },
-    severity: "warn", returnLabel: PBACK,
+    steps: ["Look at the issue date and the end date.", "Make the end date the later one.", "Press Save again."],
+    fix: { label: "Fix the dates", to: here, where: "This screen > End date", focus: "endDate" },
+    severity: "warn", returnLabel: "Back to the permit form",
   },
   {
     id: "field-self-review", source: "permission", match: { status: 403, messageRegex: rx("cannot review a submittal you submitted yourself|cannot verify your own punch list") },

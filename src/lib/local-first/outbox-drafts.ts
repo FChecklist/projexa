@@ -10,6 +10,7 @@
 // A draft of a function no screen edits yet has no href: its card shows the text itself so the person can copy it.
 
 import { useEffect, useState } from "react";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { isLocalFirstEnabled, resolveLocalUserId } from "./local-reader";
 import type { LocalWriteAccess } from "./local-writes";
 import type { OutboxDraft } from "./local-db";
@@ -19,8 +20,10 @@ const enc = encodeURIComponent;
 const str = (v: unknown) => (typeof v === "string" && v ? v : null);
 
 /** Where the person edits this draft again, or null when no screen edits that kind of change. */
-export function draftHref(draft: Pick<OutboxDraft, "opId" | "functionId" | "projectId" | "params" | "record">): string | null {
+export function draftHref(draft: Pick<OutboxDraft, "opId" | "functionId" | "projectId" | "params" | "record"> & { openAt?: string }): string | null {
   const d = `draft=${enc(draft.opId)}`;
+  // GUIDED ERRORS: the writer that queued the change named the exact screen that corrects it (an app path); only a same-origin path is ever used.
+  if (draft.openAt && safeRedirectPath(draft.openAt, "")) return withDraftMarker(draft.openAt, d);
   switch (draft.functionId) {
     case "create_rfi":
       return `/rfis/new?projectId=${enc(draft.projectId)}&${d}`;
@@ -35,6 +38,13 @@ export function draftHref(draft: Pick<OutboxDraft, "opId" | "functionId" | "proj
     default:
       return null;
   }
+}
+
+function withDraftMarker(path: string, marker: string): string {
+  const hash = path.indexOf("#");
+  const base = hash >= 0 ? path.slice(0, hash) : path;
+  const frag = hash >= 0 ? path.slice(hash) : "";
+  return `${base}${base.includes("?") ? "&" : "?"}${marker}${frag}`;
 }
 
 const NOT_TYPED = /(^id$|Id$|_id$|Date$|_date$)/;

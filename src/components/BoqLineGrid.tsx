@@ -23,6 +23,7 @@ import {
   LINE_FIELD_MESSAGE, childPercentSum, isUntouchedLine, lineMissingFields,
   type LineField, type LineItemDraft,
 } from "@/lib/boq-helpers";
+import { boqLineId, type BoqColumn } from "@/lib/error-guide/g1-faults";
 
 // Fixed widths, shared by the header cell and the input beneath it, so the two
 // stay in one column. "Parent Item Code" and "Breakdown %" are deliberately
@@ -58,6 +59,11 @@ export type BoqLineGridProps = {
   onAddCategory: (name: string) => void;
   onRemove: (index: number) => void;
   onAdd: () => void;
+  /**
+   * GUIDED ERRORS (G1): the faults the form found when Save was pressed, by input id (g1-faults.ts boqLineId), each shown beside its input in
+   * words and marked invalid, so the "Fix it now" link has a place to arrive at.
+   */
+  faultMessages?: Record<string, string>;
 };
 
 function FieldError({ id, message }: { id: string; message: string }) {
@@ -69,7 +75,7 @@ function FieldError({ id, message }: { id: string; message: string }) {
   );
 }
 
-export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpdate, onAddCategory, onRemove, onAdd }: BoqLineGridProps) {
+export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpdate, onAddCategory, onRemove, onAdd, faultMessages }: BoqLineGridProps) {
   // Validation is ON BLUR, never while a user is still typing into an empty
   // box -- a message that appears on the first keystroke of an empty field is
   // noise, not help.
@@ -105,16 +111,21 @@ export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpd
       {lines.map((line, i) => {
         const isSub = !!line.parentItemCode?.trim();
         const childSum = childPercentSum(lines, line.itemCode);
-        const descriptionError = errorFor(i, "description");
-        const unitError = errorFor(i, "unit");
-        const quantityError = errorFor(i, "quantity");
-        const rateError = errorFor(i, "rate");
-        const breakdownError = errorFor(i, "breakdownPercentage");
+        const faultFor = (column: BoqColumn): string | null => faultMessages?.[boqLineId(i, column)] ?? null;
+        const descriptionError = errorFor(i, "description") ?? faultFor("description");
+        const unitError = errorFor(i, "unit") ?? faultFor("unit");
+        const quantityError = errorFor(i, "quantity") ?? faultFor("quantity");
+        const rateError = errorFor(i, "rate") ?? faultFor("rate");
+        const breakdownError = errorFor(i, "breakdownPercentage") ?? faultFor("breakdownPercentage");
+        const itemCodeError = faultFor("itemCode");
+        const parentError = faultFor("parentItemCode");
         return (
           <div key={i} className="flex flex-wrap items-start gap-2">
             <div className={COL.description}>
               <Input
                 aria-label={`Line ${i + 1} Description`}
+                id={boqLineId(i, "description")}
+                data-testid={boqLineId(i, "description")}
                 aria-invalid={!!descriptionError}
                 aria-describedby={descriptionError ? `line-${i}-description-error` : undefined}
                 placeholder="Description"
@@ -133,6 +144,8 @@ export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpd
             <div className={COL.unit}>
               <Input
                 aria-label={`Line ${i + 1} Unit`}
+                id={boqLineId(i, "unit")}
+                data-testid={boqLineId(i, "unit")}
                 aria-invalid={!!unitError}
                 aria-describedby={unitError ? `line-${i}-unit-error` : undefined}
                 placeholder="Unit"
@@ -146,6 +159,8 @@ export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpd
             <div className={COL.quantity}>
               <Input
                 aria-label={`Line ${i + 1} Qty`}
+                id={boqLineId(i, "quantity")}
+                data-testid={boqLineId(i, "quantity")}
                 aria-invalid={!!quantityError}
                 aria-describedby={quantityError ? `line-${i}-quantity-error` : undefined}
                 placeholder="Qty"
@@ -163,6 +178,8 @@ export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpd
             <div className={COL.rate}>
               <Input
                 aria-label={`Line ${i + 1} Rate`}
+                id={boqLineId(i, "rate")}
+                data-testid={boqLineId(i, "rate")}
                 aria-invalid={!!rateError}
                 aria-describedby={rateError ? `line-${i}-rate-error` : undefined}
                 placeholder="Rate"
@@ -180,24 +197,36 @@ export default function BoqLineGrid({ lines, categories, categoriesFailed, onUpd
             <div className={COL.itemCode}>
               <Input
                 aria-label={`Line ${i + 1} Item Code`}
+                id={boqLineId(i, "itemCode")}
+                data-testid={boqLineId(i, "itemCode")}
                 placeholder="Item Code"
                 value={line.itemCode ?? ""}
+                aria-invalid={!!itemCodeError}
+                aria-describedby={itemCodeError ? `line-${i}-itemCode-error` : undefined}
                 onChange={(e) => onUpdate(i, "itemCode", e.target.value)}
               />
+              {itemCodeError && <FieldError id={`line-${i}-itemCode-error`} message={itemCodeError} />}
             </div>
 
             <div className={COL.parentItemCode}>
               <Input
                 aria-label={`Line ${i + 1} Parent Item Code`}
+                id={boqLineId(i, "parentItemCode")}
+                data-testid={boqLineId(i, "parentItemCode")}
                 placeholder="Parent Item Code"
                 value={line.parentItemCode ?? ""}
+                aria-invalid={!!parentError}
+                aria-describedby={parentError ? `line-${i}-parentItemCode-error` : undefined}
                 onChange={(e) => onUpdate(i, "parentItemCode", e.target.value)}
               />
+              {parentError && <FieldError id={`line-${i}-parentItemCode-error`} message={parentError} />}
             </div>
 
             <div className={COL.breakdownPercentage}>
               <Input
                 aria-label={`Line ${i + 1} Breakdown %`}
+                id={boqLineId(i, "breakdownPercentage")}
+                data-testid={boqLineId(i, "breakdownPercentage")}
                 aria-invalid={!!breakdownError}
                 aria-describedby={breakdownError ? `line-${i}-breakdown-error` : undefined}
                 placeholder="Breakdown %"

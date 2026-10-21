@@ -5,8 +5,14 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+
+// GUIDED ERRORS (G1): a failure is told in the guided panel, which needs the router (its "Fix it now" link).
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push: mock(() => {}), replace: mock(() => {}), prefetch: mock(() => {}) }),
+  usePathname: () => "/analysis/project-360",
+}));
 
 const Project360Client = (await import("./Project360Client")).default;
 
@@ -61,6 +67,7 @@ function renderClient(over: Partial<Record<string, Handler>> = {}) {
 
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   // @ts-expect-error -- test-only global fetch stub cleanup
   delete globalThis.fetch;
 });
@@ -94,10 +101,13 @@ describe("Project360Client", () => {
   });
 
   test("a failed analysis read shows the real error, not a silent blank screen", async () => {
-    const { getByText } = renderClient({
+    const { findByTestId } = renderClient({
       "/api/reports/boq-analysis": () => jsonRes({ error: "No organisation on this account" }, 400),
     });
-    await waitFor(() => expect(getByText(/No organisation on this account/)).toBeDefined());
+    // GUIDED ERRORS (G1): the failure is the inline guided panel (what happened, why, steps), never a bare line.
+    const panel = await findByTestId("guided-error");
+    expect(panel.querySelector('[data-testid="guided-error-steps"]')).not.toBeNull();
+    expect(panel.textContent).toMatch(/workspace|organisation/i);
   });
 });
 

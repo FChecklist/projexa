@@ -24,7 +24,7 @@ export type DocumentPhase =
   /** Waiting for a person: needs_answers (questions) or ready (a confirm is all that is left). */
   | { kind: "parked"; job: DocJob; fileName: string }
   | { kind: "created"; projectId: string; job: DocJob | null; duplicate: boolean; fileName: string }
-  | { kind: "failed"; message: string; code: string | null; issues: string[]; fileName: string }
+  | { kind: "failed"; message: string; code: string | null; issues: string[]; fileName: string; /** GUIDED ERRORS: the HTTP status of the refusal, 0 when nothing was received; picks the guide. */ status?: number }
 
 export type StartInput = { file: File; productId?: string; name?: string; acknowledgeShortfall?: boolean }
 export type FinishInput = { acknowledgeQuestions: boolean; acknowledgeShortfall: boolean; name?: string; productId?: string }
@@ -48,7 +48,7 @@ export type UseDocumentJob = {
 }
 
 function failureOf(error: unknown, fileName: string): DocumentPhase {
-  if (error instanceof DocumentError) return { kind: "failed", message: error.message, code: error.code, issues: error.issues, fileName }
+  if (error instanceof DocumentError) return { kind: "failed", message: error.message, code: error.code, issues: error.issues, fileName, status: error.status }
   return { kind: "failed", message: "Something went wrong. Nothing was changed. Try again in a minute.", code: null, issues: [], fileName }
 }
 

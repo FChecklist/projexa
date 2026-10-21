@@ -29,7 +29,6 @@
 // structurally by not offering the wrong word -- "bag" and "Bag" split the
 // materials cost report into two rows for one material, and no total is
 // right afterwards.
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
@@ -37,6 +36,8 @@ import { useSubmit } from "@/lib/use-submit";
 import { MATERIAL_UNITS } from "@/lib/material-units";
 import { useOrgMoney } from "@/lib/use-org-money";
 import type { CreateField } from "@/lib/create-screen";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { fault, notANumber, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
 
 const FIELDS: CreateField[] = [
   { name: "name", label: "Name", kind: "text", required: true, placeholder: "e.g. Cement OPC 43" },
@@ -64,7 +65,9 @@ const FIELDS: CreateField[] = [
 
 export default function MaterialCreateClient({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const [values, setValues] = useState<Record<string, string>>({});
+  // G3 guided errors: what was typed survives a "Fix it now" detour, a reload and a sign-in that ran out; cleared after a successful save.
+  const draft = useFormDraft(`material-new:${projectId}`);
+  const values = draft.values;
   const orgMoney = useOrgMoney();
 
   const moduleHref = `/materials?projectId=${projectId}`;
@@ -93,8 +96,22 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
     onSuccess: (material) => {
       const id = typeof material?.id === "string" ? material.id : "";
       if (!id) throw new Error("The server did not confirm a saved material");
+      draft.clear();
       router.replace(createdHref("/materials", id, values.name));
     },
+  });
+
+  // The form's own checks run BEFORE anything is sent; each names the exact input so "Fix it now" highlights it.
+  const checked = useCheckedSubmit(submit, () => {
+    const cost = (values.unitCost ?? "").trim();
+    if (cost !== "" && (notANumber(cost) || Number(cost) < 0)) {
+      return fault("BAD_UNIT_COST", "unitCost", `The unit cost "${cost}" is not a valid amount. Type digits only, zero or more, for example 28.50.`);
+    }
+    const reorder = (values.reorderLevel ?? "").trim();
+    if (reorder !== "" && (notANumber(reorder) || Number(reorder) < 0)) {
+      return fault("REORDER_NEGATIVE", "reorderLevel", `The reorder level "${reorder}" is not valid. Type a number of zero or more, or leave it blank for no threshold.`);
+    }
+    return null;
   });
 
   return (
@@ -103,15 +120,19 @@ export default function MaterialCreateClient({ projectId }: { projectId: string 
       moduleHref={moduleHref}
       objectLabel="Material"
       title="New Material"
+      banner={<DraftRestoredNote draft={draft} />}
       fields={FIELDS}
       values={values}
-      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      onChange={(name, value) => {
+        checked.clearFault();
+        draft.onChange(name, value);
+      }}
       money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
-      failure={submit.failure}
-      onRetry={submit.submit}
+      failure={checked.failure}
+      onRetry={checked.onRetry}
       saving={submit.saving}
       saved={submit.saved}
-      onSubmit={submit.submit}
+      onSubmit={checked.onSubmit}
     />
   );
 }

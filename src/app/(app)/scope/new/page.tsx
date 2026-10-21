@@ -11,21 +11,16 @@
 // a Suspense boundary behind the form's own skeleton.
 import { Suspense } from "react";
 import ScopeCreateClient from "@/components/ScopeCreateClient";
-import { CreateFormSkeleton, CreateProjectMissing } from "@/components/CreateFormSkeleton";
+import { CreateFormSkeleton } from "@/components/CreateFormSkeleton";
+import { NoProjectGuide } from "@/components/NoProjectGuide";
 import { resolveProjectForModule, resolveProjectIdFast } from "@/lib/module-list-source";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-
-const FRAME = {
-  breadcrumb: "Scope of Work / New BOQ",
-  title: "New BOQ",
-  backHref: "/scope",
-  backLabel: "Back to Scope of Work",
-} as const;
 
 async function ResolvedForm({ requestedProjectId }: { requestedProjectId?: string }) {
   const organizationId = await getServerOrganizationId();
   const { projectId, errorMessage } = await resolveProjectForModule(requestedProjectId, organizationId);
-  if (!projectId) return <CreateProjectMissing message={errorMessage} {...FRAME} />;
+  // GUIDED ERRORS (G1): no project to create against is told in the guided panel (what happened, what to do, the exact place), never an empty form.
+  if (!projectId) return <NoProjectGuide kind={errorMessage ? "load-failed" : "none-exist"} message={errorMessage} moduleLabel="BOQs" />;
   return <ScopeCreateClient projectId={projectId} />;
 }
 

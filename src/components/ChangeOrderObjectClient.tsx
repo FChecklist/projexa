@@ -23,7 +23,7 @@ import { viaPxApi } from "@/lib/px-api";
 // GUIDED ERRORS (G2): every refusal on this screen is the guide panel (what happened, why, the steps, the exact place to fix it, the way back), never a
 // toast that fades; the signer's details are checked here first and the typed values survive leaving the screen.
 import { GuidedError } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { useDraft } from "@/lib/error-guide/use-draft";
 import { contextFromError, currentScreen } from "@/lib/error-guide/context";
 import { signerFaults } from "@/lib/error-guide/g2-faults";
@@ -171,7 +171,7 @@ export default function ChangeOrderObjectClient({ changeOrderId }: { changeOrder
             ) : (
               <div className="space-y-2 max-w-sm">
                 {draft.restored && <p role="status" data-testid="co-send-draft-restored" className="text-xs text-px-info">We put back the signer you had typed.</p>}
-                {attempted && <FaultPanel faults={signerProblems} draftKey={`change-order-send:${changeOrderId}`} />}
+                {attempted && <FormFaultPanel faults={signerProblems} draftKey={`change-order-send:${changeOrderId}`} />}
                 <p className="text-xs text-ct-muted">Real signing request, tamper-evident audit trail (same workflow used for contracts).</p>
                 <div className="space-y-1.5"><Label htmlFor="co-signer-name">Signer name</Label><Input id="co-signer-name" value={signerName} onChange={(e) => draft.set({ name: e.target.value })} />{attempted && signerProblems.find((f) => f.field === "co-signer-name") && <p role="alert" className="text-xs text-px-error">{signerProblems.find((f) => f.field === "co-signer-name")!.message}</p>}</div>
                 <div className="space-y-1.5"><Label htmlFor="co-signer-email">Signer email</Label><Input id="co-signer-email" type="text" inputMode="email" value={signerEmail} onChange={(e) => draft.set({ email: e.target.value })} />{attempted && signerProblems.find((f) => f.field === "co-signer-email") && <p role="alert" className="text-xs text-px-error">{signerProblems.find((f) => f.field === "co-signer-email")!.message}</p>}</div>

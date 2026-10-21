@@ -11,6 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Copy, Loader2, UserPlus } from "lucide-react";
 import { formatDate } from "@/lib/format-date";
+import { GuidedError } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { fault, httpError, useFormDraft, withServerCode } from "@/lib/guided-form";
 
 // R48_NO_INVITE_UI_01. Ruled at L5: SAP, Dynamics 365 and Odoo all place user
 // provisioning under organisation admin settings, so that is where this sits.
@@ -49,16 +54,27 @@ function statusOf(i: Invite): { label: string; variant: "default" | "secondary" 
 export default function OrgInvitesCard() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<string>("member");
+  // G3 guided errors: the typed e-mail and role survive a "Fix it now" detour and a reload; a failure is a full panel, never a fading toast.
+  const draft = useFormDraft("org-invite", { email: "", role: "member" });
+  const { email, role } = draft.values;
+  const [problem, setProblem] = useState<{ ctx: GuideContext; message?: string; retry?: () => void } | null>(null);
+  const setEmail = (v: string) => { setProblem(null); draft.onChange("email", v); };
+  const setRole = (v: string) => { setProblem(null); draft.onChange("role", v); };
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/org/invites");
+    let res: Response;
+    try {
+      res = await fetch("/api/org/invites");
+    } catch (err) {
+      setProblem({ ctx: contextFromError(err, { apiPath: "/api/org/invites", method: "GET" }), retry: () => void load() });
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      toast.error((body as { error?: string }).error ?? "Couldn't load invitations");
+      const e = httpError(res, body, "Couldn't load invitations", "GET", "/api/org/invites");
+      setProblem({ ctx: contextFromError(e), message: e.message, retry: () => void load() });
       return;
     }
     setInvites((body as { invites: Invite[] }).invites ?? []);
@@ -69,6 +85,13 @@ export default function OrgInvitesCard() {
   }, [load]);
 
   async function invite() {
+    // The form's own check, before anything is sent: the address must look like name@company.com.
+    const typed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed)) {
+      setProblem({ ctx: contextFromFailure(fault("INVITE_EMAIL_INVALID", "invite-email", `"${typed}" is not a complete e-mail address. It needs an @ sign and a part after the dot, like name@company.com.`)) });
+      return;
+    }
+    setProblem(null);
     setSubmitting(true);
     try {
       const res = await fetch("/api/org/invites", {
@@ -78,9 +101,10 @@ export default function OrgInvitesCard() {
       });
       const body = await res.json().catch(() => ({}));
       // C09 SUBMIT_TRUTHFUL: never a success toast for a request that failed.
-      if (!res.ok) throw new Error((body as { error?: string }).error ?? "Could not create the invitation");
+      if (!res.ok) throw httpError(res, body, "Could not create the invitation", "POST", "/api/org/invites");
       const created = (body as { invite: Invite }).invite;
-      setEmail("");
+      draft.patch({ email: "" });
+      draft.clear();
       await load();
       try {
         await navigator.clipboard.writeText(inviteUrl(created.token));
@@ -91,7 +115,7 @@ export default function OrgInvitesCard() {
         toast.success(`Invitation created for ${created.email} — use Copy link to share it`);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not create the invitation");
+      setProblem({ ctx: contextFromError(e, withServerCode(e, { apiPath: "/api/org/invites", method: "POST" })), message: e instanceof Error ? e.message : undefined, retry: () => void invite() });
     } finally {
       setSubmitting(false);
     }
@@ -102,11 +126,11 @@ export default function OrgInvitesCard() {
     try {
       const res = await fetch(`/api/org/invites/${id}`, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((body as { error?: string }).error ?? "Could not revoke the invitation");
+      if (!res.ok) throw httpError(res, body, "Could not revoke the invitation", "DELETE", `/api/org/invites/${id}`);
       toast.success("Invitation revoked");
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not revoke the invitation");
+      setProblem({ ctx: contextFromError(e, { apiPath: `/api/org/invites/${id}`, method: "DELETE", entityId: id }), message: e instanceof Error ? e.message : undefined });
     } finally {
       setBusyId(null);
     }
@@ -117,7 +141,7 @@ export default function OrgInvitesCard() {
       await navigator.clipboard.writeText(inviteUrl(token));
       toast.success("Invitation link copied");
     } catch {
-      toast.error("Your browser blocked clipboard access — copy the link from the address bar instead");
+      setProblem({ ctx: contextFromFailure(fault("CLIPBOARD_BLOCKED", undefined, `Your browser blocked clipboard access, so the link was not copied. The link is: ${inviteUrl(token)}`)) });
     }
   }
 
@@ -127,6 +151,8 @@ export default function OrgInvitesCard() {
         <CardTitle className="text-base">Invite people</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        <DraftRestoredNote draft={draft} />
+        {problem && <GuidedError ctx={problem.ctx} message={problem.message} onRetry={problem.retry} draftKey="org-invite" />}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1 space-y-1.5">
             <Label htmlFor="invite-email">Email address</Label>

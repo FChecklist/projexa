@@ -16,7 +16,7 @@ import { toast } from "sonner";
 // GUIDED ERRORS (G2): a refusal or a wrong entry on this screen is the guide panel (what happened, why, numbered steps, the exact place to fix it,
 // the way back), the typed milestone survives leaving the screen, and nothing is sent while the form has a fault.
 import { GuidedError } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { useDraft } from "@/lib/error-guide/use-draft";
 import { contextFromError, currentScreen } from "@/lib/error-guide/context";
 import { claimFaults, invoiceInputFaults, messageFor, type Fault } from "@/lib/error-guide/g2-faults";
@@ -291,7 +291,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
         <Card className="shadow-card">
           <CardContent className="space-y-3 p-4">
             {draft.restored && <p role="status" data-testid="billing-draft-restored" className="rounded-md border border-px-info-border bg-px-info-light px-3 py-2 text-[12.5px] text-px-info">We put back the milestone you had typed before you left. Check it, then press Save.</p>}
-            <FaultPanel faults={createShown} draftKey={`billing-milestone-new:${projectId}`} />
+            <FormFaultPanel faults={createShown} draftKey={`billing-milestone-new:${projectId}`} />
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="claim-customer">Customer</Label>
@@ -435,7 +435,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
                             {taxTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                           </select>
                         </div>
-                        {invoiceFaults?.claimId === c.id && <div className="basis-full"><FaultPanel faults={invoiceFaults.faults} /></div>}
+                        {invoiceFaults?.claimId === c.id && <div className="basis-full"><FormFaultPanel faults={invoiceFaults.faults} /></div>}
                         <Button size="sm" data-testid={`claim-invoice-confirm-${c.id}`} disabled={busy} onClick={() => transition(c.id, "invoice", { billDate, taxTemplateId })}>Confirm invoice</Button>
                         <Button size="sm" variant="ghost" onClick={() => setInvoicingId(null)}>Cancel</Button>
                       </div>

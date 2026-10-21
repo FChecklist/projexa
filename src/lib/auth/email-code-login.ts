@@ -53,7 +53,34 @@ export type LoginDeps = {
   afterVerified: (email: string) => Promise<{ ok: true } | { ok: false; notice: string }>;
 };
 
-export type Step = { ok: true } | { ok: false; notice: string };
+/**
+ * GUIDED ERRORS: a refusal carries, besides the plain sentence (`notice`), the facts the guide catalogue needs (src/lib/error-guide/catalogue/
+ * g4-session-laptop.ts): a `code`, the `field` it is about, and a short `detail` that fills the guide's {serverMessage} (tries left, minutes left).
+ */
+export type LoginCode =
+  | "LOGIN_EMAIL_EMPTY" | "LOGIN_EMAIL_BAD" | "LOGIN_CODE_SHORT" | "LOGIN_CODE_WRONG" | "LOGIN_CODE_EXPIRED" | "LOGIN_LOCKED"
+  | "LOGIN_RATE_LIMIT" | "LOGIN_SEND_FAILED" | "LOGIN_OFFLINE" | "LOGIN_RESEND_WAIT" | "LOGIN_SETUP_FAILED";
+export type Step = { ok: true } | { ok: false; notice: string; code?: LoginCode; field?: "email" | "code"; detail?: string };
+
+/** Common mistypings of well-known e-mail services; a code sent there never arrives (and may reach a stranger). */
+const KNOWN_DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com", "yahoo.co.in", "rediffmail.com", "live.com"];
+const TYPO_OF: Record<string, string> = {
+  "gmial.com": "gmail.com", "gmai.com": "gmail.com", "gmal.com": "gmail.com", "gnail.com": "gmail.com", "gmail.co": "gmail.com", "gmail.con": "gmail.com", "gamil.com": "gmail.com", "gmail.cm": "gmail.com", "gmaill.com": "gmail.com", "gmail.in": "gmail.com",
+  "yaho.com": "yahoo.com", "yahooo.com": "yahoo.com", "yahoo.con": "yahoo.com", "yhoo.com": "yahoo.com",
+  "outlok.com": "outlook.com", "outlook.con": "outlook.com", "outllok.com": "outlook.com",
+  "hotmial.com": "hotmail.com", "hotmai.com": "hotmail.com", "hotmail.con": "hotmail.com",
+  "iclod.com": "icloud.com", "icloud.con": "icloud.com",
+};
+/** The well-known service this address was probably meant for (e.g. "gmail.com" for "name@gmial.com"), or null when it looks fine. */
+export function suspectedEmailTypo(emailRaw: string): { typed: string; meant: string } | null {
+  const email = emailRaw.trim().toLowerCase();
+  const at = email.lastIndexOf("@");
+  if (at < 1) return null;
+  const domain = email.slice(at + 1);
+  if (KNOWN_DOMAINS.includes(domain)) return null;
+  const meant = TYPO_OF[domain];
+  return meant ? { typed: domain, meant } : null;
+}
 
 export const normaliseEmail = (email: string) => email.trim().toLowerCase();
 export const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normaliseEmail(email));
@@ -86,6 +113,12 @@ export function pauseLeftMs(deps: LoginDeps, email: string): number {
   return l.until && l.until > deps.now() ? l.until - deps.now() : 0;
 }
 
+/** "15 minutes", "1 minute", "less than a minute" -- for the pause message. */
+export function minutesWords(ms: number): string {
+  const m = Math.ceil(ms / 60_000);
+  return m <= 0 ? "less than a minute" : `${m} ${m === 1 ? "minute" : "minutes"}`;
+}
+
 const text = (e: AuthErr) => `${e.code ?? ""} ${e.message ?? ""}`;
 const isRateLimited = (e: AuthErr) => e.status === 429 || /rate|too many|security purposes|over_email_send/i.test(text(e));
 const isExpired = (e: AuthErr) => /expired/i.test(text(e));
@@ -115,22 +148,30 @@ export function createEmailCodeLogin(deps: LoginDeps) {
     /** E-mail submitted (first send) or asked again (resend, only after 60 seconds). */
     async requestCode(emailRaw: string, opts: { resend?: boolean } = {}): Promise<Step> {
       const email = normaliseEmail(emailRaw);
-      if (!isValidEmail(email)) return { ok: false, notice: MESSAGES.badEmail };
-      if (!deps.isOnline()) return { ok: false, notice: MESSAGES.needConnection };
-      if (opts.resend && resendInMs() > 0) return { ok: false, notice: MESSAGES.resendWait };
+      if (!email) return { ok: false, notice: MESSAGES.badEmail, code: "LOGIN_EMAIL_EMPTY", field: "email" };
+      if (!isValidEmail(email)) return { ok: false, notice: MESSAGES.badEmail, code: "LOGIN_EMAIL_BAD", field: "email" };
+      if (!deps.isOnline()) return { ok: false, notice: MESSAGES.needConnection, code: "LOGIN_OFFLINE" };
+      if (opts.resend && resendInMs() > 0) return { ok: false, notice: MESSAGES.resendWait, code: "LOGIN_RESEND_WAIT", detail: `Try again in ${Math.ceil(resendInMs() / 1000)} seconds.` };
       // The public app shell starts now, before the code is typed and without telling the person. Data copy does NOT start (rule D2).
       void Promise.resolve().then(() => deps.startShellInstall()).catch(() => {});
       const { error } = await deps.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-      if (error) return { ok: false, notice: isRateLimited(error) ? MESSAGES.tooManyServer : MESSAGES.couldNotSend };
+      if (error) return isRateLimited(error) ? { ok: false, notice: MESSAGES.tooManyServer, code: "LOGIN_RATE_LIMIT" } : { ok: false, notice: MESSAGES.couldNotSend, code: "LOGIN_SEND_FAILED" };
       lastSentAt = deps.now();
       return { ok: true };
     },
 
+    /** After a good code whose set-up step failed: repeat ONLY the set-up step (the code is spent and must not be asked for again). */
+    async finish(emailRaw: string): Promise<Step> {
+      const done = await deps.afterVerified(normaliseEmail(emailRaw));
+      return done.ok ? done : { ...done, code: "LOGIN_SETUP_FAILED", detail: done.notice };
+    },
+
     async submitCode(emailRaw: string, codeRaw: string): Promise<Step> {
       const email = normaliseEmail(emailRaw);
-      if (pauseLeftMs(deps, email) > 0) return { ok: false, notice: MESSAGES.tooMany };
+      const paused = pauseLeftMs(deps, email);
+      if (paused > 0) return { ok: false, notice: MESSAGES.tooMany, code: "LOGIN_LOCKED", field: "code", detail: minutesWords(paused) };
       const token = cleanCodeInput(codeRaw);
-      if (!isCodeShape(token)) return { ok: false, notice: MESSAGES.badShape };
+      if (!isCodeShape(token)) return { ok: false, notice: MESSAGES.badShape, code: "LOGIN_CODE_SHORT", field: "code" };
 
       let result = await deps.auth.verifyOtp({ email, token, type: "email" });
       // A not-yet-confirmed new user's code is verified under type 'signup'.
@@ -140,17 +181,22 @@ export function createEmailCodeLogin(deps: LoginDeps) {
       }
       if (result.error || !result.data.session) {
         const err: AuthErr = result.error ?? {};
-        if (isRateLimited(err)) return { ok: false, notice: MESSAGES.tooManyServer };
+        if (isRateLimited(err)) return { ok: false, notice: MESSAGES.tooManyServer, code: "LOGIN_RATE_LIMIT" };
         const tries = readLock(deps, email).tries + 1;
         if (tries >= MAX_WRONG_TRIES) {
           writeLock(deps, email, { tries, until: deps.now() + LOCK_MS });
-          return { ok: false, notice: MESSAGES.tooMany };
+          return { ok: false, notice: MESSAGES.tooMany, code: "LOGIN_LOCKED", field: "code", detail: minutesWords(LOCK_MS) };
         }
         writeLock(deps, email, { tries, until: null });
-        return { ok: false, notice: isExpired(err) ? MESSAGES.expired : MESSAGES.wrongCode };
+        const left = MAX_WRONG_TRIES - tries;
+        const detail = `You have ${left} ${left === 1 ? "try" : "tries"} left before a 15-minute pause.`;
+        return isExpired(err)
+          ? { ok: false, notice: MESSAGES.expired, code: "LOGIN_CODE_EXPIRED", field: "code", detail }
+          : { ok: false, notice: MESSAGES.wrongCode, code: "LOGIN_CODE_WRONG", field: "code", detail };
       }
       writeLock(deps, email, null);
-      return deps.afterVerified(email);
+      const done = await deps.afterVerified(email);
+      return done.ok ? done : { ...done, code: "LOGIN_SETUP_FAILED", detail: done.notice };
     },
   };
 }

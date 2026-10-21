@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/ui/form-field";
 import { GuidedError } from "@/components/GuidedError";
-import FaultPanel from "@/components/FaultPanel";
+import FormFaultPanel from "@/components/FormFaultPanel";
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { fetchJson } from "@/lib/fetch-json";
 import { useDraft } from "@/lib/error-guide/use-draft";
@@ -81,7 +81,7 @@ export default function ChangeOrderCreateClient({ projectId }: { projectId: stri
             We put back what you had typed here before you left. Check it, then press Save.
           </p>
         )}
-        <FaultPanel faults={shown} draftKey={`change-order-new:${projectId}`} />
+        <FormFaultPanel faults={shown} draftKey={`change-order-new:${projectId}`} />
         {serverFailure && <GuidedError ctx={serverFailure} onRetry={() => void createChangeOrder()} draftKey={`change-order-new:${projectId}`} />}
         <FormField label="Title" required error={messageFor(shown, "co-title")}>
           {(f) => <Input {...f} data-testid="co-title" value={title} onChange={(e) => draft.set({ title: e.target.value })} />}

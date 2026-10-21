@@ -1,6 +1,6 @@
 // Design Studio: designer timesheets, day review/submit, cost analysis, mood boards, floor plans, FF&E.
 // Server messages: PROJEXA api/review-day, api/submit-day, api/timesheets, api/floor-plans, api/ffe.
-import { ent, guides, proj, rx } from "./_helpers";
+import { ent, guides, here, proj, rx } from "./_helpers";
 
 const BACK = "Back to Design Studio";
 const ds = proj("/design-studio");
@@ -16,12 +16,12 @@ export const designStudioGuides = guides([
     severity: "warn", returnLabel: BACK,
   },
   {
-    id: "design-timesheet-hours", source: "validation", match: { code: "HOURS_RANGE", field: "hours" },
+    id: "design-timesheet-hours", source: "validation", match: { code: "HOURS_RANGE" },
     title: "Hours must be between 0 and 24",
-    what: "The hours you typed are below 0 or above 24 for one day.",
+    what: "{serverMessage}",
     why: "A person cannot work more than 24 hours in a day.",
     steps: ["Type hours between 0 and 24, like 6.5.", "Save again."],
-    fix: { label: "Fix the hours", to: proj("/design-studio/timesheets/new"), where: "Design Studio > Timesheet > Hours" },
+    fix: { label: "Fix the hours", to: here, where: "This screen > Hours" },
     severity: "warn", returnLabel: BACK,
   },
   {
@@ -85,6 +85,42 @@ export const designStudioGuides = guides([
     why: "An empty board has nothing to show.",
     steps: ["Add an image or note.", "Save again."],
     fix: { label: "Open the board", to: ent("/mood-boards"), where: "Mood Boards > this board > Add item" },
+    severity: "warn", returnLabel: BACK,
+  },
+  {
+    id: "design-no-tasks", source: "prerequisite", match: { code: "NO_TASKS" },
+    title: "Add a task before logging time",
+    what: "{serverMessage}",
+    why: "Every timesheet entry is logged against a task, so the time can be costed and reported.",
+    steps: ["Create the task in Schedule.", "Come back with the strip at the top.", "Choose the task and log your time."],
+    fix: { label: "Create a task", to: proj("/schedule/tasks/new"), where: "Schedule > New task > Title", focus: "title" },
+    severity: "block", returnLabel: "Back to the timesheet",
+  },
+  {
+    id: "design-day-not-submitted", source: "conflict", match: { code: "DAY_NOT_SUBMITTED" },
+    title: "That day is not waiting for review",
+    what: "{serverMessage}",
+    why: "Only a day the designer has submitted can be approved or sent back. It may already have been decided by someone else.",
+    steps: ["Reload the review list.", "Pick a day that is still waiting."],
+    fix: { label: "Reload the review list", to: here, where: "This screen" },
+    severity: "warn", returnLabel: "Back to Review",
+  },
+  {
+    id: "design-timesheet-locked", source: "conflict", match: { code: "TIMESHEET_LOCKED" },
+    title: "This entry can no longer be changed",
+    what: "{serverMessage}",
+    why: "Once an entry is submitted or approved it is locked so that costs and pay stay correct.",
+    steps: ["Ask your reviewer to send the day back.", "Then change the entry and submit the day again."],
+    fix: { label: "Open Design Studio", to: ds, where: "Design Studio > Timesheets" },
+    severity: "block", returnLabel: BACK,
+  },
+  {
+    id: "design-pick-task", source: "validation", match: { code: "TASK_NOT_PICKED" },
+    title: "Pick the task for this row",
+    what: "{serverMessage}",
+    why: "Every row of time is logged against a task so that it can be costed and reported.",
+    steps: ["Open the Task list on the entry row.", "Choose the task the time was spent on.", "Press Add entry again."],
+    fix: { label: "Choose the task", to: here, where: "This screen > Add entry row > Task" },
     severity: "warn", returnLabel: BACK,
   },
 ]);

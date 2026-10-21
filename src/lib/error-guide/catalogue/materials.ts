@@ -1,6 +1,6 @@
 // Materials: material master, receipts (GRN), issues, expected deliveries, voiding a receipt.
 // Server messages: compliance-tracker construction-materials-service.ts, api/v1/projexa goods-receipts/items.
-import { entOr, guides, proj, rx } from "./_helpers";
+import { entOr, guides, here, proj, rx } from "./_helpers";
 
 const BACK = "Back to Materials";
 const mat = proj("/materials");
@@ -16,12 +16,12 @@ export const materialsGuides = guides([
     severity: "warn", returnLabel: "Back to the form",
   },
   {
-    id: "materials-unit-cost-invalid", source: "validation", match: { code: "BAD_UNIT_COST", field: "unitCost" },
+    id: "materials-unit-cost-invalid", source: "validation", match: { code: "BAD_UNIT_COST" },
     title: "Unit cost must be a number",
     what: "The unit cost is empty, negative or has letters in it.",
     why: "Cost reports multiply this by quantity.",
     steps: ["Type digits only, for example 380.", "Remove commas and currency signs.", "Save again."],
-    fix: { label: "Fix the unit cost", to: proj("/materials/new"), where: "Materials > New > Unit Cost", focus: "unitCost" },
+    fix: { label: "Fix the unit cost", to: here, where: "This screen > Unit cost" },
     severity: "warn", returnLabel: "Back to the form",
   },
   {
@@ -66,7 +66,7 @@ export const materialsGuides = guides([
     what: "You have not added any material for this project.",
     why: "Receipts and issues are recorded against materials from your list.",
     steps: ["Add the first material.", "Then record the receipt."],
-    fix: { label: "Add a material", to: proj("/materials/new"), where: "Materials > New" },
+    fix: { label: "Add a material", to: proj("/materials/new"), where: "Materials > New > Name", focus: "name" },
     severity: "block", returnLabel: BACK,
   },
   {
@@ -115,12 +115,12 @@ export const materialsGuides = guides([
     severity: "info", returnLabel: BACK,
   },
   {
-    id: "materials-issue-more-than-stock", source: "conflict", match: { code: "ISSUE_EXCEEDS_STOCK", field: "quantity" },
+    id: "materials-issue-more-than-stock", source: "validation", match: { code: "ISSUE_EXCEEDS_STOCK" },
     title: "You are issuing more than is in stock",
-    what: "The quantity to issue is larger than the stock recorded.",
-    why: "Stock cannot go below zero.",
-    steps: ["Check the stock shown for this material.", "Record the missing receipt first, or issue a smaller quantity."],
-    fix: { label: "Record a receipt", to: proj("/materials/receipts/new"), where: "Materials > Receipt > New" },
+    what: "{serverMessage}",
+    why: "Stock cannot go below zero, so you cannot issue more than has been received and not yet issued.",
+    steps: ["Look at the stock figure in the message above.", "Type that figure, or a smaller quantity, in the quantity box.", "If material arrived that was never recorded, record that receipt first (Materials, Receipt), then come back."],
+    fix: { label: "Fix the quantity", to: here, where: "This screen > Quantity" },
     severity: "warn", returnLabel: "Back to the issue form",
   },
   {
@@ -130,6 +130,42 @@ export const materialsGuides = guides([
     why: "A stock entry needs an item, a store, a quantity, a date and a type.",
     steps: ["Fill every box that is marked.", "Save again."],
     fix: { label: "Back to the form", to: "/inventory/stock-entries/new", where: "Inventory > Stock entries > New" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "materials-qty-not-positive", source: "validation", match: { code: "QTY_NOT_POSITIVE" },
+    title: "Quantity must be more than zero",
+    what: "{serverMessage}",
+    why: "A receipt or an issue of nothing, or of a negative amount, would corrupt the stock figure.",
+    steps: ["Click the quantity box.", "Type a number greater than 0, for example 120.", "Press Save again."],
+    fix: { label: "Fix the quantity", to: here, where: "This screen > Quantity" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "materials-reorder-negative", source: "validation", match: { code: "REORDER_NEGATIVE" },
+    title: "Reorder level must be zero or more",
+    what: "{serverMessage}",
+    why: "The reorder level is the stock figure at which the material is flagged Low, so it cannot be below zero.",
+    steps: ["Click the reorder level box.", "Type a number of zero or more, or clear the box for no threshold.", "Press Save again."],
+    fix: { label: "Fix the reorder level", to: here, where: "This screen > Reorder level" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "materials-nothing-on-hand", source: "prerequisite", match: { code: "NOTHING_ON_HAND" },
+    title: "Nothing is on hand to issue",
+    what: "{serverMessage}",
+    why: "Material can only be issued after a receipt has put it into stock.",
+    steps: ["Record the receipt of the material that arrived.", "Come back with the strip at the top.", "Choose the material and issue it."],
+    fix: { label: "Record a receipt", to: proj("/materials/receipts/new"), where: "Materials > Receipt > New", focus: "materialId" },
+    severity: "block", returnLabel: "Back to the issue form",
+  },
+  {
+    id: "input-date-in-future", source: "validation", match: { code: "DATE_FUTURE" },
+    title: "That date has not happened yet",
+    what: "{serverMessage}",
+    why: "Receipts, issues, attendance and time are records of things that already happened, so a future day would be a mistake.",
+    steps: ["Click the date box.", "Choose today or an earlier day.", "Press Save again."],
+    fix: { label: "Fix the date", to: here, where: "This screen > the date box" },
     severity: "warn", returnLabel: "Back to the form",
   },
 ]);
