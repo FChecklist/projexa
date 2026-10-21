@@ -23,6 +23,10 @@ import { registryDestination } from "@/lib/report-registry";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { useShellMessage } from "@/components/shell/shell-messages";
 import { taskErrorSentence } from "@/lib/task-errors";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { httpError } from "@/lib/guided-form";
 import {
   readReportRunParams,
   reportRunSearchParams,
@@ -231,6 +235,10 @@ function ProjectReportsPanel({
   const [status, setStatus] = useState<"idle" | "running" | "success" | "error" | "timeout">("idle");
   const [elapsed, setElapsed] = useState(0);
   const [errorText, setErrorText] = useState<string | null>(null);
+  // G3 guided errors: the facts of the failure (status, code, path), so the red card is followed by the full guide (why, steps, the exact place
+  // to fix it, the way back). The share link failure is a panel too, never a fading toast.
+  const [errorCtx, setErrorCtx] = useState<GuideContext | null>(null);
+  const [shareProblem, setShareProblem] = useState<{ ctx: GuideContext; message: string } | null>(null);
   const [result, setResult] = useState<unknown>(null);
   const [ranAt, setRanAt] = useState<Date | null>(null);
   const [stale, setStale] = useState(false);
@@ -455,7 +463,7 @@ function ProjectReportsPanel({
           : Promise.resolve(null),
       ]);
       const data = await res.json();
-      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
+      if (!res.ok) throw httpError(res, data, "", "GET", destination.path);
       if (myGeneration !== requestGeneration.current) return; // a newer request has since superseded this one
       // The breakup is the DOCUMENT, not the report: if it fails the figures
       // above it are still true and are still shown, with the table's own empty
@@ -496,6 +504,7 @@ function ProjectReportsPanel({
       if (myGeneration !== requestGeneration.current) return;
       if (err instanceof DOMException && err.name === "TimeoutError") {
         setErrorText(RUN_TIMEOUT_MESSAGE);
+        setErrorCtx(contextFromError(err, { projectId: projectId ?? undefined, method: "GET", serverMessage: RUN_TIMEOUT_MESSAGE }));
         setStatus("timeout");
         return;
       }
@@ -505,6 +514,7 @@ function ProjectReportsPanel({
       // D-03: whatever came back, the reader is shown a SENTENCE -- never a
       // code, a parameter name or a host:port.
       setErrorText(taskErrorSentence(err instanceof Error ? err.message : null, "The report service didn't answer"));
+      setErrorCtx(contextFromError(err, { projectId: projectId ?? undefined, method: "GET" }));
       setStatus("error");
     } finally {
       clearTimeout(budget);
@@ -584,17 +594,22 @@ function ProjectReportsPanel({
     if (!projectId) return null;
     setSharing(true);
     try {
-      const res = await fetch(`/api/reports/${encodeURIComponent(run.report)}/share`, {
+      const sharePath = `/api/reports/${encodeURIComponent(run.report)}/share`;
+      const res = await fetch(sharePath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, from: run.from, to: run.to }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "", "POST", sharePath);
+      setShareProblem(null);
       setShareUrl(data.url);
       return data.url as string;
     } catch (err) {
-      toast.error(taskErrorSentence(err instanceof Error ? err.message : null, "Couldn't create the share link"));
+      setShareProblem({
+        ctx: contextFromError(err, { projectId: projectId ?? undefined, apiPath: `/api/reports/${run.report}/share`, method: "POST" }),
+        message: `The share link was not created: ${taskErrorSentence(err instanceof Error ? err.message : null, "Couldn't create the share link")}`,
+      });
       return null;
     } finally {
       setSharing(false);
@@ -612,6 +627,7 @@ function ProjectReportsPanel({
 
   return (
     <div className="space-y-4">
+      {shareProblem && <GuidedError ctx={shareProblem.ctx} message={shareProblem.message} onRetry={() => void createShareLink()} />}
       {/* R67 MERGE (C-02 x E-09): HEAD's simple Report/Week-Start picker card
           (Select + prefetchReport-on-change + one Run/Open button) is gone --
           E-09's own rewrite replaced it with the richer, collapsible
@@ -869,12 +885,13 @@ function ProjectReportsPanel({
           ) : status === "error" ? (
             // The BACKEND's own sentence, and a way to try again -- never a
             // generic "could not generate this report" that says nothing about
-            // what failed.
+            // what failed. G3: followed by the full guide (why, the steps, the exact place to fix it, the way back).
             <div className="space-y-3 rounded-md border border-px-error-border bg-px-error-light p-4" role="alert" data-testid="reports-error">
               <p className="text-sm text-px-error">Could not run {currentLabel}: {errorText}</p>
               <Button variant="outline" size="sm" onClick={() => runReport()} data-testid="reports-retry">
                 <RotateCcw className="size-4" /> Retry
               </Button>
+              {errorCtx && <GuidedError ctx={errorCtx} message={`Could not run ${currentLabel}: ${errorText ?? ""}`} />}
             </div>
           ) : shownResult !== null ? (
             <>

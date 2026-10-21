@@ -5,7 +5,7 @@
 // is marked "Waiting to sync" until the server answers. Manager rank only (the registry's min_role_rank 3, decided again by the server). The budget
 // is amount x % / 100, shown from the laptop's copy; the server computes its own.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 // GUIDED ERRORS (G1): a wrong budget value is named beside its box AND told in the guided panel (what happened, why, what to do, the box outlined);
@@ -17,6 +17,7 @@ import { budgetPercentFault, moneyAmountFault, type Fault } from "@/lib/error-gu
 import { ScopeState, scopeWriteFailure } from "./ScopeGuided";
 import { formatAmount } from "@/lib/boq-helpers";
 import type { ShellScreenProps } from "../types";
+import { useDraft as useRefusedDraft } from "../../outbox-drafts";
 import type { BudgetLine, ScopeBudgetData } from "./scope-adapter";
 import { computedBudget, scopeNotQueuedMessage, setLineBudgetOffline, validateBudgetEdit, type BudgetErrors } from "./scope-writes";
 import { NOT_SYNCED, NO_PROJECT, Note, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
@@ -25,7 +26,7 @@ const BACK = { href: "/scope", label: "Back to Scope of Work" };
 
 type Draft = { budgetPercentage: string; vendorId: string; vendorAmount: string };
 
-export default function ScopeBudgetScreen({ shell, data }: ShellScreenProps<ScopeBudgetData>) {
+export default function ScopeBudgetScreen({ shell, data, query }: ShellScreenProps<ScopeBudgetData>) {
   const draftKey = `boq-budget:${data.state === "ready" ? data.boq.id : "none"}`;
   const kept = useDraft<{ drafts: Record<string, Draft> }>(draftKey, { drafts: {} });
   const drafts = kept.value.drafts;
@@ -36,6 +37,28 @@ export default function ScopeBudgetScreen({ shell, data }: ShellScreenProps<Scop
   const [failure, setFailure] = useState<ActionFailureState | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // GUIDED ERRORS (G4): "Edit again" on a refused "Line budget was not saved" card opens this screen with ?draft=<op>&line=<line>: the values the
+  // person typed are put back on THAT line, the line is brought into view, and saving it removes the refused draft. Nothing changes without ?draft.
+  const refusedDraft = useRefusedDraft(query?.get("draft") ?? null);
+  const refused = refusedDraft.draft;
+  const refusedLine = typeof refused?.params?.boqLineItemId === "string" ? refused.params.boqLineItemId : query?.get("line") ?? null;
+  useEffect(() => {
+    if (!refused || refused.functionId !== "update_line_item_budget" || !refusedLine) return;
+    const p = refused.params as Record<string, unknown>;
+    setDrafts((cur) => (cur[refusedLine] ? cur : {
+      ...cur,
+      [refusedLine]: {
+        budgetPercentage: typeof p.budgetPercentage === "number" ? String(p.budgetPercentage) : "",
+        vendorId: typeof p.vendorId === "string" ? p.vendorId : "",
+        vendorAmount: typeof p.vendorAmount === "number" ? String(p.vendorAmount) : "",
+      },
+    }));
+  }, [refused, refusedLine]);
+  useEffect(() => {
+    if (!refusedLine) return;
+    const t = setTimeout(() => document.querySelector<HTMLElement>(`[data-line-id="${CSS.escape(refusedLine)}"]`)?.scrollIntoView?.({ block: "center" }), 150);
+    return () => clearTimeout(t);
+  }, [refusedLine, data.state]);
 
   if (data.state === "no_project") return <ScopeState testId="scope-budget-screen" state="no_project" title="Line budgets" back={BACK} sentence={NO_PROJECT} />;
   if (data.state === "not_synced") return <ScopeState testId="scope-budget-screen" state="not_synced" title="Line budgets" back={BACK} sentence={NOT_SYNCED} projectId={data.projectId ?? undefined} />;
@@ -53,7 +76,7 @@ export default function ScopeBudgetScreen({ shell, data }: ShellScreenProps<Scop
 
   async function save(l: BudgetLine) {
     const d = draftOf(l);
-    const edit = { projectId, lineId: l.id, current: { budgetPercentage: l.budgetPercentage, vendorId: l.vendorId, vendorAmount: l.vendorAmount }, ...d };
+    const edit = { projectId, lineId: l.id, boqId: boq.id, lineLabel: [l.itemCode, l.description].filter(Boolean).join(", "), current: { budgetPercentage: l.budgetPercentage, vendorId: l.vendorId, vendorAmount: l.vendorAmount }, ...d };
     const errs = validateBudgetEdit(edit);
     setErrors((e) => ({ ...e, [l.id]: errs }));
     setFailure(null);
@@ -83,6 +106,7 @@ export default function ScopeBudgetScreen({ shell, data }: ShellScreenProps<Scop
     });
     if (Object.keys(drafts).filter((k) => k !== l.id).length === 0) kept.clear();
     setNote(keptNote(shell));
+    if (refused && refusedLine === l.id) void refusedDraft.clear();
     shell.refresh();
   }
 
@@ -90,6 +114,11 @@ export default function ScopeBudgetScreen({ shell, data }: ShellScreenProps<Scop
     <section data-testid="scope-budget-screen" data-state="ready" data-boq-id={boq.id}>
       <p className="text-sm"><a className="text-px-muted underline underline-offset-2" href={back.href}>{boq.title}</a></p>
       <h1 className="font-heading text-2xl text-px-ink">Line budgets</h1>
+      {refused && refusedLine ? (
+        <p role="status" data-testid="scope-budget-refused-note" className="mt-2 rounded border border-px-warning-border bg-px-warning-light p-2 text-sm text-px-ink">
+          The line marked below is filled in with what you typed before it was refused. Correct it, then press Save on that line.
+        </p>
+      ) : null}
       <p className="mt-1 text-xs text-px-muted">Budget % is 25 until you set it. The line&apos;s budget is its amount x Budget % / 100.</p>
       {kept.restored ? (
         <p className="mt-2 text-[12.5px] text-px-muted" data-testid="draft-restored">
@@ -121,7 +150,7 @@ export default function ScopeBudgetScreen({ shell, data }: ShellScreenProps<Scop
               const pct = Number(d.budgetPercentage);
               const shownBudget = d.budgetPercentage.trim() !== "" && Number.isFinite(pct) && pct >= 0 && pct <= 100 ? computedBudget(l.amount, pct) : null;
               return (
-                <tr key={l.id} className="align-top" data-testid="scope-budget-row" data-line-id={l.id}>
+                <tr key={l.id} className={`align-top ${refused && refusedLine === l.id ? "bg-px-warning-light outline outline-2 outline-px-warning-border" : ""}`} data-testid="scope-budget-row" data-line-id={l.id}>
                   <td className="px-1 py-1">{l.itemCode ?? ""}</td>
                   <td className={`px-1 py-1 ${l.isSub ? "pl-5" : ""}`}>{l.description}</td>
                   <td className="px-1 py-1 text-right tabular-nums">{formatAmount(l.amount)}</td>

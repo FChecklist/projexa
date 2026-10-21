@@ -31,6 +31,10 @@ import { useDraft } from "@/lib/local-first/outbox-drafts";
 import { PendingSyncMarker } from "@/components/PendingSyncMarker";
 
 import { viaPxApi } from "@/lib/px-api";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { fault, httpError, notANumber } from "@/lib/guided-form";
 type Task = {
   id: string; projectId: string; number: number; title: string; description: string | null;
   priority: string; statusId: string; startDate: string | null; dueDate: string | null;
@@ -149,7 +153,16 @@ export default function ScheduleTaskObjectClient({
     // Once per draft, when the task is there to lay it over (not on every pending-edit change).
   }, [draft, task?.id]);
 
+  // G3 guided errors: a refused save / archive / time entry is a full panel (what happened, why, steps, the exact place, the way back), never a
+  // fading toast. The edit form keeps every typed value (outbox-drafts) while the person fixes it.
+  const [problem, setProblem] = useState<{ ctx: GuideContext; message?: string; retry?: () => void } | null>(null);
+
   async function handleSave() {
+    if (values.startDate && values.dueDate && values.dueDate < values.startDate) {
+      setProblem({ ctx: contextFromFailure(fault("TASK_DATES_ORDER", "task-due-date", `The due date ${values.dueDate} is before the start date ${values.startDate}. A task cannot finish before it begins.`), { entityId: taskId, entityType: "task" }) });
+      return;
+    }
+    setProblem(null);
     setSaving(true);
     let refused: string | null = null;
     try {
@@ -185,15 +198,15 @@ export default function ScheduleTaskObjectClient({
           completionPercentage: values.completionPercentage,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save task");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to save task", "PATCH", `/api/schedule/tasks/${taskId}`);
       toast.success("Task saved");
       setMode("display");
       setDraftNote(false);
       void clearDraft();
       await load();
     } catch (err) {
-      toast.error(refused ?? (err instanceof Error ? err.message : "Couldn't save task"));
+      setProblem({ ctx: contextFromError(err, { entityId: taskId, entityType: "task", apiPath: `/api/schedule/tasks/${taskId}`, method: "PATCH" }), message: refused ?? (err instanceof Error ? err.message : undefined), retry: () => void handleSave() });
     } finally {
       setSaving(false);
     }
@@ -206,12 +219,12 @@ export default function ScheduleTaskObjectClient({
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isArchived: true }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to archive task");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to archive task", "PATCH", `/api/schedule/tasks/${taskId}`);
       toast.success("Task archived");
       router.push(backTo ?? `/schedule?projectId=${task!.projectId}&tab=timeline`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't archive task");
+      setProblem({ ctx: contextFromError(err, { entityId: taskId, entityType: "task" }), message: err instanceof Error ? err.message : undefined, retry: () => void handleArchive() });
     } finally {
       setArchiving(false);
     }
@@ -219,18 +232,24 @@ export default function ScheduleTaskObjectClient({
 
   async function submitLogTime() {
     if (!logHours) return;
+    const hrs = logHours.trim();
+    if (notANumber(hrs) || Number(hrs) <= 0 || Number(hrs) > 24) {
+      setProblem({ ctx: contextFromFailure(fault("HOURS_RANGE", "task-log-hours", `The hours "${hrs}" are not possible. Hours must be a number greater than 0 and not more than 24, for example 2.5.`), { entityId: taskId, entityType: "task" }) });
+      return;
+    }
+    setProblem(null);
     setLoggingTime(true);
     try {
       const res = await viaPxApi("/api/timesheets", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ issueId: taskId, hours: logHours, spentOn: logSpentOn }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to log time");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to log time", "POST", "/api/timesheets");
       toast.success("Time logged");
       setLogHours(""); setLoggingTimeOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't log time");
+      setProblem({ ctx: contextFromError(err, { entityId: taskId, entityType: "task" }), message: err instanceof Error ? err.message : undefined, retry: () => void submitLogTime() });
     } finally {
       setLoggingTime(false);
     }
@@ -270,6 +289,7 @@ export default function ScheduleTaskObjectClient({
         every other screen -- the page heading, the board card and the timesheet
         all lead with it. */}
     <ObjectContext moduleId="schedule" label={`#${view.number} ${view.title}`} projectId={view.projectId} />
+    {problem && <div className="px-6 pt-4"><GuidedError ctx={problem.ctx} message={problem.message} onRetry={problem.retry} /></div>}
     <KitObjectScreen
       breadcrumb={SCHEDULE_TASK_OBJECT_BREADCRUMB.breadcrumb}
       title={`#${view.number} ${view.title}`}
@@ -319,7 +339,7 @@ export default function ScheduleTaskObjectClient({
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1.5"><Label>Start Date</Label><Input type="date" value={values.startDate ?? ""} onChange={(e) => setValues((v) => ({ ...v, startDate: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Due Date</Label><Input type="date" value={values.dueDate ?? ""} onChange={(e) => setValues((v) => ({ ...v, dueDate: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label htmlFor="task-due-date">Due Date</Label><Input id="task-due-date" type="date" value={values.dueDate ?? ""} onChange={(e) => setValues((v) => ({ ...v, dueDate: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>% Complete</Label><Input type="number" min="0" max="100" value={values.completionPercentage ?? 0} onChange={(e) => setValues((v) => ({ ...v, completionPercentage: Number(e.target.value) }))} /></div>
             </div>
           </>
@@ -340,7 +360,7 @@ export default function ScheduleTaskObjectClient({
               <Button size="sm" variant="outline" onClick={() => setLoggingTimeOpen(true)}>Log Time</Button>
             ) : (
               <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1.5"><Label>Hours</Label><Input type="number" min="0" step="0.25" className="w-24" value={logHours} onChange={(e) => setLogHours(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label htmlFor="task-log-hours">Hours</Label><Input id="task-log-hours" type="number" min="0" step="0.25" className="w-24" value={logHours} onChange={(e) => setLogHours(e.target.value)} /></div>
                 <div className="space-y-1.5"><Label>Date</Label><Input type="date" value={logSpentOn} onChange={(e) => setLogSpentOn(e.target.value)} /></div>
                 <Button size="sm" onClick={submitLogTime} disabled={loggingTime || !logHours}>{loggingTime ? "Logging…" : "Save"}</Button>
                 <Button size="sm" variant="ghost" onClick={() => { setLoggingTimeOpen(false); setLogHours(""); }}>Cancel</Button>

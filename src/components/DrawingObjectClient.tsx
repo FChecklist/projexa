@@ -43,6 +43,8 @@ import { formatDate } from "@/lib/format-date";
 import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
 import { normaliseDrawingStatus, statusPresentation, type DrawingStatus } from "@/lib/drawing-status";
 import { viaPxApi } from "@/lib/px-api";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { httpError, useProblem } from "@/lib/guided-form";
 
 export type Drawing = {
   id: string;
@@ -149,6 +151,8 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [acting, setActing] = useState(false);
+  // G3 guided errors: a refused edit / remove / dispose is the full guide (what happened, why, steps, the exact place, the way back).
+  const { problem, show, clear } = useProblem({ entityId: drawingId, entityType: "drawing", projectId: projectId || undefined });
 
   async function load() {
     try {
@@ -189,14 +193,15 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setMessages([{ level: "error", text: body.error ?? `Couldn't save this drawing (HTTP ${res.status})` }]);
+        show(httpError(res, body, `Couldn't save this drawing (HTTP ${res.status})`, "PATCH", `/api/drawings/${drawingId}`));
         return;
       }
+      clear();
       setMessages([{ level: "success", text: "Saved" }]);
       setMode("display");
       await load();
     } catch (err) {
-      setMessages([{ level: "error", text: errorMessage(err, "Couldn't save this drawing") }]);
+      show(err);
     } finally {
       setSaving(false);
     }
@@ -222,7 +227,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
           : await viaPxApi(`/api/documents/${drawingId}/dispose`, { method: "POST" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setMessages([{ level: "error", text: body.error ?? `Couldn't ${action.toLowerCase()} this drawing (HTTP ${res.status})` }]);
+        show(httpError(res, body, `Couldn't ${action.toLowerCase()} this drawing (HTTP ${res.status})`, action === "Remove" ? "DELETE" : "POST", action === "Remove" ? `/api/drawings/${drawingId}` : `/api/documents/${drawingId}/dispose`));
         setConfirming(false);
         return;
       }
@@ -233,7 +238,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
       });
       backToList();
     } catch (err) {
-      setMessages([{ level: "error", text: errorMessage(err, `Couldn't ${action.toLowerCase()} this drawing`) }]);
+      show(err);
       setConfirming(false);
     } finally {
       setActing(false);
@@ -288,6 +293,7 @@ export default function DrawingObjectClient({ drawingId, projectId }: { drawingI
         so an empty string is published as null -- the shell then falls back to
         the rail, which is honest, instead of resolving a project id of "". */}
     <ObjectContext moduleId="drawings" label={d.name} projectId={projectId || null} />
+    <ProblemPanel problem={problem} className="px-6 pt-4" />
     <KitObjectScreen
       // Lane D0's shared constant, so this breadcrumb and the one the route's
       // own loading frame paints are the same literal and cannot drift.

@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { httpError } from "@/lib/guided-form";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -84,6 +88,9 @@ export default function SettingsClient({
   const router = useRouter();
   const [info, setInfo] = useState<OrgInfo | null>(initialOrgInfo ?? null);
   const [members, setMembers] = useState<Member[]>(initialMembers ?? []);
+  // G3 guided errors: a failed save in Settings is a full panel (what happened, why, steps, the exact place, the way back), never a fading toast.
+  const [problem, setProblem] = useState<{ ctx: GuideContext; message?: string; retry?: () => void } | null>(null);
+
   const [loading, setLoading] = useState(!initialOrgInfo);
   const [signingOut, setSigningOut] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -102,9 +109,8 @@ export default function SettingsClient({
         setInfo(orgData);
         setMembers(memberData.members ?? []);
       })
-      .catch(() => toast.error("Couldn't load settings"))
+      .catch((err) => setProblem({ ctx: contextFromError(err, { apiPath: "/api/organization", method: "GET" }), message: "Couldn't load the organisation settings.", retry: () => window.location.reload() }))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialOrgInfo is a mount-time seed, not a reactive dependency; re-fetching if it changed later would fight the user's own edits.
   }, []);
 
   // R48_NO_CURRENCY_UI_01: independent of the load above -- a currency-fetch
@@ -129,12 +135,13 @@ export default function SettingsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to update currency");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to update currency", "PUT", "/api/organization/currency");
+      setProblem(null);
       setCurrency(data);
       toast.success(`Organization currency set to ${data.baseCurrency?.code ?? code}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update currency");
+      setProblem({ ctx: contextFromError(err, { apiPath: "/api/organization/currency", method: "PUT" }), message: err instanceof Error ? err.message : undefined, retry: () => void changeCurrency(code) });
     } finally {
       setSavingCurrency(false);
     }
@@ -148,12 +155,13 @@ export default function SettingsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to update role");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to update role", "PATCH", `/api/org-members/${userId}`);
+      setProblem(null);
       setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)));
       toast.success("Role updated");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update role");
+      setProblem({ ctx: contextFromError(err, { apiPath: `/api/org-members/${userId}`, method: "PATCH", entityId: userId }), message: err instanceof Error ? err.message : undefined, retry: () => void changeRole(userId, role) });
     } finally {
       setUpdatingId(null);
     }
@@ -183,6 +191,7 @@ export default function SettingsClient({
 
   return (
     <div className="space-y-6">
+      {problem && <GuidedError ctx={problem.ctx} message={problem.message} onRetry={problem.retry} />}
       <Card className="shadow-card">
         <CardHeader><CardTitle className="text-base">Organization</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">

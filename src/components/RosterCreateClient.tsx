@@ -25,6 +25,8 @@ import { useOrgMoney } from "@/lib/use-org-money";
 import { useSubmit } from "@/lib/use-submit";
 import { getShellVendors } from "@/lib/shell-store";
 import type { CreateField } from "@/lib/create-screen";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { fault, notANumber, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
 // R67 D-34 (R-085), folded in by the integration train: the org's trade
 // vocabulary. Trade was free text, so the same job arrived as "Mason", "mason"
 // and "Masonry" and split every trade-wise total downstream. useTrades() reads
@@ -39,7 +41,9 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
   const trades = useTrades();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsError, setVendorsError] = useState<{ status: number | null; message: string | null } | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  // G3 guided errors: every typed value survives a "Fix it now" detour and comes back with the person; cleared after a successful save.
+  const draft = useFormDraft(`worker-new:${projectId}`);
+  const values = draft.values;
 
   const loadVendors = useCallback(async () => {
     setVendorsError(null);
@@ -160,8 +164,17 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
     onSuccess: (entry) => {
       const id = typeof entry?.id === "string" ? entry.id : "";
       if (!id) throw new Error("The server did not confirm a saved worker");
+      draft.clear();
       router.replace(createdHref("/labour", id, values.name));
     },
+  });
+
+  const checked = useCheckedSubmit(submit, () => {
+    const rate = (values.dailyRate ?? "").trim();
+    if (notANumber(rate) || Number(rate) < 0) {
+      return fault("RATE_INVALID", "dailyRate", `The daily rate "${rate}" is not valid. Type the worker's pay for one day as a number of 0 or more, for example 180.`);
+    }
+    return null;
   });
 
   return (
@@ -176,20 +189,24 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
       // (module-create-routes.ts: "Worker"). One name, one destination.
       fields={fields}
       values={values}
-      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      onChange={(name, value) => {
+        checked.clearFault();
+        draft.onChange(name, value);
+      }}
       money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
       // Company is OPTIONAL, so a failed vendor read must not block the save
       // -- it is stated, and the form still works for a direct employee.
       banner={
-        vendorsError ? (
-          <PaneErrorCard entity="the subcontractor list" error={vendorsError} onRetry={() => void loadVendors()} />
-        ) : undefined
+        <>
+          <DraftRestoredNote draft={draft} />
+          {vendorsError ? <PaneErrorCard entity="the subcontractor list" error={vendorsError} onRetry={() => void loadVendors()} /> : null}
+        </>
       }
-      failure={submit.failure}
-      onRetry={submit.submit}
+      failure={checked.failure}
+      onRetry={checked.onRetry}
       saving={submit.saving}
       saved={submit.saved}
-      onSubmit={submit.submit}
+      onSubmit={checked.onSubmit}
     />
   );
 }

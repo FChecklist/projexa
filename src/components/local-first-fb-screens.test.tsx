@@ -212,7 +212,8 @@ describe("ScheduleTaskObjectClient", () => {
     fireEvent.click(await view.findByRole("button", { name: /Edit/ }));
     typeInto(view.getByDisplayValue("40"), "55");
     fireEvent.click(view.getByRole("button", { name: /^Save/ }));
-    await waitFor(() => expect(JSON.stringify(toasts.filter((t) => t.kind === "error"))).toContain("comes from its BOQ line"));
+    // G3: the refusal is the full guided panel (was a fading toast), still in words and naming the BOQ line
+    await waitFor(() => expect(view.getByTestId("guided-error").textContent).toContain("comes from its BOQ line"));
     expect(await h.outbox.pendingCount()).toBe(0);
     expect(fetched.some((f) => f.method === "PATCH")).toBe(true); // offline here, so it failed -- and said so
     expect(view.getByDisplayValue("55")).toBeTruthy();

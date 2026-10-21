@@ -46,6 +46,10 @@ import {
   type ScheduleTypesState,
 } from "@/lib/schedule-type-state";
 import type { CreateField } from "@/lib/create-screen";
+import { GuidedError } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, notANumber, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
 import { dueDateError, dueDateFromDuration, durationFieldValue } from "@/lib/schedule-activity";
 
 type IssueType = { id: string; name: string; isDefault?: boolean | null };
@@ -63,7 +67,11 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
   const router = useRouter();
   const [types, setTypes] = useState<IssueType[]>([]);
   const [typesState, setTypesState] = useState<ScheduleTypesState>("loading");
-  const [values, setValues] = useState<Record<string, string>>({ priority: "no_priority" });
+  // G3 guided errors: every typed value survives a "Fix it now" detour (for example to set up task types) and comes back with the person;
+  // cleared after a successful save. The default task type is derived, never written into the draft.
+  const draft = useFormDraft(`task-new:${projectId}`, { priority: "no_priority" });
+  const defaultTypeId = (types.find((t) => t.isDefault) ?? types[0])?.id ?? "";
+  const values: Record<string, string> = { ...draft.values, typeId: draft.values.typeId ?? defaultTypeId };
   // R67 D-47: the four things the form could not send at all -- a START, a
   // DURATION, what the activity FOLLOWS, and which BOQ line it earns its value
   // against -- which is why the Timeline it feeds could not draw a bar, could
@@ -114,33 +122,6 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
    * onto the start date (a milestone IS a zero-length activity) and unticking
    * hands the finish date back.
    */
-  const handleChange = useCallback((name: string, value: string) => {
-    setValues((v) => {
-      const next = { ...v, [name]: value };
-      if (name === "isMilestone") {
-        if (value === "true") next.dueDate = next.startDate ?? "";
-        return next;
-      }
-      if (v.isMilestone === "true") {
-        // A milestone has no duration to preserve: its finish IS its start.
-        if (name === "startDate") next.dueDate = value;
-        return next;
-      }
-      if (name === "durationDays") {
-        const derived = dueDateFromDuration(next.startDate ?? "", value);
-        if (derived) next.dueDate = derived;
-      } else if (name === "dueDate") {
-        next.durationDays = durationFieldValue(next.startDate ?? "", value);
-      } else if (name === "startDate") {
-        if (next.dueDate) next.durationDays = durationFieldValue(value, next.dueDate);
-        else if (next.durationDays) {
-          const derived = dueDateFromDuration(value, next.durationDays);
-          if (derived) next.dueDate = derived;
-        }
-      }
-      return next;
-    });
-  }, []);
 
   const loadTypes = useCallback(async () => {
     setTypesState("loading");
@@ -151,8 +132,6 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
       const data = await fetchJson<{ types?: IssueType[] }>("/api/schedule/types");
       const loaded = data.types ?? [];
       setTypes(loaded);
-      const defaultType = loaded.find((t) => t.isDefault) ?? loaded[0];
-      if (defaultType) setValues((v) => ({ ...v, typeId: v.typeId ?? defaultType.id }));
       setTypesState(scheduleTypesState({ loaded, failed: false }));
     } catch {
       setTypes([]);
@@ -326,9 +305,48 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
     onSuccess: (data) => {
       const id = typeof data?.id === "string" ? data.id : "";
       if (!id) throw new Error("The server did not confirm a saved task");
+      draft.clear();
       router.replace(createdHref("/schedule/tasks", id, values.title));
     },
   });
+
+  const checked = useCheckedSubmit(submit, () => {
+    const start = values.startDate ?? "";
+    const due = values.dueDate ?? "";
+    if (!isMilestone && due && start && due < start) {
+      return fault("TASK_DATES_ORDER", "dueDate", `The due date ${due} is before the start date ${start}. A task cannot finish before it begins.`);
+    }
+    const dur = (values.durationDays ?? "").trim();
+    if (!isMilestone && dur !== "" && (notANumber(dur) || Number(dur) < 0)) {
+      return fault("TASK_DURATION_INVALID", "durationDays", `The duration "${dur}" is not valid. Type the number of days as zero or more, for example 5.`);
+    }
+    return null;
+  });
+  const noTypes = typesState === "empty";
+
+  const handleChange = (name: string, value: string) => {
+    checked.clearFault();
+    const v = values;
+    const next = { ...v, [name]: value };
+    if (name === "isMilestone") {
+      if (value === "true") next.dueDate = next.startDate ?? "";
+    } else if (v.isMilestone === "true") {
+      // A milestone has no duration to preserve: its finish IS its start.
+      if (name === "startDate") next.dueDate = value;
+    } else if (name === "durationDays") {
+      const derived = dueDateFromDuration(next.startDate ?? "", value);
+      if (derived) next.dueDate = derived;
+    } else if (name === "dueDate") {
+      next.durationDays = durationFieldValue(next.startDate ?? "", value);
+    } else if (name === "startDate") {
+      if (next.dueDate) next.durationDays = durationFieldValue(value, next.dueDate);
+      else if (next.durationDays) {
+        const derived = dueDateFromDuration(value, next.durationDays);
+        if (derived) next.dueDate = derived;
+      }
+    }
+    draft.patch(next);
+  };
 
   return (
     <CreateScreen
@@ -339,11 +357,17 @@ export default function ScheduleTaskCreateClient({ projectId }: { projectId: str
       fields={fields}
       values={values}
       onChange={handleChange}
-      failure={submit.failure}
-      onRetry={submit.submit}
+      failure={checked.failure}
+      onRetry={checked.onRetry}
       saving={submit.saving}
       saved={submit.saved}
-      onSubmit={submit.submit}
+      onSubmit={checked.onSubmit}
+      banner={
+        <>
+          <DraftRestoredNote draft={draft} />
+          {noTypes ? <GuidedError ctx={contextFromFailure(fault("NO_TASK_TYPES", "typeId", "No task types are set up for your organisation yet."), { projectId })} draftKey={`task-new:${projectId}`} /> : null}
+        </>
+      }
     />
   );
 }

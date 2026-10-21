@@ -19,6 +19,10 @@ import { useSubmit } from "@/lib/use-submit";
 import { useOrgMoney } from "@/lib/use-org-money";
 import type { CreateField } from "@/lib/create-screen";
 import { getLastChoice, setLastChoice } from "@/lib/last-choice";
+import { GuidedError } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, notANumber, todayLocalIso, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
 // R80 GAP-8: WHO is looking at this form. Passive -- it reads the shell
 // bootstrap M24Shell has already fetched for this route and never asks for it
 // itself, so identity costs this create screen no round trip (F-19's rule).
@@ -49,7 +53,9 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
   const [rememberedMaterial, setRememberedMaterial] = useState<string | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsFailed, setVendorsFailed] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({ receivedDate: todayIso() });
+  // G3 guided errors: every typed value survives a "Fix it now" detour (for example to add the missing material) and comes back with the person.
+  const draft = useFormDraft(`material-receipt:${projectId}`, { receivedDate: todayIso() });
+  const values = draft.values;
   const orgMoney = useOrgMoney();
 
   // R80 GAP-8: re-runs when the identity lands, because the memory is keyed to
@@ -205,9 +211,27 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
         text: `Recorded ${values.quantity} of ${material?.name ?? "this material"} on ${values.receivedDate}`,
         href: moduleHref,
       });
+      draft.clear();
       router.replace(moduleHref);
     },
   });
+
+  const checked = useCheckedSubmit(submit, () => {
+    const qty = (values.quantity ?? "").trim();
+    if (notANumber(qty) || Number(qty) <= 0) {
+      return fault("QTY_NOT_POSITIVE", "quantity", `The quantity "${qty}" is not valid. A receipt must be a number greater than 0, for example 120.`);
+    }
+    const cost = (values.unitCost ?? "").trim();
+    if (cost !== "" && (notANumber(cost) || Number(cost) < 0)) {
+      return fault("BAD_UNIT_COST", "unitCost", `The unit cost "${cost}" is not a valid amount. Type digits only, zero or more, for example 28.50.`);
+    }
+    if ((values.receivedDate ?? "") > todayLocalIso()) {
+      return fault("DATE_FUTURE", "receivedDate", `The received date ${values.receivedDate} is in the future. A receipt records goods that have already arrived.`);
+    }
+    return null;
+  });
+  // No material has been added to this project yet: say so with the exact way to add one (and the way back), instead of an empty list.
+  const noMaterials = !materialsLoading && !materialsError && materials.length === 0;
 
   return (
     <CreateScreen
@@ -217,21 +241,26 @@ export default function MaterialReceiptCreateClient({ projectId }: { projectId: 
       title="Record Inbound Receipt"
       fields={fields}
       values={values}
-      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      onChange={(name, value) => {
+        checked.clearFault();
+        draft.onChange(name, value);
+      }}
       money={{ currency: orgMoney.currency, loaded: orgMoney.loaded, currencySet: orgMoney.currencySet }}
       // A material that cannot be chosen is not the user's omission. Naming
       // it as "missing" would be the form blaming them for a failed read.
       extraMissing={materialsError ? ["the material list could not be loaded"] : []}
       banner={
-        materialsError ? (
-          <PaneErrorCard entity="the material master" error={materialsError} onRetry={() => void loadMaterials()} />
-        ) : undefined
+        <>
+          <DraftRestoredNote draft={draft} />
+          {materialsError ? <PaneErrorCard entity="the material master" error={materialsError} onRetry={() => void loadMaterials()} /> : null}
+          {noMaterials ? <GuidedError ctx={contextFromFailure(fault("NO_MATERIALS", "materialId", "No material has been added to this project yet."), { projectId })} draftKey={`material-receipt:${projectId}`} /> : null}
+        </>
       }
-      failure={submit.failure}
-      onRetry={submit.submit}
+      failure={checked.failure}
+      onRetry={checked.onRetry}
       saving={submit.saving}
       saved={submit.saved}
-      onSubmit={submit.submit}
+      onSubmit={checked.onSubmit}
     />
   );
 }

@@ -26,6 +26,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { httpError, useProblem } from "@/lib/guided-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,8 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
   const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  // G3 guided errors: a refused move is the full guide (and the card is put back), never a fading toast.
+  const { problem, show, clear } = useProblem({ projectId });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,9 +104,10 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
         body: JSON.stringify({ issueId, statusId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw httpError(res, data, "Couldn't move issue", "PATCH", "/api/board");
+      clear();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't move issue");
+      show(err, undefined, () => void moveIssue(issueId, statusId), { entityId: issueId, entityType: "task" });
       load();
     } finally {
       setMovingId(null);
@@ -174,6 +179,7 @@ export default function ScheduleBoardClient({ projectId }: { projectId: string }
 
   return (
     <ListStateRegion state={columns.length > 0 ? "ready" : "empty"} className="space-y-4">
+      <ProblemPanel problem={problem} className="" />
       <div className="flex gap-4 overflow-x-auto pb-2">
         {columns.map((column) => (
           <div

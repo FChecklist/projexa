@@ -287,7 +287,7 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
         ) : (
           <div className="mt-2 max-w-3xl" data-testid="boq-local-approve-note" data-ok="0">
             <ActionFailurePanel
-              failure={{ err: Object.assign(new Error(approveNote.text), { ...(approveNote.status !== undefined ? { status: approveNote.status } : {}), ...(approveNote.code ? { code: approveNote.code } : {}), apiPath: `/api/scope/${boq.id}/approve`, method: "POST" }), at: 0 }}
+              failure={{ err: Object.assign(new Error(approveNote.text), { ...(approveNote.status !== undefined ? { status: approveNote.status } : {}), ...(approveNote.code ? { code: approveNote.code } : {}), apiPath: `/api/scope/${encodeURIComponent(boq.id)}/approve`, method: "POST" }), at: 0 }}
               sentence={`${approveNote.text}${selfBlocked && !approveNote.text.includes(APPROVE_SELF_REASON) ? ` ${APPROVE_SELF_REASON}` : ""}`}
               entityType="boq"
               entityId={boq.id}

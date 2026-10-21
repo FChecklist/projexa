@@ -6,7 +6,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 
 ## Counts
 
-- Guides: **328** in **18** modules
+- Guides: **357** in **19** modules
 - Distinct in-app screens used as fix destinations: **55** (every one checked against the real route list by the test)
 - Real server messages harvested (compliance-tracker + PROJEXA): **901**; mapped to a guide: **901**; unmapped (TODO): **0**
 - Of the mapped ones, **467** are covered only by a general fallback guide (see the last section)
@@ -198,26 +198,30 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `billing-invoice-failed` (server, warn) | A temporary problem. Check the list before trying again so you do not bill twice. | **The invoice was not created.** The invoice could not be saved. Steps: 1) Open Invoices and check whether it is listed. 2) If not listed, press Create invoice again. | Check Invoices: Invoices (/invoices) | Back to Billing |
 | `billing-claim-create-failed` (server, warn) | A temporary problem. Nothing was changed. | **The billing milestone was not saved.** The milestone could not be saved. Steps: 1) Wait a few seconds. 2) Check the list. 3) Save again if it is not there. | Open Billing: Billing Milestones (/billing-milestones) | Back to Billing |
 
-## Materials (14)
+## Materials (18)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
 | `materials-name-required` (validation, warn) | A material with no name cannot be picked later in receipts or issues. | **Give the material a name.** {serverMessage} Steps: 1) Type the material name, for example Cement OPC 53. 2) Save again. | Type the name: Materials > New > Name (/materials/new, box: name) | Back to the form |
-| `materials-unit-cost-invalid` (validation, warn) | Cost reports multiply this by quantity. | **Unit cost must be a number.** The unit cost is empty, negative or has letters in it. Steps: 1) Type digits only, for example 380. 2) Remove commas and currency signs. 3) Save again. | Fix the unit cost: Materials > New > Unit Cost (/materials/new, box: unitCost) | Back to the form |
+| `materials-unit-cost-invalid` (validation, warn) | Cost reports multiply this by quantity. | **Unit cost must be a number.** The unit cost is empty, negative or has letters in it. Steps: 1) Type digits only, for example 380. 2) Remove commas and currency signs. 3) Save again. | Fix the unit cost: This screen > Unit cost (/work-progress) | Back to the form |
 | `materials-qty-required` (validation, warn) | A receipt or issue of nothing has no meaning. | **Quantity must be more than zero.** {serverMessage} Steps: 1) Type the quantity as a number greater than 0. 2) Save again. | Fix the quantity: Materials > Receipt > Quantity (/materials/receipts/new, box: quantity) | Back to the form |
 | `materials-unit-required` (validation, warn) | Quantity needs a unit such as bags, kg, m3 or nos. | **Choose a unit for the material.** {serverMessage} Steps: 1) Type the unit. 2) Save again. | Add the unit: Materials > New > Unit (/materials/new) | Back to the form |
 | `materials-date-required` (validation, warn) | Every delivery, issue and order needs a date for stock and cost reports. | **Pick the date.** {serverMessage} Steps: 1) Click the date box. 2) Choose the day. 3) Save again. | Pick the date: Materials > Receipt > Date (/materials/receipts/new, box: receivedDate) | Back to the form |
 | `materials-material-required` (prerequisite, block) | A receipt or issue is always for one material in your list. | **Choose a material first.** {serverMessage} Steps: 1) Open the Material list on the form. 2) Pick the material. 3) If it is not there, create it first. | Add a material: Materials > New (/materials/new) | Back to the form |
-| `materials-none-yet` (prerequisite, block) | Receipts and issues are recorded against materials from your list. | **No materials in the list yet.** You have not added any material for this project. Steps: 1) Add the first material. 2) Then record the receipt. | Add a material: Materials > New (/materials/new) | Back to Materials |
+| `materials-none-yet` (prerequisite, block) | Receipts and issues are recorded against materials from your list. | **No materials in the list yet.** You have not added any material for this project. Steps: 1) Add the first material. 2) Then record the receipt. | Add a material: Materials > New > Name (/materials/new, box: name) | Back to Materials |
 | `materials-supplier-required` (prerequisite, block) | A goods receipt must say who delivered. | **Choose the supplier.** {serverMessage} Steps: 1) Open the Supplier list. 2) Pick the supplier. 3) If missing, add the vendor first. | Add a vendor: Vendors > New (/vendors/new) | Back to the receipt |
 | `materials-not-found` (server, warn) | It was deleted after the page was opened. | **That material or receipt is gone.** {serverMessage} Steps: 1) Reload Materials. 2) Pick it again from the list. | Open Materials: Materials (/materials) | Back to Materials |
 | `materials-void-reason` (validation, warn) | Cancelling a receipt changes stock, so a reason is recorded. | **Write why the receipt is cancelled.** {serverMessage} Steps: 1) Type the reason, for example entered twice. 2) Press Void again. | Open the receipt: Materials > Receipts > this receipt > Void (/materials/receipts/E1) | Back to the receipt |
 | `materials-already-voided` (conflict, info) | A receipt can be cancelled only once. | **This receipt is already cancelled.** {serverMessage} Steps: 1) Nothing more is needed. 2) If you meant to record a new delivery, add a new receipt. | New receipt: Materials > Receipt > New (/materials/receipts/new) | Back to Materials |
 | `materials-duplicate-order` (conflict, info) | An identical open order stops the same delivery being ordered twice by mistake. | **This order already exists.** {serverMessage} Steps: 1) Open Materials and find the existing order. 2) Change the date or quantity if this is a different order. | Open Materials: Materials > Orders (/materials) | Back to Materials |
-| `materials-issue-more-than-stock` (conflict, warn) | Stock cannot go below zero. | **You are issuing more than is in stock.** The quantity to issue is larger than the stock recorded. Steps: 1) Check the stock shown for this material. 2) Record the missing receipt first, or issue a smaller quantity. | Record a receipt: Materials > Receipt > New (/materials/receipts/new) | Back to the issue form |
+| `materials-issue-more-than-stock` (validation, warn) | Stock cannot go below zero, so you cannot issue more than has been received and not yet issued. | **You are issuing more than is in stock.** {serverMessage} Steps: 1) Look at the stock figure in the message above. 2) Type that figure, or a smaller quantity, in the quantity box. 3) If material arrived that was never recorded, record that receipt first (Materials, Receipt), then come back. | Fix the quantity: This screen > Quantity (/work-progress) | Back to the issue form |
 | `materials-warehouse-name` (validation, warn) | A stock entry needs an item, a store, a quantity, a date and a type. | **Fill the stock entry form.** {serverMessage} Steps: 1) Fill every box that is marked. 2) Save again. | Back to the form: Inventory > Stock entries > New (/inventory/stock-entries/new) | Back to the form |
+| `materials-qty-not-positive` (validation, warn) | A receipt or an issue of nothing, or of a negative amount, would corrupt the stock figure. | **Quantity must be more than zero.** {serverMessage} Steps: 1) Click the quantity box. 2) Type a number greater than 0, for example 120. 3) Press Save again. | Fix the quantity: This screen > Quantity (/work-progress) | Back to the form |
+| `materials-reorder-negative` (validation, warn) | The reorder level is the stock figure at which the material is flagged Low, so it cannot be below zero. | **Reorder level must be zero or more.** {serverMessage} Steps: 1) Click the reorder level box. 2) Type a number of zero or more, or clear the box for no threshold. 3) Press Save again. | Fix the reorder level: This screen > Reorder level (/work-progress) | Back to the form |
+| `materials-nothing-on-hand` (prerequisite, block) | Material can only be issued after a receipt has put it into stock. | **Nothing is on hand to issue.** {serverMessage} Steps: 1) Record the receipt of the material that arrived. 2) Come back with the strip at the top. 3) Choose the material and issue it. | Record a receipt: Materials > Receipt > New (/materials/receipts/new, box: materialId) | Back to the issue form |
+| `input-date-in-future` (validation, warn) | Receipts, issues, attendance and time are records of things that already happened, so a future day would be a mistake. | **That date has not happened yet.** {serverMessage} Steps: 1) Click the date box. 2) Choose today or an earlier day. 3) Press Save again. | Fix the date: This screen > the date box (/work-progress) | Back to the form |
 
-## Labour (15)
+## Labour (17)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -229,19 +233,21 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `labour-attendance-not-found` (server, warn) | It was deleted by someone else. | **That attendance record is gone.** {serverMessage} Steps: 1) Reload the sheet. 2) Enter it again if needed. | Open Labour: Labour > Attendance (/labour) | Back to Labour |
 | `labour-status-unknown` (validation, warn) | Only listed statuses (such as present, absent, half day) are accepted. | **Choose a status from the list.** {serverMessage} Steps: 1) Open the status list in that row. 2) Pick one of the options. | Open attendance: Labour > Attendance > Status (/labour) | Back to Labour |
 | `labour-roster-missing` (prerequisite, block) | The worker was removed or belongs to another project. | **That worker is not on this project.** {serverMessage} Steps: 1) Open the Labour list. 2) Add the worker, or pick one who is listed. | Add a worker: Labour > New worker (/labour/new) | Back to Labour |
-| `labour-none-yet` (prerequisite, block) | Attendance is marked for workers on the project list. | **No workers added yet.** The labour list is empty, so there is nobody to mark. Steps: 1) Add workers one by one, or import an Excel sheet. 2) Then open attendance. | Import workers: Labour > Import (/labour/import) | Back to Labour |
+| `labour-none-yet` (prerequisite, block) | Attendance is marked for workers on the project list. | **No workers added yet.** The labour list is empty, so there is nobody to mark. Steps: 1) Add workers one by one, or import an Excel sheet. 2) Then open attendance. | Add a worker: Labour > New worker > Name (/labour/new, box: name) | Back to Labour |
 | `labour-sheet-rows` (validation, warn) | At least one worker must be marked, and no worker may be listed twice. | **The attendance sheet has a problem.** {serverMessage} Steps: 1) Mark at least one worker. 2) Remove the repeated worker row. 3) Save again. | Open attendance: Labour > Attendance sheet (/labour) | Back to Labour |
 | `labour-worker-id` (server, warn) | Two people may have added workers at the same moment. | **A worker number could not be made.** {serverMessage} Steps: 1) Wait a few seconds. 2) Press Save again. | Open Labour: Labour (/labour) | Back to Labour |
 | `labour-roster-link` (conflict, warn) | One worker can be linked to only one employee record. | **This worker is already linked.** {serverMessage} Steps: 1) Open the worker. 2) Check which employee is linked. 3) Unlink it there if it is wrong. | Open Labour: Labour > this worker > Employee link (/labour) | Back to Labour |
 | `labour-import-columns` (upload, warn) | The first row of the sheet must have headings named Name and Daily Rate. | **The worker sheet is missing a column.** {serverMessage} Steps: 1) Open your sheet. 2) Rename the heading row so it says Name and Daily Rate. 3) Upload it again. | Open the import page: Labour > Import (/labour/import) | Back to Labour |
 | `labour-project-or-roster` (prerequisite, block) | Attendance is shown for a project or for one worker. | **Choose a project or worker.** {serverMessage} Steps: 1) Pick a project. 2) Open Labour from inside it. | Pick a project: Projects (/projects) | Back to Labour |
 | `labour-saved-maybe` (network, warn) | Saving again could be refused as a duplicate. | **Attendance may already be saved.** The connection broke while saving, so we cannot be sure it was recorded. Steps: 1) Open that day's attendance. 2) If your marks are there, you are done. 3) If not, mark and save again. | Check attendance: Labour > Attendance (/labour) | Back to Labour |
+| `labour-rate-invalid` (validation, warn) | The attendance cost of every day is the daily rate multiplied by the days worked, so the rate must be a real amount. | **Daily rate must be zero or more.** {serverMessage} Steps: 1) Click the daily rate box. 2) Type the pay for one day as digits only, for example 180. 3) Press Save again. | Fix the daily rate: This screen > Daily rate (/work-progress) | Back to the form |
+| `labour-attendance-future-sheet` (validation, block) | Attendance records who came to site, so it can only be marked for today or an earlier day. | **That sheet is for a future day.** {serverMessage} Steps: 1) Open the sheet for today. 2) Mark each worker. 3) Press Save sheet. | Open today's sheet: Labour > Attendance > today (/labour/attendance/2026-10-21) | Back to the sheet |
 
-## Documents and photos (13)
+## Documents and photos (15)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
-| `docs-no-file` (upload, warn) | Upload needs a file from your device. | **Choose a file to upload.** No file is chosen yet. Steps: 1) Press Choose file. 2) Pick the PDF, photo or document. 3) Press Upload. | Choose a file: Documents > Upload > Choose file (/documents/upload) | Back to Documents |
+| `docs-no-file` (upload, warn) | Upload needs a file from your device. | **Choose a file to upload.** No file is chosen yet. Steps: 1) Press Choose file. 2) Pick the PDF, photo or document. 3) Press Upload. | Choose a file: Documents > Upload > Choose file (/documents/upload, box: document-drop-zone) | Back to Documents |
 | `docs-file-required` (upload, warn) | The file did not reach the server, or was not chosen. | **No file was received.** {serverMessage} Steps: 1) Choose the file again. 2) Wait for its name to show. 3) Press Upload. | Choose a file: Documents > Upload > Choose file (/documents/upload) | Back to Documents |
 | `docs-too-large` (upload, block) | Big files fail on slow connections and fill storage. | **This file is too big.** {serverMessage} Steps: 1) Open the file in its program and Save as a smaller file (for a PDF, choose a reduced size). 2) Or split it into two files. 3) Choose the smaller file. | Choose a smaller file: Documents > Upload > Choose file (/documents/upload) | Back to Documents |
 | `docs-http-413` (upload, block) | The server accepts only up to a fixed size per request (5 MB for AI reading of a file). | **The file or text is too large.** {serverMessage} Steps: 1) Choose a smaller file. 2) Or cut the text shorter and send again. | Choose a smaller file: Documents > Upload > Choose file (/documents/upload) | Back to Documents |
@@ -254,6 +260,8 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `docs-link-target` (prerequisite, block) | Documents are listed for one project or one record. | **Open documents from inside a project.** {serverMessage} Steps: 1) Pick a project. 2) Open Documents from there. | Pick a project: Projects (/projects) | Back to Documents |
 | `docs-open-failed` (server, warn) | The storage did not answer in time. | **The file could not be opened.** {serverMessage} Steps: 1) Wait ten seconds. 2) Press Try again. | Back to the file: Documents > this file (/documents/E1) | Back to Documents |
 | `docs-upload-offline` (network, warn) | Files can be uploaded only when you are online. | **You are offline, the file was not sent.** There is no internet, so the upload could not start. Steps: 1) Reconnect to the internet. 2) Choose the file again. 3) Press Upload. | Back to Upload: Documents > Upload (/documents/upload) | Back to Documents |
+| `file-empty` (validation, block) | A file of 0 bytes has no content, so uploading it would store nothing useful. It is usually a copy that did not finish. | **That file is empty.** {serverMessage} Steps: 1) Open the original file on your device and check that it has content. 2) Choose the file again, or a different file. 3) Press Save again. | Choose another file: This screen > the file box (/work-progress) | Back to the form |
+| `file-rejected` (validation, block) | This box only takes the file types and sizes listed under it, so the file was stopped before anything was sent. | **That file cannot be uploaded.** {serverMessage} Steps: 1) Read the limit under the file box. 2) Choose a different file, or save the file again in an accepted type or at a smaller size. 3) Press Save again. | Choose another file: This screen > the file box (/work-progress) | Back to the form |
 
 ## Drawings, permits, RFIs and site records (18)
 
@@ -270,7 +278,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `permit-name` (validation, warn) | The name tells your team what the permit allows. | **Name the permit.** {serverMessage} Steps: 1) Type the permit name. 2) Save again. | Name the permit: Permits > New > Permit name (/permits/new) | Back to Permits |
 | `permit-pdf-required` (upload, warn) | A permit is kept as a PDF so it opens the same way for everyone. | **Attach the permit as a PDF.** {serverMessage} Steps: 1) Scan or export the permit as a PDF. 2) Choose the PDF. 3) Save again. | Attach the PDF: Permits > New > Attach PDF (/permits/new) | Back to Permits |
 | `permit-not-found` (server, warn) | It was removed or belongs to another project. | **This permit cannot be found.** {serverMessage} Steps: 1) Open the permit list. 2) Find it by name. | Open Permits: Permits (/permits) | Back to Permits |
-| `permit-expiry-order` (validation, warn) | A permit cannot end before it begins. | **The permit expires before it starts.** The expiry date is earlier than the issue date. Steps: 1) Check both dates against the permit paper. 2) Correct the wrong one. 3) Save again. | Fix the dates: Permits > New > Dates (/permits/new) | Back to Permits |
+| `permit-expiry-order` (validation, warn) | A permit cannot end before it begins. | **The end date is before the issue date.** {serverMessage} Steps: 1) Look at the issue date and the end date. 2) Make the end date the later one. 3) Press Save again. | Fix the dates: This screen > End date (/work-progress, box: endDate) | Back to the permit form |
 | `field-self-review` (permission, block) | A second person must review your work so mistakes are caught. | **Someone else must check this.** {serverMessage} Steps: 1) Ask your manager or another team member to open it. 2) They press Review or Verify. | Open the list: Submittals / Punch list > this item (/submittals) | Back to the list |
 | `field-item-not-found` (server, warn) | It was removed or belongs to another project. | **That item is not there.** {serverMessage} Steps: 1) Open the list again. 2) Find it by title. | Open RFIs: RFIs / Submittals / Punch list (/rfis) | Back to the list |
 | `field-required` (validation, warn) | RFIs, instructions and diary entries need their key boxes filled so they make sense later. | **A box is empty on the form.** {serverMessage} Steps: 1) Fill the box named in the message. 2) Save again. | Open Site Instructions: Site Instructions / RFIs / Diary > New (/site-instructions/new) | Back to the form |
@@ -278,7 +286,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `field-diary-timeout` (network, warn) | The service was slow. Your entry may or may not have been saved. | **The diary took too long to load.** {serverMessage} Steps: 1) Press Try again. 2) Check the diary list before writing the entry again. | Open Site Diary: Site Diary (/site-diary) | Back to Site Diary |
 | `field-status-invalid` (validation, warn) | The screen sent a value this item cannot take. | **That option is not allowed here.** {serverMessage} Steps: 1) Reload the page. 2) Choose the option again from the list. | Open RFIs: RFIs (/rfis) | Back to the list |
 
-## MoMs and Schedule (16)
+## MoMs and Schedule (28)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -298,13 +306,25 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `schedule-duplicate-activity` (conflict, warn) | Each activity name must be unique, and each predecessor must be an activity in the same sheet. | **A programme row clashes with another.** {serverMessage} Steps: 1) Find the row number in the message. 2) Rename the activity or fix its predecessor. 3) Upload again. | Open the schedule import: Schedule > Import (/schedule/import) | Back to Schedule |
 | `schedule-members-required` (validation, warn) | The screen sent less than the server needs. | **The request was incomplete.** {serverMessage} Steps: 1) Reload the page. 2) Do the action again. | Reload: This screen (/work-progress) | Back to Schedule |
 | `meetings-input` (validation, warn) | A meeting record needs the day it took place. | **Pick the meeting date.** {serverMessage} Steps: 1) Click the date box. 2) Choose the day. 3) Save again. | Open Meetings: Meetings > New > Date (/meetings/new) | Back to Meetings |
+| `mom-date-invalid` (validation, warn) | Minutes are filed under the day and time of the meeting. | **Choose the meeting date and time.** {serverMessage} Steps: 1) Click the Date & time box. 2) Choose the day, then the time. 3) Press Save again. | Choose the date: This screen > Date & time (/work-progress) | Back to the new meeting |
+| `mom-already-published` (conflict, info) | Publishing locks the minutes. It was done already, possibly by someone else or by an earlier click, so nothing more is needed. | **These minutes are already published.** {serverMessage} Steps: 1) Reload the minutes. 2) You will see them marked Published and locked. | Reload the minutes: This screen (/work-progress) | Back to MoMs |
+| `mom-locked` (conflict, block) | After Publish & Lock the minutes are a fixed record that other people rely on. | **Published minutes cannot be changed.** {serverMessage} Steps: 1) Reload the minutes to see the published version. 2) If a correction is really needed, create a new meeting that records it. | Reload the minutes: This screen (/work-progress) | Back to MoMs |
+| `mom-share-unpublished` (prerequisite, warn) | A shared link must show a fixed record, so only published minutes can be shared. | **Publish the minutes before sharing.** {serverMessage} Steps: 1) Save the minutes with Save now. 2) Press Publish & Lock and confirm. 3) Then press Share again. | Go to Publish & Lock: MoMs > these minutes > Publish & Lock (/moms/E1, box: mom-publish) | Back to the minutes |
+| `mom-no-minutes-to-summarise` (prerequisite, warn) | The summary is written from the minutes, so there must be some text to read. | **Type the minutes first.** {serverMessage} Steps: 1) Click the minutes box. 2) Type what was discussed and decided. 3) Press Save now, then Generate AI Summary. | Go to the minutes box: MoMs > these minutes > Minutes (/moms/E1, box: mom-minutes) | Back to the minutes |
+| `mom-assignee-not-in-org` (validation, warn) | An action item becomes a task for that person, so they must belong to your organisation. | **Choose someone from your organisation.** {serverMessage} Steps: 1) Open the Assignee list. 2) Pick a person from the list. 3) If they are not listed, invite them from Settings first. | Choose the assignee: MoMs > these minutes > Action items > Assignee (/moms/E1, box: mom-action-assignee) | Back to the minutes |
+| `mom-share-expired` (auth, block) | Share links stop working after a set time, or when the person who shared them revokes them. | **This share link no longer works.** {serverMessage} Steps: 1) Ask the person who shared the minutes to send a new link. 2) If you work in this company, sign in and open the minutes from MoMs. | Sign in to open MoMs: Sign in (/login) | Back to sign in |
+| `schedule-task-dates-order` (validation, warn) | A task cannot finish before it begins. | **The due date is before the start date.** {serverMessage} Steps: 1) Look at the start date and the due date. 2) Make the due date the same day or later. 3) Press Save again. | Fix the dates: This screen > Due date (/work-progress) | Back to Schedule |
+| `schedule-task-duration` (validation, warn) | The finish date is worked out from the start date plus the duration. | **Duration must be zero days or more.** {serverMessage} Steps: 1) Click the Duration box. 2) Type the number of days, for example 5. 3) Press Save again. | Fix the duration: This screen > Duration (days) (/work-progress) | Back to Schedule |
+| `schedule-no-task-types` (prerequisite, block) | Every task has a type such as Task or Milestone, and your organisation has none yet. | **No task types are set up.** {serverMessage} Steps: 1) Open Settings. 2) Add at least one task type. 3) Come back with the strip at the top. | Open Settings: Settings > Schedule (/settings) | Back to the new task |
+| `schedule-sprint-dates-order` (validation, warn) | A sprint is a period, so its end cannot come before its start. | **The sprint ends before it starts.** {serverMessage} Steps: 1) Look at the start date and the end date. 2) Make the end date the same day or later. 3) Press Save again. | Fix the dates: This screen > End date (/work-progress) | Back to Schedule |
+| `schedule-milestone-no-date` (validation, warn) | A milestone is a date the project must reach; without one it cannot be placed on the timeline or tracked. | **Give the milestone a target date.** {serverMessage} Steps: 1) Click the Target date box. 2) Choose the date. 3) Press Save again. | Choose the date: This screen > Target date (/work-progress) | Back to Schedule |
 
-## Design Studio (9)
+## Design Studio (13)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
 | `design-timesheet-fields` (validation, warn) | A timesheet day is tied to one project, one day and one designer. | **Choose the project, day and designer.** {serverMessage} Steps: 1) Pick the project. 2) Choose the day. 3) Pick the designer (and Approve or Reject when reviewing). 4) Try again. | Open the timesheet: Design Studio > Timesheets > New (/design-studio/timesheets/new) | Back to Design Studio |
-| `design-timesheet-hours` (validation, warn) | A person cannot work more than 24 hours in a day. | **Hours must be between 0 and 24.** The hours you typed are below 0 or above 24 for one day. Steps: 1) Type hours between 0 and 24, like 6.5. 2) Save again. | Fix the hours: Design Studio > Timesheet > Hours (/design-studio/timesheets/new) | Back to Design Studio |
+| `design-timesheet-hours` (validation, warn) | A person cannot work more than 24 hours in a day. | **Hours must be between 0 and 24.** {serverMessage} Steps: 1) Type hours between 0 and 24, like 6.5. 2) Save again. | Fix the hours: This screen > Hours (/work-progress) | Back to Design Studio |
 | `design-submit-empty` (prerequisite, warn) | A day can be submitted only when it has time entries. | **No time logged for this day.** No hours are logged for this day. Steps: 1) Add your hours for the day. 2) Then press Submit day. | Add time: Design Studio > Timesheet > New (/design-studio/timesheets/new) | Back to Design Studio |
 | `design-review-self` (permission, block) | A second person checks time so it is trusted. | **You cannot review your own day.** A manager or another reviewer must approve your timesheet. Steps: 1) Ask your manager to open Review. 2) They approve or reject your day. | Open Review: Design Studio > Review (/design-studio/review) | Back to Design Studio |
 | `design-review-locked` (conflict, block) | Approved time may already be in costs and pay. | **This day is already approved.** Approved days are locked and cannot be changed. Steps: 1) Ask the reviewer to reject the day so it opens again. 2) Fix the hours. 3) Submit again. | Open Review: Design Studio > Review (/design-studio/review) | Back to Design Studio |
@@ -312,6 +332,10 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `design-cost-no-rate` (prerequisite, warn) | Cost is hours multiplied by rate. | **A designer has no rate set.** Cost analysis needs an hourly rate for each designer, and one is missing. Steps: 1) Open the employee. 2) Add their rate. 3) Run the analysis again. | Open employees: Employees > this person > Rate (/employees) | Back to Design Studio |
 | `design-floorplan-file` (upload, warn) | Only drawings and images of the supported types can be shown. | **The floor plan file could not be read.** The floor plan is damaged or in a type we cannot open. Steps: 1) Export the plan as PDF or image. 2) Upload it again. | Open Floor Plans: Floor Plans (/floor-plans) | Back to Design Studio |
 | `design-item-open` (validation, warn) | An empty board has nothing to show. | **Add something to the board first.** A mood board needs at least one item. Steps: 1) Add an image or note. 2) Save again. | Open the board: Mood Boards > this board > Add item (/mood-boards/E1) | Back to Design Studio |
+| `design-no-tasks` (prerequisite, block) | Every timesheet entry is logged against a task, so the time can be costed and reported. | **Add a task before logging time.** {serverMessage} Steps: 1) Create the task in Schedule. 2) Come back with the strip at the top. 3) Choose the task and log your time. | Create a task: Schedule > New task > Title (/schedule/tasks/new, box: title) | Back to the timesheet |
+| `design-day-not-submitted` (conflict, warn) | Only a day the designer has submitted can be approved or sent back. It may already have been decided by someone else. | **That day is not waiting for review.** {serverMessage} Steps: 1) Reload the review list. 2) Pick a day that is still waiting. | Reload the review list: This screen (/work-progress) | Back to Review |
+| `design-timesheet-locked` (conflict, block) | Once an entry is submitted or approved it is locked so that costs and pay stay correct. | **This entry can no longer be changed.** {serverMessage} Steps: 1) Ask your reviewer to send the day back. 2) Then change the entry and submit the day again. | Open Design Studio: Design Studio > Timesheets (/design-studio) | Back to Design Studio |
+| `design-pick-task` (validation, warn) | Every row of time is logged against a task so that it can be costed and reported. | **Pick the task for this row.** {serverMessage} Steps: 1) Open the Task list on the entry row. 2) Choose the task the time was spent on. 3) Press Add entry again. | Choose the task: This screen > Add entry row > Task (/work-progress) | Back to Design Studio |
 
 ## Reports and Analysis (14)
 
@@ -429,6 +453,16 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `net-conflict-generic` (conflict, warn) | The record changed, or the same item already exists. | **This clashes with something already there.** {serverMessage} Steps: 1) Reload the page. 2) Look at the latest version. 3) Repeat your change if still needed. | Reload this screen: This screen (/work-progress) | Back to what I was doing |
 | `net-too-large` (upload, warn) | The request is above the allowed size. | **That is too much to send.** {serverMessage} Steps: 1) Send less at once. 2) Try again. | Stay on this screen: This screen (/work-progress) | Back to what I was doing |
 
+## Settings and team (5)
+
+| Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
+|---|---|---|---|---|
+| `invite-email-invalid` (validation, warn) | The invitation link is made for exactly one e-mail address, so the address has to be complete and correct. | **That e-mail address is not complete.** {serverMessage} Steps: 1) Click the e-mail box. 2) Check for a missing @ sign, a missing ending such as .com, or a space. 3) Press Invite again. | Fix the e-mail: This screen > Invite people > E-mail address (/work-progress) | Back to Settings |
+| `invite-revoked` (auth, block) | An administrator withdrew the invitation, so the link no longer lets anyone join. | **This invitation was cancelled.** {serverMessage} Steps: 1) Ask the administrator of the organisation for a new invitation. 2) Open the new link they send you. | Go to sign in: Sign in (/login) | Back to the invitation |
+| `invite-wrong-email` (auth, block) | An invitation is tied to one e-mail address, so a forwarded link grants nothing to a different address. | **Sign in with the invited e-mail.** {serverMessage} Steps: 1) Sign out, or open the link in another browser. 2) Sign in with the exact e-mail address the invitation was sent to. 3) You come straight back to the invitation. | Sign in with the right e-mail: Sign in, then straight back to the invitation (/login) | Back to the invitation |
+| `clipboard-blocked` (unknown, info) | Your browser did not allow this page to use the clipboard. The invitation itself is fine. | **The link could not be copied for you.** {serverMessage} Steps: 1) Select the link shown above with your mouse and copy it yourself. 2) Send it to the person it was made for. | stays on this screen | Back to Settings |
+| `settings-save-failed` (server, warn) | The server could not store the change. Nothing was changed. | **Your settings were not saved.** {serverMessage} Steps: 1) Wait a few seconds. 2) Press Try again. | Reload Settings: This screen (/work-progress) | Back to Settings |
+
 ## Codes the screens must raise (client-side)
 
 These guides have no server message to read; the screen (or fetch layer) has to pass this `code` in the GuideContext. Until it does, the guide never appears.
@@ -485,14 +519,34 @@ These guides have no server message to read; the screen (or fetch layer) has to 
 | `BILLING_NEEDS_APPROVED_BOQ` | `billing-boq-not-approved` | The agreed rates must be fixed before money is claimed. |
 | `BAD_UNIT_COST` | `materials-unit-cost-invalid` | Cost reports multiply this by quantity. |
 | `NO_MATERIALS` | `materials-none-yet` | Receipts and issues are recorded against materials from your list. |
-| `ISSUE_EXCEEDS_STOCK` | `materials-issue-more-than-stock` | Stock cannot go below zero. |
+| `ISSUE_EXCEEDS_STOCK` | `materials-issue-more-than-stock` | Stock cannot go below zero, so you cannot issue more than has been received and not yet issued. |
+| `QTY_NOT_POSITIVE` | `materials-qty-not-positive` | A receipt or an issue of nothing, or of a negative amount, would corrupt the stock figure. |
+| `REORDER_NEGATIVE` | `materials-reorder-negative` | The reorder level is the stock figure at which the material is flagged Low, so it cannot be below zero. |
+| `NOTHING_ON_HAND` | `materials-nothing-on-hand` | Material can only be issued after a receipt has put it into stock. |
+| `DATE_FUTURE` | `input-date-in-future` | Receipts, issues, attendance and time are records of things that already happened, so a future day would be a mistake. |
 | `NO_WORKERS` | `labour-none-yet` | Attendance is marked for workers on the project list. |
 | `UNCONFIRMED` | `labour-saved-maybe` | Saving again could be refused as a duplicate. |
+| `RATE_INVALID` | `labour-rate-invalid` | The attendance cost of every day is the daily rate multiplied by the days worked, so the rate must be a real amount. |
+| `ATTENDANCE_FUTURE_DATE` | `labour-attendance-future-sheet` | Attendance records who came to site, so it can only be marked for today or an earlier day. |
 | `NO_FILE` | `docs-no-file` | Upload needs a file from your device. |
 | `OFFLINE` | `docs-upload-offline` | Files can be uploaded only when you are online. |
+| `EMPTY_FILE` | `file-empty` | A file of 0 bytes has no content, so uploading it would store nothing useful. It is usually a copy that did not finish. |
+| `FILE_REJECTED` | `file-rejected` | This box only takes the file types and sizes listed under it, so the file was stopped before anything was sent. |
 | `EXPIRY_BEFORE_ISSUE` | `permit-expiry-order` | A permit cannot end before it begins. |
 | `MOM_UNSAVED` | `mom-not-saved-yet` | A shared link points to the saved version. |
 | `EDIT_CONFLICT` | `mom-edited-elsewhere` | PROJEXA protects both versions. |
+| `MOM_DATE_INVALID` | `mom-date-invalid` | Minutes are filed under the day and time of the meeting. |
+| `MOM_ALREADY_PUBLISHED` | `mom-already-published` | Publishing locks the minutes. It was done already, possibly by someone else or by an earlier click, so nothing more is needed. |
+| `MOM_LOCKED` | `mom-locked` | After Publish & Lock the minutes are a fixed record that other people rely on. |
+| `MOM_SHARE_UNPUBLISHED` | `mom-share-unpublished` | A shared link must show a fixed record, so only published minutes can be shared. |
+| `MOM_NO_MINUTES` | `mom-no-minutes-to-summarise` | The summary is written from the minutes, so there must be some text to read. |
+| `MOM_ASSIGNEE_NOT_IN_ORG` | `mom-assignee-not-in-org` | An action item becomes a task for that person, so they must belong to your organisation. |
+| `MOM_SHARE_EXPIRED` | `mom-share-expired` | Share links stop working after a set time, or when the person who shared them revokes them. |
+| `TASK_DATES_ORDER` | `schedule-task-dates-order` | A task cannot finish before it begins. |
+| `TASK_DURATION_INVALID` | `schedule-task-duration` | The finish date is worked out from the start date plus the duration. |
+| `NO_TASK_TYPES` | `schedule-no-task-types` | Every task has a type such as Task or Milestone, and your organisation has none yet. |
+| `SPRINT_DATES_ORDER` | `schedule-sprint-dates-order` | A sprint is a period, so its end cannot come before its start. |
+| `MILESTONE_NO_DATE` | `schedule-milestone-no-date` | A milestone is a date the project must reach; without one it cannot be placed on the timeline or tracked. |
 | `HOURS_RANGE` | `design-timesheet-hours` | A person cannot work more than 24 hours in a day. |
 | `EMPTY_DAY` | `design-submit-empty` | A day can be submitted only when it has time entries. |
 | `SELF_REVIEW` | `design-review-self` | A second person checks time so it is trusted. |
@@ -500,6 +554,10 @@ These guides have no server message to read; the screen (or fetch layer) has to 
 | `NO_RATE` | `design-cost-no-rate` | Cost is hours multiplied by rate. |
 | `FLOORPLAN_FILE` | `design-floorplan-file` | Only drawings and images of the supported types can be shown. |
 | `DS_ITEM_REQUIRED` | `design-item-open` | An empty board has nothing to show. |
+| `NO_TASKS` | `design-no-tasks` | Every timesheet entry is logged against a task, so the time can be costed and reported. |
+| `DAY_NOT_SUBMITTED` | `design-day-not-submitted` | Only a day the designer has submitted can be approved or sent back. It may already have been decided by someone else. |
+| `TIMESHEET_LOCKED` | `design-timesheet-locked` | Once an entry is submitted or approved it is locked so that costs and pay stay correct. |
+| `TASK_NOT_PICKED` | `design-pick-task` | Every row of time is logged against a task so that it can be costed and reported. |
 | `EMPTY_REPORT` | `report-empty` | Reports are built from approved BOQs, progress and bills. None exist yet in this period. |
 | `SHARE_EXPIRED` | `report-share-expired` | Shared links stop working after a set time. |
 | `NO_EXCEPTIONS_DATA` | `analysis-exceptions-none` | It compares BOQ, progress and bills. |
@@ -522,6 +580,10 @@ These guides have no server message to read; the screen (or fetch layer) has to 
 | `COST_HIDDEN` | `perm-cost-hidden` | The company owner decides who can see cost. |
 | `DUPLICATE_CREATE` | `misc-duplicate-create` | A double click may have sent it twice. |
 | `UNSAVED_CHANGES` | `misc-unsaved-leave` | If you leave now your changes will be lost. |
+| `INVITE_EMAIL_INVALID` | `invite-email-invalid` | The invitation link is made for exactly one e-mail address, so the address has to be complete and correct. |
+| `INVITE_REVOKED` | `invite-revoked` | An administrator withdrew the invitation, so the link no longer lets anyone join. |
+| `INVITE_WRONG_EMAIL` | `invite-wrong-email` | An invitation is tied to one e-mail address, so a forwarded link grants nothing to a different address. |
+| `CLIPBOARD_BLOCKED` | `clipboard-blocked` | Your browser did not allow this page to use the clipboard. The invitation itself is fine. |
 
 ## TODO: harvested messages with no guide
 

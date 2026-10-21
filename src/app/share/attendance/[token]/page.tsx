@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { ExpiredShareNotice } from "@/components/ExpiredShareNotice";
 import { formatNumber } from "@/lib/format-number";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
 import { countCell, headlineSentence, tradeLabel, type AttendanceSummary } from "@/lib/attendance-summary";
@@ -42,7 +42,7 @@ async function fetchSharedSummary(token: string): Promise<AttendanceSummary | nu
 export default async function SharedAttendancePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const data = await fetchSharedSummary(token);
-  if (!data) notFound();
+  if (!data) return <main><ExpiredShareNotice kind="attendance" token={token} /></main>;
 
   const cell = { padding: "0.5rem", textAlign: "right" as const };
 

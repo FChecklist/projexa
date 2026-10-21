@@ -34,6 +34,8 @@ import { usePathname } from "next/navigation";
 import { Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAutoGrowTextarea } from "@/lib/use-autogrow-textarea";
+import { GuidedPanel } from "@/components/GuidedPanel";
+import { alternativeFor } from "@/lib/copilot-alternatives";
 import { OWN_AI_SENTENCE, callServerAi } from "@/lib/local-first/ai-off/internal-ai";
 import {
   useVeriChat, FIXED_MODES, HOME_ROUTE, CONSTRUCTION_CHAIN_MODE_KEY, type CapabilityNode, type PathSegment,
@@ -94,6 +96,8 @@ export default function VeriComposer() {
   const [selectedPath, setSelectedPath] = useState<PathSegment[]>([]);
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
+  // GUIDED ERRORS (G4): a Discuss question that got no answer is explained here, inline (no popup), and the question is put back in the box.
+  const [discussFailure, setDiscussFailure] = useState<{ code: "AI_PILL_UNAVAILABLE" | "AI_REPLY_FAILED"; message: string; text: string } | null>(null);
   const [queue, setQueue] = useState<{ codeReference: string; fixedInputs: Record<string, string>; label: string; display: string }[]>([]);
   const textareaRef = useAutoGrowTextarea(value, 96);
 
@@ -249,13 +253,17 @@ export default function VeriComposer() {
       }));
       if (answer.kind === "own_ai") {
         appendDiscussMessage({ role: "assistant", content: answer.sentence });
+        setDiscussFailure(null);
         return;
       }
       const data = answer.body as { reply?: string } | null;
       if (!answer.res.ok || !data || typeof data.reply !== "string") throw new Error();
       appendDiscussMessage({ role: "assistant", content: data.reply });
-    } catch {
-      toast.error("VERI AI didn't reply — try again");
+      setDiscussFailure(null);
+    } catch (err) {
+      const offline = (typeof navigator !== "undefined" && navigator.onLine === false) || err instanceof TypeError;
+      setValue(text); // the question is never lost
+      setDiscussFailure({ code: offline ? "AI_PILL_UNAVAILABLE" : "AI_REPLY_FAILED", message: offline ? "This device has no connection to the server." : "No answer came back from the AI.", text });
     } finally {
       setSending(false);
     }
@@ -287,6 +295,17 @@ export default function VeriComposer() {
   return (
     <div className="shrink-0 px-3 pb-2 pt-1">
       <div className="w-full max-w-5xl mx-auto">
+        {discussFailure ? (
+          <div className="mb-2" data-testid="discuss-failure">
+            <GuidedPanel
+              ctx={{ route: typeof window === "undefined" ? "/" : window.location.pathname, search: "", code: discussFailure.code, serverMessage: discussFailure.message }}
+              title={discussFailure.code === "AI_PILL_UNAVAILABLE" ? "AI unavailable: Discuss" : undefined}
+              fix={discussFailure.code === "AI_PILL_UNAVAILABLE" ? (() => { const a = alternativeFor(null); return { label: a.label, href: a.href, where: a.where }; })() : undefined}
+              actions={[{ id: "retry", label: "Try again", primary: true, onClick: () => { setDiscussFailure(null); void sendDiscuss(); } }, { id: "dismiss", label: "Dismiss", onClick: () => setDiscussFailure(null) }]}
+              noCopy
+            />
+          </div>
+        ) : null}
         {/* R52: THE MODE ROW WAS REMOVED HERE.
             It rendered Discuss | Chats | To Do | Construction Intelligence as a
             pill row directly beneath the M24 control strip, which already owns

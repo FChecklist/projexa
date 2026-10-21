@@ -63,7 +63,7 @@ describe("P1 e-mailed code sign-in", () => {
     expect(await setup({ online: false }).login.start()).toBe("offline_needs_connection");
     expect(await setup({ online: false, identity: true }).login.start()).toBe("session");
     const s = setup({ online: false });
-    expect(await s.login.requestCode("a@b.co")).toEqual({ ok: false, notice: MESSAGES.needConnection });
+    expect(await s.login.requestCode("a@b.co")).toMatchObject({ ok: false, notice: MESSAGES.needConnection });
     expect(s.calls.otp.length).toBe(0);
   });
 
@@ -89,15 +89,15 @@ describe("P1 e-mailed code sign-in", () => {
 
   test("wrong code and expired code each get their own plain message", async () => {
     const w = setup({ verify: () => bad });
-    expect(await w.login.submitCode("a@b.co", "999999")).toEqual({ ok: false, notice: MESSAGES.wrongCode });
+    expect(await w.login.submitCode("a@b.co", "999999")).toMatchObject({ ok: false, notice: MESSAGES.wrongCode });
     const e = setup({ verify: () => ({ ok: false, code: "otp_expired", message: "OTP expired" }) });
-    expect(await e.login.submitCode("a@b.co", "999999")).toEqual({ ok: false, notice: MESSAGES.expired });
+    expect(await e.login.submitCode("a@b.co", "999999")).toMatchObject({ ok: false, notice: MESSAGES.expired });
   });
 
   test("only 6 digits are accepted (a 7th is cut, letters ignored, a short code is refused without costing a try)", async () => {
     expect(cleanCodeInput("12a3456789")).toBe("123456");
     const s = setup();
-    expect(await s.login.submitCode("a@b.co", "12345")).toEqual({ ok: false, notice: MESSAGES.badShape });
+    expect(await s.login.submitCode("a@b.co", "12345")).toMatchObject({ ok: false, notice: MESSAGES.badShape });
     expect(s.calls.verify.length).toBe(0);
     await s.login.submitCode("a@b.co", "1234567");
     expect(s.calls.verify[0]!.token).toBe("123456");
@@ -108,7 +108,7 @@ describe("P1 e-mailed code sign-in", () => {
     for (let i = 0; i < MAX_WRONG_TRIES; i += 1) await s.login.submitCode("a@b.co", "111111");
     const sent = s.calls.verify.length;
     expect(sent).toBe(MAX_WRONG_TRIES * 2); // email + signup per try
-    expect(await s.login.submitCode("a@b.co", "123456")).toEqual({ ok: false, notice: MESSAGES.tooMany });
+    expect(await s.login.submitCode("a@b.co", "123456")).toMatchObject({ ok: false, notice: MESSAGES.tooMany });
     s.advance(LOCK_MS - 1);
     expect((await s.login.submitCode("a@b.co", "123456")).ok).toBe(false);
     expect(s.calls.verify.length).toBe(sent); // nothing was sent to the server while paused
@@ -129,7 +129,7 @@ describe("P1 e-mailed code sign-in", () => {
     const s = setup();
     await s.login.requestCode("a@b.co");
     expect(s.login.resendInMs()).toBe(RESEND_AFTER_MS);
-    expect(await s.login.requestCode("a@b.co", { resend: true })).toEqual({ ok: false, notice: MESSAGES.resendWait });
+    expect(await s.login.requestCode("a@b.co", { resend: true })).toMatchObject({ ok: false, notice: MESSAGES.resendWait });
     expect(s.calls.otp.length).toBe(1);
     s.advance(RESEND_AFTER_MS);
     expect(await s.login.requestCode("a@b.co", { resend: true })).toEqual({ ok: true });
@@ -138,7 +138,7 @@ describe("P1 e-mailed code sign-in", () => {
 
   test("the server rate limit is explained plainly", async () => {
     const s = setup({ otpError: { message: "For security purposes, you can only request this after 50 seconds", status: 429 } });
-    expect(await s.login.requestCode("a@b.co")).toEqual({ ok: false, notice: MESSAGES.tooManyServer });
+    expect(await s.login.requestCode("a@b.co")).toMatchObject({ ok: false, notice: MESSAGES.tooManyServer });
   });
 
   test("redirectTo and the invitation return are honoured only as same-origin paths", () => {

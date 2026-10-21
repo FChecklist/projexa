@@ -8,6 +8,7 @@
 // the AI work link registry); it never grants anything: every op is decided again by the server, as the person with their live role.
 
 import type { ReactNode } from "react";
+import { ShellStateNote } from "@/components/local-first/ShellStateNote";
 import { CURRENCY_FALLBACK_LABEL } from "@/lib/currency";
 import { formatDateTime } from "@/lib/format-date";
 import { findFunction, rankOf } from "../../ai/registry";
@@ -51,17 +52,8 @@ export const COST_HIDDEN = "Hidden for your role";
 export const projectQuery = (projectId: string) => `?projectId=${encodeURIComponent(projectId)}`;
 
 export function StateMessage({ testId, state, title, back, children }: { testId: string; state: string; title: string; back?: { href: string; label: string }; children: ReactNode }) {
-  return (
-    <section data-testid={testId} data-state={state}>
-      <h1 className="font-heading text-2xl text-px-ink">{title}</h1>
-      <p className="mt-3 text-sm text-px-muted">{children}</p>
-      {back ? (
-        <p className="mt-3 text-sm">
-          <a className="text-px-ink underline underline-offset-2" href={back.href}>{back.label}</a>
-        </p>
-      ) : null}
-    </section>
-  );
+  // GUIDED ERRORS (G4): drawn as the full guided panel (what it means, why, steps, where to go), see components/local-first/ShellStateNote.tsx.
+  return <ShellStateNote testId={testId} state={state} title={title} back={back}>{children}</ShellStateNote>;
 }
 
 export function CopyNote({ testId, syncedAt }: { testId: string; syncedAt: number | null }) {

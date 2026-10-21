@@ -16,6 +16,8 @@ import { ObjectContext } from "@/components/shell/shell-screen-context";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { setScreenMessage, takeScreenMessage } from "@/lib/screen-message";
 import { viaPxApi } from "@/lib/px-api";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { httpError, useProblem } from "@/lib/guided-form";
 import { houseDateDisplay } from "@/lib/list-date-cells";
 
 type Permit = {
@@ -62,6 +64,8 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [hasDraft, setHasDraft] = useState(false);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
+  // G3 guided errors: a refused save / delete is the full guide (what happened, why, steps, the exact place, the way back).
+  const { problem, show, clear } = useProblem({ entityId: permitId, entityType: "permit" });
   // R67 D-05: the confirm step for Delete is rendered INSIDE the screen, not
   // in a dialog -- PROJEXA's one popup was removed by D-01 and none is coming
   // back. `deleting` keeps the destructive action from being fired twice.
@@ -166,9 +170,10 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      setMessages([{ level: "error", text: body.error ?? "Failed to save permit" }]);
+      show(httpError(res, body, "Failed to save permit", "PATCH", `/api/permits/${permitId}`));
       return;
     }
+    clear();
     setMessages([]);
     setDraftId(null);
     setHasDraft(false);
@@ -189,7 +194,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       const res = await viaPxApi(`/api/permits/${permitId}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setMessages([{ level: "error", text: body.error ?? "Failed to delete permit" }]);
+        show(httpError(res, body, "Failed to delete permit", "DELETE", `/api/permits/${permitId}`));
         setConfirmingDelete(false);
         setDeleting(false);
         return;
@@ -199,7 +204,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
       setScreenMessage("permits.list", { level: "success", text: `Permit ${permitLabel} deleted` });
       router.push(`/permits?projectId=${permit.projectId}`);
     } catch (err) {
-      setMessages([{ level: "error", text: errorMessage(err, "Couldn't delete this permit") }]);
+      show(err);
       setConfirmingDelete(false);
       setDeleting(false);
     }
@@ -253,6 +258,7 @@ export default function PermitObjectClient({ permitId }: { permitId: string }) {
         rather than rendering the bare word "Permit", which would name a screen
         that does not exist. */}
     <ObjectContext moduleId="permits" label={permit.name} projectId={permit.projectId} />
+    <ProblemPanel problem={problem} className="px-6 pt-4" />
     <KitObjectScreen
       breadcrumb={PERMIT_OBJECT_BREADCRUMB.breadcrumb}
       title={permit.name || "New Permit"}

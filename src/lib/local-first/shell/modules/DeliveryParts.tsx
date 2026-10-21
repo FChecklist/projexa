@@ -5,6 +5,7 @@
 // one form-submit helper (keeps the person's input on a refusal, refreshes the screen after a save, never shows a dialog).
 
 import { useState, type ReactNode } from "react";
+import { ShellStateNote } from "@/components/local-first/ShellStateNote";
 import { formatAmount } from "@/lib/boq-helpers";
 import { formatDateTime } from "@/lib/format-date";
 import { serverPageUrl } from "../paths";
@@ -51,16 +52,8 @@ export function StateMessage({ testId, title, state, what, back }: { testId: str
         : state === "invalid_date"
           ? "That is not a date this screen understands."
           : `This ${what} is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.`;
-  return (
-    <Screen testId={testId} state={state} title={title}>
-      <p className="mt-3 text-sm text-px-muted">{text}</p>
-      {back ? (
-        <p className="mt-3 text-sm">
-          <a className="text-px-ink underline underline-offset-2" href={back.href}>{back.label}</a>
-        </p>
-      ) : null}
-    </Screen>
-  );
+  // GUIDED ERRORS (G4): the full guided panel, see components/local-first/ShellStateNote.tsx.
+  return <ShellStateNote testId={testId} state={state} title={title} back={back}>{text}</ShellStateNote>;
 }
 
 export function CopyNote({ testId, syncedAt }: { testId: string; syncedAt: number | null }) {
