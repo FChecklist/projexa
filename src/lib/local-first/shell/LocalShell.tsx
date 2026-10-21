@@ -12,6 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { PeerSyncMarker } from "@/components/PeerSyncMarker";
+import { GuidedNavigationContext } from "@/components/GuidedError";
+import { ReturnStrip } from "@/components/ReturnStrip";
 import { ConnectivityMarker } from "@/components/local-first/ConnectivityMarker";
 import { OutboxAttention } from "@/components/OutboxAttention";
 import type { Outbox } from "../outbox";
@@ -475,6 +477,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         </nav>
   );
   return (
+    <GuidedNavigationContext.Provider value={navigate}>
     <div
       data-testid="local-shell"
       data-org-id={data?.orgId ?? undefined}
@@ -526,6 +529,8 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
         {/* Row 2 (Modern View only): the modules; scrolls sideways on a narrow screen. */}
         {traditional ? null : moduleNav}
       </header>
+      {/* GUIDED ERRORS: the way back after a "Fix it now" trip, and the ?focus= arrival, on the laptop screens too (the web layout mounts the same strip) */}
+      <ReturnStrip />
       {traditional ? (
         <div className="mx-auto flex max-w-7xl gap-4 p-4">
           <aside className="sticky top-2 h-fit w-52 shrink-0 rounded-xl border-2 border-[#BAE6FD] bg-white p-2">{moduleNav}</aside>
@@ -536,6 +541,7 @@ function Chrome({ children, navigate, data, shell, locationPath }: { children: R
       )}
       {data && shell ? <LocalShellChat userId={data.userId} projectId={shell.projectId ?? null} online={shell.connectivity === "online"} /> : null}
     </div>
+    </GuidedNavigationContext.Provider>
   );
 }
 

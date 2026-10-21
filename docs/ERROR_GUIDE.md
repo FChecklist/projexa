@@ -59,3 +59,17 @@ Guides: `src/lib/error-guide/catalogue/g4-session-laptop.ts` (codes only G4 scre
 | 404, no access, System log for a non-owner | `app/not-found.tsx`, `NotFoundGuide`, `AccessDenied` | guided-g4-session |
 
 A refused queued change carries `openAt` (the screen that corrects it) and `subject` (the exact record in words) from the writer that queued it (`EnqueueInput`); a writer that sets them gets the exact "Go to it and re-enter your values" button. Only the Line budget writer sets them so far.
+
+## Form helpers (added by group G3: materials, labour, documents, drawings, permits, MoMs, schedule, design studio, reports, settings)
+
+All in `src/lib/guided-form.ts`; none runs at page load (they touch `sessionStorage` only after the form is on screen).
+
+| Need | Use |
+| --- | --- |
+| Keep every typed value of a form across a "Fix it now" detour, a reload and a sign-in that ran out | `const draft = useFormDraft("material-new:" + projectId)`; read `draft.values`, write `draft.onChange(name, value)`, `draft.clear()` after a successful save; show `<DraftRestoredNote draft={draft} />` |
+| A mistake the form finds itself, before anything is sent | `fault(CODE, fieldId, "plain sentence naming the value")` inside `useCheckedSubmit(submit, () => fault(...) \| null)`; pass `checked.failure / onRetry / onSubmit` to `CreateScreen` |
+| A refused edit, status change, delete or void on an object page | `const { problem, show, clear } = useProblem({ entityId, entityType })`; in the `catch`, `show(err)`; render `<ProblemPanel problem={problem} />` |
+| Turn a refused `fetch` into an error the matcher understands | `throw httpError(res, body, "fallback", "PATCH", "/api/x/1")` |
+| A server sentence the harvested catalogue does not hold | add it to `SERVER_MESSAGE_CODES`; `contextFromError(err, withServerCode(err, {...}))` then picks the code-keyed guide |
+
+Rules that keep the "exact place" promise: the `fieldId` of a fault must be an `id`, `name` or `data-testid` that exists on the screen (it becomes `?focus=` and is outlined for 3 s), and a guide whose source is `validation` and names no `focus` of its own gets that field automatically. A file a browser cannot restore (an upload) is the one thing a draft cannot keep: the screen says "choose the file again".

@@ -6,14 +6,15 @@
 // Nothing is read or fetched until the first effect runs (no work at page load beyond one sessionStorage read).
 
 import { useCallback, useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useGuidedNavigate } from "@/components/GuidedError";
 import { backUrl, consumeReturn, entryForScreen, TRAIL_EVENT, type TrailEntry } from "@/lib/error-guide/return-trail";
 import { FOCUS_PARAM, focusOnArrival } from "@/lib/error-guide/focus";
 
 export function ReturnStrip() {
-  const router = useRouter();
+  const go = useGuidedNavigate();
   const pathname = usePathname() ?? "/";
   const [entry, setEntry] = useState<TrailEntry | null>(null);
 
@@ -43,7 +44,7 @@ export function ReturnStrip() {
   const goBack = () => {
     consumeReturn(entry.id);
     setEntry(null);
-    router.push(backUrl(entry));
+    go(backUrl(entry));
   };
   const stay = () => {
     consumeReturn(entry.id);

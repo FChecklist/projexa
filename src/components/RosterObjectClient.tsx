@@ -75,6 +75,8 @@ import RosterFields, { useTrades, type RosterFieldValues, type Vendor } from "@/
 import { currencyLabel, useCurrencies } from "@/lib/currency";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { httpError, useProblem } from "@/lib/guided-form";
 import { missingRosterFields, missingRosterReason, rosterFieldMessage, type RosterFieldKey } from "@/lib/roster-form";
 import { formatDayMonthYear } from "@/lib/format-date";
 
@@ -138,6 +140,8 @@ export default function RosterObjectClient({ rosterId, createdNotice }: { roster
   const [messages, setMessages] = useState<FieldMessage[]>([]);
   const [saving, setSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
+  // G3 guided errors: a refused save / status change is the full guide (what happened, why, steps, the exact place, the way back).
+  const { problem, show, clear } = useProblem({ entityId: rosterId, entityType: "worker" });
   const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   const presets = useMemo(() => monthPresets(), []);
@@ -234,9 +238,10 @@ export default function RosterObjectClient({ rosterId, createdNotice }: { roster
       });
       setEntry(data);
       setMode("display");
+      clear();
       setMessages([{ level: "info", text: "Worker saved" }]);
     } catch (err) {
-      setMessages([{ level: "error", text: errorMessage(err, "Couldn't save this worker") }]);
+      show(err, undefined, () => void saveEdit());
     } finally {
       setSaving(false);
     }
@@ -256,10 +261,7 @@ export default function RosterObjectClient({ rosterId, createdNotice }: { roster
       // so the receipt has to be able to say "reactivated" too.
       setMessages([{ level: "info", text: isActive ? "Worker reactivated" : "Worker deactivated" }]);
     } catch (err) {
-      setMessages([{
-        level: "error",
-        text: errorMessage(err, isActive ? "Couldn't reactivate this worker" : "Couldn't deactivate this worker"),
-      }]);
+      show(err, undefined, () => void setActive(isActive));
     } finally {
       setStatusChanging(false);
     }
@@ -303,6 +305,7 @@ export default function RosterObjectClient({ rosterId, createdNotice }: { roster
         "<project> › Worker Ramesh Kumar" -- instead of the module. Published
         after the fetch, which is when this page first knows either. */}
     <ObjectContext moduleId="labour" label={entry.name} projectId={entry.projectId} />
+    <ProblemPanel problem={problem} className="px-6 pt-4" />
     {/* R67 D-33 / decision D-09: the KIT's ObjectScreen cannot say
         "Deactivate" -- its delete control is hard-coded to "Delete", which is
         the wrong word for a reversible status change that keeps every row.

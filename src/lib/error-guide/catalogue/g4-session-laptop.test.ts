@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { matchGuide, resolveGuide } from "../match";
+import { ALL_GUIDES } from "./all";
 import { g4Guides } from "./g4-session-laptop";
 
 const SRC = join(import.meta.dir, "..", "..", "..");
@@ -37,7 +38,10 @@ describe("G4 guides", () => {
     for (const code of codes) {
       const field = g4Guides.find((x) => x.match.code === code)?.match.field;
       const g = matchGuide({ route: "/x", search: "", code, field });
-      expect({ code, guide: g.id.startsWith("g4-") }).toEqual({ code, guide: true });
+      // A code another group already owns (e.g. INVITE_WRONG_EMAIL, in settings.ts) lands on that group's guide, never on the generic fallback.
+      const owner = ALL_GUIDES.find((x) => x.match.code === code && Object.keys(x.match).length === 1);
+      if (owner) expect({ code, guide: g.id }).toEqual({ code, guide: owner.id });
+      else expect({ code, guide: g.id.startsWith("g4-") }).toEqual({ code, guide: true });
     }
   });
 

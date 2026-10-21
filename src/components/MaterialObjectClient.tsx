@@ -19,6 +19,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { fault, httpError, notANumber } from "@/lib/guided-form";
 // R67 F-34 (D-09): the FORKED ObjectScreen, which adds the `loading` variant.
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { MATERIAL_OBJECT_BREADCRUMB } from "@/lib/object-breadcrumbs";
@@ -63,6 +67,8 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   const [draft, setDraft] = useState({ name: "", spec: "", unit: "", unitCost: "", reorderLevel: "" });
   const [saving, setSaving] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  // G3 guided errors: a refused edit is a full panel (what happened, why, steps, the exact place, the way back), never a fading toast.
+  const [problem, setProblem] = useState<{ ctx: GuideContext; message?: string; retry?: () => void } | null>(null);
 
   async function load() {
     try {
@@ -96,20 +102,34 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
   }
 
   async function saveEdit() {
-    if (!draft.name.trim() || !draft.unit.trim()) { toast.error("Name and unit are required"); return; }
+    if (!draft.name.trim() || !draft.unit.trim()) {
+      setProblem({ ctx: contextFromFailure(fault("FIELD_INVALID", !draft.name.trim() ? "material-name" : "material-unit", "The name and the unit cannot be empty."), { entityId: materialId }) });
+      return;
+    }
+    const cost = draft.unitCost.trim();
+    if (cost !== "" && (notANumber(cost) || Number(cost) < 0)) {
+      setProblem({ ctx: contextFromFailure(fault("BAD_UNIT_COST", "material-unit-cost", `The unit cost "${cost}" is not a valid amount. Type digits only, zero or more, for example 28.50.`), { entityId: materialId }) });
+      return;
+    }
+    const reorder = draft.reorderLevel.trim();
+    if (reorder !== "" && (notANumber(reorder) || Number(reorder) < 0)) {
+      setProblem({ ctx: contextFromFailure(fault("REORDER_NEGATIVE", "material-reorder-level", `The reorder level "${reorder}" is not valid. Type a number of zero or more, or leave it blank for no threshold.`), { entityId: materialId }) });
+      return;
+    }
+    setProblem(null);
     setSaving(true);
     try {
       const res = await viaPxApi(`/api/materials/master/${materialId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reorderLevel: draft.reorderLevel === "" ? null : Number(draft.reorderLevel), name: draft.name.trim(), spec: draft.spec || null, unit: draft.unit.trim(), unitCost: draft.unitCost ? Number(draft.unitCost) : undefined }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save material");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to save material", "PATCH", `/api/materials/master/${materialId}`);
       toast.success("Material saved");
       setMode("display");
       setMaterial(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save material");
+      setProblem({ ctx: contextFromError(err, { entityId: materialId, entityType: "material" }), message: err instanceof Error ? err.message : undefined, retry: () => void saveEdit() });
     } finally {
       setSaving(false);
     }
@@ -122,12 +142,12 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: false }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to deactivate material");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw httpError(res, data, "Failed to deactivate material", "PATCH", `/api/materials/master/${materialId}`);
       toast.success("Material deactivated");
       setMaterial(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't deactivate material");
+      setProblem({ ctx: contextFromError(err, { entityId: materialId, entityType: "material" }), message: err instanceof Error ? err.message : undefined, retry: () => void deactivate() });
     } finally {
       setDeactivating(false);
     }
@@ -178,6 +198,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
         rather than naming the module, and the project is the one on the record
         rather than whichever one the top rail was left on. */}
     <ObjectContext moduleId="materials" label={material.name} projectId={material.projectId} />
+    {problem && <div className="px-6 pt-4"><GuidedError ctx={problem.ctx} message={problem.message} onRetry={problem.retry} /></div>}
     <KitObjectScreen
       breadcrumb={MATERIAL_OBJECT_BREADCRUMB.breadcrumb}
       title={mode === "edit" ? "Edit Material" : material.name}
@@ -219,7 +240,7 @@ export default function MaterialObjectClient({ materialId }: { materialId: strin
       {removal.card}
       {mode === "edit" && (
         <div className="space-y-3 px-4 py-3">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
+          <div className="space-y-1.5"><Label htmlFor="material-name">Name</Label><Input id="material-name" value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
           <div className="space-y-1.5"><Label>Spec (optional)</Label><Input value={draft.spec} onChange={(e) => setDraft((d) => ({ ...d, spec: e.target.value }))} placeholder="e.g. 43-grade OPC" /></div>
           {/* R67 G-05: the same closed vocabulary MaterialCreateClient uses.
               A legacy value outside it is offered back as its own option --

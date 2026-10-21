@@ -1,0 +1,6479 @@
+[
+ {
+  "message": "\"${clash.name}\" is already a category",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:146"
+  ]
+ },
+ {
+  "message": "\"${existing.name}\" is already a category",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:95"
+  ]
+ },
+ {
+  "message": "\"${trap}\" is not a recognised field -- use \"lineItems\"",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:296"
+  ]
+ },
+ {
+  "message": "${email} is already a member of this organisation.",
+  "status": 409,
+  "where": [
+   "projexa:src/app/api/org/invites/route.ts:76"
+  ]
+ },
+ {
+  "message": "${field} is over ${max} characters",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:62"
+  ]
+ },
+ {
+  "message": "${field} is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:61"
+  ]
+ },
+ {
+  "message": "${k} is not valid",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/client-logs/issues/route.ts:20"
+  ]
+ },
+ {
+  "message": "${key} must be a date written YYYY-MM-DD",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:173"
+  ]
+ },
+ {
+  "message": "${key} must be a non-negative number, got ${JSON.stringify(value)}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1570"
+  ]
+ },
+ {
+  "message": "${key} must be a number from 0 to 100",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:185"
+  ]
+ },
+ {
+  "message": "${key}: ${check.reason}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1664"
+  ]
+ },
+ {
+  "message": "${references} other record${references === 1 ? \"\" : \"s\"} reference this drawing, so it cannot be removed",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:204"
+  ]
+ },
+ {
+  "message": "${rejected.join(\", \")} cannot be changed by editing this BOQ.",
+  "status": null,
+  "where": [
+   "projexa:src/app/api/scope/[id]/route.ts:93"
+  ]
+ },
+ {
+  "message": "${rejected.join(\", \")} cannot be changed here -- version, parentBoqId and status are the revision lineage (use Create Revision / Submit / Approve), and projectId would separate this BOQ from its own recorded progress. Nothing was saved.",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/route.ts:137"
+  ]
+ },
+ {
+  "message": "${reportName} has no public view yet, so it cannot be shared. Shareable reports: ${Object.keys(SHAREABLE).join(\", \")}",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/reports/[reportName]/share/route.ts:30"
+  ]
+ },
+ {
+  "message": "${where}: \"${wrong}\" is not a recognised field -- use \"${right}\"",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:312"
+  ]
+ },
+ {
+  "message": "${where}: ${key} must be a non-negative number, got ${JSON.stringify(v)}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:356"
+  ]
+ },
+ {
+  "message": "${where}: breakdownPercentage is required when parentItemCode is set",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:362"
+  ]
+ },
+ {
+  "message": "${where}: description is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:317"
+  ]
+ },
+ {
+  "message": "${where}: duplicate itemCode \"${item.itemCode}\" -- item codes must be unique within one BOQ",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:344"
+  ]
+ },
+ {
+  "message": "${where}: unit is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:337"
+  ]
+ },
+ {
+  "message": "${where}: unit must be a string",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:334"
+  ]
+ },
+ {
+  "message": "A batch holds at most ${MAX_LINES_PER_BATCH} lines, this one has ${input.lines.length}. Send the rest as the next batch.",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:222"
+  ]
+ },
+ {
+  "message": "A category cannot be its own parent",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:164"
+  ]
+ },
+ {
+  "message": "A category cannot sit under one of its own sub-categories",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:174"
+  ]
+ },
+ {
+  "message": "A drawing's category must be drawing or drawing_3d",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:152"
+  ]
+ },
+ {
+  "message": "A file is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/versions/route.ts:31"
+  ]
+ },
+ {
+  "message": "A JSON body is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/classify/route.ts:36",
+   "projexa:src/app/api/pill-usage/route.ts:71",
+   "projexa:src/app/api/tasks/route.ts:70"
+  ]
+ },
+ {
+  "message": "A key for one project cannot create a new project",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/assistant/route.ts:77"
+  ]
+ },
+ {
+  "message": "A line of a ${boq.status} BOQ cannot be edited -- make a revision instead",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1729"
+  ]
+ },
+ {
+  "message": "A note is required when you set the percentage manually",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:1121"
+  ]
+ },
+ {
+  "message": "A PDF file is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/route.ts:147"
+  ]
+ },
+ {
+  "message": "A project key is held to its own project and cannot create a new one",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:174",
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:76"
+  ]
+ },
+ {
+  "message": "A project key is held to its own project and cannot read an extraction job",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:252"
+  ]
+ },
+ {
+  "message": "A read-only account cannot submit tasks",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/assistant/route.ts:63",
+   "compliance-tracker:src/app/api/v1/projexa/tasks/route.ts:150"
+  ]
+ },
+ {
+  "message": "A reason is required to void a receipt",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:260"
+  ]
+ },
+ {
+  "message": "A scenario commit is a FINANCIAL action -- an AI agent may PROPOSE a scenario's adjustments but may NEVER commit one (10-12). Refused before any database access.",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:828"
+  ]
+ },
+ {
+  "message": "A scenario commit requires a real, authenticated user session -- an API-key-only caller cannot commit a scenario.",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/[id]/commit/route.ts:31"
+  ]
+ },
+ {
+  "message": "A site diary entry already exists for this project and date",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-site-diary-service.ts:54"
+  ]
+ },
+ {
+  "message": "A superseded revision is a historical record and cannot be edited -- open the revision that replaced it",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1504"
+  ]
+ },
+ {
+  "message": "A task id is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/[id]/route.ts:78",
+   "compliance-tracker:src/app/api/v1/projexa/tasks/[id]/route.ts:140",
+   "projexa:src/app/api/tasks/[id]/route.ts:22"
+  ]
+ },
+ {
+  "message": "accountingPeriodIds is required (comma-separated list of at least one erp_accounting_periods id)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/statistical-key-figure-report/route.ts:27"
+  ]
+ },
+ {
+  "message": "action must be 'answer' or 'close'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/rfis/[id]/route.ts:49"
+  ]
+ },
+ {
+  "message": "action must be 'edit' or 'request_publish'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/policies/[id]/route.ts:41"
+  ]
+ },
+ {
+  "message": "action must be 'ready' or 'verify'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/punch-list/[id]/route.ts:47"
+  ]
+ },
+ {
+  "message": "action must be 'review'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/submittals/[id]/route.ts:35"
+  ]
+ },
+ {
+  "message": "action must be 'status'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/route.ts:33"
+  ]
+ },
+ {
+  "message": "action must be 'status' or 'dimensions'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ffe/[id]/route.ts:45"
+  ]
+ },
+ {
+  "message": "action must be 'submit' -- a change order can only be approved/rejected via a real e-signature completion, see GET .../signature-status",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/change-orders/[id]/route.ts:65"
+  ]
+ },
+ {
+  "message": "action must be one of: ${ACTIONS.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/[id]/route.ts:42"
+  ]
+ },
+ {
+  "message": "Activity not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-prediction-service.ts:40",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:193",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:789"
+  ]
+ },
+ {
+  "message": "activityId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:774",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:851"
+  ]
+ },
+ {
+  "message": "after must be a valid timestamp",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/client-logs/timeline/route.ts:21"
+  ]
+ },
+ {
+  "message": "allowed must be true or false",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/internal-ai-allowance/route.ts:25"
+  ]
+ },
+ {
+  "message": "amount must be positive",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-expense-service.ts:230"
+  ]
+ },
+ {
+  "message": "amountDisputed must be a number that is not negative",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:138"
+  ]
+ },
+ {
+  "message": "An ${existing.status} change order cannot be cancelled",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:188"
+  ]
+ },
+ {
+  "message": "An invitation token is required.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/invites/accept/route.ts:52",
+   "projexa:src/app/api/org/invites/preview/route.ts:11"
+  ]
+ },
+ {
+  "message": "An open order for this material, quantity and date already exists",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:700"
+  ]
+ },
+ {
+  "message": "An organization can have at most ${MAX_SLOTS} digest emails a day",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/email-schedule/route.ts:60"
+  ]
+ },
+ {
+  "message": "answer is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:57"
+  ]
+ },
+ {
+  "message": "approvedOn cannot be in the future",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:217"
+  ]
+ },
+ {
+  "message": "approvedOn must be a date written YYYY-MM-DD",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:216"
+  ]
+ },
+ {
+  "message": "Approving a quotation requires a real user session, not an API key",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/route.ts:106"
+  ]
+ },
+ {
+  "message": "At least one line item is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/route.ts:39",
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/route.ts:42",
+   "compliance-tracker:src/app/api/v1/projexa/procurement/quotations/route.ts:41"
+  ]
+ },
+ {
+  "message": "At least one marked row is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:503"
+  ]
+ },
+ {
+  "message": "At least one scenarioId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:669"
+  ]
+ },
+ {
+  "message": "At least one signer is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:80"
+  ]
+ },
+ {
+  "message": "At least one supplier is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/rfqs/route.ts:38"
+  ]
+ },
+ {
+  "message": "At most ${MAX_EVENTS} events per request",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/client-logs/route.ts:26"
+  ]
+ },
+ {
+  "message": "attachment must be {documentId, sha256?}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/assistant/route.ts:81"
+  ]
+ },
+ {
+  "message": "Attendance already recorded for this worker on this date",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:436"
+  ]
+ },
+ {
+  "message": "Attendance not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:661",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:681"
+  ]
+ },
+ {
+  "message": "attendanceDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:426",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:501"
+  ]
+ },
+ {
+  "message": "Baseline version ${version} not found for BOQ ${boqId}",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-baseline-service.ts:204"
+  ]
+ },
+ {
+  "message": "Batch ${input.batchNo} of this BOQ was already stored with different lines. Use the next batch number for new lines.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:253"
+  ]
+ },
+ {
+  "message": "Batch not stored: ${codes.length} line(s) sent but ${lineIds.length} found afterwards. Nothing was saved.",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:297"
+  ]
+ },
+ {
+  "message": "batchNo must be a whole number from 1 to ${MAX_BATCH_NO}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:218"
+  ]
+ },
+ {
+  "message": "billDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:134",
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:161",
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/[id]/route.ts:68"
+  ]
+ },
+ {
+  "message": "Body must be a JSON object",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:147",
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/paste-back/route.ts:50",
+   "projexa:src/app/api/local-first/prepare-report/route.ts:31"
+  ]
+ },
+ {
+  "message": "Body must be JSON",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/classify/route.ts:40",
+   "compliance-tracker:src/app/api/v1/projexa/currencies/base/route.ts:67",
+   "compliance-tracker:src/app/api/v1/projexa/pill-usage/route.ts:118"
+  ]
+ },
+ {
+  "message": "BOQ ${boqId} not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-baseline-service.ts:138"
+  ]
+ },
+ {
+  "message": "BOQ line item not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:727"
+  ]
+ },
+ {
+  "message": "BOQ line not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:150"
+  ]
+ },
+ {
+  "message": "BOQ not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-contract-value-service.ts:156",
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:702",
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:838"
+  ]
+ },
+ {
+  "message": "BOQ not found after write -- nothing was saved",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1786"
+  ]
+ },
+ {
+  "message": "BOQ to compare against was not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2251"
+  ]
+ },
+ {
+  "message": "BOQ was not created: ${expected} line item(s) submitted but ${stored.length} stored. Nothing was saved.",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:381"
+  ]
+ },
+ {
+  "message": "boqId \"${options.boqId}\" does not belong to this project",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-reports-service.ts:2638"
+  ]
+ },
+ {
+  "message": "boqId \"${requestedBoqId}\" does not belong to this project",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/work-progress/report/route.ts:147"
+  ]
+ },
+ {
+  "message": "boqId does not belong to projectId",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:171"
+  ]
+ },
+ {
+  "message": "boqId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:384",
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:54",
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:210"
+  ]
+ },
+ {
+  "message": "breakdownPercentage is required for line item \"${item.description}\" (has a parentItemCode)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:198"
+  ]
+ },
+ {
+  "message": "budgetPercentage must be between 0 and 100",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1560"
+  ]
+ },
+ {
+  "message": "Bulk selector matched zero line items",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:509"
+  ]
+ },
+ {
+  "message": "candidate not found, or already promoted",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/phrase-map/[id]/promote/route.ts:24"
+  ]
+ },
+ {
+  "message": "Cannot change this member's role: every organization must keep at least one owner or admin.",
+  "status": 409,
+  "where": [
+   "projexa:src/app/api/org-members/[id]/route.ts:55"
+  ]
+ },
+ {
+  "message": "Cannot compare BOQ revisions from different projects",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2252"
+  ]
+ },
+ {
+  "message": "Cannot move a '${currentStatus}' claim to '${to}' -- valid next status(es): ${allowed.length ? allowed.join(\", \") : \"none (terminal)\"}",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:78"
+  ]
+ },
+ {
+  "message": "Cannot transition tender from '${tender.stage}' to '${newStage}'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:126"
+  ]
+ },
+ {
+  "message": "Category name is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:85",
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:130"
+  ]
+ },
+ {
+  "message": "Category name must be 80 characters or fewer",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:86",
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:131"
+  ]
+ },
+ {
+  "message": "Category not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:137",
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:204",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:122"
+  ]
+ },
+ {
+  "message": "categoryId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:118"
+  ]
+ },
+ {
+  "message": "Change Order #${sourceChangeOrder.number} is already linked to a BOQ revision (${sourceChangeOrder.boqRevisionId})",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1838"
+  ]
+ },
+ {
+  "message": "Change order not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1833",
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:66",
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:118"
+  ]
+ },
+ {
+  "message": "Choose a .dwg, .dxf or .pdf file — this is a .png",
+  "status": null,
+  "where": [
+   "projexa:src/lib/file-limits.ts:80"
+  ]
+ },
+ {
+  "message": "Choose a file to send.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/projects/from-document/route.ts:37"
+  ]
+ },
+ {
+  "message": "Choose a PDF, image, email or Office file — this is a .zip",
+  "status": null,
+  "where": [
+   "projexa:src/lib/document-intake.ts:92"
+  ]
+ },
+ {
+  "message": "Choose your AI and paste its key.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/own-ai/mine/route.ts:18",
+   "projexa:src/app/api/org/own-ai/route.ts:35"
+  ]
+ },
+ {
+  "message": "Circular parentItemCode reference detected at \"${current.itemCode}\"",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:143"
+  ]
+ },
+ {
+  "message": "Client not found for this organisation",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:211"
+  ]
+ },
+ {
+  "message": "client_viewer can never be granted cost visibility -- this is a hard floor, not a configurable option (D91 B1).",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/scope/cost-visibility/route.ts:39"
+  ]
+ },
+ {
+  "message": "code is required, e.g. \\",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/currencies/base/route.ts:71"
+  ]
+ },
+ {
+  "message": "code must be a 3-letter ISO currency code, e.g. \"AED\"",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/currency/route.ts:50"
+  ]
+ },
+ {
+  "message": "codeReference is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/assistant/route.ts:76"
+  ]
+ },
+ {
+  "message": "codeReference must be one of: ${ALLOWED_CODE_REFERENCES.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/assistant/route.ts:162"
+  ]
+ },
+ {
+  "message": "companyId query param is required",
+  "status": 400,
+  "where": [
+   "projexa:src/lib/company-scope.ts:45"
+  ]
+ },
+ {
+  "message": "completionPercentage must be between 0 and 100",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:1123"
+  ]
+ },
+ {
+  "message": "confirm needs submissionId",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/route.ts:188"
+  ]
+ },
+ {
+  "message": "confirmBaseline requires a non-empty evidenceArtefactRef -- a PO, proforma, agreed proposal, term sheet, proposal sent, agreement, email, or explicit written confirmation (D88).",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-baseline-service.ts:130"
+  ]
+ },
+ {
+  "message": "confirmedDiffToken is required -- run POST .../excel/diff first and pass back the token it returns. Nothing was applied.",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/excel/apply/route.ts:41"
+  ]
+ },
+ {
+  "message": "Connect the mailbox or Drive folder this file came from, then approve again",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:55"
+  ]
+ },
+ {
+  "message": "content is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/conversations/[id]/messages/route.ts:31"
+  ]
+ },
+ {
+  "message": "contractAwardSalesOrderId is required when marking a tender awarded",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:132"
+  ]
+ },
+ {
+  "message": "controlTotals must be an object {areas: {<area>: number}, grand: number}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:390"
+  ]
+ },
+ {
+  "message": "controlTotals.areas must be an object {<area>: number}, empty when the BOQ has no areas",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:393"
+  ]
+ },
+ {
+  "message": "controlTotals.areas[\"${name}\"] must be a non-negative number",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:396"
+  ]
+ },
+ {
+  "message": "controlTotals.grand must be a non-negative number",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:392"
+  ]
+ },
+ {
+  "message": "costImpact must be a number",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:161"
+  ]
+ },
+ {
+  "message": "Could not allocate a worker ID",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:87"
+  ]
+ },
+ {
+  "message": "Could not find a Daily Rate column in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-roster-import-service.ts:121"
+  ]
+ },
+ {
+  "message": "Could not find a Description column in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-import-service.ts:130"
+  ]
+ },
+ {
+  "message": "Could not find a Name column in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-roster-import-service.ts:120"
+  ]
+ },
+ {
+  "message": "Could not find a Quantity column in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-import-service.ts:131"
+  ]
+ },
+ {
+  "message": "Could not find a Rate column in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-import-service.ts:132"
+  ]
+ },
+ {
+  "message": "Could not provision your PROJEXA workspace. Please try again.",
+  "status": 503,
+  "where": [
+   "projexa:src/app/api/org/provision/route.ts:46"
+  ]
+ },
+ {
+  "message": "Could not read your organisation. Please retry.",
+  "status": 503,
+  "where": [
+   "projexa:src/app/api/org/repair/route.ts:110"
+  ]
+ },
+ {
+  "message": "Could not verify organization membership, please retry",
+  "status": 503,
+  "where": [
+   "projexa:src/lib/supabase/auth-guard.ts:170"
+  ]
+ },
+ {
+  "message": "Couldn't build that step",
+  "status": 502,
+  "where": [
+   "projexa:src/app/api/chain-options/route.ts:79",
+   "projexa:src/app/api/chain-options/route.ts:99"
+  ]
+ },
+ {
+  "message": "Couldn't fetch these minutes right now - try again in a moment",
+  "status": 502,
+  "where": [
+   "projexa:src/app/api/shared/mom/[token]/pdf/route.ts:33"
+  ]
+ },
+ {
+  "message": "cursor belongs to a different BOQ",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1381",
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1433"
+  ]
+ },
+ {
+  "message": "cursor belongs to a different revision than the one requested",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1247"
+  ]
+ },
+ {
+  "message": "cursor does not belong to a BOQ of this project",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1258",
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1448"
+  ]
+ },
+ {
+  "message": "cursor is not a valid BOQ line cursor",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1176"
+  ]
+ },
+ {
+  "message": "Customer not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:184"
+  ]
+ },
+ {
+  "message": "customerId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:55",
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:160"
+  ]
+ },
+ {
+  "message": "dailyRate must be a number of 0 or more",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:261"
+  ]
+ },
+ {
+  "message": "date query param is required with includeAttendanceSummary",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/labour-roster/route.ts:35"
+  ]
+ },
+ {
+  "message": "decision must be 'approved' or 'rejected'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leave/requests/[id]/decision/route.ts:20"
+  ]
+ },
+ {
+  "message": "decision must be 'confirmed' or 'revoked'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/access-review/certifications/[id]/route.ts:23"
+  ]
+ },
+ {
+  "message": "description cannot be empty",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1712"
+  ]
+ },
+ {
+  "message": "description is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:137",
+   "compliance-tracker:src/lib/services/construction-site-instruction-service.ts:31"
+  ]
+ },
+ {
+  "message": "description must be 2,000 characters or fewer",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1713"
+  ]
+ },
+ {
+  "message": "designerId, projectId, spentOn and decision are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/timesheets/review-day/route.ts:18"
+  ]
+ },
+ {
+  "message": "diaryDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-site-diary-service.ts:45"
+  ]
+ },
+ {
+  "message": "Document not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/route.ts:56"
+  ]
+ },
+ {
+  "message": "Draft not found (or not yours)",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/screen-drafts/[id]/route.ts:26"
+  ]
+ },
+ {
+  "message": "Drawing not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/document-url/route.ts:38",
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:130",
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:156"
+  ]
+ },
+ {
+  "message": "drawingDocumentId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:90"
+  ]
+ },
+ {
+  "message": "dryRun needs rawInput",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/route.ts:164"
+  ]
+ },
+ {
+  "message": "DWG drawings require a file upload",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/route.ts:173"
+  ]
+ },
+ {
+  "message": "Either a file or externalUrl is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/route.ts:170"
+  ]
+ },
+ {
+  "message": "Email \"${email}\" is not a valid email address.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/invites/route.ts:55"
+  ]
+ },
+ {
+  "message": "Email is required to send an invitation.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/invites/route.ts:52"
+  ]
+ },
+ {
+  "message": "Employee not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:258",
+   "compliance-tracker:src/app/api/v1/projexa/employees/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "employeeId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:250"
+  ]
+ },
+ {
+  "message": "entryBasis must be DELTA or SNAPSHOT",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:699"
+  ]
+ },
+ {
+  "message": "entryDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:773",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:852"
+  ]
+ },
+ {
+  "message": "events must be a non-empty array",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/client-logs/route.ts:25"
+  ]
+ },
+ {
+  "message": "every line must be an object",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:224"
+  ]
+ },
+ {
+  "message": "Every row needs a rosterId",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:507"
+  ]
+ },
+ {
+  "message": "evidenceArtefactRef is required for a contract value override (D88)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-contract-value-service.ts:149"
+  ]
+ },
+ {
+  "message": "evidenceDocumentId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:211"
+  ]
+ },
+ {
+  "message": "expectedDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:677"
+  ]
+ },
+ {
+  "message": "expectedLineCount must be a whole number, 0 or more",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:399"
+  ]
+ },
+ {
+  "message": "expenseDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-expense-service.ts:229"
+  ]
+ },
+ {
+  "message": "expenseHead must be one of: ${VALID_HEADS.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-expense-service.ts:228"
+  ]
+ },
+ {
+  "message": "Failed to add action item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/action-items/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to add adjustment",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/[id]/adjustments/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to add bank account",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/bank-accounts/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to add issue to sprint",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/[id]/issues/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to add meeting outcome",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/meetings/[id]/outcomes/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to add mood board item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/[id]/route.ts:72"
+  ]
+ },
+ {
+  "message": "Failed to add room",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/rooms/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to apply the uploaded BOQ spreadsheet",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/excel/apply/route.ts:75"
+  ]
+ },
+ {
+  "message": "Failed to approve BOQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/approve/route.ts:35"
+  ]
+ },
+ {
+  "message": "Failed to approve KPI entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-entries/[id]/approve/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to approve the proposal",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:204",
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:126"
+  ]
+ },
+ {
+  "message": "Failed to approve time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/approve/route.ts:52"
+  ]
+ },
+ {
+  "message": "Failed to assign income tax slab",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/employees/[id]/income-tax-slab/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to auto-distribute leads",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/auto-distribute/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to auto-distribute opportunities",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/auto-distribute/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to build board data",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/board/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to build Gantt data",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/gantt/route.ts:32"
+  ]
+ },
+ {
+  "message": "Failed to build scene",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/scene/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to build the attendance summary",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/attendance/summary/route.ts:33"
+  ]
+ },
+ {
+  "message": "Failed to build the BOQ import template",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scope/import/template/route.ts:64"
+  ]
+ },
+ {
+  "message": "Failed to bulk-reassign leads",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/bulk-reassign/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to bulk-reassign opportunities",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/bulk-reassign/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to bulk-update sales order status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/bulk-status/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to cancel invoice",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-invoices/[id]/cancel/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to cancel project budget",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/[id]/cancel/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to cancel purchase order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/[id]/route.ts:76"
+  ]
+ },
+ {
+  "message": "Failed to capture baseline",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/baselines/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to commit scenario",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/[id]/commit/route.ts:67"
+  ]
+ },
+ {
+  "message": "Failed to compare baseline",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/baselines/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to compare BOQ revisions",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/compare/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to compare RFQ quotations",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/rfqs/[id]/comparison/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to compare scenarios",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/compare/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to compute budget variance",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/[id]/variance/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to compute margin summary",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ffe/margin-summary/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to compute resource conflicts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/resource-conflicts/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to compute workload",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/workload/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to confirm the baseline",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/baseline/route.ts:56"
+  ]
+ },
+ {
+  "message": "Failed to convert quotation to a sales order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/convert/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to create activity",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/work-progress/activities/route.ts:90"
+  ]
+ },
+ {
+  "message": "Failed to create application",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to create audit engagement",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/audit-engagements/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to create audit finding",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/audit-findings/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to create billing milestone",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/route.ts:66"
+  ]
+ },
+ {
+  "message": "Failed to create BOQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/route.ts:135"
+  ]
+ },
+ {
+  "message": "Failed to create BOQ category",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/categories/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to create BOQ revision",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/revisions/route.ts:35"
+  ]
+ },
+ {
+  "message": "Failed to create candidate",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/candidates/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to create change order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/change-orders/route.ts:47"
+  ]
+ },
+ {
+  "message": "Failed to create company",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/companies/route.ts:50"
+  ]
+ },
+ {
+  "message": "Failed to create compliance register item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/compliance-register/route.ts:62"
+  ]
+ },
+ {
+  "message": "Failed to create credit note",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/credit-notes/route.ts:56"
+  ]
+ },
+ {
+  "message": "Failed to create customer",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/customers/route.ts:64"
+  ]
+ },
+ {
+  "message": "Failed to create department",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/hr/departments/route.ts:70"
+  ]
+ },
+ {
+  "message": "Failed to create drawing",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/route.ts:194"
+  ]
+ },
+ {
+  "message": "Failed to create expense entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/expenses/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to create FF&E item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ffe/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to create floor plan",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to create fraud case",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/fraud-cases/route.ts:46"
+  ]
+ },
+ {
+  "message": "Failed to create goods receipt",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to create income tax slab",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/income-tax-slabs/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to create item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/items/route.ts:50"
+  ]
+ },
+ {
+  "message": "Failed to create job opening",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/job-openings/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to create journal entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/journal-entries/route.ts:81"
+  ]
+ },
+ {
+  "message": "Failed to create knowledge base page",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/route.ts:44"
+  ]
+ },
+ {
+  "message": "Failed to create KPI definition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-definitions/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to create lead",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/route.ts:64"
+  ]
+ },
+ {
+  "message": "Failed to create leave request",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leave/requests/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to create material",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/design-materials/route.ts:42",
+   "compliance-tracker:src/app/api/v1/construction/materials/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to create material receipt",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/receipts/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to create meeting",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/meetings/route.ts:49",
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/route.ts:78"
+  ]
+ },
+ {
+  "message": "Failed to create milestone",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/milestones/route.ts:70"
+  ]
+ },
+ {
+  "message": "Failed to create mood board",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to create opportunity",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/route.ts:67"
+  ]
+ },
+ {
+  "message": "Failed to create payroll run",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/runs/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to create permit",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/route.ts:176"
+  ]
+ },
+ {
+  "message": "Failed to create policy",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/policies/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to create portal link",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/portal-links/route.ts:46"
+  ]
+ },
+ {
+  "message": "Failed to create progress entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/progress/route.ts:86"
+  ]
+ },
+ {
+  "message": "Failed to create project",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/route.ts:71"
+  ]
+ },
+ {
+  "message": "Failed to create project budget",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/route.ts:62"
+  ]
+ },
+ {
+  "message": "Failed to create project from document",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:304"
+  ]
+ },
+ {
+  "message": "Failed to create punch list item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/punch-list/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to create purchase order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/route.ts:52",
+   "compliance-tracker:src/app/api/v1/projexa/purchase-orders/route.ts:71"
+  ]
+ },
+ {
+  "message": "Failed to create purchase requisition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/requisitions/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to create quotation",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/route.ts:90"
+  ]
+ },
+ {
+  "message": "Failed to create quotation revision",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/revisions/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to create resource allocation",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/workload/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to create RFI",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/rfis/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to create RFQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/rfqs/route.ts:48"
+  ]
+ },
+ {
+  "message": "Failed to create risk",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/risks/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to create roster entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/labour-roster/route.ts:70"
+  ]
+ },
+ {
+  "message": "Failed to create salary component",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/salary-components/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to create salary structure",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/salary-structures/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to create sales invoice",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-invoices/route.ts:98"
+  ]
+ },
+ {
+  "message": "Failed to create sales order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/route.ts:88"
+  ]
+ },
+ {
+  "message": "Failed to create scenario",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/route.ts:60"
+  ]
+ },
+ {
+  "message": "Failed to create share link",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/share/route.ts:35",
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/share-links/route.ts:71"
+  ]
+ },
+ {
+  "message": "Failed to create site diary entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-diary/route.ts:95"
+  ]
+ },
+ {
+  "message": "Failed to create site instruction",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-instructions/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to create sprint",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/route.ts:63"
+  ]
+ },
+ {
+  "message": "Failed to create statutory rule",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/statutory-rules/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to create submittal",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/submittals/route.ts:44"
+  ]
+ },
+ {
+  "message": "Failed to create supplier quotation",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/quotations/route.ts:51"
+  ]
+ },
+ {
+  "message": "Failed to create task",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/route.ts:121"
+  ]
+ },
+ {
+  "message": "Failed to create tax exemption",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/employees/[id]/tax-exemptions/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to create tax template",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tax-templates/route.ts:59"
+  ]
+ },
+ {
+  "message": "Failed to create vendor",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/route.ts:64"
+  ]
+ },
+ {
+  "message": "Failed to create vendor risk profile",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendor-risk/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to create warehouse",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/warehouses/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to create wiki page",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/wiki/route.ts:47"
+  ]
+ },
+ {
+  "message": "Failed to decide leave request",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leave/requests/[id]/decision/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to delete BOQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/route.ts:103"
+  ]
+ },
+ {
+  "message": "Failed to delete BOQ category",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/categories/[id]/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to delete meeting",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/route.ts:101"
+  ]
+ },
+ {
+  "message": "Failed to delete progress entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/progress/[id]/route.ts:88"
+  ]
+ },
+ {
+  "message": "Failed to delete this permit",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/[id]/route.ts:137"
+  ]
+ },
+ {
+  "message": "Failed to delete time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/route.ts:82"
+  ]
+ },
+ {
+  "message": "Failed to diff the uploaded BOQ spreadsheet",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/excel/diff/route.ts:55"
+  ]
+ },
+ {
+  "message": "Failed to dispose document",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/dispose/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to export BOQ spreadsheet",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/excel/export/route.ts:48"
+  ]
+ },
+ {
+  "message": "Failed to export material cost report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/cost-report/export/route.ts:129"
+  ]
+ },
+ {
+  "message": "Failed to export the ${reportName} report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/export/route.ts:238",
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/export/route.ts:295"
+  ]
+ },
+ {
+  "message": "Failed to export the designer-timesheet report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/export/route.ts:143"
+  ]
+ },
+ {
+  "message": "Failed to export the drawings register",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/export/route.ts:65"
+  ]
+ },
+ {
+  "message": "Failed to fetch",
+  "status": null,
+  "where": [
+   "browser: network failure"
+  ]
+ },
+ {
+  "message": "Failed to fetch access review data",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/access-review/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to fetch activities",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/work-progress/activities/route.ts:48"
+  ]
+ },
+ {
+  "message": "Failed to fetch application",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch applications",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch attendance",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/attendance/route.ts:48"
+  ]
+ },
+ {
+  "message": "Failed to fetch audit engagements",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/audit-engagements/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch bank accounts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/bank-accounts/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to fetch bank reconciliation data",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/bank-reconciliation/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to fetch billing claims",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to fetch BOQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/route.ts:81"
+  ]
+ },
+ {
+  "message": "Failed to fetch BOQ categories",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/categories/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch BOQs",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/route.ts:93"
+  ]
+ },
+ {
+  "message": "Failed to fetch candidates",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/candidates/route.ts:17"
+  ]
+ },
+ {
+  "message": "Failed to fetch change order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/change-orders/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch chart of accounts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/accounts/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to fetch companies",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/companies/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch compliance register",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/compliance-register/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to fetch cost centers",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/cost-centers/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to fetch credit note",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/credit-notes/[id]/route.ts:31"
+  ]
+ },
+ {
+  "message": "Failed to fetch credit notes",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/credit-notes/route.ts:32"
+  ]
+ },
+ {
+  "message": "Failed to fetch currencies",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/currencies/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to fetch customer",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/customers/[id]/route.ts:29"
+  ]
+ },
+ {
+  "message": "Failed to fetch customer overview",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/customers/[id]/overview/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch customers",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/customers/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to fetch dashboard",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dashboard/route.ts:171"
+  ]
+ },
+ {
+  "message": "Failed to fetch departments",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/hr/departments/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to fetch drawings",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/route.ts:123"
+  ]
+ },
+ {
+  "message": "Failed to fetch employee",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/employees/[id]/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to fetch employees",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/employees/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to fetch expenses",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/expenses/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch FF&E item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ffe/[id]/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch fiscal years",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/fiscal-years/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to fetch floor plan",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch fraud case",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/fraud-cases/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch fraud cases",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/fraud-cases/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch goods receipt",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/[id]/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch goods receipts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch income tax slabs",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/income-tax-slabs/route.ts:18"
+  ]
+ },
+ {
+  "message": "Failed to fetch interviews",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/[id]/interviews/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch issue types",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/types/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/items/[id]/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch items",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/items/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch job opening",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/job-openings/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch job openings",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/job-openings/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch journal entries",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/journal-entries/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to fetch journal entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/journal-entries/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch knowledge base page",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/by-slug/route.ts:21",
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/[id]/route.ts:29"
+  ]
+ },
+ {
+  "message": "Failed to fetch knowledge base pages",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch KPI definition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-definitions/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch KPI definitions",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-definitions/route.ts:16"
+  ]
+ },
+ {
+  "message": "Failed to fetch KPI entries",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-entries/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch labour roster",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/labour-roster/route.ts:44"
+  ]
+ },
+ {
+  "message": "Failed to fetch lead",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/[id]/route.ts:31"
+  ]
+ },
+ {
+  "message": "Failed to fetch lead assignment overview",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/assignment-overview/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch lead history",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/[id]/history/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch leads",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to fetch leave balances",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leave/balances/route.ts:18"
+  ]
+ },
+ {
+  "message": "Failed to fetch leave requests",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leave/requests/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch material",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch material cost report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/cost-report/route.ts:36"
+  ]
+ },
+ {
+  "message": "Failed to fetch material issues",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/issues/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch material ledger",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/materials/route.ts:68"
+  ]
+ },
+ {
+  "message": "Failed to fetch material receipt",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/receipts/[id]/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch material receipts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/receipts/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch materials",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch meeting",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/meetings/[id]/route.ts:26",
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch meetings",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/meetings/route.ts:27",
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/route.ts:33"
+  ]
+ },
+ {
+  "message": "Failed to fetch milestones",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/milestones/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to fetch mood board",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch opportunities",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to fetch opportunity",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/[id]/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to fetch opportunity assignment overview",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/assignment-overview/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch opportunity history",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/[id]/history/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch org chart",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/hr/org-chart/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch payroll run",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/runs/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch payroll runs",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/runs/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch payslip",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/payslips/[id]/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch payslips",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/runs/[id]/payslips/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to fetch permits",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/route.ts:118"
+  ]
+ },
+ {
+  "message": "Failed to fetch policies",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/policies/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch policy",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/policies/[id]/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch portal links",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/portal-links/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch progress entries",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/progress/route.ts:36"
+  ]
+ },
+ {
+  "message": "Failed to fetch project budget",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/[id]/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch project budgets",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to fetch project dashboard",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dashboard/[projectId]/route.ts:76"
+  ]
+ },
+ {
+  "message": "Failed to fetch projects",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to fetch punch list item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/punch-list/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch purchase order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/[id]/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to fetch purchase orders",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/route.ts:25",
+   "compliance-tracker:src/app/api/v1/projexa/purchase-orders/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to fetch purchase requisition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/requisitions/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch purchase requisitions",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/requisitions/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch qualification reviews",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/qualification/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch quotation",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/route.ts:85"
+  ]
+ },
+ {
+  "message": "Failed to fetch quotations",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/route.ts:55"
+  ]
+ },
+ {
+  "message": "Failed to fetch report catalog",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/catalog/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to fetch RFI",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/rfis/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch RFQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/rfqs/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch RFQs",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/rfqs/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch risk",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/risks/[id]/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch risk register",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/risks/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch roster entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/labour-roster/[id]/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch salary components",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/salary-components/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch salary structures",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/salary-structures/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch sales invoice",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-invoices/[id]/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to fetch sales invoices",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-invoices/route.ts:63"
+  ]
+ },
+ {
+  "message": "Failed to fetch sales order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/[id]/route.ts:57"
+  ]
+ },
+ {
+  "message": "Failed to fetch sales orders",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/route.ts:53"
+  ]
+ },
+ {
+  "message": "Failed to fetch sales pipeline overview",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-pipeline/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch sanction checks",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/sanction-checks/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch scenario",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/[id]/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch share links",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/share-links/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to fetch signature status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/change-orders/[id]/signature-status/route.ts:53"
+  ]
+ },
+ {
+  "message": "Failed to fetch site diaries",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-diary/route.ts:74"
+  ]
+ },
+ {
+  "message": "Failed to fetch site diary entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-diary/[id]/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to fetch site instruction",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-instructions/[id]/route.ts:17"
+  ]
+ },
+ {
+  "message": "Failed to fetch site instructions",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-instructions/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch sprint issues",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/[id]/issues/route.ts:23"
+  ]
+ },
+ {
+  "message": "Failed to fetch sprints",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/route.ts:36"
+  ]
+ },
+ {
+  "message": "Failed to fetch statutory rules",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/statutory-rules/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to fetch stock balances",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/stock-balance/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to fetch stock entries",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/stock-entries/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to fetch submittal",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/submittals/[id]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to fetch supplier quotations",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/quotations/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to fetch task",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/[id]/route.ts:32"
+  ]
+ },
+ {
+  "message": "Failed to fetch tasks",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/route.ts:44"
+  ]
+ },
+ {
+  "message": "Failed to fetch tax accounts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tax-templates/accounts/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to fetch tax exemptions",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/employees/[id]/tax-exemptions/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch tax templates",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tax-templates/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to fetch the organisation's people",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/users/route.ts:33"
+  ]
+ },
+ {
+  "message": "Failed to fetch the project dashboards",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dashboard/route.ts:102"
+  ]
+ },
+ {
+  "message": "Failed to fetch this permit",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/[id]/route.ts:68"
+  ]
+ },
+ {
+  "message": "Failed to fetch time entries",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/route.ts:110"
+  ]
+ },
+ {
+  "message": "Failed to fetch vendor",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/route.ts:35"
+  ]
+ },
+ {
+  "message": "Failed to fetch vendor risk profiles",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendor-risk/route.ts:18"
+  ]
+ },
+ {
+  "message": "Failed to fetch vendors",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to fetch warehouses",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/warehouses/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to fetch wiki page",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/wiki/by-slug/route.ts:23",
+   "compliance-tracker:src/app/api/v1/projexa/wiki/[id]/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to fetch wiki pages",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/wiki/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to finalize payslip",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/payslips/[id]/finalize/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to generate ${reportName} report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/route.ts:63"
+  ]
+ },
+ {
+  "message": "Failed to generate AR aging report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ar-aging/route.ts:36"
+  ]
+ },
+ {
+  "message": "Failed to generate balance sheet",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/balance-sheet/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to generate customer payment behavior report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/customer-payment-behavior/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to generate download link",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/route.ts:76"
+  ]
+ },
+ {
+  "message": "Failed to generate dunning list",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dunning-list/route.ts:35"
+  ]
+ },
+ {
+  "message": "Failed to generate finance dashboard",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/finance-dashboard/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to generate GRC dashboard",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/grc-dashboard/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to generate meeting intelligence",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/generate-intelligence/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to generate meeting PDF",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/pdf/route.ts:80"
+  ]
+ },
+ {
+  "message": "Failed to generate payment proposal list",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payment-proposal-list/route.ts:54"
+  ]
+ },
+ {
+  "message": "Failed to generate payslip PDF",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/payslips/[id]/pdf/route.ts:128"
+  ]
+ },
+ {
+  "message": "Failed to generate per-project P&L",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/profit-and-loss-by-project/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to generate profit and loss statement",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/profit-and-loss/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to generate quotation PDF",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/pdf/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to generate sales order document flow",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-order-document-flow/[id]/route.ts:29"
+  ]
+ },
+ {
+  "message": "Failed to generate sales representative performance dashboard",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-rep-performance/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to generate subcontractor payment application status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/subcontractor-payment-application-status/route.ts:31"
+  ]
+ },
+ {
+  "message": "Failed to generate subcontractor retention summary",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/subcontractor-retention-summary/route.ts:54"
+  ]
+ },
+ {
+  "message": "Failed to generate the analysis report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/boq-analysis/route.ts:73"
+  ]
+ },
+ {
+  "message": "Failed to generate the attendance summary PDF",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/attendance/summary/pdf/route.ts:61"
+  ]
+ },
+ {
+  "message": "Failed to generate the exceptions report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/exceptions/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to generate the portfolio budget vs actual report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/portfolio/budget-vs-actual/route.ts:52"
+  ]
+ },
+ {
+  "message": "Failed to generate trial balance",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/trial-balance/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to generate vendor payment behavior report",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendor-payment-behavior/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to generate work progress report PDF",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/work-progress/report/pdf/route.ts:116"
+  ]
+ },
+ {
+  "message": "Failed to generate work progress report spreadsheet",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/work-progress/report/xlsx/route.ts:101"
+  ]
+ },
+ {
+  "message": "Failed to link hired employee",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/[id]/hire/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to list baselines",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/baselines/route.ts:19",
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/baseline/route.ts:36"
+  ]
+ },
+ {
+  "message": "Failed to list change orders",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/change-orders/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to list FF&E items",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ffe/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to list floor plans",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to list materials",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/design-materials/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to list mood boards",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to list products",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/products/route.ts:18"
+  ]
+ },
+ {
+  "message": "Failed to list punch list items",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/punch-list/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to list RFIs",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/rfis/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to list scenarios",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/route.ts:32"
+  ]
+ },
+ {
+  "message": "Failed to list submittals",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/submittals/route.ts:20"
+  ]
+ },
+ {
+  "message": "Failed to list your teammates",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/people/route.ts:16"
+  ]
+ },
+ {
+  "message": "Failed to load BOQ lines",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scope/lines/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to load cost visibility config",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/cost-visibility/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to load progress entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/progress/[id]/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to load the billing milestone's timeline",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/[id]/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to load the organisation directory",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/org-users/route.ts:29"
+  ]
+ },
+ {
+  "message": "Failed to load the trade list",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/labour-roster/trades/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to load this activity's progress source",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/[id]/completion/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to log time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/route.ts:153"
+  ]
+ },
+ {
+  "message": "Failed to move application stage",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/[id]/stage/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to open access review cycle",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/access-review/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to place furniture",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/placements/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to predict completion date",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/predictions/[activityId]/route.ts:17"
+  ]
+ },
+ {
+  "message": "Failed to process payroll run",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/runs/[id]/process/route.ts:24"
+  ]
+ },
+ {
+  "message": "Failed to read storage status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/storage-status/route.ts:34"
+  ]
+ },
+ {
+  "message": "Failed to read the approvals of this project",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:67"
+  ]
+ },
+ {
+  "message": "Failed to read the organisation currency",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/currencies/base/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to read the proposals prepared by schedules",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to read the setting",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/internal-ai-allowance/route.ts:16",
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/route.ts:36"
+  ]
+ },
+ {
+  "message": "Failed to read time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to record attendance",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/attendance/route.ts:93"
+  ]
+ },
+ {
+  "message": "Failed to record certification decision",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/access-review/certifications/[id]/route.ts:31"
+  ]
+ },
+ {
+  "message": "Failed to record dunning action",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dunning-list/[invoiceId]/record/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to record material issue",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/issues/route.ts:46"
+  ]
+ },
+ {
+  "message": "Failed to record payment",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-invoices/[id]/payments/route.ts:29"
+  ]
+ },
+ {
+  "message": "Failed to record qualification review",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/qualification/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to record sanction check",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/sanction-checks/route.ts:44"
+  ]
+ },
+ {
+  "message": "Failed to record stock entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/stock-entries/route.ts:66"
+  ]
+ },
+ {
+  "message": "Failed to record the review decision",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/review-day/route.ts:65"
+  ]
+ },
+ {
+  "message": "Failed to reject time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/reject/route.ts:53"
+  ]
+ },
+ {
+  "message": "Failed to release retention",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/subcontractor-retention-summary/[invoiceId]/release/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to remove adjustment",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/[id]/adjustments/route.ts:68"
+  ]
+ },
+ {
+  "message": "Failed to remove issue from sprint",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/[id]/issues/route.ts:64"
+  ]
+ },
+ {
+  "message": "Failed to remove mood board item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/[id]/items/[itemId]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to remove placement",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/placements/[placementId]/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to remove room",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/rooms/[roomId]/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to remove the key",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/route.ts:79"
+  ]
+ },
+ {
+  "message": "Failed to remove this drawing",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:235"
+  ]
+ },
+ {
+  "message": "Failed to rename BOQ category",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/categories/[id]/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to replace document file",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/versions/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to resolve screen definition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/screen-definitions/[functionId]/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to resolve the drawing's document link",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/document-url/route.ts:57"
+  ]
+ },
+ {
+  "message": "Failed to retrieve document",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/route.ts:98"
+  ]
+ },
+ {
+  "message": "Failed to retrieve this drawing",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:135"
+  ]
+ },
+ {
+  "message": "Failed to revoke portal link",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/portal-links/[linkId]/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to revoke share link",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/share-links/[linkId]/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to run report definition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/definitions/[id]/run/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to save employee profile",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/employees/route.ts:63"
+  ]
+ },
+ {
+  "message": "Failed to save the attendance sheet",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/attendance/bulk/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to save the setting",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/internal-ai-allowance/route.ts:38",
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/route.ts:60"
+  ]
+ },
+ {
+  "message": "Failed to save who can use your AI",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/shares/route.ts:21"
+  ]
+ },
+ {
+  "message": "Failed to schedule interview",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/applications/[id]/interviews/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to search knowledge base",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/search/route.ts:19"
+  ]
+ },
+ {
+  "message": "Failed to send RFQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/rfqs/[id]/send/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to set leave balance",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leave/balances/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to set the organisation currency",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/currencies/base/route.ts:84"
+  ]
+ },
+ {
+  "message": "Failed to set this activity's completion",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/[id]/completion/route.ts:56"
+  ]
+ },
+ {
+  "message": "Failed to set up tax accounts",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tax-templates/accounts/route.ts:60"
+  ]
+ },
+ {
+  "message": "Failed to solve target-seek",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/target-seek/route.ts:32"
+  ]
+ },
+ {
+  "message": "Failed to start draft",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/screen-drafts/route.ts:57"
+  ]
+ },
+ {
+  "message": "Failed to store the pasted proposals",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/paste-back/route.ts:103"
+  ]
+ },
+ {
+  "message": "Failed to submit BOQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/submit/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to submit credit note",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/credit-notes/[id]/submit/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to submit goods receipt",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/[id]/submit/route.ts:30"
+  ]
+ },
+ {
+  "message": "Failed to submit interview feedback",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/interviews/[id]/feedback/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to submit journal entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/journal-entries/[id]/submit/route.ts:32"
+  ]
+ },
+ {
+  "message": "Failed to submit KPI entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-entries/route.ts:40"
+  ]
+ },
+ {
+  "message": "Failed to submit project budget",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/[id]/submit/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to submit purchase order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/[id]/submit/route.ts:28"
+  ]
+ },
+ {
+  "message": "Failed to submit purchase requisition",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/requisitions/[id]/submit/route.ts:37"
+  ]
+ },
+ {
+  "message": "Failed to submit sales invoice",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-invoices/[id]/submit/route.ts:31"
+  ]
+ },
+ {
+  "message": "Failed to submit the day for review",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/submit-day/route.ts:71"
+  ]
+ },
+ {
+  "message": "Failed to submit time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/submit/route.ts:105"
+  ]
+ },
+ {
+  "message": "Failed to update audit finding",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/audit-findings/[id]/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to update BOQ",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/route.ts:147"
+  ]
+ },
+ {
+  "message": "Failed to update change order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/change-orders/[id]/route.ts:69"
+  ]
+ },
+ {
+  "message": "Failed to update cost visibility config",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/cost-visibility/route.ts:73"
+  ]
+ },
+ {
+  "message": "Failed to update customer",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/customers/[id]/route.ts:56"
+  ]
+ },
+ {
+  "message": "Failed to update document",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/documents/[id]/route.ts:128"
+  ]
+ },
+ {
+  "message": "Failed to update employee",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/employees/[id]/route.ts:50"
+  ]
+ },
+ {
+  "message": "Failed to update FF&E item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/ffe/[id]/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to update floor plan",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/route.ts:39"
+  ]
+ },
+ {
+  "message": "Failed to update fraud case status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/fraud-cases/[id]/route.ts:43"
+  ]
+ },
+ {
+  "message": "Failed to update issue status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/board/route.ts:61"
+  ]
+ },
+ {
+  "message": "Failed to update job opening status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/recruitment/job-openings/[id]/status/route.ts:27"
+  ]
+ },
+ {
+  "message": "Failed to update knowledge base page",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/[id]/route.ts:51"
+  ]
+ },
+ {
+  "message": "Failed to update lead",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/[id]/route.ts:59"
+  ]
+ },
+ {
+  "message": "Failed to update line item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/line-items/[id]/route.ts:72"
+  ]
+ },
+ {
+  "message": "Failed to update material",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/[id]/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to update meeting",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/meetings/[id]/route.ts:45",
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/route.ts:75"
+  ]
+ },
+ {
+  "message": "Failed to update milestone",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/milestones/[id]/route.ts:41"
+  ]
+ },
+ {
+  "message": "Failed to update mood board",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/[id]/route.ts:50"
+  ]
+ },
+ {
+  "message": "Failed to update opportunity",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/[id]/route.ts:57"
+  ]
+ },
+ {
+  "message": "Failed to update placement",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/placements/[placementId]/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to update policy",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/policies/[id]/route.ts:49"
+  ]
+ },
+ {
+  "message": "Failed to update progress entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/progress/[id]/route.ts:70"
+  ]
+ },
+ {
+  "message": "Failed to update project budget",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/[id]/route.ts:42"
+  ]
+ },
+ {
+  "message": "Failed to update project value",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/route.ts:25"
+  ]
+ },
+ {
+  "message": "Failed to update punch list item",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/punch-list/[id]/route.ts:51"
+  ]
+ },
+ {
+  "message": "Failed to update purchase order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/[id]/route.ts:54"
+  ]
+ },
+ {
+  "message": "Failed to update quotation",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/route.ts:117"
+  ]
+ },
+ {
+  "message": "Failed to update RFI",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/rfis/[id]/route.ts:53"
+  ]
+ },
+ {
+  "message": "Failed to update risk status",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/risks/[id]/route.ts:46"
+  ]
+ },
+ {
+  "message": "Failed to update room",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/floor-plans/[id]/rooms/[roomId]/route.ts:22"
+  ]
+ },
+ {
+  "message": "Failed to update roster entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/labour-roster/[id]/route.ts:38"
+  ]
+ },
+ {
+  "message": "Failed to update sales order",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/[id]/route.ts:80"
+  ]
+ },
+ {
+  "message": "Failed to update sprint",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/[id]/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to update submittal",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/submittals/[id]/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to update task",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/[id]/route.ts:65"
+  ]
+ },
+ {
+  "message": "Failed to update TDS",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/payroll/payslips/[id]/tds/route.ts:26"
+  ]
+ },
+ {
+  "message": "Failed to update the billing milestone",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/[id]/route.ts:81"
+  ]
+ },
+ {
+  "message": "Failed to update this drawing",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:175"
+  ]
+ },
+ {
+  "message": "Failed to update this permit",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/[id]/route.ts:113"
+  ]
+ },
+ {
+  "message": "Failed to update time entry",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/route.ts:60"
+  ]
+ },
+ {
+  "message": "Failed to update vendor",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/vendors/[id]/route.ts:64"
+  ]
+ },
+ {
+  "message": "Failed to update wiki page",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/wiki/[id]/route.ts:45"
+  ]
+ },
+ {
+  "message": "Failed to void material receipt",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/receipts/[id]/route.ts:48"
+  ]
+ },
+ {
+  "message": "file is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/work-progress/photos/route.ts:26"
+  ]
+ },
+ {
+  "message": "File storage is not configured on this server — uploads will fail",
+  "status": null,
+  "where": [
+   "projexa:src/lib/file-limits.ts:27"
+  ]
+ },
+ {
+  "message": "File too large. Maximum size is 10 MB. Your file: ${(file.size / 1024 / 1024).toFixed(1)} MB",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/labour-roster/import/route.ts:81",
+   "compliance-tracker:src/app/api/v1/projexa/schedule/import/route.ts:35",
+   "compliance-tracker:src/app/api/v1/projexa/scope/import/route.ts:224"
+  ]
+ },
+ {
+  "message": "Forbidden: your role does not permit this action",
+  "status": 403,
+  "where": [
+   "projexa:src/lib/supabase/auth-guard.ts:61"
+  ]
+ },
+ {
+  "message": "from and to (YYYY-MM-DD) query params are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/work-progress/report/pdf/route.ts:62",
+   "compliance-tracker:src/app/api/v1/projexa/work-progress/report/xlsx/route.ts:49",
+   "projexa:src/app/api/work-progress/report/pdf/route.ts:25"
+  ]
+ },
+ {
+  "message": "from must be a date in YYYY-MM-DD format",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:356"
+  ]
+ },
+ {
+  "message": "from must not be later than to",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:358"
+  ]
+ },
+ {
+  "message": "functionId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/screen-drafts/route.ts:21",
+   "compliance-tracker:src/app/api/v1/projexa/screen-drafts/route.ts:39",
+   "projexa:src/app/api/screen-drafts/route.ts:15"
+  ]
+ },
+ {
+  "message": "Give jobId, or the 64-character sha256 of the file",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:275"
+  ]
+ },
+ {
+  "message": "Give the sha256 of the file or the job id.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/projects/from-document/route.ts:51"
+  ]
+ },
+ {
+  "message": "Google Sheets is already connected for this organization. Disconnect first to recreate it.",
+  "status": 409,
+  "where": [
+   "projexa:src/app/api/integrations/google-sheets/setup/route.ts:29"
+  ]
+ },
+ {
+  "message": "hoursWorked must be a number",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:512"
+  ]
+ },
+ {
+  "message": "hoursWorked must be between 0 and 24",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:656"
+  ]
+ },
+ {
+  "message": "idempotency_key \"${key}\" was already used to create a different BOQ. Use a new key for a new BOQ.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:181"
+  ]
+ },
+ {
+  "message": "idempotency_key must be 1 to ${MAX_IDEMPOTENCY_KEY_LENGTH} characters of letters, digits and . _ : -",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:152"
+  ]
+ },
+ {
+  "message": "ids is required (comma-separated scenario ids)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/compare/route.ts:17"
+  ]
+ },
+ {
+  "message": "Interim bill not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:252"
+  ]
+ },
+ {
+  "message": "Internal server error",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/asset-to-gl-reconciliation/route.ts:47",
+   "compliance-tracker:src/app/api/v1/projexa/cost-center-hierarchy/route.ts:26",
+   "compliance-tracker:src/app/api/v1/projexa/cost-center-line-items/route.ts:36"
+  ]
+ },
+ {
+  "message": "Invalid payload",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/email/inbound/route.ts:70"
+  ]
+ },
+ {
+  "message": "Invalid request body",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/email-schedule/route.ts:52"
+  ]
+ },
+ {
+  "message": "Invalid token",
+  "status": 401,
+  "where": [
+   "projexa:src/app/api/integrations/google-sheets/webhook/route.ts:43"
+  ]
+ },
+ {
+  "message": "issueDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-site-instruction-service.ts:29"
+  ]
+ },
+ {
+  "message": "issuedDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:604"
+  ]
+ },
+ {
+  "message": "issueId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/board/route.ts:54",
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/[id]/issues/route.ts:37",
+   "projexa:src/app/api/schedule/sprints/[id]/issues/route.ts:28"
+  ]
+ },
+ {
+  "message": "issueId query param is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/sprints/[id]/issues/route.ts:55",
+   "projexa:src/app/api/schedule/sprints/[id]/issues/route.ts:42"
+  ]
+ },
+ {
+  "message": "issueId, hours, and spentOn are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/timesheets/route.ts:56"
+  ]
+ },
+ {
+  "message": "issuingAuthority is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:76"
+  ]
+ },
+ {
+  "message": "itemCode and itemName are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/items/route.ts:38"
+  ]
+ },
+ {
+  "message": "itemId, warehouseId, quantity, and postingDate are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/stock-entries/route.ts:47"
+  ]
+ },
+ {
+  "message": "KPI definition not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:50",
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:58",
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:69"
+  ]
+ },
+ {
+  "message": "KPI entry not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:85"
+  ]
+ },
+ {
+  "message": "kpiDefinitionId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:64"
+  ]
+ },
+ {
+  "message": "kpiDefinitionId query param is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/kpi-entries/route.ts:11",
+   "projexa:src/app/api/kpi-entries/route.ts:14"
+  ]
+ },
+ {
+  "message": "Lead not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/[id]/route.ts:26"
+  ]
+ },
+ {
+  "message": "leadIds (non-empty array) is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/leads/bulk-reassign/route.ts:21"
+  ]
+ },
+ {
+  "message": "limit must be a whole number from 1 to ${BOQ_LINE_PAGE_MAX_LIMIT}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1173"
+  ]
+ },
+ {
+  "message": "line ${i + 1} (${line.itemCode}): parentItemCode \"${line.parentItemCode}\" must be a line of the same batch",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:235"
+  ]
+ },
+ {
+  "message": "line ${i + 1}: itemCode is required in a batch (it is what makes a duplicate visible)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:227"
+  ]
+ },
+ {
+  "message": "Line item ${input.lineItemId} does not belong to this scenario's BOQ",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:471"
+  ]
+ },
+ {
+  "message": "Line item ${lineItemId} no longer exists -- the BOQ changed since this diff was computed. Re-run diff and try again. Nothing was applied.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:845",
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:892"
+  ]
+ },
+ {
+  "message": "Line item ${lineItemId}'s ${c.field} changed since this diff was computed (was ${c.before}, is now ${currentNormalized}). Re-run diff and try again -- nothing was applied.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:850"
+  ]
+ },
+ {
+  "message": "Line item ${lineItemId}'s ${c.field} changed since this diff was computed. Re-run diff and try again -- nothing was applied.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:904"
+  ]
+ },
+ {
+  "message": "Line item not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1575",
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1577",
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1670"
+  ]
+ },
+ {
+  "message": "lineItemId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:458",
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/[id]/adjustments/route.ts:59"
+  ]
+ },
+ {
+  "message": "lineItems array is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/project-budgets/[id]/route.ts:36"
+  ]
+ },
+ {
+  "message": "lines must be a list with at least one line",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:220"
+  ]
+ },
+ {
+  "message": "linkedEntityId or projectScopeId query param is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/documents/route.ts:27"
+  ]
+ },
+ {
+  "message": "localTime must be 24h \\",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/email-schedule/route.ts:70"
+  ]
+ },
+ {
+  "message": "lossReason is required when marking a tender lost",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:129"
+  ]
+ },
+ {
+  "message": "Malformed file -- nothing was applied.",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/excel/apply/route.ts:50"
+  ]
+ },
+ {
+  "message": "Malformed file -- nothing was read.",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/boq/[id]/excel/diff/route.ts:45"
+  ]
+ },
+ {
+  "message": "Material not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:144",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:183",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:523"
+  ]
+ },
+ {
+  "message": "Material receipt not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:230",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:267"
+  ]
+ },
+ {
+  "message": "materialId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:514",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:602",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:676"
+  ]
+ },
+ {
+  "message": "meetingDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:184"
+  ]
+ },
+ {
+  "message": "Member not found",
+  "status": 404,
+  "where": [
+   "projexa:src/app/api/org-members/[id]/route.ts:42",
+   "projexa:src/app/api/org-members/[id]/route.ts:71"
+  ]
+ },
+ {
+  "message": "message is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/discuss/route.ts:19",
+   "projexa:src/app/api/discuss/route.ts:17"
+  ]
+ },
+ {
+  "message": "metricName is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:31"
+  ]
+ },
+ {
+  "message": "milestoneDescription is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:56"
+  ]
+ },
+ {
+  "message": "Missing bearer token",
+  "status": 401,
+  "where": [
+   "projexa:src/app/api/integrations/google-sheets/webhook/route.ts:24"
+  ]
+ },
+ {
+  "message": "mode must be create or prepare",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:193"
+  ]
+ },
+ {
+  "message": "name cannot be empty",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:170",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:304",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:184"
+  ]
+ },
+ {
+  "message": "name is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:383",
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:128",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:252"
+  ]
+ },
+ {
+  "message": "name must be 200 characters or fewer",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:146"
+  ]
+ },
+ {
+  "message": "No AI model is configured for this organisation",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-ai-service.ts:128",
+   "compliance-tracker:src/lib/services/construction-ai-service.ts:330",
+   "compliance-tracker:src/lib/services/construction-ai-service.ts:410"
+  ]
+ },
+ {
+  "message": "No emailed proposal with that job id is waiting",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:126"
+  ]
+ },
+ {
+  "message": "No fields to update",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:770"
+  ]
+ },
+ {
+  "message": "No file provided",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/labour-roster/import/route.ts:79",
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:186",
+   "compliance-tracker:src/app/api/v1/projexa/schedule/import/route.ts:33"
+  ]
+ },
+ {
+  "message": "No issue types configured for this organisation -- ask an admin to set one up in VERIDIAN AI PMS",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/route.ts:87"
+  ]
+ },
+ {
+  "message": "No membership found",
+  "status": 404,
+  "where": [
+   "projexa:src/app/api/email/send-digest/route.ts:24"
+  ]
+ },
+ {
+  "message": "No new progress to bill -- every tracked line item is already billed up to its current percent complete",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:180"
+  ]
+ },
+ {
+  "message": "No organisation found",
+  "status": 500,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/hr/departments/route.ts:66",
+   "compliance-tracker:src/app/api/v1/projexa/reports/definitions/[id]/run/route.ts:31"
+  ]
+ },
+ {
+  "message": "No organisation on this account",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/access-review/certifications/[id]/route.ts:15",
+   "compliance-tracker:src/app/api/v1/projexa/access-review/route.ts:37",
+   "compliance-tracker:src/app/api/v1/projexa/ar-aging/route.ts:27"
+  ]
+ },
+ {
+  "message": "No organization",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/ai/apply/route.ts:50",
+   "projexa:src/app/api/email/send-digest/route.ts:16",
+   "projexa:src/lib/supabase/auth-guard.ts:186"
+  ]
+ },
+ {
+  "message": "No proposal prepared by a schedule with that id",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:45"
+  ]
+ },
+ {
+  "message": "No such extraction job",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:278"
+  ]
+ },
+ {
+  "message": "No usable line items found in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scope/import/route.ts:242"
+  ]
+ },
+ {
+  "message": "No usable rows in this spreadsheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/labour-roster/import/route.ts:98"
+  ]
+ },
+ {
+  "message": "No vision-capable model available for this organisation's configured provider",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-ai-service.ts:332"
+  ]
+ },
+ {
+  "message": "Not a cache entry this route clears",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/cache/revalidate/route.ts:41"
+  ]
+ },
+ {
+  "message": "Not a member of this company",
+  "status": 403,
+  "where": [
+   "projexa:src/lib/company-scope.ts:55"
+  ]
+ },
+ {
+  "message": "Nothing to change",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1722",
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:171",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:658"
+  ]
+ },
+ {
+  "message": "Nothing to update: send at least one of",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:169"
+  ]
+ },
+ {
+  "message": "Notification not found",
+  "status": 404,
+  "where": [
+   "projexa:src/app/api/notifications/[id]/read/route.ts:25"
+  ]
+ },
+ {
+  "message": "Only { action: \\",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/materials/receipts/[id]/route.ts:38"
+  ]
+ },
+ {
+  "message": "Only a 'client_approved' claim can be invoiced (this one is '${existing.status}')",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:141"
+  ]
+ },
+ {
+  "message": "Only a draft BOQ can be deleted -- submit/approve implies real scope that must be revised, not silently removed",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2320"
+  ]
+ },
+ {
+  "message": "Only a draft BOQ can be submitted",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2280"
+  ]
+ },
+ {
+  "message": "Only a draft change order can be edited (this one is ${existing.status})",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:176"
+  ]
+ },
+ {
+  "message": "Only a draft change order can be submitted for approval",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:83"
+  ]
+ },
+ {
+  "message": "Only a submitted BOQ can be approved",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2340"
+  ]
+ },
+ {
+  "message": "Only a submitted KPI entry can be approved",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:86"
+  ]
+ },
+ {
+  "message": "Only an approved change order can be linked to a BOQ revision -- this one is \"${sourceChangeOrder.status}\"",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1835"
+  ]
+ },
+ {
+  "message": "Only an organisation owner or admin can change the organisation's AI",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/route.ts:22"
+  ]
+ },
+ {
+  "message": "Only an organisation owner or admin can change this",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/internal-ai-allowance/route.ts:30"
+  ]
+ },
+ {
+  "message": "Only one \"${s.slot}\" slot is allowed",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/email-schedule/route.ts:74"
+  ]
+ },
+ {
+  "message": "Only the person whose schedule prepared this proposal can approve it: the file is read again with their own connection",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:47"
+  ]
+ },
+ {
+  "message": "Opportunity not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/[id]/route.ts:23"
+  ]
+ },
+ {
+  "message": "opportunityIds (non-empty array) is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/opportunities/bulk-reassign/route.ts:20"
+  ]
+ },
+ {
+  "message": "orderDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/route.ts:43",
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/convert/route.ts:32"
+  ]
+ },
+ {
+  "message": "Organization not found",
+  "status": 404,
+  "where": [
+   "projexa:src/app/api/integrations/google-sheets/setup/route.ts:33",
+   "projexa:src/app/api/organization/email-schedule/route.ts:32"
+  ]
+ },
+ {
+  "message": "organizationId and action ('refresh' | 'submit') are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/integrations/google-sheets/webhook/route.ts:34"
+  ]
+ },
+ {
+  "message": "orgId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/projexa-pill-usage-service.ts:286",
+   "compliance-tracker:src/lib/services/projexa-pill-usage-service.ts:403"
+  ]
+ },
+ {
+  "message": "orgName is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/provision/route.ts:30"
+  ]
+ },
+ {
+  "message": "params must be an object",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:158"
+  ]
+ },
+ {
+  "message": "params must be an object.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/projects/[id]/approvals/route.ts:50"
+  ]
+ },
+ {
+  "message": "Parent BOQ not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1823"
+  ]
+ },
+ {
+  "message": "Parent category not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:173"
+  ]
+ },
+ {
+  "message": "parentItemCode \"${current.parentItemCode}\" does not match any itemCode in this submission",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:147"
+  ]
+ },
+ {
+  "message": "path query param is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/chain-options/route.ts:49"
+  ]
+ },
+ {
+  "message": "period is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:65"
+  ]
+ },
+ {
+  "message": "Permit name is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/route.ts:150"
+  ]
+ },
+ {
+  "message": "Permit not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/permits/[id]/route.ts:64",
+   "compliance-tracker:src/app/api/v1/projexa/permits/[id]/route.ts:97",
+   "compliance-tracker:src/app/api/v1/projexa/permits/[id]/route.ts:131"
+  ]
+ },
+ {
+  "message": "Photo upload failed: ${uploadError.message}",
+  "status": 502,
+  "where": [
+   "projexa:src/app/api/work-progress/photos/route.ts:37"
+  ]
+ },
+ {
+  "message": "pillKey is invalid or missing",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/projexa-pill-usage-service.ts:412"
+  ]
+ },
+ {
+  "message": "pillKey must be a non-empty string of at most 120 characters",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/pill-usage/route.ts:123"
+  ]
+ },
+ {
+  "message": "plannedQuantity must be a number of at least 0",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:203"
+  ]
+ },
+ {
+  "message": "postingDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/route.ts:40",
+   "compliance-tracker:src/app/api/v1/projexa/procurement/quotations/route.ts:42",
+   "compliance-tracker:src/app/api/v1/projexa/procurement/requisitions/route.ts:40"
+  ]
+ },
+ {
+  "message": "Product not found for this organisation",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:132"
+  ]
+ },
+ {
+  "message": "productId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:127",
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:188",
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:53"
+  ]
+ },
+ {
+  "message": "Progress claim not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:74",
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:140",
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:217"
+  ]
+ },
+ {
+  "message": "Progress entry not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:98",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:450",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:491"
+  ]
+ },
+ {
+  "message": "Progress on ${line?.itemCode ?? \"this line\"} would reach ${fmt(totalPct)}%, more than 100%. Only ${fmt(Math.max(100 - (totalPct - Number(input.percentComplete)), 0))}% remains on this line.",
+  "status": 422,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:933"
+  ]
+ },
+ {
+  "message": "Progress on ${line.itemCode ?? \"this line\"} would reach ${fmt(newTotal)} of ${fmt(lineQty)} ${line.unit ?? \"\"} (${fmt(totalPct)}%), more than 100%. Only ${fmt(Math.max(lineQty - alreadyDone - (alreadyPct / 100) * lineQty, 0))} ${line.unit ?? \"\"} remains on this line.",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:924"
+  ]
+ },
+ {
+  "message": "progressEntryId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:89"
+  ]
+ },
+ {
+  "message": "Project not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-cost-actuals-service.ts:140",
+   "compliance-tracker:src/lib/services/construction-ai-service.ts:133",
+   "compliance-tracker:src/lib/services/construction-ai-service.ts:252"
+  ]
+ },
+ {
+  "message": "projectId and name are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/baselines/route.ts:35",
+   "projexa:src/app/api/schedule/baselines/route.ts:29",
+   "projexa:src/app/api/schedule/sprints/route.ts:27"
+  ]
+ },
+ {
+  "message": "projectId and slug query params are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/wiki/by-slug/route.ts:15"
+  ]
+ },
+ {
+  "message": "projectId and spentOn are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/timesheets/submit-day/route.ts:17"
+  ]
+ },
+ {
+  "message": "projectId and title are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/schedule/tasks/route.ts:38",
+   "projexa:src/app/api/wiki/route.ts:27"
+  ]
+ },
+ {
+  "message": "projectId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-cost-actuals-service.ts:204",
+   "compliance-tracker:src/lib/services/boq-cost-actuals-service.ts:240",
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:53"
+  ]
+ },
+ {
+  "message": "projectId must be a string or null",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/user-preference/last-project/route.ts:21"
+  ]
+ },
+ {
+  "message": "projectId or activityId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:406"
+  ]
+ },
+ {
+  "message": "projectId or categoryId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:106"
+  ]
+ },
+ {
+  "message": "projectId or issueId query param is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/route.ts:78",
+   "projexa:src/app/api/timesheets/route.ts:24"
+  ]
+ },
+ {
+  "message": "projectId or rosterId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:376"
+  ]
+ },
+ {
+  "message": "projectId or rosterId query param is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/attendance/route.ts:38"
+  ]
+ },
+ {
+  "message": "projectId query param is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/attendance/summary/pdf/route.ts:22",
+   "compliance-tracker:src/app/api/v1/projexa/attendance/summary/route.ts:21",
+   "compliance-tracker:src/app/api/v1/projexa/board/route.ts:21"
+  ]
+ },
+ {
+  "message": "projectId, from and to are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/attendance/summary/share/route.ts:20",
+   "projexa:src/app/api/reports/[reportName]/share/route.ts:44",
+   "projexa:src/app/api/work-progress/report/share/route.ts:20"
+  ]
+ },
+ {
+  "message": "projectId, userId, allocatedHoursPerDay, startDate, endDate are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/schedule/workload/route.ts:34",
+   "projexa:src/app/api/schedule/workload/route.ts:28"
+  ]
+ },
+ {
+  "message": "projectIds was empty",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dashboard/route.ts:79"
+  ]
+ },
+ {
+  "message": "projectValue must be a non-negative number or null",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:181"
+  ]
+ },
+ {
+  "message": "projectValue must be a number or null",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/route.ts:18"
+  ]
+ },
+ {
+  "message": "Provide { action: \\",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/mood-boards/[id]/route.ts:46"
+  ]
+ },
+ {
+  "message": "Provide { minutes }, { action: \\",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/veri-meetings/[id]/route.ts:71"
+  ]
+ },
+ {
+  "message": "Provide either functionId (the pill path) or rawInput (the typed path)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/route.ts:230"
+  ]
+ },
+ {
+  "message": "Punch list item not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:156",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:177",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:185"
+  ]
+ },
+ {
+  "message": "quantity is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:517",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:605"
+  ]
+ },
+ {
+  "message": "quantity must be greater than 0",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:607",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:680"
+  ]
+ },
+ {
+  "message": "question is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:23"
+  ]
+ },
+ {
+  "message": "Rate limit: slow down",
+  "status": 429,
+  "where": [
+   "projexa:src/app/api/client-logs/route.ts:33"
+  ]
+ },
+ {
+  "message": "rawInput is required and must be a non-empty string",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/classify/route.ts:45",
+   "compliance-tracker:src/app/api/v1/projexa/submissions/route.ts:49"
+  ]
+ },
+ {
+  "message": "reason is required for a contract value override",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-contract-value-service.ts:146"
+  ]
+ },
+ {
+  "message": "receivedDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:516"
+  ]
+ },
+ {
+  "message": "reports must be an array",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/local-first/client-error/route.ts:12"
+  ]
+ },
+ {
+  "message": "Request body must be valid JSON",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/cache/revalidate/route.ts:31",
+   "projexa:src/app/api/integrations/google-sheets/webhook/route.ts:30",
+   "projexa:src/app/api/reports/[reportName]/share/route.ts:40"
+  ]
+ },
+ {
+  "message": "retentionPercent must be between 0 and 100",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:59",
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:162"
+  ]
+ },
+ {
+  "message": "RFI not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:43",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:62",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:70"
+  ]
+ },
+ {
+  "message": "Role \"${role}\" is not a valid role. Choose one of: ${ALL_ORG_ROLES.join(\", \")}.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/invites/route.ts:58"
+  ]
+ },
+ {
+  "message": "role (string) and canSeeCost (boolean) are required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/cost-visibility/route.ts:58"
+  ]
+ },
+ {
+  "message": "role must be one of: ${ALL_ORG_ROLES.join(\", \")}",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org-members/[id]/route.ts:24"
+  ]
+ },
+ {
+  "message": "Roster entry not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:255",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:291",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:303"
+  ]
+ },
+ {
+  "message": "Roster entry not found on this project: ${missing.join(\", \")}",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:531"
+  ]
+ },
+ {
+  "message": "rosterId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:249",
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:425"
+  ]
+ },
+ {
+  "message": "Row 11: duplicate activity name \"Plastering\"",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/schedule-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 12: predecessor \"Brickwork\" is not an activity in this sheet",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/schedule-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 14: Finish before Start",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/schedule-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 2: same name and trade as row 1 -- imported as a separate worker, not merged",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-roster-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 3: Rate is blank",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 4: duplicate Item Code \"A-101\"",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts"
+  ]
+ },
+ {
+  "message": "Row 5: Qty is not a number",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 6: printed amount 1200 does not match quantity x rate (1000) -- the line was kept",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 7: Daily Rate cannot be negative",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-roster-import-service.ts"
+  ]
+ },
+ {
+  "message": "Row 8: no Line ID -- new lines cannot be added via Excel upload",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts"
+  ]
+ },
+ {
+  "message": "Row 9: no worker name",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-roster-import-service.ts"
+  ]
+ },
+ {
+  "message": "salesOrderIds (non-empty array) is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/bulk-status/route.ts:30"
+  ]
+ },
+ {
+  "message": "Scenario \"${scenario.name}\" has already been committed and can no longer be edited (10-11: a committed scenario IS the audit trail -- it is never silently changed after the fact).",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:430"
+  ]
+ },
+ {
+  "message": "Scenario not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:413",
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:465",
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:504"
+  ]
+ },
+ {
+  "message": "scheduledDate is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:57"
+  ]
+ },
+ {
+  "message": "scheduleImpactDays must be a whole number",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:162"
+  ]
+ },
+ {
+  "message": "Scope reduction blocked -- this revision would remove or reduce work already completed on site: R60SK-A: 12 m2 recorded on 28 Aug 2026. To go ahead anyway, choose \"Apply anyway - override\" (API callers: allowScopeReductionOverride: true).",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1913"
+  ]
+ },
+ {
+  "message": "Search failed",
+  "status": 500,
+  "where": [
+   "projexa:src/app/api/search/route.ts:29"
+  ]
+ },
+ {
+  "message": "Send the AI company and the key",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/own-ai/route.ts:45"
+  ]
+ },
+ {
+  "message": "Send the list of teammates to share with.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/org/own-ai/shares/route.ts:15"
+  ]
+ },
+ {
+  "message": "severity must be low, medium or high",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:178"
+  ]
+ },
+ {
+  "message": "Site diary entry not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-site-diary-service.ts:38"
+  ]
+ },
+ {
+  "message": "Site diary request did not respond in time",
+  "status": 504,
+  "where": [
+   "compliance-tracker:src/app/api/v1/construction/site-diary/route.ts:54",
+   "compliance-tracker:src/app/api/v1/construction/site-diary/[id]/route.ts:22"
+  ]
+ },
+ {
+  "message": "Site instruction not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-site-instruction-service.ts:61"
+  ]
+ },
+ {
+  "message": "slot must be one of: ${Array.from(ALLOWED_SLOTS).join(\", \")}",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/email-schedule/route.ts:67"
+  ]
+ },
+ {
+  "message": "slug query param is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/knowledge-base/by-slug/route.ts:13"
+  ]
+ },
+ {
+  "message": "stage, status and percent are required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/local-first/prepare-report/route.ts:36"
+  ]
+ },
+ {
+  "message": "startDate is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/schedule/tasks/route.ts:41"
+  ]
+ },
+ {
+  "message": "status is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/quotations/[id]/route.ts:102",
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/bulk-status/route.ts:31",
+   "compliance-tracker:src/app/api/v1/projexa/sales-orders/[id]/route.ts:74"
+  ]
+ },
+ {
+  "message": "status must be one of ${DRAWING_STATUSES.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/route.ts:163"
+  ]
+ },
+ {
+  "message": "status must be one of: ${MANUAL_STATUSES.join(\", \")} -- in_progress/waiting/blocked are set only by the execution pipeline itself, never by a manual write",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/[id]/route.ts:151"
+  ]
+ },
+ {
+  "message": "status must be one of: ${PROJECT_STATUSES.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:232"
+  ]
+ },
+ {
+  "message": "status must be one of: ${VALID.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:114"
+  ]
+ },
+ {
+  "message": "statusId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/board/route.ts:55"
+  ]
+ },
+ {
+  "message": "subject is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:22"
+  ]
+ },
+ {
+  "message": "submissionId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:155"
+  ]
+ },
+ {
+  "message": "submissionId is required.",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/projects/[id]/approvals/route.ts:48"
+  ]
+ },
+ {
+  "message": "Submittal not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:99",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:118",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:127"
+  ]
+ },
+ {
+  "message": "Submitting a journal entry requires a real user session, not just an API key",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/journal-entries/[id]/submit/route.ts:20"
+  ]
+ },
+ {
+  "message": "Submitting a purchase requisition requires a real user session, not an API key",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/requisitions/[id]/submit/route.ts:27"
+  ]
+ },
+ {
+  "message": "supplierId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/procurement/goods-receipts/route.ts:38",
+   "compliance-tracker:src/app/api/v1/projexa/procurement/purchase-orders/route.ts:41",
+   "compliance-tracker:src/app/api/v1/projexa/procurement/quotations/route.ts:40"
+  ]
+ },
+ {
+  "message": "tags and paths must be lists of at most 4 names, at least one in all",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/cache/revalidate/route.ts:36"
+  ]
+ },
+ {
+  "message": "targetContractValue is required for mode qty_for_contract_value",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/target-seek/route.ts:21"
+  ]
+ },
+ {
+  "message": "targetDate cannot be before startDate",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-dashboard-service.ts:215"
+  ]
+ },
+ {
+  "message": "targetProfitPercent is required for mode rate_for_profit",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/boq-scenarios/target-seek/route.ts:26"
+  ]
+ },
+ {
+  "message": "Task not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/[id]/route.ts:109",
+   "compliance-tracker:src/app/api/v1/projexa/tasks/[id]/route.ts:176"
+  ]
+ },
+ {
+  "message": "Tax template not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:167"
+  ]
+ },
+ {
+  "message": "taxTemplateId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-billing-workflow-service.ts:135",
+   "compliance-tracker:src/lib/services/construction-valuation-service.ts:163",
+   "compliance-tracker:src/app/api/v1/projexa/billing-claims/[id]/route.ts:69"
+  ]
+ },
+ {
+  "message": "Tender not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:59",
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:124",
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:150"
+  ]
+ },
+ {
+  "message": "tenderNumber is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-tender-service.ts:75"
+  ]
+ },
+ {
+  "message": "text is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/paste-back/route.ts:53",
+   "projexa:src/app/api/todos/route.ts:27"
+  ]
+ },
+ {
+  "message": "That invitation no longer exists, or has already been used or revoked.",
+  "status": 404,
+  "where": [
+   "projexa:src/app/api/org/invites/[id]/route.ts:32"
+  ]
+ },
+ {
+  "message": "That proposal has already been decided",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:91"
+  ]
+ },
+ {
+  "message": "That proposal is already being approved",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:94"
+  ]
+ },
+ {
+  "message": "That proposal is not on this project",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:89"
+  ]
+ },
+ {
+  "message": "That submission is not on this account",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/route.ts:203"
+  ]
+ },
+ {
+  "message": "The ${reportName} report is not a project report. Exportable reports: ${[...EXPORTABLE, \"every report in the project report list\"].join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/export/route.ts:82"
+  ]
+ },
+ {
+  "message": "The acting person is not an active user of this organisation",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-payload-service.ts:118",
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:55"
+  ]
+ },
+ {
+  "message": "The audit rows of that proposal are already being written",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/approvals/route.ts:121"
+  ]
+ },
+ {
+  "message": "The body must be a JSON object",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:92"
+  ]
+ },
+ {
+  "message": "The BOQ must be approved by the organisation before the customer's approval is recorded",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:225"
+  ]
+ },
+ {
+  "message": "The category tree is too deep",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:168"
+  ]
+ },
+ {
+  "message": "The connected source could not hand the file over now. Nothing was made; try again",
+  "status": 502,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:57"
+  ]
+ },
+ {
+  "message": "The contract side is locked -- this BOQ was confirmed (baseline v${latest.version}, ${latest.confirmedAt.toISOString()}). A post-confirmation contract change needs a cited evidence artefact and creates the next baseline version -- it cannot be edited directly here.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1679"
+  ]
+ },
+ {
+  "message": "The file in the source is no longer the file that was proposed. Nothing was made; the next scan proposes the new file",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:59"
+  ]
+ },
+ {
+  "message": "The file is larger than 5 MB",
+  "status": 413,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:190"
+  ]
+ },
+ {
+  "message": "The lines do not add up to the totals the file prints",
+  "status": null,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scope/import/route.ts:191"
+  ]
+ },
+ {
+  "message": "The pasted text is too large",
+  "status": 413,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/paste-back/route.ts:43",
+   "compliance-tracker:src/app/api/v1/projexa/projects/[id]/paste-back/route.ts:54"
+  ]
+ },
+ {
+  "message": "The request body is not multipart form data",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:137"
+  ]
+ },
+ {
+  "message": "The request is larger than 5 MB",
+  "status": 413,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/projects/from-document/route.ts:133"
+  ]
+ },
+ {
+  "message": "The submitter cannot approve their own KPI entry",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-kpi-service.ts:87"
+  ]
+ },
+ {
+  "message": "The Work Progress Report was still running after ${REPORT_DEADLINE_MS / 1000} s and was cancelled. Narrow the date range and run it again.",
+  "status": 504,
+  "where": [
+   "projexa:src/app/api/work-progress/report/route.ts:235"
+  ]
+ },
+ {
+  "message": "There is already a pending invitation for ${email}. Revoke it first to issue a new link.",
+  "status": 409,
+  "where": [
+   "projexa:src/app/api/org/invites/route.ts:96"
+  ]
+ },
+ {
+  "message": "This action requires a real user session, not an API key",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/employees/route.ts:48",
+   "compliance-tracker:src/app/api/v1/projexa/employees/[id]/route.ts:36",
+   "compliance-tracker:src/app/api/v1/projexa/hr/departments/route.ts:48"
+  ]
+ },
+ {
+  "message": "This BOQ already has a customer approval on record",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:226"
+  ]
+ },
+ {
+  "message": "This BOQ has already been revised (revision ${existingChild.version}, id ${existingChild.id}) -- create a new revision from that one instead.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1860"
+  ]
+ },
+ {
+  "message": "This BOQ has already been revised (revision ${successor.version}, id ${successor.id}) -- edit that revision instead",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1508"
+  ]
+ },
+ {
+  "message": "This BOQ has no previous revision to compare against",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2248"
+  ]
+ },
+ {
+  "message": "This BOQ was confirmed -- its lines cannot be edited in place; make a revision instead",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1731"
+  ]
+ },
+ {
+  "message": "This capability is not part of the Module your organization purchased. Please contact your organization's administrator. This capability is already in the Construction module.",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-enablement-service.ts:39",
+   "compliance-tracker:src/lib/services/construction-enablement-service.ts:61"
+  ]
+ },
+ {
+  "message": "This diff no longer matches the current BOQ state -- it may have changed since you last previewed it, or confirmedDiffToken does not match this exact file/evidence combination. Re-run the diff preview and confirm again before applying. Nothing was applied.",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-excel-roundtrip-service.ts:949"
+  ]
+ },
+ {
+  "message": "This drawing is on legal hold and cannot be removed",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:195"
+  ]
+ },
+ {
+  "message": "This drawing is past its first 24 hours; it is kept under the retention policy and can only be disposed",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/route.ts:198"
+  ]
+ },
+ {
+  "message": "This drawing's file could not be opened right now. Please retry.",
+  "status": 502,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/drawings/[id]/document-url/route.ts:49"
+  ]
+ },
+ {
+  "message": "This file is 31 MB; the limit is 25 MB",
+  "status": null,
+  "where": [
+   "projexa:src/lib/file-limits.ts:46"
+  ]
+ },
+ {
+  "message": "This invitation link is not valid.",
+  "status": 404,
+  "where": [
+   "projexa:src/app/api/org/invites/preview/route.ts:18"
+  ]
+ },
+ {
+  "message": "This link has expired - ask the sender for a new one",
+  "status": null,
+  "where": [
+   "projexa:src/app/api/shared/mom/[token]/pdf/route.ts:22"
+  ]
+ },
+ {
+  "message": "This proposal is being approved by another request",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:51"
+  ]
+ },
+ {
+  "message": "This proposal was already decided",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/scheduler-proposals/[id]/approve/route.ts:49"
+  ]
+ },
+ {
+  "message": "This receipt is already voided",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:268"
+  ]
+ },
+ {
+  "message": "This report requires manager role or higher",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/portfolio/budget-vs-actual/route.ts:28",
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/route.ts:27"
+  ]
+ },
+ {
+  "message": "This roster entry is already linked to another employee",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:256"
+  ]
+ },
+ {
+  "message": "Timed out waiting for the request body",
+  "status": 408,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/route.ts:57",
+   "compliance-tracker:src/app/api/v1/projexa/timesheets/[id]/submit/route.ts:58"
+  ]
+ },
+ {
+  "message": "timezone must be a valid IANA timezone, e.g. Asia/Kolkata",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/organization/email-schedule/route.ts:55"
+  ]
+ },
+ {
+  "message": "title cannot be empty",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:160"
+  ]
+ },
+ {
+  "message": "title is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1751",
+   "compliance-tracker:src/lib/services/construction-change-order-service.ts:25",
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:80"
+  ]
+ },
+ {
+  "message": "title must be a non-empty string",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1497"
+  ]
+ },
+ {
+  "message": "to (YYYY-MM-DD) query param is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/work-progress/report/route.ts:111"
+  ]
+ },
+ {
+  "message": "to must be a date in YYYY-MM-DD format",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:357"
+  ]
+ },
+ {
+  "message": "toContractor is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-site-instruction-service.ts:30"
+  ]
+ },
+ {
+  "message": "Too large",
+  "status": 413,
+  "where": [
+   "projexa:src/app/api/client-logs/route.ts:18",
+   "projexa:src/app/api/local-first/client-error/route.ts:9",
+   "projexa:src/app/api/local-first/prepare-report/route.ts:24"
+  ]
+ },
+ {
+  "message": "Too large: 31 MB, limit 25 MB",
+  "status": null,
+  "where": [
+   "projexa:src/lib/attachments.ts:89"
+  ]
+ },
+ {
+  "message": "Too many files: 5 attached, limit 4",
+  "status": null,
+  "where": [
+   "projexa:src/lib/attachments.ts:79"
+  ]
+ },
+ {
+  "message": "Too many projects in one request: ${ids.length}. The maximum is ${MAX_BATCH_PROJECTS}.",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/dashboard/route.ts:81"
+  ]
+ },
+ {
+  "message": "type must be 'receipt' or 'issue'",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/stock-entries/route.ts:44"
+  ]
+ },
+ {
+  "message": "Type what you need first",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/classify/route.ts:42"
+  ]
+ },
+ {
+  "message": "Unauthorized",
+  "status": 401,
+  "where": [
+   "projexa:src/app/api/email/inbound/route.ts:67",
+   "projexa:src/app/api/local-first/prepare-report/route.ts:21",
+   "projexa:src/app/api/notifications/[id]/read/route.ts:11"
+  ]
+ },
+ {
+  "message": "unit cannot be empty",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1718",
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:185"
+  ]
+ },
+ {
+  "message": "unit is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:118"
+  ]
+ },
+ {
+  "message": "unit must be 40 characters or fewer",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:1719",
+   "compliance-tracker:src/lib/services/construction-progress-service.ts:209"
+  ]
+ },
+ {
+  "message": "Unknown attendance status \"${String(patch.status)}\"",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:654"
+  ]
+ },
+ {
+  "message": "Unknown attendance status \"${String(row.status)}\"",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:510"
+  ]
+ },
+ {
+  "message": "Unknown format. Valid formats: ${[...FORMATS].join(\", \")}",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/construction-materials/cost-report/export/route.ts:34",
+   "projexa:src/app/api/reports/budget-variance/export/route.ts:35",
+   "projexa:src/app/api/reports/[reportName]/export/route.ts:38"
+  ]
+ },
+ {
+  "message": "Unknown format. Valid formats: ${FORMATS.join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/export/route.ts:91",
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/export/route.ts:252",
+   "compliance-tracker:src/app/api/v1/construction/materials/cost-report/export/route.ts:40"
+  ]
+ },
+ {
+  "message": "Unknown organization",
+  "status": 401,
+  "where": [
+   "projexa:src/app/api/integrations/google-sheets/webhook/route.ts:38"
+  ]
+ },
+ {
+  "message": "Unknown report. Valid reports: ${VALID_REPORT_NAMES}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/reports/[reportName]/route.ts:16"
+  ]
+ },
+ {
+  "message": "Unknown status filter: ${filter.unknown.join(\", \")}. Valid values: ${validFilterKeys().join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/tasks/route.ts:332"
+  ]
+ },
+ {
+  "message": "Unresolvable parentItemCode reference(s) among: ${notReady.map((i) => i.itemCode || i.description).join(\", \")}",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:420"
+  ]
+ },
+ {
+  "message": "Used by 3 BOQ lines",
+  "status": 409,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-category-service.ts:189"
+  ]
+ },
+ {
+  "message": "userId is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/projexa-pill-usage-service.ts:287",
+   "compliance-tracker:src/lib/services/projexa-pill-usage-service.ts:404"
+  ]
+ },
+ {
+  "message": "userId is required (the employee's existing user account)",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/employees/route.ts:52"
+  ]
+ },
+ {
+  "message": "value must be a finite number",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/boq-contract-value-service.ts:143",
+   "compliance-tracker:src/lib/services/boq-scenario-service.ts:438"
+  ]
+ },
+ {
+  "message": "Vendor not found",
+  "status": 404,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-exception-capture-service.ts:145"
+  ]
+ },
+ {
+  "message": "veridianEntryId is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/work-progress/photos/route.ts:23"
+  ]
+ },
+ {
+  "message": "veridianEntryId query param is required",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/work-progress/photos/route.ts:64"
+  ]
+ },
+ {
+  "message": "voidedBy is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-materials-service.ts:261"
+  ]
+ },
+ {
+  "message": "warehouseName is required",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/app/api/v1/projexa/inventory/warehouses/route.ts:38"
+  ]
+ },
+ {
+  "message": "We connected your workspace but couldn't confirm it. Please contact support.",
+  "status": 500,
+  "where": [
+   "projexa:src/app/api/org/repair/route.ts:174"
+  ]
+ },
+ {
+  "message": "We connected your workspace but couldn't save the connection. Please contact support.",
+  "status": 500,
+  "where": [
+   "projexa:src/app/api/org/repair/route.ts:162"
+  ]
+ },
+ {
+  "message": "Worker ${row.rosterId} appears twice in the same sheet",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-labour-service.ts:508"
+  ]
+ },
+ {
+  "message": "Wrong type: .zip — attach a PDF",
+  "status": null,
+  "where": [
+   "projexa:src/lib/attachments.ts:84"
+  ]
+ },
+ {
+  "message": "You cannot approve a BOQ you created yourself -- an independent approver is required",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-boq-service.ts:2342"
+  ]
+ },
+ {
+  "message": "You cannot review a submittal you submitted yourself -- an independent reviewer is required",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:120"
+  ]
+ },
+ {
+  "message": "You cannot verify your own punch list item as closed -- an independent verifier is required",
+  "status": 403,
+  "where": [
+   "compliance-tracker:src/lib/services/construction-field-workflow-service.ts:190"
+  ]
+ },
+ {
+  "message": "You must be signed in to accept an invitation.",
+  "status": 401,
+  "where": [
+   "projexa:src/app/api/org/invites/accept/route.ts:47"
+  ]
+ },
+ {
+  "message": "Your membership points at an organisation that no longer exists. This needs support, not a repair.",
+  "status": 409,
+  "where": [
+   "projexa:src/app/api/org/repair/route.ts:116"
+  ]
+ },
+ {
+  "message": "Your PROJEXA account is not linked to a PROJEXA user - ask your admin",
+  "status": 400,
+  "where": [
+   "compliance-tracker:src/lib/supabase/auth-guard.ts:562"
+  ]
+ },
+ {
+  "message": "Your session has ended. Please sign in again.",
+  "status": 401,
+  "where": [
+   "projexa:src/lib/supabase/auth-guard.ts"
+  ]
+ }
+]

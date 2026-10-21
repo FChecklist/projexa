@@ -184,14 +184,6 @@ export const g4Guides: Guide[] = [
     severity: "block",
   },
   {
-    id: "g4-invite-wrong-email", source: "permission", match: { code: "INVITE_WRONG_EMAIL" },
-    title: "Signed in with a different e-mail",
-    what: "This invitation was sent to another e-mail address than the one you are signed in with. {serverMessage}",
-    why: "An invitation can only be accepted by the e-mail it was sent to.",
-    steps: ["Sign out, then sign in with the e-mail the invitation was sent to.", "You come straight back to this invitation.", "Or ask the Owner to invite the e-mail you are using now."],
-    severity: "block",
-  },
-  {
     id: "g4-invite-signed-out", source: "auth", match: { code: "INVITE_SIGNED_OUT" },
     title: "Sign in to accept this invitation",
     what: "You are not signed in, so the invitation cannot be accepted yet.",

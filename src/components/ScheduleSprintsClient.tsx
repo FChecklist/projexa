@@ -19,6 +19,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { httpError, useProblem } from "@/lib/guided-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,8 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
   const [error, setError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // G3 guided errors: a failed close / issue read is the full guide, never a fading toast.
+  const { problem, show, clear } = useProblem({ projectId });
   const [sprintIssues, setSprintIssues] = useState<Record<string, SprintIssue[]>>({});
 
   const load = useCallback(async () => {
@@ -77,7 +81,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
         const data = await fetchJson(`/api/schedule/sprints/${encodeURIComponent(sprintId)}/issues`);
         setSprintIssues((prev) => ({ ...prev, [sprintId]: data.issues ?? [] }));
       } catch (err) {
-        toast.error(errorMessage(err, "Couldn't load sprint issues"));
+        show(err, undefined, () => void toggleExpand(sprintId), { entityId: sprintId, entityType: "sprint" });
       }
     }
   }
@@ -89,11 +93,12 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
         body: JSON.stringify({ action: "close" }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to close sprint");
+      if (!res.ok) throw httpError(res, data, "Failed to close sprint", "PATCH", `/api/schedule/sprints/${sprintId}`);
+      clear();
       toast.success("Sprint closed");
       load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't close sprint");
+      show(err, undefined, () => void closeSprint(sprintId), { entityId: sprintId, entityType: "sprint" });
     }
   }
 
@@ -129,6 +134,7 @@ export default function ScheduleSprintsClient({ projectId }: { projectId: string
 
   return (
     <ListStateRegion state={sprints.length > 0 ? "ready" : "empty"} className="space-y-4">
+      <ProblemPanel problem={problem} className="" />
       {sprints.length === 0 ? (
         // R67 D-79: the module header carries "+ New" on every tab now, so
         // this button is no longer duplicated in a header row -- it stays

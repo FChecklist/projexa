@@ -1,4 +1,5 @@
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
+import { ExpiredShareNotice } from "@/components/ExpiredShareNotice";
 
 // R67 D-21. The PUBLIC, read-only page a MoM share token resolves to.
 //
@@ -61,7 +62,7 @@ export default async function SharedMoMPage({ params }: { params: Promise<{ toke
     return (
       <main style={PAGE}>
         <h1 style={{ fontSize: "1.25rem", marginBottom: "0.5rem" }}>Minutes of Meeting</h1>
-        <p style={{ fontSize: "0.95rem" }}>This link has expired - ask the sender for a new one</p>
+        <ExpiredShareNotice kind="mom" token={token} />
       </main>
     );
   }

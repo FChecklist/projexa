@@ -12,7 +12,10 @@
 // not fit the generic JSON screen_drafts payload; see permits/new/page.tsx.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { GuidedSubmitFailure } from "@/components/GuidedError";
+import { GuidedError, GuidedSubmitFailure } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, useFormDraft } from "@/lib/guided-form";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,11 +113,16 @@ export default function PermitCreateClient({
   const router = useRouter();
   const [messages, setMessages] = useState<FieldMessage[]>([]);
 
-  const [name, setName] = useState("");
-  const [permitNumber, setPermitNumber] = useState("");
-  const [permitAuthority, setPermitAuthority] = useState("");
-  const [issueDate, setIssueDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // G3 guided errors: every typed value (except the chosen PDF, which a browser never lets a page restore) survives a "Fix it now" detour, a
+  // reload and a sign-in that ran out; thrown away after a successful save.
+  const draftKey = `permit-new:${projectId}`;
+  const draft = useFormDraft(draftKey, { name: "", permitNumber: "", permitAuthority: "", issueDate: "", endDate: "" });
+  const { name, permitNumber, permitAuthority, issueDate, endDate } = draft.values;
+  const setName = (v: string) => draft.onChange("name", v);
+  const setPermitNumber = (v: string) => draft.onChange("permitNumber", v);
+  const setPermitAuthority = (v: string) => draft.onChange("permitAuthority", v);
+  const setIssueDate = (v: string) => draft.onChange("issueDate", v);
+  const setEndDate = (v: string) => draft.onChange("endDate", v);
   const [file, setFile] = useState<File | null>(null);
   // Validation is shown on blur (and on choose, for the file) rather than on
   // every keystroke -- a message that appears while a user is still typing the
@@ -149,6 +157,7 @@ export default function PermitCreateClient({
         level: "success",
         text: `Permit ${permitNumber.trim() || name.trim()} created`,
       });
+      draft.clear();
       router.push(`/permits/${id}`);
     },
   });
@@ -156,7 +165,8 @@ export default function PermitCreateClient({
 
   const missing = missingPermitFields({ name, issueDate, endDate, hasFile: file !== null });
   const dateError = touchedDates ? endDateError(issueDate, endDate) : undefined;
-  const sizeError = fileSizeError(file ? file.size : null);
+  const emptyFileError = file && file.size === 0 ? `The file ${file.name} is empty (0 bytes), so there is nothing to upload` : undefined;
+  const sizeError = emptyFileError ?? fileSizeError(file ? file.size : null);
   // R67 D-78: checked the moment a file is chosen -- choosing IS the
   // interaction, so waiting for a blur that may never come would hide the
   // problem until Save. Type before size: a .docx is not "too big", it is the
@@ -214,7 +224,17 @@ export default function PermitCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
-        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
+        <DraftRestoredNote draft={draft} />
+        {draft.restored && !file && (
+          <p role="status" data-testid="permit-rechoose" className="text-[13px] text-ct-muted">
+            Your entries are back. A browser cannot keep a chosen file, so choose the PDF again.
+          </p>
+        )}
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} draftKey={draftKey} />
+        {dateError && <GuidedError ctx={contextFromFailure(fault("EXPIRY_BEFORE_ISSUE", "endDate", `${dateError}: the end date ${endDate} is before the issue date ${issueDate}.`), { projectId })} draftKey={draftKey} />}
+        {file && fileError && (
+          <GuidedError ctx={contextFromFailure(fault(file.size === 0 ? "EMPTY_FILE" : "FILE_REJECTED", "file", fileError), { projectId })} draftKey={draftKey} />
+        )}
         {!storageConfigured && (
           <p
             role="alert"

@@ -138,7 +138,7 @@ test.describe("G4 invitations", () => {
     await page.goto("/invite/g4-wrong-email");
     await page.getByRole("button", { name: /^Join / }).click();
     const panel = page.getByTestId("invite-guided-error");
-    await expect(panel.getByTestId("guided-error-title")).toContainText("Signed in with a different e-mail");
+    await expect(panel.getByTestId("guided-error-title")).toContainText("Sign in with the invited e-mail");
     await expect(panel.getByTestId("guided-error-steps")).toContainText("Sign out");
     await context.close();
   });

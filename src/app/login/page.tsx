@@ -257,7 +257,7 @@ export default function LoginPage() {
                 <GuidedPanel ctx={{ route: "/login", search: "", code: "SESSION_ENDED_LOGIN", serverMessage: continueTo }} noCopy testId="login-continue" />
               )}
               <p className="text-sm text-px-muted">{t("intro")}</p>
-              {error && <LoginFailure f={error} resendIn={resendIn} loading={loading} onResend={() => void sendCode(undefined, true)} onTry={() => void sendCode(undefined, stage === "code")} onRetrySetup={() => void retrySetup()} onRetryGoogle={() => void continueWithGoogle()} />}
+              {error && <LoginFailure f={error} resendIn={resendIn} loading={loading} onResend={() => void sendCode(undefined, true)} onTry={() => void sendCode(undefined, false)} onRetrySetup={() => void retrySetup()} onRetryGoogle={() => void continueWithGoogle()} />}
               <Button type="submit" className="w-full" disabled={loading || stage === "checking"}>{loading ? t("submitting") : t("submit")}</Button>
             </form>
           )}

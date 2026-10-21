@@ -28,6 +28,10 @@ import { fetchJson, ApiError } from "@/lib/fetch-json";
 import { useSubmit } from "@/lib/use-submit";
 import type { CreateField } from "@/lib/create-screen";
 import { getLastChoice, setLastChoice } from "@/lib/last-choice";
+import { GuidedError } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, notANumber, todayLocalIso, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
 // R80 GAP-8: WHO is looking at this form. Passive -- it reads the shell
 // bootstrap M24Shell has already fetched for this route and never asks for it
 // itself, so identity costs this create screen no round trip (F-19's rule).
@@ -54,10 +58,9 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
   const [rosterError, setRosterError] = useState<{ status: number | null; message: string | null } | null>(null);
   const [rosterLoading, setRosterLoading] = useState(true);
   const [rememberedWorker, setRememberedWorker] = useState<string | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({
-    attendanceDate: initialDate ?? todayIso(),
-    status: "present",
-  });
+  // G3 guided errors: every typed value survives a "Fix it now" detour and comes back with the person; cleared after a successful save.
+  const draft = useFormDraft(`attendance-new:${projectId}`, { attendanceDate: initialDate ?? todayIso(), status: "present" });
+  const values = draft.values;
 
   // Read after mount: localStorage is a browser fact, and reading it during
   // render would differ between the server pass and the client's.
@@ -165,9 +168,24 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
         text: `Marked ${worker?.name ?? "this worker"} ${values.status.replace("_", " ")} on ${values.attendanceDate}`,
         href: moduleHref,
       });
+      draft.clear();
       router.replace(moduleHref);
     },
   });
+
+  const checked = useCheckedSubmit(submit, () => {
+    const date = values.attendanceDate ?? "";
+    if (date > todayLocalIso()) {
+      return fault("DATE_FUTURE", "attendanceDate", `The date ${date} is in the future. Attendance can only be marked for today or an earlier day.`);
+    }
+    const hours = (values.hoursWorked ?? "").trim();
+    if (hours !== "" && (notANumber(hours) || Number(hours) < 0 || Number(hours) > 24)) {
+      return fault("HOURS_RANGE", "hoursWorked", `The hours "${hours}" are not possible. Hours worked must be a number from 0 to 24, for example 8.`);
+    }
+    return null;
+  });
+  // The roster has nobody on it yet: attendance is marked for workers on the roster, so say so and take the person to add or import them.
+  const noWorkers = !rosterLoading && !rosterError && roster.length === 0;
 
   return (
     <CreateScreen
@@ -177,18 +195,23 @@ export default function AttendanceCreateClient({ projectId, initialDate }: { pro
       title="Mark Attendance"
       fields={fields}
       values={values}
-      onChange={(name, value) => setValues((v) => ({ ...v, [name]: value }))}
+      onChange={(name, value) => {
+        checked.clearFault();
+        draft.onChange(name, value);
+      }}
       extraMissing={rosterError ? ["the roster could not be loaded"] : []}
       banner={
-        rosterError ? (
-          <PaneErrorCard entity="this project's roster" error={rosterError} onRetry={() => void loadRoster()} />
-        ) : undefined
+        <>
+          <DraftRestoredNote draft={draft} />
+          {rosterError ? <PaneErrorCard entity="this project's roster" error={rosterError} onRetry={() => void loadRoster()} /> : null}
+          {noWorkers ? <GuidedError ctx={contextFromFailure(fault("NO_WORKERS", "rosterId", "There is nobody on this project's roster yet."), { projectId })} draftKey={`attendance-new:${projectId}`} /> : null}
+        </>
       }
-      failure={submit.failure}
-      onRetry={submit.submit}
+      failure={checked.failure}
+      onRetry={checked.onRetry}
       saving={submit.saving}
       saved={submit.saved}
-      onSubmit={submit.submit}
+      onSubmit={checked.onSubmit}
     />
   );
 }
