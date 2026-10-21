@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { GuidedError } from "@/components/GuidedError";
 import FaultPanel from "@/components/FaultPanel";
 import { useDraft } from "@/lib/error-guide/use-draft";
-import { contextFromError } from "@/lib/error-guide/context";
+import { contextFromError, currentScreen } from "@/lib/error-guide/context";
 import { claimFaults, invoiceInputFaults, messageFor, type Fault } from "@/lib/error-guide/g2-faults";
 import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
 import type { GuideContext } from "@/lib/error-guide/types";
@@ -136,9 +136,12 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
 
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
-  const [invoicingId, setInvoicingId] = useState<string | null>(null);
-  const [billDate, setBillDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [taxTemplateId, setTaxTemplateId] = useState("");
+  // The invoice form (which claim, which bill date, which tax template) is kept too, so coming back from "log the progress first" finds it as it was.
+  const invoiceDraft = useDraft(`billing-invoice:${projectId}`, { invoicingId: null as string | null, billDate: new Date().toISOString().slice(0, 10), taxTemplateId: "" });
+  const { invoicingId, billDate, taxTemplateId } = invoiceDraft.value;
+  const setInvoicingId = (v: string | null) => invoiceDraft.set({ invoicingId: v });
+  const setBillDate = (v: string) => invoiceDraft.set({ billDate: v });
+  const setTaxTemplateId = (v: string) => invoiceDraft.set({ taxTemplateId: v });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -234,7 +237,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
         toast.success(`${invoiceLabel(r.invoiceNumber)} raised`, { action: { label: "Open invoice", onClick: () => router.push(invoicePath(r.invoiceId)) } });
       } else toast.success(`Billing milestone ${action === "draft" ? "drafted" : action === "submit" ? "submitted" : action === "approve" ? "approved" : action === "reject" ? "rejected" : "invoiced"}`);
       setRejectingId(null); setRejectionReason("");
-      setInvoicingId(null);
+      invoiceDraft.startFresh();
       await load();
     } catch (err) {
       setFailure(contextFromError(err, { projectId, entityId: claimId, entityType: "progress_claim" }));
@@ -275,9 +278,12 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
           </p>
         ) : null}
         {!formOpen && boqChecked && !boqId && !loadError ? (
-          <p className="max-w-md text-right text-sm text-px-muted" data-testid="billing-no-approved-boq">
-            {NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.
-          </p>
+          <div className="w-full max-w-xl text-left" data-testid="billing-no-approved-boq">
+            <GuidedError
+              ctx={{ ...currentScreen(), projectId, status: 0, code: "BILL_NO_APPROVED_BOQ", entityType: "boq", serverMessage: NO_APPROVED_BOQ_REASON }}
+              message={`${NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.`}
+            />
+          </div>
         ) : null}
       </div>
 
@@ -331,7 +337,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
         </Card>
       )}
 
-      <Card className="shadow-card">
+      <Card className="shadow-card" data-testid="billing-claims-list" tabIndex={-1}>
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
