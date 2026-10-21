@@ -1,7 +1,7 @@
 // Labour: roster (workers), attendance sheet, attendance summary, roster import from Excel.
 // Server messages: compliance-tracker construction-labour-service.ts, construction-roster-import-service.ts,
 // PROJEXA api/attendance.
-import { guides, here, proj, rx } from "./_helpers";
+import { guides, proj, rx } from "./_helpers";
 
 const BACK = "Back to Labour";
 const lab = proj("/labour");
@@ -141,14 +141,5 @@ export const labourGuides = guides([
     steps: ["Open that day's attendance.", "If your marks are there, you are done.", "If not, mark and save again."],
     fix: { label: "Check attendance", to: lab, where: "Labour > Attendance" },
     severity: "warn", returnLabel: BACK,
-  },
-  {
-    id: "labour-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/attendance" },
-    title: "Attendance did not load",
-    what: "The attendance sheet could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it fails again, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
   },
 ]);

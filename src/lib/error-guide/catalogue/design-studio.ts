@@ -1,6 +1,6 @@
 // Design Studio: designer timesheets, day review/submit, cost analysis, mood boards, floor plans, FF&E.
 // Server messages: PROJEXA api/review-day, api/submit-day, api/timesheets, api/floor-plans, api/ffe.
-import { ent, guides, here, proj, rx } from "./_helpers";
+import { ent, guides, proj, rx } from "./_helpers";
 
 const BACK = "Back to Design Studio";
 const ds = proj("/design-studio");
@@ -77,15 +77,6 @@ export const designStudioGuides = guides([
     steps: ["Export the plan as PDF or image.", "Upload it again."],
     fix: { label: "Open Floor Plans", to: proj("/floor-plans"), where: "Floor Plans" },
     severity: "warn", returnLabel: BACK,
-  },
-  {
-    id: "design-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/design" },
-    title: "Design Studio did not load",
-    what: "The Design Studio data could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it fails again, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
   },
   {
     id: "design-item-open", source: "validation", match: { code: "DS_ITEM_REQUIRED", apiPath: "/mood-boards" },

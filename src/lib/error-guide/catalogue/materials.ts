@@ -1,6 +1,6 @@
 // Materials: material master, receipts (GRN), issues, expected deliveries, voiding a receipt.
 // Server messages: compliance-tracker construction-materials-service.ts, api/v1/projexa goods-receipts/items.
-import { entOr, guides, here, proj, rx } from "./_helpers";
+import { entOr, guides, proj, rx } from "./_helpers";
 
 const BACK = "Back to Materials";
 const mat = proj("/materials");
@@ -131,14 +131,5 @@ export const materialsGuides = guides([
     steps: ["Fill every box that is marked.", "Save again."],
     fix: { label: "Back to the form", to: "/inventory/stock-entries/new", where: "Inventory > Stock entries > New" },
     severity: "warn", returnLabel: "Back to the form",
-  },
-  {
-    id: "materials-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/materials" },
-    title: "Materials did not load",
-    what: "The materials list could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it fails again, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
   },
 ]);

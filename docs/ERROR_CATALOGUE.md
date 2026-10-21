@@ -6,7 +6,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 
 ## Counts
 
-- Guides: **294** in **18** modules
+- Guides: **287** in **18** modules
 - Distinct in-app screens used as fix destinations: **55** (every one checked against the real route list by the test)
 - Real server messages harvested (compliance-tracker + PROJEXA): **901**; mapped to a guide: **901**; unmapped (TODO): **0**
 - Of the mapped ones, **467** are covered only by a general fallback guide (see the last section)
@@ -41,7 +41,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `auth-last-owner` (conflict, block) | If every owner or admin left, nobody could manage the company. | **Someone must stay as owner or admin.** {serverMessage} Steps: 1) First give another person the owner or admin role. 2) Then change this person's role. | Open the team list: Settings > Team > Role (/settings) | Back to Settings |
 | `auth-member-not-found` (server, warn) | They were removed (maybe by another admin) while this page was open. | **That team member is gone.** {serverMessage} Steps: 1) Refresh the team list. 2) Check the person is still listed. | Open the team list: Settings > Team (/settings) | Back to Settings |
 
-## Projects (16)
+## Projects (15)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -60,7 +60,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `project-batch-too-many` (validation, warn) | The dashboard shows a limited number of projects at a time. | **Too many (or no) projects chosen.** {serverMessage} Steps: 1) Choose between one and the allowed number of projects. 2) Open the dashboard again. | Open the dashboard: Dashboard > project filter (/dashboard) | Back to the dashboard |
 | `project-boq-mismatch` (conflict, warn) | The BOQ you picked belongs to another project. | **That BOQ is from a different project.** {serverMessage} Steps: 1) Open this project's Scope of Work. 2) Pick the BOQ listed there. | Open Scope of Work: Scope of Work > this project's BOQ (/scope) | Back to my report |
 | `project-create-failed` (server, warn) | The service had a problem. Your typing is still on screen. | **The project was not created.** We could not create the project. Nothing was saved. Steps: 1) Wait a few seconds. 2) Press Save again. 3) Check Projects first so you do not create it twice. | Check the project list: Projects (/projects) | Back to the form |
-| `project-load-failed` (server, warn) | This is a temporary problem; your data is safe. | **Projects did not load.** The project list could not be read. Steps: 1) Press Try again. 2) If it keeps failing, check your internet. | Reload projects: This screen (/work-progress) | Back to projects |
 
 ## Scope of Work (BOQ) (45)
 
@@ -112,7 +111,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `boq-customer-approval-order` (prerequisite, block) | Your company must approve the BOQ first, and the customer approval can be recorded only once. | **Customer approval is out of order.** {serverMessage} Steps: 1) Get the BOQ approved inside your company first. 2) Then record the customer's approval once. 3) If it is already recorded, nothing more is needed. | Open the BOQ: Scope of Work > this BOQ > Approvals (/scope/E1) | Back to my BOQ |
 | `boq-decision-invalid` (validation, warn) | Only the listed decisions are accepted. | **Choose approve or reject.** {serverMessage} Steps: 1) Press the Approve or Reject button again. 2) If it repeats, reload the page. | Open the BOQ: Scope of Work > this BOQ (/scope/E1) | Back to my BOQ |
 
-## Work Progress (17)
+## Work Progress (16)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -132,7 +131,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `progress-user-not-linked` (permission, block) | Progress is recorded under a named user. Your sign-in is not yet linked to a user in this company. | **Your account is not a team user.** {serverMessage} Steps: 1) Ask your admin to add you under Settings > Team using this same e-mail. 2) Sign out and sign in again. 3) Enter the progress again. | Open the team list: Settings > Team (/settings) | Back to Work Progress |
 | `progress-exception-fields` (validation, warn) | The exception form needs these boxes filled in. | **A required box is empty or too long.** {serverMessage} Steps: 1) Read which box is named. 2) Fill it in, or shorten it. 3) Save again. | Open the exceptions list: Analysis > Exceptions (/analysis/exceptions) | Back to Exceptions |
 | `progress-saved-maybe` (network, warn) | Saving again could count the same work twice. | **Progress may already be saved.** The connection broke while saving, so we cannot be sure your entry was recorded. Steps: 1) Open Work Progress and look at the latest entries. 2) If your entry is listed, do nothing more. 3) If it is not listed, enter it again. | Check recent entries: Work Progress > Recent entries (/work-progress) | Back to Work Progress |
-| `progress-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Work Progress did not load.** The progress list could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Work Progress |
 
 ## Change Orders (11)
 
@@ -150,7 +148,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `co-link-not-approved` (prerequisite, block) | Only a signed change order can change the BOQ. | **Approve the change order first.** {serverMessage} Steps: 1) Wait for the signature to complete. 2) Then make the BOQ revision. | Open the change order: Change Orders > this order > Status (/change-orders/E1) | Back to the change order |
 | `co-link-already` (conflict, info) | One change order can only be applied to one revision. | **This change is already in a BOQ revision.** {serverMessage} Steps: 1) Open Scope of Work. 2) Open the revision named in the message. | Open Scope of Work: Scope of Work > the revision (/scope) | Back to the change order |
 
-## Billing (14)
+## Billing (13)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -167,9 +165,8 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `billing-boq-not-approved` (prerequisite, block) | The agreed rates must be fixed before money is claimed. | **Approve the BOQ before billing.** Billing works only on an approved BOQ. Steps: 1) Open the BOQ and submit it. 2) Ask a second person to approve it. 3) Come back to billing. | Open Scope of Work: Scope of Work > Submit / Approve (/scope) | Back to Billing |
 | `billing-invoice-failed` (server, warn) | A temporary problem. Check the list before trying again so you do not bill twice. | **The invoice was not created.** The invoice could not be saved. Steps: 1) Open Invoices and check whether it is listed. 2) If not listed, press Create invoice again. | Check Invoices: Invoices (/invoices) | Back to Billing |
 | `billing-claim-create-failed` (server, warn) | A temporary problem. Nothing was changed. | **The billing milestone was not saved.** The milestone could not be saved. Steps: 1) Wait a few seconds. 2) Check the list. 3) Save again if it is not there. | Open Billing: Billing Milestones (/billing-milestones) | Back to Billing |
-| `billing-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Billing did not load.** The billing list could not be read. Steps: 1) Press Try again. 2) If it keeps failing, check your internet. | Reload: This screen (/work-progress) | Back to Billing |
 
-## Materials (15)
+## Materials (14)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -187,9 +184,8 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `materials-duplicate-order` (conflict, info) | An identical open order stops the same delivery being ordered twice by mistake. | **This order already exists.** {serverMessage} Steps: 1) Open Materials and find the existing order. 2) Change the date or quantity if this is a different order. | Open Materials: Materials > Orders (/materials) | Back to Materials |
 | `materials-issue-more-than-stock` (conflict, warn) | Stock cannot go below zero. | **You are issuing more than is in stock.** The quantity to issue is larger than the stock recorded. Steps: 1) Check the stock shown for this material. 2) Record the missing receipt first, or issue a smaller quantity. | Record a receipt: Materials > Receipt > New (/materials/receipts/new) | Back to the issue form |
 | `materials-warehouse-name` (validation, warn) | A stock entry needs an item, a store, a quantity, a date and a type. | **Fill the stock entry form.** {serverMessage} Steps: 1) Fill every box that is marked. 2) Save again. | Back to the form: Inventory > Stock entries > New (/inventory/stock-entries/new) | Back to the form |
-| `materials-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Materials did not load.** The materials list could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Materials |
 
-## Labour (16)
+## Labour (15)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -208,7 +204,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `labour-import-columns` (upload, warn) | The first row of the sheet must have headings named Name and Daily Rate. | **The worker sheet is missing a column.** {serverMessage} Steps: 1) Open your sheet. 2) Rename the heading row so it says Name and Daily Rate. 3) Upload it again. | Open the import page: Labour > Import (/labour/import) | Back to Labour |
 | `labour-project-or-roster` (prerequisite, block) | Attendance is shown for a project or for one worker. | **Choose a project or worker.** {serverMessage} Steps: 1) Pick a project. 2) Open Labour from inside it. | Pick a project: Projects (/projects) | Back to Labour |
 | `labour-saved-maybe` (network, warn) | Saving again could be refused as a duplicate. | **Attendance may already be saved.** The connection broke while saving, so we cannot be sure it was recorded. Steps: 1) Open that day's attendance. 2) If your marks are there, you are done. 3) If not, mark and save again. | Check attendance: Labour > Attendance (/labour) | Back to Labour |
-| `labour-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Attendance did not load.** The attendance sheet could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Labour |
 
 ## Documents and photos (13)
 
@@ -228,7 +223,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `docs-open-failed` (server, warn) | The storage did not answer in time. | **The file could not be opened.** {serverMessage} Steps: 1) Wait ten seconds. 2) Press Try again. | Back to the file: Documents > this file (/documents/E1) | Back to Documents |
 | `docs-upload-offline` (network, warn) | Files can be uploaded only when you are online. | **You are offline, the file was not sent.** There is no internet, so the upload could not start. Steps: 1) Reconnect to the internet. 2) Choose the file again. 3) Press Upload. | Back to Upload: Documents > Upload (/documents/upload) | Back to Documents |
 
-## Drawings, permits, RFIs and site records (19)
+## Drawings, permits, RFIs and site records (18)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -240,7 +235,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `drawing-legal-hold` (permission, block) | A legal hold keeps records safe from deletion. | **This drawing is on legal hold.** {serverMessage} Steps: 1) Do not try to remove it. 2) Ask the owner of the project if the hold can be lifted. | Open the drawing: Drawings > this drawing (/drawings/E1) | Back to Drawings |
 | `drawing-retention` (conflict, block) | Drawings can be deleted only in the first 24 hours; after that they are kept for records. | **It is too late to delete this drawing.** {serverMessage} Steps: 1) Upload the corrected drawing as a new one. 2) Mark the old drawing as Superseded. | Open the drawing: Drawings > this drawing > Status (/drawings/E1) | Back to Drawings |
 | `drawing-open-failed` (server, warn) | The file storage did not answer in time. | **The drawing could not be opened.** {serverMessage} Steps: 1) Wait ten seconds. 2) Press Try again. | Back to the drawing: Drawings > this drawing (/drawings/E1) | Back to Drawings |
-| `drawing-name-required` (validation, warn) | People find drawings by their name or number. | **Name the drawing.** The drawing name is empty. Steps: 1) Type the drawing number and name. 2) Save again. | Name the drawing: Drawings > New > Name (/drawings/new) | Back to Drawings |
 | `permit-name` (validation, warn) | The name tells your team what the permit allows. | **Name the permit.** {serverMessage} Steps: 1) Type the permit name. 2) Save again. | Name the permit: Permits > New > Permit name (/permits/new) | Back to Permits |
 | `permit-pdf-required` (upload, warn) | A permit is kept as a PDF so it opens the same way for everyone. | **Attach the permit as a PDF.** {serverMessage} Steps: 1) Scan or export the permit as a PDF. 2) Choose the PDF. 3) Save again. | Attach the PDF: Permits > New > Attach PDF (/permits/new) | Back to Permits |
 | `permit-not-found` (server, warn) | It was removed or belongs to another project. | **This permit cannot be found.** {serverMessage} Steps: 1) Open the permit list. 2) Find it by name. | Open Permits: Permits (/permits) | Back to Permits |
@@ -273,7 +267,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `schedule-members-required` (validation, warn) | The screen sent less than the server needs. | **The request was incomplete.** {serverMessage} Steps: 1) Reload the page. 2) Do the action again. | Reload: This screen (/work-progress) | Back to Schedule |
 | `meetings-input` (validation, warn) | A meeting record needs the day it took place. | **Pick the meeting date.** {serverMessage} Steps: 1) Click the date box. 2) Choose the day. 3) Save again. | Open Meetings: Meetings > New > Date (/meetings/new) | Back to Meetings |
 
-## Design Studio (10)
+## Design Studio (9)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -285,7 +279,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `design-timesheet-missing` (server, warn) | It may have been deleted by someone else. | **That timesheet cannot be found.** The timesheet was removed or belongs to another company. Steps: 1) Open the timesheet list. 2) Find the right day. | Open Design Studio: Design Studio > Timesheets (/design-studio) | Back to Design Studio |
 | `design-cost-no-rate` (prerequisite, warn) | Cost is hours multiplied by rate. | **A designer has no rate set.** Cost analysis needs an hourly rate for each designer, and one is missing. Steps: 1) Open the employee. 2) Add their rate. 3) Run the analysis again. | Open employees: Employees > this person > Rate (/employees) | Back to Design Studio |
 | `design-floorplan-file` (upload, warn) | Only drawings and images of the supported types can be shown. | **The floor plan file could not be read.** The floor plan is damaged or in a type we cannot open. Steps: 1) Export the plan as PDF or image. 2) Upload it again. | Open Floor Plans: Floor Plans (/floor-plans) | Back to Design Studio |
-| `design-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Design Studio did not load.** The Design Studio data could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Design Studio |
 | `design-item-open` (validation, warn) | An empty board has nothing to show. | **Add something to the board first.** A mood board needs at least one item. Steps: 1) Add an image or note. 2) Save again. | Open the board: Mood Boards > this board > Add item (/mood-boards/E1) | Back to Design Studio |
 
 ## Reports and Analysis (14)
@@ -424,7 +417,6 @@ These guides have no server message to read; the screen (or fetch layer) has to 
 | `UNCONFIRMED` | `labour-saved-maybe` | Saving again could be refused as a duplicate. |
 | `NO_FILE` | `docs-no-file` | Upload needs a file from your device. |
 | `OFFLINE` | `docs-upload-offline` | Files can be uploaded only when you are online. |
-| `NAME_REQUIRED` | `drawing-name-required` | People find drawings by their name or number. |
 | `EXPIRY_BEFORE_ISSUE` | `permit-expiry-order` | A permit cannot end before it begins. |
 | `MOM_UNSAVED` | `mom-not-saved-yet` | A shared link points to the saved version. |
 | `EDIT_CONFLICT` | `mom-edited-elsewhere` | PROJEXA protects both versions. |
