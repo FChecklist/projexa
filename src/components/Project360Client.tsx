@@ -31,6 +31,8 @@ import { ApiError, fetchJson, errorMessage } from "@/lib/fetch-json";
 // GUIDED ERRORS (G1): a refused baseline, a missing evidence reference, a missing BOQ and a failed read are each told in the inline panel.
 import { ActionFailurePanel, codedFailure, type ActionFailureState } from "@/components/ActionFailure";
 import { baselineEvidenceFault, faultError } from "@/lib/error-guide/g1-faults";
+import { baselineControlState, mayConfirmBaseline, BASELINE_ROLE_REASON } from "@/lib/baseline-control";
+import { useOrgRole } from "@/hooks/use-org-role";
 import { project360ToCsv } from "@/lib/project-360-export";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 
@@ -46,6 +48,8 @@ type ProfitAtBothLevels = {
 type ProjectAnalysisRow = {
   boqId?: string | null;
   hasBaseline: boolean;
+  baselineHasFigures?: boolean;
+  baselineCount?: number;
   contractAtFirstConfirmation: MoneyFigure;
   contractValueNow: MoneyFigure;
   contractVariance: MoneyFigure;
@@ -87,10 +91,13 @@ export const PROJECT360_READ_TIMEOUT_MS = 40_000;
 
 export default function Project360Client({ projectId, projectName, readTimeoutMs = PROJECT360_READ_TIMEOUT_MS }: { projectId: string; projectName: string; readTimeoutMs?: number }) {
   const orgMoney = useOrgMoney();
-  const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? "Not yet baselined" : orgMoney.money(v, { fractionDigits: 0 }));
+  const { role } = useOrgRole();
+  const [analysis, setAnalysis] = useState<ProjectAnalysisRow | null>(null);
+  // A baseline can exist yet carry no cost figures: say that, not "Not yet baselined".
+  const emptyLabel = analysis && analysis.hasBaseline ? "No cost figures yet" : "Not yet baselined";
+  const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? emptyLabel : orgMoney.money(v, { fractionDigits: 0 }));
   const fmtPercent = (v: MoneyFigure) => (v === "NOT_SET" ? "—" : `${formatNumber(v, { fractionDigits: 1 })}%`);
 
-  const [analysis, setAnalysis] = useState<ProjectAnalysisRow | null>(null);
   const [changeOrders, setChangeOrders] = useState<ChangeOrder[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [tasks, setTasks] = useState<GanttTask[]>([]);
@@ -108,7 +115,7 @@ export default function Project360Client({ projectId, projectName, readTimeoutMs
     try {
       const res = await fetchJson<{ row: ProjectAnalysisRow }>(`/api/reports/boq-analysis?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" });
       setAnalysis(res.row);
-      return res.row.hasBaseline;
+      return baselineControlState(res.row) === "none";
     } catch {
       return false;
     }
@@ -310,10 +317,16 @@ export default function Project360Client({ projectId, projectName, readTimeoutMs
               Baseline confirmed by you on {formatDateTime(confirmedNote.at)} (evidence: {confirmedNote.evidence}).
             </p>
           )}
-          {!analysis.hasBaseline && (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs text-px-muted">No baseline has been confirmed for this project's BOQ yet — the figures above will read "Not yet baselined" until one is.</p>
-              {analysis.boqId ? (
+          {baselineControlState(analysis) !== "none" && (
+            <div className="mt-3 space-y-2" data-testid="project360-baseline-control">
+              {baselineControlState(analysis) === "first" ? (
+                <p className="text-xs text-px-muted">No baseline has been confirmed for this project's BOQ yet — the figures above will read "Not yet baselined" until one is.</p>
+              ) : (
+                <p className="text-xs text-px-muted" data-testid="project360-baseline-refresh">A baseline was confirmed, but before this BOQ had its cost figures, so the profit figures cannot be worked out from it. Enter the cost figures on the BOQ if you have not, then confirm a fresh baseline here (the earlier one is kept).</p>
+              )}
+              {analysis.boqId && !mayConfirmBaseline(role) ? (
+                <p className="text-sm text-px-ink" role="status" data-testid="project360-baseline-role-message">{BASELINE_ROLE_REASON}</p>
+              ) : analysis.boqId ? (
                 <div className="flex flex-wrap items-start gap-2">
                   <Input
                     aria-label="Evidence for the baseline"
@@ -331,7 +344,7 @@ export default function Project360Client({ projectId, projectName, readTimeoutMs
                   </Button>
                   {confirmError && (
                     <div className="w-full">
-                      <ActionFailurePanel failure={confirmError} entityType="boq" entityId={analysis.boqId as string} projectId={projectId} />
+                      <ActionFailurePanel failure={confirmError} entityType="boq" entityId={analysis.boqId as string} projectId={projectId} onRetry={() => void confirmBaseline(analysis.boqId as string)} retryable />
                     </div>
                   )}
                 </div>

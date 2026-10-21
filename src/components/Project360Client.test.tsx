@@ -288,3 +288,55 @@ describe("Project360Client: download (Sumeet R-99 / R-100)", () => {
     }
   });
 });
+
+// R-100 (2026-10-22 final audit): the card said "Not yet baselined" with NO Confirm button and no Retry. Causes covered here: a baseline that
+// exists but carries no cost figures hid the control for ever; a role that cannot confirm got nothing to read; a failed confirm had no Retry.
+describe("Project360Client: the baseline control is always reachable", () => {
+  const FIGURELESS = { ...ANALYSIS_ROW, boqId: "boq-9", hasBaseline: true, baselineHasFigures: false, contractAtFirstConfirmation: "NOT_SET", expectedProfitGross: "NOT_SET", profitVsExpectedDelta: "NOT_SET" };
+  const asRole = (role: string) => ({ "/api/organization": () => jsonRes({ role, organization: { country: "AE" } }) });
+
+  test("a baseline with no cost figures still offers Confirm baseline, says why, and does not call the figures 'not yet baselined'", async () => {
+    const { getByText, getByTestId, queryByText } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: FIGURELESS }), ...asRole("owner") });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    expect(getByTestId("project360-baseline-refresh").textContent).toContain("before this BOQ had its cost figures");
+    expect(queryByText("Not yet baselined")).toBeNull();
+  });
+
+  test("a figure-less baseline: confirming again re-reads until the figures arrive", async () => {
+    let confirmed = false;
+    const { getByLabelText, getByText, findByText } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: confirmed ? { ...ANALYSIS_ROW, boqId: "boq-9", baselineHasFigures: true } : FIGURELESS }),
+      "/api/scope/boq-9/revisions": async () => { confirmed = true; return jsonRes({ id: "b2", version: 2 }, 201); },
+      ...asRole("pm"),
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-2026-114");
+    fireEvent.click(getByText("Confirm baseline"));
+    await findByText(/Baseline confirmed/);
+    await waitFor(() => expect(getByText("25.9% margin")).toBeDefined());
+  });
+
+  test("a role that cannot confirm (site engineer) gets a message saying who can, not a button that will be refused", async () => {
+    const { getByTestId, queryByText } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: { ...FIGURELESS, hasBaseline: false } }), ...asRole("site_engineer") });
+    await waitFor(() => expect(getByTestId("project360-baseline-role-message")).toBeDefined());
+    expect(getByTestId("project360-baseline-role-message").textContent).toContain("owner, administrator or project manager");
+    expect(queryByText("Confirm baseline")).toBeNull();
+  });
+
+  test("a failed confirm offers Retry, and Retry sends the same evidence again", async () => {
+    let posts = 0;
+    const { getByLabelText, getByText, findByRole } = renderClient({
+      "/api/reports/boq-analysis": () => jsonRes({ row: { ...FIGURELESS, hasBaseline: false } }),
+      "/api/scope/boq-9/revisions": () => { posts += 1; return jsonRes({ error: "Failed to confirm the baseline" }, 500); },
+      ...asRole("owner"),
+    });
+    await waitFor(() => expect(getByText("Confirm baseline")).toBeDefined());
+    typeInto(getByLabelText("Evidence for the baseline"), "PO-1");
+    fireEvent.click(getByText("Confirm baseline"));
+    await findByRole("alert");
+    const before = posts;
+    const retry = await waitFor(() => { const b = Array.from(document.querySelectorAll("button")).find((x) => /retry|try again/i.test(x.textContent ?? "")); if (!b) throw new Error("no retry"); return b; });
+    fireEvent.click(retry);
+    await waitFor(() => expect(posts).toBeGreaterThan(before));
+  });
+});
