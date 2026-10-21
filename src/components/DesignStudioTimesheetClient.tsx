@@ -43,6 +43,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import DataLoadError from "@/components/DataLoadError";
 import DesignStudioTabs from "@/components/DesignStudioTabs";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { fault, withServerCode } from "@/lib/guided-form";
 import { ApiError, fetchJson } from "@/lib/fetch-json";
 import {
   DESIGN_STUDIO_CATEGORIES,
@@ -128,8 +133,22 @@ export default function DesignStudioTimesheetClient({
   const [draftProjectId, setDraftProjectId] = useState(projectId);
   const [draftCategory, setDraftCategory] = useState<string>(DESIGN_STUDIO_CATEGORIES[0]);
   const [draftTaskId, setDraftTaskId] = useState("");
-  const [draftHours, setDraftHours] = useState("");
-  const [draftComments, setDraftComments] = useState("");
+  const [draftHours, setDraftHoursState] = useState("");
+  const [draftComments, setDraftCommentsState] = useState("");
+  // G3 guided errors: the half-typed add-entry row (hours, comments, category) survives a "Fix it now" detour, a reload and a sign-in that ran
+  // out. The entries already added are saved on the server one by one, so they are never at risk; the task and project are re-chosen.
+  const rowDraftKey = `design-timesheet-row:${projectId}`;
+  const rowDraft = useDraft<{ hours: string; comments: string; category: string }>(rowDraftKey, { hours: "", comments: "", category: DESIGN_STUDIO_CATEGORIES[0] });
+  const setDraftHours = (v: string) => { setDraftHoursState(v); rowDraft.set({ hours: v }); };
+  const setDraftComments = (v: string) => { setDraftCommentsState(v); rowDraft.set({ comments: v }); };
+  useEffect(() => {
+    if (!rowDraft.restored) return;
+    setDraftHoursState(rowDraft.value.hours ?? "");
+    setDraftCommentsState(rowDraft.value.comments ?? "");
+    if (rowDraft.value.category) setDraftCategory(rowDraft.value.category);
+  }, [rowDraft.restored]);
+  // The failure of a write (add row / submit entry / submit day), as a full guided panel.
+  const [problem, setProblem] = useState<{ ctx: GuideContext; message?: string; retry?: () => void } | null>(null);
   const [hoursError, setHoursError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -209,9 +228,21 @@ export default function DesignStudioTimesheetClient({
     const problem = validateHours(draftHours, otherHours);
     setHoursError(problem);
     if (problem || !draftTaskId) {
-      if (!draftTaskId) setFooterMessage({ level: "error", text: "Pick a task before saving the row." });
+      if (!draftTaskId) {
+        const noTasks = tasks.length === 0 && !tasksError;
+        setProblem({
+          ctx: contextFromFailure(
+            noTasks
+              ? fault("NO_TASKS", "design-row-task", `There is no task on ${draftProjectName}, and every row of time is logged against a task.`)
+              : fault("TASK_NOT_PICKED", "design-row-task", "No task is chosen for this row. Pick the task the time was spent on."),
+            { projectId: draftProjectId }
+          ),
+          message: noTasks ? undefined : "No task is chosen for this row. Pick the task the time was spent on.",
+        });
+      }
       return;
     }
+    setProblem(null);
 
     // Optimistic append: the row appears immediately with a temporary id and
     // is replaced by the saved row, or removed with the real reason.
@@ -229,12 +260,14 @@ export default function DesignStudioTimesheetClient({
         body: JSON.stringify({ issueId: draftTaskId, hours: draftHours, spentOn, activityType: draftCategory, comments: draftComments || undefined }),
       });
       setEntries((prev) => prev.map((e) => (e.id === optimisticId ? { ...saved, issue: task, projectId: saved.projectId ?? draftProjectId } : e)));
-      setDraftHours("");
-      setDraftComments("");
+      setDraftHoursState("");
+      setDraftCommentsState("");
+      rowDraft.set({ hours: "", comments: "" });
       setFooterMessage({ level: "success", text: `${formatHours(saved.hours)} h saved on ${formatDayLabel(saved.spentOn)}` });
     } catch (err) {
       setEntries((prev) => prev.filter((e) => e.id !== optimisticId));
-      setFooterMessage({ level: "error", text: err instanceof ApiError || err instanceof Error ? err.message : "The row was not saved" });
+      const text = err instanceof ApiError || err instanceof Error ? err.message : "The row was not saved";
+      setProblem({ ctx: contextFromError(err, withServerCode(err, { projectId: draftProjectId })), message: text, retry: () => void addRow() });
     } finally {
       setBusy(false);
     }
@@ -252,7 +285,8 @@ export default function DesignStudioTimesheetClient({
       void load();
     } catch (err) {
       setEntries((prev) => prev.map((e) => (e.id === entry.id ? { ...e, approvalStatus: before } : e)));
-      setFooterMessage({ level: "error", text: err instanceof Error ? err.message : "The entry was not submitted" });
+      const text = err instanceof Error ? err.message : "The entry was not submitted";
+      setProblem({ ctx: contextFromError(err, withServerCode(err, { projectId, entityId: entry.id })), message: text, retry: () => void submitEntry(entry) });
     } finally {
       setBusy(false);
     }
@@ -273,7 +307,8 @@ export default function DesignStudioTimesheetClient({
       );
       void load();
     } catch (err) {
-      setFooterMessage({ level: "error", text: err instanceof Error ? err.message : "The day was not submitted" });
+      const text = err instanceof Error ? err.message : "The day was not submitted";
+      setProblem({ ctx: contextFromError(err, withServerCode(err, { projectId })), message: text, retry: () => void submitDay() });
     } finally {
       setBusy(false);
     }
@@ -319,6 +354,7 @@ export default function DesignStudioTimesheetClient({
       <DesignStudioTabs projectId={projectId} />
 
       <div className="space-y-4 p-4">
+        {problem && <GuidedError ctx={problem.ctx} message={problem.message} onRetry={problem.retry} draftKey={rowDraftKey} />}
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="design-studio-day">Day</Label>
@@ -439,14 +475,14 @@ export default function DesignStudioTimesheetClient({
                 </Select>
               </TableCell>
               <TableCell>
-                <Select value={draftCategory} onValueChange={setDraftCategory}>
+                <Select value={draftCategory} onValueChange={(v) => { setDraftCategory(v); rowDraft.set({ category: v }); }}>
                   <SelectTrigger aria-label="Category" className="w-full"><SelectValue placeholder="Category" /></SelectTrigger>
                   <SelectContent>{DESIGN_STUDIO_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </TableCell>
               <TableCell>
                 <Select value={draftTaskId} onValueChange={setDraftTaskId}>
-                  <SelectTrigger aria-label="Task" className="w-full">
+                  <SelectTrigger aria-label="Task" id="design-row-task" className="w-full">
                     <SelectValue placeholder={tasksError ? "Could not be loaded" : tasks.length === 0 ? `No tasks on ${draftProjectName}` : "Select a task"} />
                   </SelectTrigger>
                   <SelectContent>{tasks.map((t) => <SelectItem key={t.id} value={t.id}>#{t.number} {t.title}</SelectItem>)}</SelectContent>

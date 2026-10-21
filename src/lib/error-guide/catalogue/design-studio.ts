@@ -123,4 +123,13 @@ export const designStudioGuides = guides([
     fix: { label: "Open Design Studio", to: ds, where: "Design Studio > Timesheets" },
     severity: "block", returnLabel: BACK,
   },
+  {
+    id: "design-pick-task", source: "validation", match: { code: "TASK_NOT_PICKED" },
+    title: "Pick the task for this row",
+    what: "{serverMessage}",
+    why: "Every row of time is logged against a task so that it can be costed and reported.",
+    steps: ["Open the Task list on the entry row.", "Choose the task the time was spent on.", "Press Add entry again."],
+    fix: { label: "Choose the task", to: here, where: "This screen > Add entry row > Task" },
+    severity: "warn", returnLabel: BACK,
+  },
 ]);

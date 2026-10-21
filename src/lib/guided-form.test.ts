@@ -107,6 +107,7 @@ const CASES: Case[] = [
   { code: "MILESTONE_NO_DATE", field: "milestone-target-date", route: "/schedule", guide: "schedule-milestone-no-date", to: "/schedule", focus: "milestone-target-date" },
   { code: "HOURS_RANGE", field: "new-entry-hours", route: "/design-studio/timesheets/new", guide: "design-timesheet-hours", to: "/design-studio/timesheets/new", focus: "new-entry-hours" },
   { code: "NO_TASKS", field: "new-entry-task", route: "/design-studio/timesheets/new", guide: "design-no-tasks", to: "/schedule/tasks/new", focus: "title" },
+  { code: "TASK_NOT_PICKED", field: "design-row-task", route: "/design-studio/timesheets", guide: "design-pick-task", to: "/design-studio/timesheets", focus: "design-row-task" },
   { code: "SELF_REVIEW", route: "/design-studio/review", guide: "design-review-self", to: "/design-studio/review" },
   { code: "DAY_NOT_SUBMITTED", route: "/design-studio/review", guide: "design-day-not-submitted", to: "/design-studio/review" },
   { code: "TIMESHEET_LOCKED", route: "/design-studio/timesheets/t1", guide: "design-timesheet-locked", to: "/design-studio" },

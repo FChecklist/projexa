@@ -15,6 +15,7 @@
 // Nothing here runs at page load (init stays lazy): the hooks only touch sessionStorage after the form is on screen.
 
 import { useCallback, useState } from "react";
+import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
 import { useDraft } from "@/lib/error-guide/use-draft";
 import type { GuideContext } from "@/lib/error-guide/types";
 import type { SubmitFailure, UseSubmit } from "@/lib/use-submit";
@@ -145,3 +146,25 @@ export function withServerCode(err: unknown, extra: Partial<GuideContext> = {}):
   const code = serverMessageCode(msg);
   return code ? { ...extra, code } : extra;
 }
+
+export type Problem = { ctx: GuideContext; message?: string; retry?: () => void };
+
+/**
+ * The failure of a write that is NOT a create form (an edit, a status change, a delete, a void): kept as the facts of the error, so the screen can
+ * show the complete guide for it (see ProblemPanel). `base` is what only the screen knows (project, entity). `show(err, text)` replaces the
+ * screen's old one-line message; `text` stays the sentence the person reads first, the guide adds why, the steps, the exact place and the way back.
+ */
+export function useProblem(base: Partial<GuideContext> = {}) {
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const show = useCallback(
+    (err: unknown, message?: string, retry?: () => void, extra: Partial<GuideContext> = {}) =>
+      setProblem({ ctx: contextFromError(err, withServerCode(err, { ...base, ...extra })), message, retry }),
+    [base.projectId, base.entityId, base.entityType]
+  );
+  const showFault = useCallback((f: SubmitFailure, extra: Partial<GuideContext> = {}) => {
+    setProblem({ ctx: contextFromFailure(f, { ...base, ...extra }), message: f.message });
+  }, [base.projectId, base.entityId, base.entityType]);
+  const clear = useCallback(() => setProblem(null), []);
+  return { problem, show, showFault, clear };
+}
+
