@@ -61,6 +61,22 @@ describe("the return trail", () => {
     expect(list.find((e) => e.id === b.id)?.ready).toBeUndefined();
   });
 
+  test("after a save that moved the person on, the strip follows them to the next screen until they go back (or it is 30 minutes old)", () => {
+    const s = memory();
+    const e = pushReturn(entry(1), s, T0);
+    // not saved yet: the strip belongs to its destination only
+    expect(entryForScreen("/finance/currencies/abc", "", s, T0 + 1)).toBeNull();
+    markReturnReady("/finance/currencies", s, T0 + 2);
+    // saved, and the create screen has landed on the new record
+    expect(entryForScreen("/finance/currencies/abc", "?created=1", s, T0 + 3)?.id).toBe(e.id);
+    expect(entryForScreen("/anything/else", "", s, T0 + 4)?.id).toBe(e.id);
+    // too old to follow
+    expect(entryForScreen("/anything/else", "", s, T0 + 31 * 60 * 1000)).toBeNull();
+    // going back removes it
+    consumeReturn(e.id, s, T0 + 5);
+    expect(entryForScreen("/anything/else", "", s, T0 + 6)).toBeNull();
+  });
+
   test("the way back never leaves the site and drops the markers; the destination link carries the marker", () => {
     const s = memory();
     const e = pushReturn({ returnUrl: "/permits/new?projectId=p1&focus=name&returnTo=zz", label: "x", destination: "/a" }, s, T0);
