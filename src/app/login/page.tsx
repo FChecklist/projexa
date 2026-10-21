@@ -28,6 +28,29 @@ import { BrowserNotice } from "@/components/BrowserNotice";
 type Failure = { code: string; field?: "email" | "code"; detail?: string };
 const failureOf = (r: Extract<Step, { ok: false }>): Failure => ({ code: r.code ?? "LOGIN_SEND_FAILED", field: r.field, detail: r.detail ?? (r.code ? undefined : r.notice) });
 
+/** The guided panel for a sign-in failure, with the buttons that DO the fix here. A component of its own (it receives the page's handlers as props). */
+function LoginFailure(props: { f: Failure; resendIn: number; loading: boolean; onResend: () => void; onTry: () => void; onRetrySetup: () => void; onRetryGoogle: () => void }) {
+  const { f, resendIn, loading } = props;
+  const screen = currentScreen();
+  const actions: PanelAction[] = [];
+  if (f.code === "LOGIN_CODE_WRONG" || f.code === "LOGIN_CODE_EXPIRED" || f.code === "LOGIN_LOCKED") {
+    actions.push({ id: "resend", primary: true, label: resendIn > 0 ? `Send a new code (in ${Math.ceil(resendIn / 1000)}s)` : "Send a new code", disabled: loading || resendIn > 0 || f.code === "LOGIN_LOCKED", onClick: props.onResend });
+  } else if (f.code === "LOGIN_SETUP_FAILED") {
+    actions.push({ id: "retry", primary: true, label: "Try again", disabled: loading, onClick: props.onRetrySetup });
+  } else if (f.code === "LOGIN_GOOGLE_FAILED") {
+    actions.push({ id: "retry", primary: true, label: "Try again", onClick: props.onRetryGoogle });
+  } else if (f.code === "LOGIN_RATE_LIMIT" || f.code === "LOGIN_SEND_FAILED" || f.code === "LOGIN_OFFLINE") {
+    actions.push({ id: "retry", primary: true, label: "Try again", disabled: loading, onClick: props.onTry });
+  }
+  return (
+    <GuidedPanel
+      ctx={{ route: screen.route, search: screen.search, code: f.code, field: f.field, serverMessage: f.detail, status: f.code === "LOGIN_OFFLINE" ? 0 : undefined }}
+      actions={actions}
+      testId="login-guided-error"
+    />
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const t = useTranslations("Auth.login");
@@ -123,28 +146,6 @@ export default function LoginPage() {
     goIn();
   }
 
-  // The panel shown instead of a bare red sentence: the guide for this failure, with the buttons that DO the fix here.
-  function failurePanel(f: Failure) {
-    const screen = currentScreen();
-    const actions: PanelAction[] = [];
-    if (f.code === "LOGIN_CODE_WRONG" || f.code === "LOGIN_CODE_EXPIRED" || f.code === "LOGIN_LOCKED") {
-      actions.push({ id: "resend", primary: true, label: resendIn > 0 ? `Send a new code (in ${Math.ceil(resendIn / 1000)}s)` : "Send a new code", disabled: loading || resendIn > 0 || f.code === "LOGIN_LOCKED", onClick: () => void sendCode(undefined, true) });
-    } else if (f.code === "LOGIN_SETUP_FAILED") {
-      actions.push({ id: "retry", primary: true, label: "Try again", disabled: loading, onClick: () => void retrySetup() });
-    } else if (f.code === "LOGIN_GOOGLE_FAILED") {
-      actions.push({ id: "retry", primary: true, label: "Try again", onClick: () => void continueWithGoogle() });
-    } else if (f.code === "LOGIN_RATE_LIMIT" || f.code === "LOGIN_SEND_FAILED" || f.code === "LOGIN_OFFLINE") {
-      actions.push({ id: "retry", primary: true, label: "Try again", disabled: loading, onClick: () => void sendCode(undefined, stage === "code") });
-    }
-    return (
-      <GuidedPanel
-        ctx={{ route: screen.route, search: screen.search, code: f.code, field: f.field, serverMessage: f.detail, status: f.code === "LOGIN_OFFLINE" ? 0 : undefined }}
-        actions={actions}
-        testId="login-guided-error"
-      />
-    );
-  }
-
   useEffect(() => {
     if (stage !== "code") return;
     const id = setInterval(() => setResendIn(getLogin().resendInMs()), 1000);
@@ -225,7 +226,7 @@ export default function LoginPage() {
                 <Input id="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={CODE_LENGTH * 2} required autoFocus value={code} aria-invalid={fieldError("code") ? true : undefined} aria-describedby={fieldError("code") ? "code-error" : undefined} onChange={(e) => onCodeChange(e.target.value)} />
                 {fieldError("code") && <p id="code-error" data-testid="login-code-error" className="text-xs text-px-error">This code is not accepted. The steps are below.</p>}
               </div>
-              {error && failurePanel(error)}
+              {error && <LoginFailure f={error} resendIn={resendIn} loading={loading} onResend={() => void sendCode(undefined, true)} onTry={() => void sendCode(undefined, stage === "code")} onRetrySetup={() => void retrySetup()} onRetryGoogle={() => void continueWithGoogle()} />}
               {notArrived && (
                 <GuidedPanel
                   ctx={{ route: "/login", search: "", code: "LOGIN_CODE_NOT_ARRIVED", serverMessage: email }}
@@ -256,7 +257,7 @@ export default function LoginPage() {
                 <GuidedPanel ctx={{ route: "/login", search: "", code: "SESSION_ENDED_LOGIN", serverMessage: continueTo }} noCopy testId="login-continue" />
               )}
               <p className="text-sm text-px-muted">{t("intro")}</p>
-              {error && failurePanel(error)}
+              {error && <LoginFailure f={error} resendIn={resendIn} loading={loading} onResend={() => void sendCode(undefined, true)} onTry={() => void sendCode(undefined, stage === "code")} onRetrySetup={() => void retrySetup()} onRetryGoogle={() => void continueWithGoogle()} />}
               <Button type="submit" className="w-full" disabled={loading || stage === "checking"}>{loading ? t("submitting") : t("submit")}</Button>
             </form>
           )}
