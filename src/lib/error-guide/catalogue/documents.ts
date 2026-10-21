@@ -1,0 +1,128 @@
+// Documents and photo uploads: upload form, file type/size, categories, versions, site photos.
+// Client messages: file-limits.ts, document-intake.ts, attachments.ts.
+// Server messages: PROJEXA api/photos, api/documents; compliance-tracker api/v1/projexa/documents.
+import { ent, guides, here, proj, rx } from "./_helpers";
+
+const BACK = "Back to Documents";
+const docs = proj("/documents");
+const up = proj("/documents/upload");
+
+export const documentsGuides = guides([
+  {
+    id: "docs-no-file", source: "upload", match: { code: "NO_FILE" },
+    title: "Choose a file to upload",
+    what: "No file is chosen yet.",
+    why: "Upload needs a file from your device.",
+    steps: ["Press Choose file.", "Pick the PDF, photo or document.", "Press Upload."],
+    fix: { label: "Choose a file", to: up, where: "Documents > Upload > Choose file" },
+    severity: "warn", returnLabel: BACK,
+  },
+  {
+    id: "docs-file-required", source: "upload", match: { status: 400, messageRegex: rx("^(file is required|A file is required|Choose a file to send\\.)$") },
+    title: "No file was received",
+    what: "{serverMessage}",
+    why: "The file did not reach the server, or was not chosen.",
+    steps: ["Choose the file again.", "Wait for its name to show.", "Press Upload."],
+    fix: { label: "Choose a file", to: up, where: "Documents > Upload > Choose file" },
+    severity: "warn", returnLabel: BACK,
+  },
+  {
+    id: "docs-too-large", source: "upload", match: { messageRegex: rx("the limit is \\d+ MB|Too large:|File too large") },
+    title: "This file is too big",
+    what: "{serverMessage}",
+    why: "Big files fail on slow connections and fill storage.",
+    steps: ["Open the file in its program and Save as a smaller file (for a PDF, choose a reduced size).", "Or split it into two files.", "Choose the smaller file."],
+    fix: { label: "Choose a smaller file", to: up, where: "Documents > Upload > Choose file" },
+    severity: "block", returnLabel: BACK,
+  },
+  {
+    id: "docs-http-413", source: "upload", match: { status: 413 },
+    title: "The file or text is too large",
+    what: "{serverMessage}",
+    why: "The server accepts only up to a fixed size per request (5 MB for AI reading of a file).",
+    steps: ["Choose a smaller file.", "Or cut the text shorter and send again."],
+    fix: { label: "Choose a smaller file", to: up, where: "Documents > Upload > Choose file" },
+    severity: "block", returnLabel: BACK,
+  },
+  {
+    id: "docs-wrong-type", source: "upload", match: { messageRegex: rx("^Choose a .* file( —| -) this is a |Wrong type:") },
+    title: "This kind of file is not accepted",
+    what: "{serverMessage}",
+    why: "Only certain file types can be opened and shown safely.",
+    steps: ["Read the accepted types in the message.", "Save or export your file as one of them (a PDF is always safe).", "Choose it again."],
+    fix: { label: "Choose another file", to: up, where: "Documents > Upload > Choose file" },
+    severity: "block", returnLabel: BACK,
+  },
+  {
+    id: "docs-too-many", source: "upload", match: { messageRegex: rx("^Too many files") },
+    title: "Too many files attached",
+    what: "{serverMessage}",
+    why: "Only a limited number of files can go in one message.",
+    steps: ["Remove one or two files.", "Send the rest in a second message."],
+    severity: "warn", returnLabel: "Back to what I was doing",
+    fix: { label: "Reload this screen", to: here, where: "This screen" },
+  },
+  {
+    id: "docs-storage-off", source: "server", match: { messageRegex: rx("File storage is not configured|file storage not configured") },
+    title: "File uploads are switched off",
+    what: "{serverMessage}",
+    why: "The company's file storage is not set up, so no file can be saved yet.",
+    steps: ["Tell your admin that file storage needs to be set up.", "Meanwhile, e-mail the file to your team."],
+    fix: { label: "Open Settings", to: "/settings", where: "Settings" },
+    severity: "block", returnLabel: BACK,
+  },
+  {
+    id: "docs-photo-upload-failed", source: "upload", match: { status: 502, messageRegex: rx("^Photo upload failed") },
+    title: "The photo did not upload",
+    what: "{serverMessage}",
+    why: "A connection problem or a full storage stopped it. Your photo is still on your device.",
+    steps: ["Check your internet.", "Press Try again.", "If it still fails, make the photo smaller."],
+    retry: true, severity: "warn", returnLabel: "Back to my entry",
+    fix: { label: "Back to documents", to: docs, where: "Documents" },
+  },
+  {
+    id: "docs-photo-entry", source: "prerequisite", match: { status: 400, messageRegex: rx("^veridianEntryId( query param)? is required$") },
+    title: "Save the entry before adding photos",
+    what: "{serverMessage}",
+    why: "A photo is attached to a saved entry. This entry has not been saved yet.",
+    steps: ["Save the entry first.", "Then add the photo."],
+    severity: "warn", returnLabel: "Back to my entry",
+    fix: { label: "Back to documents", to: docs, where: "Documents" },
+  },
+  {
+    id: "docs-not-found", source: "server", match: { status: 404, messageRegex: rx("^Document not found$|^Draft not found") },
+    title: "That document is not there",
+    what: "{serverMessage}",
+    why: "It was deleted, or it belongs to another person's draft.",
+    steps: ["Open the Documents list.", "Search for it by name."],
+    fix: { label: "Open Documents", to: docs, where: "Documents" },
+    severity: "warn", returnLabel: BACK,
+  },
+  {
+    id: "docs-link-target", source: "prerequisite", match: { status: 400, messageRegex: rx("linkedEntityId or projectScopeId query param is required") },
+    title: "Open documents from inside a project",
+    what: "{serverMessage}",
+    why: "Documents are listed for one project or one record.",
+    steps: ["Pick a project.", "Open Documents from there."],
+    fix: { label: "Pick a project", to: "/projects", where: "Projects" },
+    severity: "block", returnLabel: BACK,
+  },
+  {
+    id: "docs-open-failed", source: "server", match: { status: 502, messageRegex: rx("file could not be opened right now") },
+    title: "The file could not be opened",
+    what: "{serverMessage}",
+    why: "The storage did not answer in time.",
+    steps: ["Wait ten seconds.", "Press Try again."],
+    retry: true, severity: "warn", returnLabel: BACK,
+    fix: { label: "Back to the file", to: ent("/documents"), where: "Documents > this file" },
+  },
+  {
+    id: "docs-upload-offline", source: "network", match: { code: "OFFLINE", method: "POST", apiPath: "/documents" },
+    title: "You are offline, the file was not sent",
+    what: "There is no internet, so the upload could not start.",
+    why: "Files can be uploaded only when you are online.",
+    steps: ["Reconnect to the internet.", "Choose the file again.", "Press Upload."],
+    retry: true, severity: "warn", returnLabel: BACK,
+    fix: { label: "Back to Upload", to: up, where: "Documents > Upload" },
+  },
+]);
