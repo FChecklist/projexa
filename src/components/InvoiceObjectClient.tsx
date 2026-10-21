@@ -15,6 +15,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+// GUIDED ERRORS (G2): a refusal (posting, payment, cancel, load) is the guide panel -- what happened in full, why, numbered steps, the exact place to fix
+// it, the way back -- and a missing or wrong entry is written beside its box and explained, with nothing sent.
+import { GuidedError } from "@/components/GuidedError";
+import FaultPanel from "@/components/FaultPanel";
+import { contextFromError } from "@/lib/error-guide/context";
+import { invoicePostFaults, messageFor, paymentFaults, type Fault } from "@/lib/error-guide/g2-faults";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import type { GuideContext } from "@/lib/error-guide/types";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import type { StatusTone } from "@fchecklist/veridian-ui-kit/screens";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -48,7 +56,9 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
   const label = currencyLabel(undefined, currencies);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<GuideContext | null>(null);
+  const [failure, setFailure] = useState<GuideContext | null>(null);
+  const [faults, setFaults] = useState<Fault[]>([]);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   const [revenueAccountId, setRevenueAccountId] = useState("");
@@ -68,13 +78,16 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
       setLoadError(null);
     } catch (err) {
       setInvoice(null);
-      setLoadError(errorMessage(err, "Couldn't load this invoice"));
+      setLoadError(contextFromError(err, { entityId: invoiceId, entityType: "sales_invoice" }));
     }
   }
   useEffect(() => { load(); }, [invoiceId]);
 
   async function submitInvoice() {
-    if (!revenueAccountId) { toast.error("Choose a revenue account first"); return; }
+    const problems = invoicePostFaults({ revenueAccountId, hasRevenueAccounts: accounts.some((a) => a.rootType === "income") });
+    setFailure(null);
+    if (problems.length) { setFaults(problems); const el = findFocusTarget(problems[0].field); if (el) highlightElement(el); return; }
+    setFaults([]);
     setActionBusy("submit");
     try {
       const res = await viaPxApi(`/api/sales-invoices/${invoiceId}/submit`, {
@@ -86,14 +99,17 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
       toast.success("Invoice posted to the ledger");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't submit invoice");
+      setFailure(contextFromError(err, { entityId: invoiceId, entityType: "sales_invoice", method: "POST", apiPath: `/api/sales-invoices/${invoiceId}/submit` }));
     } finally {
       setActionBusy(null);
     }
   }
 
   async function recordPayment() {
-    if (!paymentAmount || !paymentAccountId) { toast.error("Amount and bank/cash account are required"); return; }
+    const problems = paymentFaults({ amount: paymentAmount, outstanding: Number(invoice?.outstandingAmount ?? 0), accountId: paymentAccountId, hasBankAccounts: accounts.some((a) => a.accountType?.toLowerCase() === "bank" || a.accountType?.toLowerCase() === "cash"), date: paymentDate });
+    setFailure(null);
+    if (problems.length) { setFaults(problems); const el = findFocusTarget(problems[0].field); if (el) highlightElement(el); return; }
+    setFaults([]);
     setActionBusy("payment");
     try {
       const res = await viaPxApi(`/api/sales-invoices/${invoiceId}/payments`, {
@@ -106,7 +122,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
       setPaymentAccountId("");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't record payment");
+      setFailure(contextFromError(err, { entityId: invoiceId, entityType: "sales_invoice", method: "POST", apiPath: `/api/sales-invoices/${invoiceId}/payments` }));
     } finally {
       setActionBusy(null);
     }
@@ -114,6 +130,8 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
 
   async function cancelInvoice() {
     setActionBusy("cancel");
+    setFailure(null);
+    setFaults([]);
     try {
       const res = await viaPxApi(`/api/sales-invoices/${invoiceId}/cancel`, { method: "POST" });
       const data = await res.json();
@@ -121,7 +139,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
       toast.success("Invoice cancelled");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't cancel invoice");
+      setFailure(contextFromError(err, { entityId: invoiceId, entityType: "sales_invoice", method: "POST", apiPath: `/api/sales-invoices/${invoiceId}/cancel` }));
     } finally {
       setActionBusy(null);
     }
@@ -130,8 +148,7 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
-        <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+        <GuidedError ctx={loadError} onRetry={() => void load()} />
       </div>
     );
   }
@@ -164,16 +181,22 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
       onBack={() => router.push("/invoices?tab=invoices")}
       messages={[]}
     >
+      {(failure || faults.length > 0) && (
+        <div className="space-y-2 border-b border-ct-border px-4 py-3">
+          <FaultPanel faults={faults} />
+          {failure && <GuidedError ctx={failure} onRetry={() => void (failure.apiPath?.endsWith("/payments") ? recordPayment() : failure.apiPath?.endsWith("/cancel") ? cancelInvoice() : submitInvoice())} />}
+        </div>
+      )}
       {invoice.status === "draft" && (
         <div className="flex flex-wrap items-end gap-2 border-b border-ct-border px-4 py-3">
           <div className="space-y-1.5">
             <Label>Revenue Account</Label>
             <Select value={revenueAccountId} onValueChange={setRevenueAccountId}>
-              <SelectTrigger className="w-64"><SelectValue placeholder="Select a revenue account" /></SelectTrigger>
+              <SelectTrigger className="w-64" data-testid="inv-revenue-account"><SelectValue placeholder="Select a revenue account" /></SelectTrigger>
               <SelectContent>{revenueAccounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountNumber ? `${a.accountNumber} — ` : ""}{a.accountName}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <Button size="sm" disabled={actionBusy !== null || !revenueAccountId} onClick={submitInvoice}>
+          <Button size="sm" disabled={actionBusy !== null} onClick={submitInvoice}>
             {actionBusy === "submit" ? "Posting…" : "Submit (Post to Ledger)"}
           </Button>
         </div>
@@ -183,20 +206,20 @@ export default function InvoiceObjectClient({ invoiceId }: { invoiceId: string }
         <div className="flex flex-wrap items-end gap-2 border-b border-ct-border px-4 py-3">
           <div className="space-y-1.5">
             <Label>Amount</Label>
-            <Input type="number" className="w-32" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
+            <Input data-testid="inv-payment-amount" type="text" inputMode="decimal" className="w-32" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label>Bank / Cash Account</Label>
             <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-              <SelectTrigger className="w-56"><SelectValue placeholder={bankAccounts.length ? "Select an account" : "Loading…"} /></SelectTrigger>
+              <SelectTrigger className="w-56" data-testid="inv-payment-account"><SelectValue placeholder={bankAccounts.length ? "Select an account" : "Loading…"} /></SelectTrigger>
               <SelectContent>{bankAccounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.accountName}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Posting Date</Label>
-            <Input type="date" className="w-40" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+            <Input data-testid="inv-payment-date" type="date" className="w-40" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
           </div>
-          <Button size="sm" disabled={actionBusy !== null || !paymentAmount || !paymentAccountId} onClick={recordPayment}>
+          <Button size="sm" disabled={actionBusy !== null} onClick={recordPayment}>
             {actionBusy === "payment" ? "Recording…" : "Record Payment"}
           </Button>
         </div>

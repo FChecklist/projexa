@@ -57,6 +57,7 @@ function renderClient(over: Partial<Record<string, Handler>> = {}) {
 afterEach(() => {
   cleanup();
   push.mockClear();
+  try { sessionStorage.clear(); } catch { /* the typed milestone is kept in session storage (guided errors); each test starts with none */ }
   // @ts-expect-error -- test-only global fetch stub cleanup
   delete globalThis.fetch;
 });
@@ -104,21 +105,36 @@ describe("BillingMilestonesClient", () => {
     });
   });
 
-  test("the create form opens with Save disabled until a description and customer exist", async () => {
-    const { getByText, getByRole } = renderClient({ "/api/billing-claims": () => jsonRes({ claims: [] }) });
+  test("GUIDED: Save with nothing typed sends nothing and says exactly what to fix (customer, date, description), with the first box outlined", async () => {
+    let posted = false;
+    const { getByText, getByRole, getByTestId, findByTestId } = renderClient({
+      "/api/billing-claims": (init) => { if (init?.method === "POST") posted = true; return jsonRes({ claims: [] }); },
+    });
     await waitFor(() => expect(getByText("No billing milestones yet.")).toBeDefined());
     fireEvent.click(getByRole("button", { name: "New Billing Milestone" }));
-    const save = getByRole("button", { name: `Save (${NAME_REQUIRED})` }) as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    const save = getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    const panel = await findByTestId("fault-panel");
+    expect(panel.getAttribute("data-fault-code")).toBe("BILL_CUSTOMER_MISSING");
+    expect(getByTestId("fault-panel-more").textContent).toContain("planned billing date");
+    expect(getByTestId("fault-panel-more").textContent).toContain("Describe the milestone");
+    expect(posted).toBe(false);
+  });
+
+  test("a retention above 100 is refused with its own message before anything is sent", async () => {
+    const { getByText, getByRole, getByLabelText, findByTestId } = renderClient({ "/api/billing-claims": () => jsonRes({ claims: [] }) });
+    await waitFor(() => expect(getByText("No billing milestones yet.")).toBeDefined());
+    fireEvent.click(getByRole("button", { name: "New Billing Milestone" }));
+    const retention = getByLabelText("Retention %") as HTMLInputElement;
+    const key = Object.keys(retention).find((k) => k.startsWith("__reactProps"))!;
+    (retention as unknown as Record<string, { onChange: (e: unknown) => void }>)[key].onChange({ target: { value: "150" }, currentTarget: { value: "150" } });
+    fireEvent.click(getByRole("button", { name: "Save" }));
+    const more = await findByTestId("fault-panel");
+    expect(more.textContent).toContain("0 to 100");
   });
 
   test("picking a customer updates the select's own value for real", async () => {
-    // The description field can't be typed into in this environment (see
-    // buildClaimCreatePayload's own header), so it stays blank and Save's
-    // disabled reason stays NAME_REQUIRED regardless of the customer picked
-    // -- that reflects real, correct precedence (both fields are still
-    // missing), not a defect in the customer <select>'s own wiring, which
-    // this asserts directly.
     const { getByText, getByRole, getByLabelText } = renderClient({ "/api/billing-claims": () => jsonRes({ claims: [] }) });
     await waitFor(() => expect(getByText("No billing milestones yet.")).toBeDefined());
     fireEvent.click(getByRole("button", { name: "New Billing Milestone" }));
@@ -126,7 +142,6 @@ describe("BillingMilestonesClient", () => {
     await waitFor(() => expect(customerSelect.options.length).toBeGreaterThan(1));
     fireEvent.change(customerSelect, { target: { value: "cust-1" } });
     await waitFor(() => expect(customerSelect.value).toBe("cust-1"));
-    expect(getByRole("button", { name: `Save (${NAME_REQUIRED})` })).toBeDefined();
   });
 
   test("approving a submitted claim PATCHes /api/billing-claims/[id] with action=approve", async () => {
@@ -156,17 +171,18 @@ describe("BillingMilestonesClient", () => {
     await waitFor(() => expect(patched).toEqual({ action: "reject", rejectionReason: "" }));
   });
 
-  test("invoicing an approved claim without a tax template configured is disabled with a real reason", async () => {
+  test("GUIDED: invoicing with no tax template configured explains it and points at the tax template form on this same page", async () => {
     const claim = { ...CLAIM_SUBMITTED, status: "client_approved" as const };
-    const { getByText, getByRole } = renderClient({
+    const { getByText, getByRole, findByTestId } = renderClient({
       "/api/billing-claims": () => jsonRes({ claims: [claim] }),
       "/api/tax-templates": () => jsonRes({ taxTemplates: [] }),
     });
     await waitFor(() => expect(getByText("Foundation complete")).toBeDefined());
-    await waitFor(() => {
-      const btn = getByRole("button", { name: "Invoice" }) as HTMLButtonElement;
-      expect(btn.disabled).toBe(true);
-    });
+    fireEvent.click(getByRole("button", { name: "Invoice" }));
+    fireEvent.click(await findByTestId("claim-invoice-confirm-claim-1"));
+    const panel = await findByTestId("fault-panel");
+    expect(panel.getAttribute("data-fault-code")).toBe("BILL_NO_TAX_TEMPLATE");
+    expect(document.querySelector('[data-testid="tax-template-form"]')).not.toBeNull();
   });
 
   test("QA D5: 'no approved BOQ' is not shown while the BOQ lookup is still pending", async () => {

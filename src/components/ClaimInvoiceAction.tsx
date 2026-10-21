@@ -6,7 +6,15 @@
 // ("No new progress to bill ...") is shown exactly as the server worded it, and nothing is claimed as raised.
 import { useState } from "react";
 import { fetchJson } from "@/lib/fetch-json";
-import { invoiceLabel, invoicePath, missingInvoiceInput, readInvoiceReceipt, refusalText, type InvoiceReceipt } from "@/lib/billing-invoice";
+import { invoiceLabel, invoicePath, readInvoiceReceipt, type InvoiceReceipt } from "@/lib/billing-invoice";
+// GUIDED ERRORS (G2): a missing bill date or tax template, and every refusal ("No new progress to bill ..."), is the guide panel: what happened in the
+// server's own words, why, the numbered steps, the exact place to fix it and the way back. Nothing is claimed as raised unless the server confirmed an invoice.
+import { GuidedError } from "@/components/GuidedError";
+import FaultPanel from "@/components/FaultPanel";
+import { contextFromError, currentScreen } from "@/lib/error-guide/context";
+import { invoiceInputFaults, type Fault } from "@/lib/error-guide/g2-faults";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import type { GuideContext } from "@/lib/error-guide/types";
 
 type TaxTemplate = { id: string; name: string; isDefault?: boolean };
 
@@ -19,12 +27,14 @@ export default function ClaimInvoiceAction({ claimId, onInvoiced, requestTimeout
   const [billDate, setBillDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [taxTemplateId, setTaxTemplateId] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<GuideContext | null>(null);
+  const [faults, setFaults] = useState<Fault[]>([]);
   const [receipt, setReceipt] = useState<InvoiceReceipt | null>(null);
 
   async function openForm() {
     setOpen(true);
-    setError(null);
+    setFailure(null);
+    setFaults([]);
     if (templates) return;
     try {
       const d = await fetchJson<{ taxTemplates?: TaxTemplate[] }>("/api/tax-templates");
@@ -35,15 +45,22 @@ export default function ClaimInvoiceAction({ claimId, onInvoiced, requestTimeout
       if (preset) setTaxTemplateId((cur) => cur || preset.id);
     } catch (err) {
       setTemplates([]);
-      setError(refusalText(err));
+      setFailure(contextFromError(err, { entityId: claimId, entityType: "progress_claim" }));
     }
   }
 
   async function confirm() {
-    const missing = missingInvoiceInput({ billDate, taxTemplateId });
-    if (missing) { setError(missing); return; }
+    const problems = invoiceInputFaults({ billDate, taxTemplateId, hasTemplates: (templates?.length ?? 0) > 0, ids: { billDate: "claim-invoice-bill-date", taxTemplate: "claim-invoice-tax-template" } });
+    if (problems.length > 0) {
+      setFaults(problems);
+      setFailure(null);
+      const el = findFocusTarget(problems[0].field);
+      if (el) highlightElement(el);
+      return;
+    }
+    setFaults([]);
     setBusy(true);
-    setError(null);
+    setFailure(null);
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), requestTimeoutMs);
     try {
@@ -58,9 +75,11 @@ export default function ClaimInvoiceAction({ claimId, onInvoiced, requestTimeout
       setOpen(false);
       onInvoiced?.(r);
     } catch (err) {
-      setError(ctl.signal.aborted
-        ? "The server did not answer in time. The invoice may already have been raised - check the Invoices list before trying again."
-        : refusalText(err));
+      setFailure(
+        ctl.signal.aborted
+          ? { ...currentScreen(), entityId: claimId, entityType: "progress_claim", status: 0, code: "TIMEOUT", method: "PATCH", apiPath: `/api/billing-claims/${claimId}`, serverMessage: "The server did not answer in time. The invoice may already have been raised - check the Invoices list before trying again." }
+          : contextFromError(err, { entityId: claimId, entityType: "progress_claim", ...(err instanceof Error && /did not confirm an invoice/i.test(err.message) ? { code: "UNCONFIRMED", method: "PATCH", apiPath: `/api/billing-claims/${claimId}`, status: 200 } : {}) })
+      );
     } finally {
       clearTimeout(timer);
       setBusy(false);
@@ -81,9 +100,9 @@ export default function ClaimInvoiceAction({ claimId, onInvoiced, requestTimeout
         <button type="button" data-testid="claim-invoice-open" className="rounded-md bg-ct-navy px-3 py-1.5 text-sm text-white" onClick={() => void openForm()}>Invoice</button>
       ) : (
         <div className="flex flex-wrap items-end gap-2 rounded-md border border-black/10 p-3">
-          <label className="text-xs">Bill date<input aria-label="Bill date" type="date" className="mt-1 block h-9 w-40 rounded-md border border-black/20 px-2 text-sm" value={billDate} onChange={(e) => setBillDate(e.target.value)} /></label>
+          <label className="text-xs">Bill date<input aria-label="Bill date" id="claim-invoice-bill-date" data-testid="claim-invoice-bill-date" type="date" className="mt-1 block h-9 w-40 rounded-md border border-black/20 px-2 text-sm" value={billDate} onChange={(e) => setBillDate(e.target.value)} /></label>
           <label className="text-xs">Tax template
-            <select aria-label="Tax template" className="mt-1 block h-9 w-48 rounded-md border border-black/20 px-2 text-sm" value={taxTemplateId} onChange={(e) => setTaxTemplateId(e.target.value)}>
+            <select aria-label="Tax template" id="claim-invoice-tax-template" data-testid="claim-invoice-tax-template" className="mt-1 block h-9 w-48 rounded-md border border-black/20 px-2 text-sm" value={taxTemplateId} onChange={(e) => setTaxTemplateId(e.target.value)}>
               <option value="">{templates === null ? "Loading…" : "Select…"}</option>
               {(templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
@@ -92,10 +111,11 @@ export default function ClaimInvoiceAction({ claimId, onInvoiced, requestTimeout
           <button type="button" className="px-2 py-1.5 text-sm underline" onClick={() => setOpen(false)}>Cancel</button>
         </div>
       )}
-      {templates !== null && templates.length === 0 && open && !error ? (
+      {templates !== null && templates.length === 0 && open && !failure && faults.length === 0 ? (
         <p className="text-xs text-px-muted" data-testid="claim-invoice-no-template">No tax template is set up for this organisation yet. Create one on the online billing page, then try again.</p>
       ) : null}
-      {error ? <p role="alert" data-testid="claim-invoice-error" className="text-sm text-red-800">{error}</p> : null}
+      <FaultPanel faults={faults} />
+      {failure ? <div data-testid="claim-invoice-error"><GuidedError ctx={failure} onRetry={() => void confirm()} /></div> : null}
     </div>
   );
 }

@@ -12,21 +12,26 @@ import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/scr
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setScreenMessage } from "@/lib/screen-message";
+// GUIDED ERRORS (G2): what was typed survives leaving the form, a wrong or missing entry is written beside its box AND explained in the guide panel
+// (nothing is sent while a fault exists), and a refusal from the server is the same panel with the server's own words.
+import FaultPanel from "@/components/FaultPanel";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { messageFor, siteInstructionFaults, siteInstructionFileFault, type Fault } from "@/lib/error-guide/g2-faults";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
 import { useSubmit, SUBMIT_TIMEOUT_MS } from "@/lib/use-submit";
 import { fetchJson } from "@/lib/fetch-json";
 import { findRecentSiteInstruction, lookForCreated, type SiteInstructionRow } from "@/lib/recover-created";
-import {
-  SI_MAX_FILE_MB,
-  missingSiteInstructionFields,
-  missingSiteInstructionReason,
-  readCreatedSiteInstruction,
-  siteInstructionFileError,
-} from "@/lib/site-instruction-form";
+import { SI_MAX_FILE_MB, readCreatedSiteInstruction } from "@/lib/site-instruction-form";
 
 type CreatedBody = { siteInstruction?: { id?: string; siNumber?: number }; attachmentError?: string; recovered?: boolean; fileExpected?: boolean };
 
 // A save with a file attached is a multi-step write (record, then upload), so it is given longer than a plain JSON POST.
 const SUBMIT_WITH_FILE_TIMEOUT_MS = 25_000;
+
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function SiteInstructionCreateClient({
   projectId,
@@ -42,12 +47,16 @@ export default function SiteInstructionCreateClient({
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<FieldMessage[]>([]);
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [toContractor, setToContractor] = useState("");
-  const [description, setDescription] = useState("");
-  const [drawingRef, setDrawingRef] = useState("");
-  const [costImpact, setCostImpact] = useState(false);
+  const draftKey = `site-instruction-new:${projectId}`;
+  const draft = useDraft(draftKey, { issueDate: todayLocal(), toContractor: "", description: "", drawingRef: "", costImpact: false });
+  const { issueDate, toContractor, description, drawingRef, costImpact } = draft.value;
+  const setIssueDate = (v: string) => draft.set({ issueDate: v });
+  const setToContractor = (v: string) => draft.set({ toContractor: v });
+  const setDescription = (v: string) => draft.set({ description: v });
+  const setDrawingRef = (v: string) => draft.set({ drawingRef: v });
+  const setCostImpact = (v: boolean) => draft.set({ costImpact: v });
   const [file, setFile] = useState<File | null>(null);
+  const [attempted, setAttempted] = useState(false);
 
   // What the last request actually carried, so the lookup after a timeout matches THAT save even if a field was edited since.
   const sent = useRef<{ issueDate: string; toContractor: string; description: string; hasFile: boolean } | null>(null);
@@ -80,20 +89,25 @@ export default function SiteInstructionCreateClient({
     },
     onSuccess: (data) => {
       const receipt = readCreatedSiteInstruction(data);
+      draft.clear();
       setScreenMessage("site-instructions.object", { level: receipt.level, text: receipt.text });
       router.push(`/site-instructions/${receipt.id}?projectId=${encodeURIComponent(projectId)}`);
     },
   });
   const saving = submit.saving;
 
-  const missing = missingSiteInstructionFields({ issueDate, toContractor, description });
-  const fileError = siteInstructionFileError(file ? { name: file.name, size: file.size } : null);
-  const disabledReason = saving ? "Saving…" : fileError ?? missingSiteInstructionReason(missing);
-  const saveDisabled = saving || missing.length > 0 || !!fileError;
+  const fileFault = siteInstructionFileFault(file ? { name: file.name, size: file.size } : null, "file");
+  const faults: Fault[] = [...siteInstructionFaults({ issueDate, toContractor, description }), ...(fileFault ? [fileFault] : [])];
+  // a missing entry is only shown after the first press of Save; a wrong file or a future date is shown at once
+  const shown = faults.filter((f) => attempted || !/_MISSING$/.test(f.code));
+  const saveDisabled = saving;
 
   function createInstruction() {
-    if (saveDisabled) {
-      if (disabledReason) setMessages([{ level: "error", text: disabledReason }]);
+    setAttempted(true);
+    if (faults.length > 0) {
+      setMessages([]);
+      const el = findFocusTarget(faults[0].field);
+      if (el) highlightElement(el);
       return;
     }
     setMessages([]);
@@ -117,14 +131,22 @@ export default function SiteInstructionCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
-        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
+        {draft.restored && !submit.failure && (
+          <p role="status" data-testid="si-draft-restored" className="rounded-md border border-px-info-border bg-px-info-light px-3 py-2 text-[12.5px] text-px-info">
+            We put back what you had typed here before you left. Check it, then press Save.
+          </p>
+        )}
+        <FaultPanel faults={shown} draftKey={draftKey} />
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} draftKey={draftKey} />
         <div className="space-y-1.5">
           <Label htmlFor="issueDate">Issue date</Label>
-          <Input id="issueDate" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+          <Input id="issueDate" data-testid="issueDate" type="date" max={todayLocal()} value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+          {messageFor(shown, "issueDate") && <p role="alert" className="text-[12.5px] text-px-error">{messageFor(shown, "issueDate")}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="toContractor">To contractor</Label>
           <Input id="toContractor" autoFocus value={toContractor} onChange={(e) => setToContractor(e.target.value)} placeholder="e.g. Apex MEP Contractors LLC" />
+          {messageFor(shown, "toContractor") && <p role="alert" className="text-[12.5px] text-px-error">{messageFor(shown, "toContractor")}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="description">Instruction</Label>
@@ -136,6 +158,7 @@ export default function SiteInstructionCreateClient({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What the contractor is instructed to do"
           />
+          {messageFor(shown, "description") && <p role="alert" className="text-[12.5px] text-px-error">{messageFor(shown, "description")}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="drawingRef">Drawing reference (optional)</Label>
@@ -154,9 +177,8 @@ export default function SiteInstructionCreateClient({
             onChange={(e) => setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null)}
           />
           <p className="text-[12.5px] text-ct-muted">PDF or photo, up to {SI_MAX_FILE_MB} MB</p>
-          {fileError && <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{fileError}</p>}
+          {fileFault && <p role="alert" className="text-[12.5px] text-px-error">{fileFault.message}</p>}
         </div>
-        {disabledReason && <p role="status" className="pt-1 text-[12.5px] text-ct-muted">{disabledReason}</p>}
       </div>
     </ObjectScreen>
   );

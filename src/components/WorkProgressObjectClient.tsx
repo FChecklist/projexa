@@ -25,6 +25,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
+// GUIDED ERRORS (G2): a refused save / delete or a failed read is the guide panel (what happened in full, why, numbered steps, the exact place to fix it,
+// the way back), not one red line.
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
 import { formatDayMonthYearNumeric } from "@/lib/format-date";
 import {
   boqLineLabel, describeProgressDeleteImpact, progressDeleteConfirmSentence,
@@ -78,7 +83,8 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
   const [activities, setActivities] = useState<Activity[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [photosError, setPhotosError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<GuideContext | null>(null);
+  const [failure, setFailure] = useState<GuideContext | null>(null);
   const [mode, setMode] = useState<"display" | "edit">("display");
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [messages, setMessages] = useState<FieldMessage[]>([]);
@@ -94,7 +100,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
       setEntry(null);
       // The backend's own words, not a generic replacement -- the reason an
       // entry will not load is information the site engineer needs.
-      setLoadError(errorMessage(err, "Couldn't load this progress entry"));
+      setLoadError(contextFromError(err, { entityId: entryId, entityType: "work_progress_entry" }));
       return;
     }
     setLoadError(null);
@@ -161,6 +167,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
     if (!entry) return;
     setSaving(true);
     setMessages([]);
+    setFailure(null);
     try {
       const saved = await fetchJson<ProgressEntryDetail>(`/api/work-progress/${entryId}`, {
         method: "PATCH",
@@ -183,7 +190,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
     } catch (err) {
       // The backend's message verbatim -- e.g. the parent-BOQ-line refusal or
       // the 0-100 range -- in the persistent band, never a toast.
-      setMessages([{ level: "error", text: errorMessage(err, "Couldn't save this progress entry") }]);
+      setFailure(contextFromError(err, { projectId: entry.projectId, entityId: entryId, entityType: "work_progress_entry", field: "wp-edit-form" }));
     } finally {
       setSaving(false);
     }
@@ -220,7 +227,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
       router.push(`/work-progress?projectId=${entry.projectId}&deleted=${encodeURIComponent(`Deleted the entry logged on ${formatDayMonthYearNumeric(entry.entryDate)}`)}`);
     } catch (err) {
       setConfirmingDelete(false);
-      setMessages([{ level: "error", text: errorMessage(err, "Couldn't delete this progress entry") }]);
+      setFailure(contextFromError(err, { projectId: entry.projectId, entityId: entryId, entityType: "work_progress_entry" }));
     } finally {
       setDeleting(false);
     }
@@ -229,10 +236,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
-        <div className="rounded-md border border-px-error-border bg-px-error-light p-4">
-          <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        </div>
-        <button type="button" onClick={() => void load()} className="rounded-md border border-ct-border2 px-3 py-1.5 text-[13px]">Retry</button>
+        <GuidedError ctx={loadError} onRetry={() => void load()} />
       </div>
     );
   }
@@ -278,8 +282,9 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
       saveDisabledReason={saving ? "Saving…" : missingCount > 0 ? `${missingCount} required field${missingCount === 1 ? "" : "s"}` : undefined}
       messages={messages}
     >
+      {failure && <div className="px-4 pt-3"><GuidedError ctx={failure} onRetry={failure.method === "DELETE" ? () => void handleDelete() : () => void handleSave()} /></div>}
       {mode === "edit" ? (
-        <>
+        <div data-testid="wp-edit-form" tabIndex={-1}>
           {/* The BOQ line is shown, not edited, here: re-pointing an entry at a
               different line is a change of WHAT was measured, and the backend
               enforces real rules about it (the line must belong to this
@@ -290,7 +295,7 @@ export default function WorkProgressObjectClient({ entryId, justLogged }: { entr
           </p>
           <FormSection title="Progress entry" columns={columns} values={values} mode="edit" onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))} />
           <FormSection title="More details" columns={remarksColumns} values={values} mode="edit" onFieldChange={(field, value) => setValues((v) => ({ ...v, [field]: value }))} defaultOptionalCollapsed />
-        </>
+        </div>
       ) : (
         <div className="space-y-4 px-4 py-3">
           <section>

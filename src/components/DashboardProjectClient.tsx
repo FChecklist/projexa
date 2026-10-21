@@ -121,7 +121,9 @@ import {
 // connected bordered strip, not four separately-boxed tiles with gaps.
 import { DashboardScreen } from "@/components/screens/DashboardScreen";
 import { DashboardKpiTile, type KpiTileState } from "@/components/DashboardKpiTile";
-import { PaneErrorCard } from "@/components/PaneState";
+// GUIDED ERRORS (G2): the whole-screen failure is the guide panel (what happened in full, why, numbered steps, Try again, copy details).
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
 // R67 E-02 (R-012), chart 2: the percent-only kit BarChart below is replaced by
 // the real category-distribution charts. The PRESENTATIONAL half is imported so
 // this screen's own already-fetched category-progress response feeds it -- no
@@ -422,9 +424,10 @@ export default function DashboardProjectClient({ projectId, labels }: { projectI
   if (dashboard.state === "error") {
     return (
       <div className="flex-1 p-6">
-        <PaneErrorCard
-          entity="this project's dashboard"
-          error={{ status: dashboardStatus, message: dashboard.error }}
+        <GuidedError
+          ctx={contextFromError(dashboardStatus ? Object.assign(new Error(dashboard.error ?? ""), { status: dashboardStatus }) : Object.assign(new Error(dashboard.error ?? ""), { code: "OFFLINE" }), { projectId, entityType: "project_dashboard", apiPath: "/api/dashboard/project", method: "GET" })}
+          message={`Couldn't load this project's dashboard. ${dashboard.error ?? ""}`.trim()}
+          retryable
           onRetry={() => {
             const controller = new AbortController();
             setDashboard(PENDING);

@@ -5,8 +5,11 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+
+// the guided-error panel navigates with the app router
+mock.module("next/navigation", () => ({ useRouter: () => ({ push() {}, replace() {}, refresh() {}, back() {}, prefetch() {} }), usePathname: () => "/billing-milestones", useSearchParams: () => new URLSearchParams() }));
 import ClaimInvoiceAction from "./ClaimInvoiceAction";
 
 const realFetch = globalThis.fetch;
@@ -56,7 +59,9 @@ describe("ClaimInvoiceAction", () => {
     await openAndPick(view);
     fireEvent.click(view.getByTestId("claim-invoice-confirm"));
     await waitFor(() => view.getByTestId("claim-invoice-error"));
-    expect(view.getByTestId("claim-invoice-error").textContent).toBe("No new progress to bill since the last interim bill");
+    // GUIDED: the server's words are shown whole inside the guide panel (title, what happened, why, steps)
+    expect(view.getByTestId("guided-error-what").textContent).toContain("No new progress to bill since the last interim bill");
+    expect(view.getByTestId("guided-error-steps").children.length).toBeGreaterThan(0);
     expect(view.queryByTestId("claim-invoice-receipt")).toBeNull();
     expect(view.queryByTestId("claim-invoice-link")).toBeNull();
   });
@@ -76,7 +81,8 @@ describe("ClaimInvoiceAction", () => {
     fireEvent.click(view.getByTestId("claim-invoice-open"));
     await waitFor(() => expect(view.getByLabelText("Tax template").querySelectorAll("option").length).toBe(3));
     fireEvent.click(view.getByTestId("claim-invoice-confirm"));
-    expect(view.getByTestId("claim-invoice-error").textContent).toBe("Choose the tax template");
+    expect(view.getByTestId("fault-panel").getAttribute("data-fault-code")).toBe("BILL_TAX_TEMPLATE_MISSING");
+    expect(view.getByTestId("guided-error-what").textContent).toContain("Choose the tax template");
     expect(calls.some((c) => c.method === "PATCH")).toBe(false);
   });
 
@@ -89,7 +95,7 @@ describe("ClaimInvoiceAction", () => {
     expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(view.getByTestId("claim-invoice-confirm"));
     await waitFor(() => view.getByTestId("claim-invoice-error"));
-    expect(view.getByTestId("claim-invoice-error").textContent).toBe("No new progress to bill");
+    expect(view.getByTestId("guided-error-what").textContent).toContain("No new progress to bill");
   });
 
   test("R-94/95 live: of several templates the one the organisation marked default is chosen", async () => {
@@ -107,7 +113,7 @@ describe("ClaimInvoiceAction", () => {
     fireEvent.click(view.getByTestId("claim-invoice-confirm"));
     expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(true);
     await waitFor(() => view.getByTestId("claim-invoice-error"));
-    expect(view.getByTestId("claim-invoice-error").textContent).toContain("may already have been raised");
+    expect(view.getByTestId("guided-error-what").textContent).toContain("may have been saved");
     expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(false);
   });
 });

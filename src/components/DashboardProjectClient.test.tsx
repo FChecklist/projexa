@@ -75,7 +75,7 @@ describe("DashboardProjectClient", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("Couldn't load this project's dashboard");
     });
-    expect(container.textContent).toContain("Retry");
+    expect(container.textContent).toContain("Try again");
   });
 
   test("a failed read never renders the permits all-clear -- the specific lie this fixes", async () => {

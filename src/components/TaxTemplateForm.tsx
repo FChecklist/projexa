@@ -10,7 +10,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G2): a wrong rate or a refusal is the guide panel inside this form (what happened, why, steps, outlines the exact box), not a toast.
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, currentScreen } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
 
 export type TaxAccount = { id: string; accountName: string };
 export type TaxMode = "intra" | "inter";
@@ -62,12 +66,14 @@ export default function TaxTemplateForm({ onCreated }: { onCreated: () => void |
   const [igst, setIgst] = useState("18");
   const [customName, setCustomName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<GuideContext | null>(null);
 
   const numeric = (s: string) => (s.trim() !== "" && Number.isFinite(Number(s)) ? Number(s) : 0);
   const shownName = customName ?? defaultTemplateName(mode, numeric(cgst), numeric(sgst), numeric(igst));
 
   async function create() {
     setSaving(true);
+    setFailure(null);
     try {
       const seeded = await fetchJson<{ taxAccounts?: TaxAccount[] }>("/api/tax-templates", {
         method: "POST",
@@ -76,7 +82,9 @@ export default function TaxTemplateForm({ onCreated }: { onCreated: () => void |
       });
       const built = buildTaxTemplatePayload(mode, customName, cgst, sgst, igst, seeded.taxAccounts ?? []);
       if (!built.ok) {
-        toast.error(built.error);
+        // which box the rule is about: "CGST rate must be ..." -> the CGST box
+        const label = /^(CGST|SGST|IGST)\b/.exec(built.error)?.[1]?.toLowerCase();
+        setFailure({ ...currentScreen(), status: 0, code: "BILL_TAX_RATE_INVALID", field: label ? `tt-${label}` : "tax-template-form", serverMessage: built.error });
         return;
       }
       await fetchJson("/api/tax-templates", {
@@ -87,14 +95,15 @@ export default function TaxTemplateForm({ onCreated }: { onCreated: () => void |
       toast.success("Tax template created");
       await onCreated();
     } catch (err) {
-      toast.error(errorMessage(err, "The tax template was not created"));
+      setFailure(contextFromError(err, { entityType: "tax_template", field: "tax-template-form" }));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-px-border bg-px-cloud/40 p-3" data-testid="tax-template-form">
+    <div className="mt-2 flex flex-wrap items-end gap-2 rounded-md border border-px-border bg-px-cloud/40 p-3" data-testid="tax-template-form" tabIndex={-1}>
+      {failure && <div className="basis-full"><GuidedError ctx={failure} onRetry={() => void create()} /></div>}
       <div className="space-y-1.5">
         <Label htmlFor="tt-mode">Supply type</Label>
         <select
@@ -111,17 +120,17 @@ export default function TaxTemplateForm({ onCreated }: { onCreated: () => void |
         <>
           <div className="space-y-1.5">
             <Label htmlFor="tt-cgst">CGST %</Label>
-            <Input id="tt-cgst" type="number" min={0} max={100} step="0.01" className="w-24" value={cgst} onChange={(e) => setCgst(e.target.value)} />
+            <Input id="tt-cgst" type="text" inputMode="decimal" className="w-24" value={cgst} onChange={(e) => setCgst(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="tt-sgst">SGST %</Label>
-            <Input id="tt-sgst" type="number" min={0} max={100} step="0.01" className="w-24" value={sgst} onChange={(e) => setSgst(e.target.value)} />
+            <Input id="tt-sgst" type="text" inputMode="decimal" className="w-24" value={sgst} onChange={(e) => setSgst(e.target.value)} />
           </div>
         </>
       ) : (
         <div className="space-y-1.5">
           <Label htmlFor="tt-igst">IGST %</Label>
-          <Input id="tt-igst" type="number" min={0} max={100} step="0.01" className="w-24" value={igst} onChange={(e) => setIgst(e.target.value)} />
+          <Input id="tt-igst" type="text" inputMode="decimal" className="w-24" value={igst} onChange={(e) => setIgst(e.target.value)} />
         </div>
       )}
       <div className="space-y-1.5">

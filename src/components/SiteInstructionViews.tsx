@@ -5,7 +5,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G2): a failed read or a refused "Add file" is the guide panel (what happened in full, why, numbered steps, the exact place to fix it,
+// the way back), not a single red line.
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, currentScreen } from "@/lib/error-guide/context";
+import { siteInstructionFileFault } from "@/lib/error-guide/g2-faults";
+import { faultContext } from "@/lib/error-guide/g2-faults";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import type { GuideContext } from "@/lib/error-guide/types";
 import { takeScreenMessage, type ScreenMessage } from "@/lib/screen-message";
 import { SI_DOCUMENT_ENTITY_TYPE, SI_MAX_FILE_MB, siLabel, siteInstructionFileError } from "@/lib/site-instruction-form";
 
@@ -26,15 +34,17 @@ const day = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : DASH
 
 export function SiteInstructionsList({ projectId, projectName }: { projectId: string; projectName?: string | null }) {
   const [rows, setRows] = useState<SiteInstructionRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<GuideContext | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setError(null);
     fetchJson<{ siteInstructions?: SiteInstructionRow[] }>(`/api/site-instructions?projectId=${encodeURIComponent(projectId)}`)
       .then((body) => { if (!cancelled) setRows(body.siteInstructions ?? []); })
-      .catch((err) => { if (!cancelled) setError(errorMessage(err, "Could not load the site instructions")); });
+      .catch((err) => { if (!cancelled) setError(contextFromError(err, { projectId, entityType: "site_instruction" })); });
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, attempt]);
 
   const newHref = `/site-instructions/new?projectId=${encodeURIComponent(projectId)}`;
   return (
@@ -46,7 +56,7 @@ export function SiteInstructionsList({ projectId, projectName }: { projectId: st
         </div>
         <Link href={newHref} className="rounded-md bg-ct-navy px-3 py-2 text-sm text-white">+ New</Link>
       </div>
-      {error ? <p role="alert" className="text-sm text-[color:var(--color-veri-status-late)]">{error}</p> : null}
+      {error ? <GuidedError ctx={error} onRetry={() => setAttempt((a) => a + 1)} /> : null}
       {!error && rows === null ? <p className="text-sm text-px-muted">Loading site instructions…</p> : null}
       {rows && rows.length === 0 ? <p className="text-sm text-px-muted">No site instructions in this project yet.</p> : null}
       {rows && rows.length > 0 ? (
@@ -81,12 +91,19 @@ export function SiteInstructionAddFile({ id }: { id: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [failure, setFailure] = useState<GuideContext | null>(null);
   const [inputKey, setInputKey] = useState(0);
-  const fileError = siteInstructionFileError(file ? { name: file.name, size: file.size } : null);
+  const fileFault = siteInstructionFileFault(file ? { name: file.name, size: file.size } : null, "si-add-file-input");
+  const fileError = fileFault?.message;
 
   async function add() {
-    if (!file || fileError) {
-      setNote({ ok: false, text: fileError ?? "Choose the file to add" });
+    setFailure(null);
+    if (!file || fileFault) {
+      // Nothing is sent. The guide panel names the problem and its "Fix it now" outlines the file box.
+      const fault = fileFault ?? { code: "SI_FILE_NONE", field: "si-add-file-input", message: "Choose the PDF or photo to add to this instruction." };
+      setFailure(faultContext(fault, { entityId: id, entityType: "site_instruction" }));
+      const el = findFocusTarget("si-add-file-input");
+      if (el) highlightElement(el);
       return;
     }
     setBusy(true);
@@ -104,7 +121,7 @@ export function SiteInstructionAddFile({ id }: { id: string }) {
       setFile(null);
       setInputKey((k) => k + 1);
     } catch (err) {
-      setNote({ ok: false, text: errorMessage(err, "The file could not be added") });
+      setFailure(contextFromError(err, { entityId: id, entityType: "site_instruction" }));
     } finally {
       setBusy(false);
     }
@@ -121,11 +138,12 @@ export function SiteInstructionAddFile({ id }: { id: string }) {
           accept="application/pdf,image/png,image/jpeg"
           onChange={(e) => { setFile(e.target.files && e.target.files.length > 0 ? e.target.files[0] : null); setNote(null); }}
         />
-        <button type="button" data-testid="si-add-file-button" disabled={busy || !file} onClick={() => void add()} className="rounded-md bg-ct-navy px-3 py-1.5 text-sm text-white disabled:opacity-50">
+        <button type="button" data-testid="si-add-file-button" disabled={busy} onClick={() => void add()} className="rounded-md bg-ct-navy px-3 py-1.5 text-sm text-white disabled:opacity-50">
           {busy ? "Adding…" : "Add file"}
         </button>
       </div>
       {fileError ? <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{fileError}</p> : null}
+      {failure ? <GuidedError ctx={failure} onRetry={failure.status === 0 && failure.code?.startsWith("SI_FILE") ? undefined : () => void add()} /> : null}
       {note ? <p role={note.ok ? "status" : "alert"} data-testid="si-add-file-note" data-ok={note.ok ? "1" : "0"} className="text-sm">{note.text}</p> : null}
     </div>
   );
@@ -133,7 +151,8 @@ export function SiteInstructionAddFile({ id }: { id: string }) {
 
 export function SiteInstructionView({ id, projectId }: { id: string; projectId?: string | null }) {
   const [si, setSi] = useState<SiteInstructionRow | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<GuideContext | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [handed, setHanded] = useState<ScreenMessage | null>(null);
 
   useEffect(() => {
@@ -146,9 +165,9 @@ export function SiteInstructionView({ id, projectId }: { id: string; projectId?:
         const row = (body as { siteInstruction?: SiteInstructionRow }).siteInstruction ?? (body as SiteInstructionRow);
         setSi(row);
       })
-      .catch((err) => { if (!cancelled) setError(errorMessage(err, "Could not load this site instruction")); });
+      .catch((err) => { if (!cancelled) setError(contextFromError(err, { projectId: projectId ?? undefined, entityId: id, entityType: "site_instruction" })); });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, attempt]);
 
   const listHref = projectId ? `/site-instructions?projectId=${encodeURIComponent(projectId)}` : "/site-instructions";
   const facts: [string, string][] = si
@@ -166,7 +185,7 @@ export function SiteInstructionView({ id, projectId }: { id: string; projectId?:
       {handed ? (
         <p role="status" className={`rounded-md border p-3 text-sm ${handed.level === "warning" ? "border-amber-400" : "border-emerald-400"}`}>{handed.text}</p>
       ) : null}
-      {error ? <p role="alert" className="text-sm text-[color:var(--color-veri-status-late)]">{error}</p> : null}
+      {error ? <GuidedError ctx={error} onRetry={() => setAttempt((a) => a + 1)} /> : null}
       {!error && !si ? <p className="text-sm text-px-muted">Loading…</p> : null}
       {si ? (
         <div className="max-w-xl space-y-3 rounded-lg border border-black/10 bg-white p-4 text-sm">
