@@ -3,6 +3,8 @@
 
 export const FOCUS_PARAM = "focus";
 export const HIGHLIGHT_MS = 3000;
+/** A FILE box keeps its outline until a file is chosen (or this long): it is small, and the page that owns it is often slow when a fault is shown. */
+export const FILE_HIGHLIGHT_MS = 20000;
 const SEARCH_EVERY_MS = 100;
 const SEARCH_FOR_MS = 3000;
 export const LIVE_REGION_ID = "px-focus-announcer";
@@ -65,11 +67,18 @@ export function highlightElement(el: HTMLElement, doc: Document = document): voi
     /* not focusable */
   }
   announce(`Highlighted: ${labelOf(el, doc)}. This is the place to correct.`, doc);
-  setTimeout(() => {
+  const clear = () => {
     el.style.outline = previous.outline;
     el.style.outlineOffset = previous.offset;
     el.removeAttribute("data-px-highlighted");
-  }, HIGHLIGHT_MS);
+  };
+  if (el instanceof HTMLInputElement && el.type === "file") {
+    // The person is ending the outline by doing the correction: choosing a file.
+    const timer = setTimeout(clear, FILE_HIGHLIGHT_MS);
+    el.addEventListener("change", () => { clearTimeout(timer); clear(); }, { once: true });
+    return;
+  }
+  setTimeout(clear, HIGHLIGHT_MS);
 }
 
 /** Looks for the element until it appears (the screen may still be loading) and highlights it. Returns a cancel function. */

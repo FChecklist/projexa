@@ -82,7 +82,10 @@ const SIGN_VARIANT: Record<ProjectAnalysisRow["commitmentDriftSign"], "default" 
 /** Gap between re-reads of the analysis after a baseline was confirmed and the first read still said "no baseline". */
 const BASELINE_REREAD_DELAY_MS = 300;
 
-export default function Project360Client({ projectId, projectName }: { projectId: string; projectName: string }) {
+/** How long the analysis read may take before the card says so and offers Retry (the proxy's own upstream budget is shorter; this is the backstop). */
+export const PROJECT360_READ_TIMEOUT_MS = 40_000;
+
+export default function Project360Client({ projectId, projectName, readTimeoutMs = PROJECT360_READ_TIMEOUT_MS }: { projectId: string; projectName: string; readTimeoutMs?: number }) {
   const orgMoney = useOrgMoney();
   const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? "Not yet baselined" : orgMoney.money(v, { fractionDigits: 0 }));
   const fmtPercent = (v: MoneyFigure) => (v === "NOT_SET" ? "—" : `${formatNumber(v, { fractionDigits: 1 })}%`);
@@ -154,34 +157,41 @@ export default function Project360Client({ projectId, projectName }: { projectId
     }
   }
 
+  // R-100: the Profit & Loss card needs ONLY the analysis row. It used to wait (Promise.all) for four unrelated lists as well, so one slow
+  // list kept the spinner up for ever and the card never drew. Now: the analysis loads on its own, bounded by a timeout, and draws the moment
+  // it arrives; the four small counts load beside it and fill in when they can (a failed count reads "-", never blocks the card).
   useEffect(() => {
     let cancelled = false;
+    const controllers: AbortController[] = [];
+    function within<T>(url: string): Promise<T> {
+      const c = new AbortController();
+      controllers.push(c);
+      const timer = setTimeout(() => c.abort(), readTimeoutMs);
+      return fetchJson<T>(url, { signal: c.signal }).finally(() => clearTimeout(timer));
+    }
     async function load() {
       setLoading(true);
       setError(null);
+      const q = encodeURIComponent(projectId);
+      void within<{ changeOrders?: ChangeOrder[] }>(`/api/change-orders?projectId=${q}`).then((r) => { if (!cancelled) setChangeOrders(r.changeOrders ?? []); }).catch(() => {});
+      void within<{ milestones?: Milestone[] }>(`/api/milestones?projectId=${q}`).then((r) => { if (!cancelled) setMilestones(r.milestones ?? []); }).catch(() => {});
+      void within<{ tasks?: GanttTask[] }>(`/api/schedule/gantt?projectId=${q}`).then((r) => { if (!cancelled) setTasks(r.tasks ?? []); }).catch(() => {});
+      void within<{ claims?: BillingClaim[] }>(`/api/billing-claims?projectId=${q}`).then((r) => { if (!cancelled) setBillingClaims(r.claims ?? []); }).catch(() => {});
       try {
-        const [analysisRes, changeOrdersRes, milestonesRes, ganttRes, billingRes] = await Promise.all([
-          fetchJson<{ row: ProjectAnalysisRow }>(`/api/reports/boq-analysis?projectId=${encodeURIComponent(projectId)}`),
-          fetchJson<{ changeOrders?: ChangeOrder[] }>(`/api/change-orders?projectId=${encodeURIComponent(projectId)}`),
-          fetchJson<{ milestones?: Milestone[] }>(`/api/milestones?projectId=${encodeURIComponent(projectId)}`),
-          fetchJson<{ tasks?: GanttTask[] }>(`/api/schedule/gantt?projectId=${encodeURIComponent(projectId)}`),
-          fetchJson<{ claims?: BillingClaim[] }>(`/api/billing-claims?projectId=${encodeURIComponent(projectId)}`),
-        ]);
+        const analysisRes = await within<{ row: ProjectAnalysisRow }>(`/api/reports/boq-analysis?projectId=${q}`);
         if (cancelled) return;
         setAnalysis(analysisRes.row);
-        setChangeOrders(changeOrdersRes.changeOrders ?? []);
-        setMilestones(milestonesRes.milestones ?? []);
-        setTasks(ganttRes.tasks ?? []);
-        setBillingClaims(billingRes.claims ?? []);
       } catch (err) {
-        if (!cancelled) setError({ err, at: Date.now(), retry: () => setReloadKey((k) => k + 1) });
+        const timedOut = err instanceof DOMException && err.name === "AbortError";
+        const shown = timedOut ? new ApiError("The profit and loss figures took too long to load. Press Retry.", 408, null) : err;
+        if (!cancelled) setError({ err: shown, at: Date.now(), retry: () => setReloadKey((k) => k + 1) });
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     void load();
-    return () => { cancelled = true; };
-  }, [projectId, reloadKey]);
+    return () => { cancelled = true; controllers.forEach((c) => c.abort()); };
+  }, [projectId, reloadKey, readTimeoutMs]);
 
   if (loading && !analysis) {
     return <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;

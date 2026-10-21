@@ -134,4 +134,36 @@ describe("reports on this laptop", () => {
     const { queryByTestId } = render(<ReportsLocalScreen shell={fakeShell("offline")} params={{}} query={new URLSearchParams("report=project-status")} data={data} />);
     expect(queryByTestId("reports-keep-all")).toBeNull();
   });
+
+  // R-C11/R-C15 (2026-10-22 audit): no "Run Report" button was ever found, and a hung server left "Fetching..." for ever.
+  test("a selected report has a Run Report button that asks the server again, plus Export PDF and Share once a result is kept", async () => {
+    await snapshotCacheFor({ userId: "u1", role: "pm", idb }).write(reportSnapshotName(STATUS_URL, "p1"), BODY);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    const { getByTestId, getByText } = render(<ReportsLocalScreen shell={fakeShell("online")} params={{}} query={new URLSearchParams()} data={data} />);
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+    await waitFor(() => expect((getByTestId("reports-run") as HTMLButtonElement).disabled).toBe(false));
+    expect(getByTestId("reports-run").textContent).toBe("Run Report");
+    fireEvent.click(getByTestId("reports-run"));
+    await waitFor(() => expect(fetchCalls.length).toBe(2));
+    expect(getByText("Export PDF")).toBeTruthy();
+    expect(getByTestId("overview-report-whatsapp").textContent).toContain("Share");
+  });
+
+  test("a server that never answers is given up on with a plain note and a Retry, never an endless 'Fetching'", async () => {
+    globalThis.fetch = ((_i: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_res, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError"))))) as typeof fetch;
+    const { SNAPSHOT_READ_TIMEOUT_MS } = await import("./overview-refresh");
+    expect(SNAPSHOT_READ_TIMEOUT_MS).toBeGreaterThan(0);
+    const data = await loadReports(shellData(), "p1", new URLSearchParams("report=project-status"));
+    const shell = fakeShell("online");
+    const realSetTimeout = globalThis.setTimeout;
+    // shorten only the hook's own 45 s timer
+    globalThis.setTimeout = ((fn: () => void, ms?: number, ...a: unknown[]) => realSetTimeout(fn, ms === SNAPSHOT_READ_TIMEOUT_MS ? 30 : ms, ...a)) as typeof setTimeout;
+    try {
+      const { findByTestId } = render(<ReportsLocalScreen shell={shell} params={{}} query={new URLSearchParams()} data={data} />);
+      await waitFor(() => expect(document.querySelector('[data-testid="overview-report-refresh"]')?.textContent ?? "").toMatch(/took too long/));
+      expect(await findByTestId("reports-retry")).toBeTruthy();
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
 });

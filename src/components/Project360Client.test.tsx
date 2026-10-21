@@ -111,6 +111,27 @@ describe("Project360Client", () => {
   });
 });
 
+// R-100 (2026-10-22 audit): the P&L card never drew within 200 s. One slow sibling list held the whole screen on a spinner, and a hung read had no end.
+describe("Project360Client: the P&L card is never held hostage", () => {
+  test("the Profit & Loss card draws as soon as the analysis arrives, even when the scope-change list never answers", async () => {
+    const never = () => new Promise<Response>(() => {});
+    const { findByText } = renderClient({ "/api/change-orders": never, "/api/milestones": never, "/api/schedule/gantt": never, "/api/billing-claims": never });
+    expect(await findByText("Profit & Loss — the answer")).toBeDefined();
+    expect(await findByText("25.9% margin")).toBeDefined();
+  });
+
+  test("an analysis read that never answers ends in a guided message with Retry, not an endless spinner", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (!url.includes("/api/reports/boq-analysis")) return Promise.resolve(jsonRes({}));
+      return new Promise<Response>((_res, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError"))));
+    }) as typeof fetch;
+    const { findByTestId } = render(<Project360Client projectId="proj-1" projectName="Villa" readTimeoutMs={50} />);
+    const panel = await findByTestId("guided-error");
+    expect(panel.textContent).toMatch(/too long|Retry/i);
+  });
+});
+
 /** Types into a CONTROLLED input (fireEvent.change cannot drive one in this environment): calls its React onChange inside act(). */
 function typeInto(el: Element, value: string) {
   const key = Object.keys(el).find((k) => k.startsWith("__reactProps"));
