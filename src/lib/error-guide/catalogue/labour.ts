@@ -85,7 +85,7 @@ export const labourGuides = guides([
     what: "The labour list is empty, so there is nobody to mark.",
     why: "Attendance is marked for workers on the project list.",
     steps: ["Add workers one by one, or import an Excel sheet.", "Then open attendance."],
-    fix: { label: "Import workers", to: proj("/labour/import"), where: "Labour > Import" },
+    fix: { label: "Add a worker", to: proj("/labour/new"), where: "Labour > New worker > Name", focus: "name" },
     severity: "block", returnLabel: BACK,
   },
   {
@@ -150,5 +150,23 @@ export const labourGuides = guides([
     steps: ["Press Try again.", "If it fails again, check your internet."],
     retry: true, severity: "warn", returnLabel: BACK,
     fix: { label: "Reload", to: here, where: "This screen" },
+  },
+  {
+    id: "labour-rate-invalid", source: "validation", match: { code: "RATE_INVALID" },
+    title: "Daily rate must be zero or more",
+    what: "{serverMessage}",
+    why: "The attendance cost of every day is the daily rate multiplied by the days worked, so the rate must be a real amount.",
+    steps: ["Click the daily rate box.", "Type the pay for one day as digits only, for example 180.", "Press Save again."],
+    fix: { label: "Fix the daily rate", to: here, where: "This screen > Daily rate" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "labour-attendance-future-sheet", source: "validation", match: { code: "ATTENDANCE_FUTURE_DATE" },
+    title: "That sheet is for a future day",
+    what: "{serverMessage}",
+    why: "Attendance records who came to site, so it can only be marked for today or an earlier day.",
+    steps: ["Open the sheet for today.", "Mark each worker.", "Press Save sheet."],
+    fix: { label: "Open today's sheet", to: (c) => `/labour/attendance/${new Date().toISOString().slice(0, 10)}${c.projectId ? `?projectId=${encodeURIComponent(c.projectId)}` : ""}`, where: "Labour > Attendance > today" },
+    severity: "block", returnLabel: "Back to the sheet",
   },
 ]);

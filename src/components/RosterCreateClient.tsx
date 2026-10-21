@@ -171,8 +171,8 @@ export default function RosterCreateClient({ projectId }: { projectId: string })
 
   const checked = useCheckedSubmit(submit, () => {
     const rate = (values.dailyRate ?? "").trim();
-    if (notANumber(rate) || Number(rate) <= 0) {
-      return fault("RATE_INVALID", "dailyRate", `The daily rate "${rate}" is not valid. Type the worker's pay for one day as a number greater than 0, for example 180.`);
+    if (notANumber(rate) || Number(rate) < 0) {
+      return fault("RATE_INVALID", "dailyRate", `The daily rate "${rate}" is not valid. Type the worker's pay for one day as a number of 0 or more, for example 180.`);
     }
     return null;
   });

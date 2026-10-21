@@ -15,7 +15,7 @@ import { GuidedError } from "@/components/GuidedError";
 import { DraftRestoredNote } from "@/components/DraftRestoredNote";
 import { contextFromError, contextFromFailure } from "@/lib/error-guide/context";
 import type { GuideContext } from "@/lib/error-guide/types";
-import { fault, httpError, useFormDraft } from "@/lib/guided-form";
+import { fault, httpError, useFormDraft, withServerCode } from "@/lib/guided-form";
 
 // R48_NO_INVITE_UI_01. Ruled at L5: SAP, Dynamics 365 and Odoo all place user
 // provisioning under organisation admin settings, so that is where this sits.
@@ -115,7 +115,7 @@ export default function OrgInvitesCard() {
         toast.success(`Invitation created for ${created.email} — use Copy link to share it`);
       }
     } catch (e) {
-      setProblem({ ctx: contextFromError(e, { apiPath: "/api/org/invites", method: "POST" }), message: e instanceof Error ? e.message : undefined, retry: () => void invite() });
+      setProblem({ ctx: contextFromError(e, withServerCode(e, { apiPath: "/api/org/invites", method: "POST" })), message: e instanceof Error ? e.message : undefined, retry: () => void invite() });
     } finally {
       setSubmitting(false);
     }

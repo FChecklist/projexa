@@ -27,6 +27,7 @@ import DesignStudioTabs from "@/components/DesignStudioTabs";
 import { fetchJson } from "@/lib/fetch-json";
 import { GuidedError } from "@/components/GuidedError";
 import { contextFromError } from "@/lib/error-guide/context";
+import { withServerCode } from "@/lib/guided-form";
 import { ROLE_GROUPS } from "@/lib/authz/roles";
 import { formatDayLabel, formatHours, groupSubmittedByDesignerDay, rowStatus, totalHours, type DesignerDayGroup } from "@/lib/design-studio-timesheet";
 import type { TimesheetEntry } from "@/components/DesignStudioTimesheetClient";
@@ -153,7 +154,7 @@ export default function DesignStudioReviewClient({
         <DataLoadError messages={loadErrors} onRetry={() => void load()} />
         {decideErr && (
           <GuidedError
-            ctx={contextFromError(decideErr.err, { projectId, apiPath: "/api/timesheets/review-day", method: "POST" })}
+            ctx={contextFromError(decideErr.err, withServerCode(decideErr.err, { projectId, apiPath: "/api/timesheets/review-day", method: "POST" }))}
             message={`The decision was not recorded: ${decideErr.message}`}
             onRetry={decideErr.retry}
           />

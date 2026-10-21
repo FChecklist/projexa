@@ -16,6 +16,7 @@
 
 import { useCallback, useState } from "react";
 import { useDraft } from "@/lib/error-guide/use-draft";
+import type { GuideContext } from "@/lib/error-guide/types";
 import type { SubmitFailure, UseSubmit } from "@/lib/use-submit";
 
 export type FormValues = Record<string, string>;
@@ -107,4 +108,40 @@ export function httpError(res: { status: number }, body: unknown, fallback: stri
   e.method = method.toUpperCase();
   e.body = body;
   return e;
+}
+
+// A few real server sentences (compliance-tracker veri-meeting-service, pms-time-service, the org-invite SQL function) are not in the harvested
+// catalogue fixtures, so their guides are keyed on a CODE the screen derives from the server's own words. The server's sentence is still shown
+// (the guide's "what" quotes it); only the choice of guide uses this table.
+const SERVER_MESSAGE_CODES: Array<[RegExp, string]> = [
+  [/meeting is already published/i, "MOM_ALREADY_PUBLISHED"],
+  [/published and locked/i, "MOM_LOCKED"],
+  [/only published meetings can be shared/i, "MOM_SHARE_UNPUBLISHED"],
+  [/meeting has no minutes/i, "MOM_NO_MINUTES"],
+  [/no ai provider configured/i, "AI_OFF"],
+  [/that person is not in your organisation/i, "MOM_ASSIGNEE_NOT_IN_ORG"],
+  [/share link (not found|is invalid or has expired)/i, "MOM_SHARE_EXPIRED"],
+  [/hours must be more than 0|hours must be a positive number/i, "HOURS_RANGE"],
+  [/only a draft or returned time entry/i, "TIMESHEET_LOCKED"],
+  [/no hours logged for this day/i, "EMPTY_DAY"],
+  [/no submitted hours to review/i, "DAY_NOT_SUBMITTED"],
+  [/cannot review their own/i, "SELF_REVIEW"],
+  [/invitation has been revoked/i, "INVITE_REVOKED"],
+  [/issued to a different email/i, "INVITE_WRONG_EMAIL"],
+];
+
+/** The G3 guide code for a server sentence, or undefined when the catalogue already matches it by its words. */
+export function serverMessageCode(message: string | undefined | null): string | undefined {
+  if (!message) return undefined;
+  for (const [re, code] of SERVER_MESSAGE_CODES) if (re.test(message)) return code;
+  return undefined;
+}
+
+/** `extra` for contextFromError(): the caller's own facts plus the derived code, only when the error did not carry a code of its own. */
+export function withServerCode(err: unknown, extra: Partial<GuideContext> = {}): Partial<GuideContext> {
+  const own = err && typeof err === "object" ? (err as { code?: unknown }).code : undefined;
+  if (typeof own === "string" && own) return extra;
+  const msg = err instanceof Error ? err.message : typeof err === "string" ? err : undefined;
+  const code = serverMessageCode(msg);
+  return code ? { ...extra, code } : extra;
 }

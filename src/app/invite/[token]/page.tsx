@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { GuidedError } from "@/components/GuidedError";
 import { contextFromError } from "@/lib/error-guide/context";
 import type { GuideContext } from "@/lib/error-guide/types";
-import { httpError } from "@/lib/guided-form";
+import { httpError, withServerCode } from "@/lib/guided-form";
 
 // R48_NO_INVITE_UI_01, redemption half.
 //
@@ -59,7 +59,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
       if (cancelled) return;
       if (!res.ok) {
         const e = httpError(res, body, "This invitation link is not valid.", "GET", "/api/org/invites/preview");
-        setError({ message: e.message, ctx: contextFromError(e) });
+        setError({ message: e.message, ctx: contextFromError(e, withServerCode(e)) });
         return;
       }
       setPreview((body as { invite: Preview }).invite);
@@ -87,7 +87,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       const e = httpError(res, body, "Could not accept this invitation.", "POST", "/api/org/invites/accept");
-      setError({ message: e.message, ctx: contextFromError(e) });
+      setError({ message: e.message, ctx: contextFromError(e, withServerCode(e)) });
       setAccepting(false);
       return;
     }

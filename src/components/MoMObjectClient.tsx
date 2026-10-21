@@ -106,7 +106,7 @@ import { GuidedError } from "@/components/GuidedError";
 import { contextFromError } from "@/lib/error-guide/context";
 import type { GuideContext } from "@/lib/error-guide/types";
 import { useDraft } from "@/lib/error-guide/use-draft";
-import { httpError } from "@/lib/guided-form";
+import { httpError, withServerCode } from "@/lib/guided-form";
 type ActionItem = { id: string; task: { id: string; title: string; status: string; dueDate: string | null; userId: string | null } };
 type SuggestedActionItem = { title: string; assignee: string | null; dueDateHint: string | null };
 type Meeting = {
@@ -290,7 +290,7 @@ export default function MoMObjectClient({
   function note(message: FieldMessage, err?: unknown, retry?: () => void) {
     setNotices((prev) => [...prev.filter((n) => n.field !== message.field), message]);
     if (message.level === "error" && err !== undefined && message.field) {
-      setGuided({ field: message.field, ctx: contextFromError(err, { entityId: meetingId, entityType: "mom" }), message: message.text, retry });
+      setGuided({ field: message.field, ctx: contextFromError(err, withServerCode(err, { entityId: meetingId, entityType: "mom" })), message: message.text, retry });
     } else if (message.level === "success") {
       setGuided((g) => (g && g.field === message.field ? null : g));
     }
@@ -715,6 +715,7 @@ export default function MoMObjectClient({
       {!isPublished && mode === "display" && (
         <div className="flex items-center gap-2 border-b border-ct-border px-4 py-3">
           <Button
+            id="mom-publish"
             size="sm"
             disabled={publishing || !!publishDisabledReason}
             title={publishDisabledReason}
