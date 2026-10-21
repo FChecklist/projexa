@@ -125,7 +125,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
         setReport(null);
         const message = body.error ?? `Couldn't load the budget (HTTP ${res.status})`;
         setLoadError(message);
-        setLoadFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: "/api/reports/budget-variance", method: "GET" }), at: Date.now(), retry: () => void load() });
+        setLoadFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: "/api/reports/budget-variance", method: "GET" }), at: Date.now() });
         return;
       }
       setReport(body as BudgetReport);
@@ -134,7 +134,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
     } catch (err) {
       setReport(null);
       setLoadError(err instanceof Error ? err.message : "Couldn't load the budget");
-      setLoadFailure({ err, at: Date.now(), retry: () => void load() });
+      setLoadFailure({ err, at: Date.now() });
     } finally {
       setLoading(false);
       inFlight.current = false;

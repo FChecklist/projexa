@@ -335,7 +335,6 @@ export default function ScopeClient({
           ? Object.assign(new Error("The construction data service timed out."), { code: "TIMEOUT", status: 0, apiPath: "/api/scope", method: "GET" })
           : err,
         at: Date.now(),
-        retry: () => void load(),
       });
     }
     // `initial` is intentionally not a dependency: it is a server payload

@@ -49,7 +49,6 @@ export default function ScopeReviseScreen({ shell, data }: ShellScreenProps<Scop
   useEffect(() => {
     if (faults.length === 0) return;
     setFaults((prev) => stillTrue(prev, boqDraftFaults(title, lines, { titleLabel: "revision" })));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.value.title, draft.value.lines]);
 
   if (data.state === "no_project") return <ScopeState testId="scope-revise-screen" state="no_project" title="New Revision" back={BACK} sentence={NO_PROJECT} />;

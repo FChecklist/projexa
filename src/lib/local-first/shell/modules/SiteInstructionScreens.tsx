@@ -91,7 +91,6 @@ export function SiteInstructionNewScreen({ shell, data }: ShellScreenProps<ListD
   useEffect(() => {
     if (faults.length === 0) return;
     setFaults((prev) => prev.filter((p) => siFaults().some((c) => c.code === p.code && c.field === p.field)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueDate, toContractor, description]);
 
   if (data.state !== "local") return <StateMessage testId="si-new" title="New site instruction" state={data.state} what="project" />;

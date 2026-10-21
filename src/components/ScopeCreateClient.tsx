@@ -305,7 +305,6 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
     const field = remapFaults(faults, TITLE_REMAP)[0]?.field;
     const el = field ? findFocusTarget(field) : null;
     if (el) highlightElement(el);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt]);
 
   // A refusal from the server that names a line is taken to that line's input, exactly like a fault the form found itself.

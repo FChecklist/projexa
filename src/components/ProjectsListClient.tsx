@@ -100,7 +100,7 @@ export default function ProjectsListClient() {
         setRows([]);
         const message = body.error ?? `Couldn't load your projects (HTTP ${res.status})`;
         setLoadError(message);
-        setLoadFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: "/api/projects/overview", method: "GET" }), at: Date.now(), retry: () => void load() });
+        setLoadFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: "/api/projects/overview", method: "GET" }), at: Date.now() });
         return;
       }
       setRows((body.projects ?? []) as ProjectRow[]);
@@ -109,7 +109,7 @@ export default function ProjectsListClient() {
     } catch (err) {
       setRows([]);
       setLoadError(err instanceof Error ? err.message : "Couldn't load your projects");
-      setLoadFailure({ err, at: Date.now(), retry: () => void load() });
+      setLoadFailure({ err, at: Date.now() });
     } finally {
       setLoading(false);
       inFlight.current = false;

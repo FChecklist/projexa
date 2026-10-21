@@ -46,7 +46,6 @@ export default function ScopeNewScreen({ shell, data }: ShellScreenProps<ScopeNe
   useEffect(() => {
     if (faults.length === 0) return;
     setFaults((prev) => stillTrue(prev, boqDraftFaults(title, lines)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.value.title, draft.value.lines]);
 
   if (data.state === "no_project") return <ScopeState testId="scope-new-screen" state="no_project" title="New BOQ" back={BACK} sentence={NO_PROJECT} />;

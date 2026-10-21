@@ -43,7 +43,6 @@ export default function ScopeAddItemScreen({ shell, data }: ShellScreenProps<Sco
   useEffect(() => {
     if (faults.length === 0 || !readyData) return;
     setFaults((prev) => stillTrue(prev, newLineFaults(boqDraftFaults(readyData.boq.title, [...parentDrafts, ...items]), parentDrafts.length)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.value.items]);
 
   if (data.state === "no_project") return <ScopeState testId="scope-additem-screen" state="no_project" title="Add a scope item" back={BACK} sentence={NO_PROJECT} />;

@@ -124,7 +124,6 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   useEffect(() => {
     if (faults.length === 0) return;
     setFaults((prev) => stillTrue(prev, currentFaults()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.value.title, draft.value.lines, siFile]);
   const faultMessages = faultsByField(faults);
 
