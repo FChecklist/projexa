@@ -10,7 +10,9 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, waitFor, within } from "@testing-library/react";
+// testing-library waits 1 s by default; on a loaded CI runner these screens need longer (the sheet failed on that alone, run after run).
+configure({ asyncUtilTimeout: 10_000 });
 
 const push = mock(() => {});
 mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
