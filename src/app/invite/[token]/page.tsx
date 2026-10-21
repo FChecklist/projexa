@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GuidedError } from "@/components/GuidedError";
-import { contextFromError } from "@/lib/error-guide/context";
-import type { GuideContext } from "@/lib/error-guide/types";
-import { httpError, withServerCode } from "@/lib/guided-form";
+import { GuidedPanel } from "@/components/GuidedPanel";
+import { inviteFailureCode } from "@/lib/org/invite-failure";
 
 // R48_NO_INVITE_UI_01, redemption half.
 //
@@ -43,8 +41,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
 
   const [preview, setPreview] = useState<Preview | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  // G3 guided errors: the failure as a full panel (what happened, why, steps, the exact place, the way back), built from the real answer.
-  const [error, setError] = useState<{ message: string; ctx: GuideContext } | null>(null);
+  const [error, setError] = useState<{ code: string; message?: string } | null>(null);
   const [accepting, setAccepting] = useState(false);
 
   useEffect(() => {
@@ -54,12 +51,18 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
       const { data: session } = await supabase.auth.getSession();
       if (!cancelled) setSignedIn(!!session.session);
 
-      const res = await fetch(`/api/org/invites/preview?token=${encodeURIComponent(token)}`);
+      let res: Response;
+      try {
+        res = await fetch(`/api/org/invites/preview?token=${encodeURIComponent(token)}`);
+      } catch {
+        if (!cancelled) setError({ code: inviteFailureCode({ offline: true }) });
+        return;
+      }
       const body = await res.json().catch(() => ({}));
       if (cancelled) return;
       if (!res.ok) {
-        const e = httpError(res, body, "This invitation link is not valid.", "GET", "/api/org/invites/preview");
-        setError({ message: e.message, ctx: contextFromError(e, withServerCode(e)) });
+        const message = (body as { error?: string }).error;
+        setError({ code: inviteFailureCode({ status: res.status, message: message ?? "This invitation link is not valid." }), message });
         return;
       }
       setPreview((body as { invite: Preview }).invite);
@@ -79,15 +82,15 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
-    } catch (err) {
-      setError({ message: "The request never reached the server, so you have not joined yet.", ctx: contextFromError(err, { apiPath: "/api/org/invites/accept", method: "POST" }) });
+    } catch {
+      setError({ code: inviteFailureCode({ offline: true }) });
       setAccepting(false);
       return;
     }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const e = httpError(res, body, "Could not accept this invitation.", "POST", "/api/org/invites/accept");
-      setError({ message: e.message, ctx: contextFromError(e, withServerCode(e)) });
+      const message = (body as { error?: string }).error ?? "Could not accept this invitation.";
+      setError({ code: inviteFailureCode({ status: res.status, message }), message });
       setAccepting(false);
       return;
     }
@@ -104,15 +107,18 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && <GuidedError ctx={error.ctx} message={error.message} onRetry={preview?.is_open && signedIn ? () => void accept() : undefined} />}
+          {error && (
+            <GuidedPanel
+              ctx={{ route: `/invite/${token}`, search: "", code: error.code, serverMessage: error.message }}
+              testId="invite-guided-error"
+              actions={error.code === "INVITE_OFFLINE" || error.code === "INVITE_FAILED" ? [{ id: "retry", label: "Try again", primary: true, onClick: () => { setError(null); if (preview) void accept(); else window.location.reload(); } }] : []}
+            />
+          )}
 
           {!error && !preview && <p className="text-sm text-px-muted">Checking this invitation…</p>}
 
           {preview && !preview.is_open && !error && (
-            <p role="alert" className="text-sm text-px-error">
-              This invitation is no longer open. It has been used, revoked, or has expired. Ask an
-              administrator for a new one.
-            </p>
+            <GuidedPanel ctx={{ route: `/invite/${token}`, search: "", code: "INVITE_CLOSED" }} testId="invite-guided-error" />
           )}
 
           {preview && preview.is_open && (
