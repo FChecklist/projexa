@@ -12,7 +12,7 @@
 // Nothing here shows anything. The only visible results are the calm connectivity marker and the one optional "Install" action.
 // Everything with a side effect is injected (BootWiring), so the order of events is tested with fakes.
 
-import { announceShellReady } from "./release/shell-handoff";
+import { announceReleaseUpdated, announceShellReady } from "./release/shell-handoff";
 import { browserIsOffline } from "@/lib/supabase/durable-auth";
 import { sharedConnectivity, withConnectivityReporting, type ConnectivityController } from "./connectivity";
 import { deviceMetaStore, openDeviceMeta } from "./device-meta";
@@ -112,6 +112,8 @@ export async function runBootPass(wiring: BootWiring): Promise<{ personId: strin
   }).catch(() => null);
   // AUDIT-100 A3: the worker now serves the shell for this person (a release was installed, or its pointer was set again after a sign-in): a
   // server-rendered page that is open hands the person over to it (LocalShellHandoff) -- at the END of the pass, never before the data step below.
+  // R-C15: a NEWER release was installed under a page that is still running the old one -> say so (a first install is not an update).
+  if (releaseReport?.release?.status === "updated") announceReleaseUpdated(releaseReport.release.version ?? null);
   const shellNowReady = Boolean(releaseReport && (releaseReport.pointerFixed || releaseReport.release?.status === "installed" || releaseReport.release?.status === "updated"));
   // lf-e12: every later sync call names the release that is installed NOW (the one just installed, or the one that was), so the
   // service's release floor (426) can apply to this laptop.

@@ -193,7 +193,7 @@ export const billingGuides = guides([
     id: "billing-no-new-progress", source: "prerequisite", match: { status: 400, messageRegex: rx("No new progress to bill") },
     title: "Nothing new to bill yet",
     what: "{serverMessage}",
-    why: "An invoice bills only the progress logged since the last bill. Every line is already billed up to its current % complete, so there is nothing to add. The milestone stays approved; nothing was invoiced.",
+    why: "An invoice bills only progress logged in Work Progress against a line of this milestone's BOQ (or the same item code on an earlier revision) that is above what earlier bills already claimed. The message above gives the date of the latest entry counted. Every line is already billed up to it, so there is nothing to add. The milestone stays approved; nothing was invoiced.",
     steps: ["Log the new progress in Work Progress (the strip at the top brings you back).", "Press Invoice again on this milestone: your bill date and tax template are kept.", "If the work really is already billed, no invoice is needed."],
     fix: { label: "Log the progress first", to: proj("/work-progress"), where: "Work Progress > Log entry" },
     severity: "warn", returnLabel: "Back to the invoice",

@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 import type { ShellScreenProps } from "../types";
+import { useOrgMoney } from "@/lib/use-org-money";
 import type { Master, SettingsData } from "./platform-adapter";
 import { Facts, OnlineOnly } from "./DocumentsShared";
 
@@ -23,7 +24,22 @@ function Unavailable({ m }: { m: Exclude<Master<unknown>, { state: "local" }> })
   return <p className="text-px-muted" data-testid={`master-${m.state}`}>{m.state === "not_allowed" ? "This list is not available to your role." : "This list has not been copied to this laptop yet."}</p>;
 }
 
-export default function SettingsLocalScreen({ data }: ShellScreenProps<SettingsData>) {
+const WHO_CAN_CHANGE = " — only an owner or administrator can change it.";
+
+/**
+ * R-63 (final audit 2026-10-22): the currency line must not depend on a list that has not synced. When this laptop's copy has no base currency
+ * (list not copied yet, not allowed for the role, or no base row in the copy) the organisation's currency is read once from the server (the
+ * same cached read every money screen already uses); offline with nothing known it says so, and says who can change it either way.
+ */
+function CurrencyFallback({ online }: { online: boolean }) {
+  const money = useOrgMoney();
+  if (money.currency) return <span data-testid="settings-currency-code">Currency: {money.currency}<span className="text-px-muted">{WHO_CAN_CHANGE}</span></span>;
+  if (!money.loaded && online) return <span className="text-px-muted" data-testid="settings-currency-checking">Checking the organisation currency…</span>;
+  if (!online) return <span data-testid="settings-currency-code">Currency: not known on this laptop yet<span className="text-px-muted"> — connect once to see it. Only an owner or administrator can change it.</span></span>;
+  return <span data-testid="settings-currency-code">Currency: not set yet<span className="text-px-muted"> — only an owner or administrator can set it (Settings, online).</span></span>;
+}
+
+export default function SettingsLocalScreen({ data, shell }: ShellScreenProps<SettingsData>) {
   return (
     <section data-testid="settings" data-state="local">
       <h1 className="font-heading text-2xl text-px-ink">Settings</h1>
@@ -32,12 +48,10 @@ export default function SettingsLocalScreen({ data }: ShellScreenProps<SettingsD
         <Facts rows={[["Name", data.name ?? "-"], ["Email", data.email ?? "-"], ["Role", data.role ?? "-"], ["Projects on this laptop", String(data.projectCount)]]} />
       </Card>
       <Card title="Currency" testId="settings-currency">
-        {data.currency.state !== "local" ? (
-          <Unavailable m={data.currency} />
-        ) : data.currency.value ? (
-          <span data-testid="settings-currency-code">Currency: {data.currency.value.code}{data.currency.value.name ? ` (${data.currency.value.name})` : ""}<span className="text-px-muted"> — only an owner or administrator can change it.</span></span>
+        {data.currency.state === "local" && data.currency.value ? (
+          <span data-testid="settings-currency-code">Currency: {data.currency.value.code}{data.currency.value.name ? ` (${data.currency.value.name})` : ""}<span className="text-px-muted">{WHO_CAN_CHANGE}</span></span>
         ) : (
-          <span className="text-px-muted">Not set</span>
+          <CurrencyFallback online={shell.connectivity === "online"} />
         )}
       </Card>
       <Card title="BOQ categories" testId="settings-categories">

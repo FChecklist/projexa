@@ -148,3 +148,14 @@ export function announceShellReady(): void {
     /* no window */
   }
 }
+
+/** R-C15: a newer release was installed while this page was already running an older one; the page keeps running the old code until it is reloaded. */
+export const RELEASE_UPDATED_EVENT = "px:release-updated";
+
+export function announceReleaseUpdated(version: string | null): void {
+  try {
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(RELEASE_UPDATED_EVENT, { detail: { version } }));
+  } catch {
+    /* no window */
+  }
+}
