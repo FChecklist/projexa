@@ -7,7 +7,7 @@ const mat = proj("/materials");
 
 export const materialsGuides = guides([
   {
-    id: "materials-name-required", source: "validation", match: { status: 400, messageRegex: rx("itemCode and itemName are required|^name is required$") },
+    id: "materials-name-required", source: "validation", match: { status: 400, messageRegex: rx("itemCode and itemName are required") },
     title: "Give the material a name",
     what: "{serverMessage}",
     why: "A material with no name cannot be picked later in receipts or issues.",

@@ -4,6 +4,8 @@
 import { describe, expect, test } from "bun:test";
 import { SHIPPED_ROUTES } from "../../nav-routes";
 import type { Guide, GuideContext } from "../types";
+import { catalogue } from "./index";
+import { matchGuide } from "../match";
 import { ALL_GUIDES, CATALOGUE_MODULES } from "./all";
 import { FIXTURES, genericOnly, guideMatchesMessage, mapFixtures } from "./coverage";
 
@@ -97,6 +99,21 @@ describe("error-guide catalogue", () => {
       const hit = FIXTURES.some((f) => guideMatchesMessage(g, f.message, f.status));
       expect(hit, `${g.id}: no message matches regex AND status`).toBe(true);
     }
+  });
+
+  test("combined catalogue (base + this) has unique ids", () => {
+    const ids = catalogue.map((g) => g.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("the real matcher resolves most harvested messages to a specific guide, never the on-the-fly generic", () => {
+    let generic = 0;
+    for (const f of FIXTURES) {
+      if (f.status === null) continue;
+      const g = matchGuide({ route: "/scope", search: "", status: f.status, serverMessage: f.message }, catalogue);
+      if (g.id.startsWith("generic-")) generic++;
+    }
+    expect(generic).toBe(0);
   });
 
   test("matcher compatibility: the framework needs EVERY key to match, so message guides carry no code or field", () => {

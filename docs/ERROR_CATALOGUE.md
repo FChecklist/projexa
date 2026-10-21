@@ -6,10 +6,10 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 
 ## Counts
 
-- Guides: **298** in **18** modules
+- Guides: **294** in **18** modules
 - Distinct in-app screens used as fix destinations: **55** (every one checked against the real route list by the test)
 - Real server messages harvested (compliance-tracker + PROJEXA): **901**; mapped to a guide: **901**; unmapped (TODO): **0**
-- Of the mapped ones, **466** are covered only by a general fallback guide (see the last section)
+- Of the mapped ones, **467** are covered only by a general fallback guide (see the last section)
 
 ## Sign in and invitations (25)
 
@@ -189,11 +189,10 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `materials-warehouse-name` (validation, warn) | A stock entry needs an item, a store, a quantity, a date and a type. | **Fill the stock entry form.** {serverMessage} Steps: 1) Fill every box that is marked. 2) Save again. | Back to the form: Inventory > Stock entries > New (/inventory/stock-entries/new) | Back to the form |
 | `materials-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Materials did not load.** The materials list could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Materials |
 
-## Labour (17)
+## Labour (16)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
-| `labour-name-required` (validation, warn) | Attendance and wages are recorded per named worker. | **Type the worker's name.** {serverMessage} Steps: 1) Type the worker's name. 2) Save again. | Type the name: Labour > New worker > Name (/labour/new, box: name) | Back to the form |
 | `labour-daily-rate` (validation, warn) | Wages are worked out from the daily rate. | **Daily rate must be a number.** {serverMessage} Steps: 1) Type digits only, for example 700. 2) A rate of 0 is allowed if unpaid. 3) Save again. | Fix the rate: Labour > New worker > Daily rate (/labour/new) | Back to the form |
 | `labour-hours-range` (validation, warn) | A person cannot work more than 24 hours in one day. | **Hours must be between 0 and 24.** {serverMessage} Steps: 1) Type hours between 0 and 24, like 8 or 7.5. 2) Save again. | Fix the hours: Labour > Attendance > Hours Worked (/labour/attendance/new, box: hoursWorked) | Back to attendance |
 | `labour-date-required` (validation, warn) | Attendance is saved for one day at a time. | **Pick the attendance date.** {serverMessage} Steps: 1) Click the date box. 2) Choose the day. 3) Open or save again. | Pick the date: Labour > Attendance > Date (/labour/attendance/new, box: attendanceDate) | Back to attendance |
@@ -253,11 +252,10 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `field-diary-timeout` (network, warn) | The service was slow. Your entry may or may not have been saved. | **The diary took too long to load.** {serverMessage} Steps: 1) Press Try again. 2) Check the diary list before writing the entry again. | Open Site Diary: Site Diary (/site-diary) | Back to Site Diary |
 | `field-status-invalid` (validation, warn) | The screen sent a value this item cannot take. | **That option is not allowed here.** {serverMessage} Steps: 1) Reload the page. 2) Choose the option again from the list. | Open RFIs: RFIs (/rfis) | Back to the list |
 
-## MoMs and Schedule (17)
+## MoMs and Schedule (16)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
-| `mom-title-required` (validation, warn) | The title is how people find these minutes later. | **Give the meeting a title.** {serverMessage} Steps: 1) Type a short title, such as Weekly site meeting 12 Oct. 2) Save again. | Type the title: MoMs > New > Title (/moms/new, box: title) | Back to MoMs |
 | `mom-link-expired` (auth, block) | Shared links stop working after a set time for safety. | **This shared link has run out.** {serverMessage} Steps: 1) Ask the person who shared it to send a new link. 2) If you work in this company, open it from MoMs after signing in. | Sign in to open MoMs: Sign in (/login) | Back to sign in |
 | `mom-pdf-failed` (server, warn) | A temporary problem. Nothing was lost. | **The minutes could not be fetched.** {serverMessage} Steps: 1) Wait a few seconds. 2) Press Try again. | Open MoMs: MoMs (/moms) | Back to MoMs |
 | `mom-date-range` (validation, warn) | A report or PDF covers a period, so it needs both dates. | **Choose both a start and an end date.** {serverMessage} Steps: 1) Pick the From date. 2) Pick the To date. 3) Press Run again. | Pick the dates: This screen > From / To (/work-progress) | Back to this screen |
@@ -368,7 +366,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `perm-company-scope` (prerequisite, block) | Accounting screens work inside one company at a time. | **Choose a company first.** {serverMessage} Steps: 1) Pick the company at the top. 2) Open the screen again. | Open Accounting: Accounting > Company (/accounting) | Back to what I was doing |
 | `perm-scenario-ai` (permission, block) | Money actions need a person to press the button. | **An AI helper cannot do this.** {serverMessage} Steps: 1) Open the item yourself. 2) Press the button signed in as you. | Open Scope of Work: Scope of Work (/scope) | Back to what I was doing |
 
-## Other records (15)
+## Other records (14)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -383,19 +381,17 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `misc-not-found-records` (server, warn) | It was deleted, or belongs to another company. | **That record is not there.** {serverMessage} Steps: 1) Go back to the list. 2) Find the record again. | Open Customers: Customers / Vendors / Sales (/customers) | Back to the list |
 | `misc-employee-user` (prerequisite, block) | An employee record is linked to a user account that must exist first. | **Create the user before the employee.** {serverMessage} Steps: 1) Invite the person under Settings > Team. 2) Wait for them to accept. 3) Then create the employee. | Open the team list: Settings > Team > Invite (/settings) | Back to Employees |
 | `misc-duplicate-create` (conflict, info) | A double click may have sent it twice. | **This looks like a copy.** An identical record was saved a moment ago. Steps: 1) Open the list. 2) Check there is only one. 3) Delete the extra if needed. | Back to the list: This screen > the list (/work-progress) | Back to the list |
-| `misc-customer-name` (validation, warn) | Bills and reports show the customer's name. | **Name the customer.** {serverMessage} Steps: 1) Type the customer's name. 2) Save again. | Type the name: Customers > New > Name (/customers/new, box: name) | Back to Customers |
 | `misc-unsaved-leave` (validation, warn) | If you leave now your changes will be lost. | **You have changes that are not saved.** You are leaving a form with unsaved typing. Steps: 1) Press Stay and then Save. 2) Or leave if you do not need the changes. | Stay and save: This screen > Save (/work-progress) | Back to the form |
 | `misc-currency-code` (validation, warn) | Money needs a standard code such as INR, AED or USD. | **Use a 3-letter currency code.** {serverMessage} Steps: 1) Type three capital letters, like INR. 2) Save again. | Open Settings: Settings > Currency (/settings) | Back to Settings |
 | `misc-sheets-connected` (conflict, info) | Only one sheet connection can exist for the company. | **Google Sheets is already connected.** {serverMessage} Steps: 1) Open the connection. 2) Press Disconnect if you want a new one. 3) Then connect again. | Open Settings: Settings > Connections > Google Sheets (/settings) | Back to Settings |
 
-## Network and general (6)
+## Network and general (5)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
 | `net-data-service-slow` (network, warn) | Many people may be using it at once. Your work is safe. | **The data service is slow.** {serverMessage} Steps: 1) Wait about 30 seconds. 2) Press Try again. | Stay on this screen: This screen (/work-progress) | Back to what I was doing |
 | `net-failed-to` (server, warn) | An unexpected problem happened on our side. Nothing was changed. | **That did not work.** {serverMessage} Steps: 1) Press Try again. 2) If it fails again, reload the page. 3) Tell support the time and what you were doing. | Reload this screen: This screen (/work-progress) | Back to what I was doing |
 | `net-bad-json` (validation, warn) | The page sent something unreadable. It usually fixes itself after a reload. | **The request was not understood.** {serverMessage} Steps: 1) Reload the page. 2) Do the action again. | Reload this screen: This screen (/work-progress) | Back to what I was doing |
-| `net-required-generic` (validation, warn) | The form needs this to save. | **A needed box is empty.** {serverMessage} Steps: 1) Find the box named in the message. 2) Fill it in. 3) Save again. | Back to the form: This screen > the form (/work-progress) | Back to what I was doing |
 | `net-conflict-generic` (conflict, warn) | The record changed, or the same item already exists. | **This clashes with something already there.** {serverMessage} Steps: 1) Reload the page. 2) Look at the latest version. 3) Repeat your change if still needed. | Reload this screen: This screen (/work-progress) | Back to what I was doing |
 | `net-too-large` (upload, warn) | The request is above the allowed size. | **That is too much to send.** {serverMessage} Steps: 1) Send less at once. 2) Try again. | Stay on this screen: This screen (/work-progress) | Back to what I was doing |
 
@@ -900,6 +896,7 @@ These show correct general advice (try again / fill the named box) but not scree
 - 401 `Invalid token` at projexa:src/app/api/integrations/google-sheets/webhook/route.ts:43
 - 400 `lineItemId is required` at compliance-tracker:src/lib/services/boq-scenario-service.ts:458
 - 401 `Missing bearer token` at projexa:src/app/api/integrations/google-sheets/webhook/route.ts:24
+- 400 `name is required` at compliance-tracker:src/lib/services/boq-scenario-service.ts:383
 - 500 `No organisation found` at compliance-tracker:src/app/api/v1/projexa/hr/departments/route.ts:66
 - 400 `Not a cache entry this route clears` at projexa:src/app/api/cache/revalidate/route.ts:41
 - 404 `Notification not found` at projexa:src/app/api/notifications/[id]/read/route.ts:25

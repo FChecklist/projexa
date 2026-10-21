@@ -50,7 +50,7 @@ export const projectGuides = guides([
     severity: "warn", returnLabel: "Back to the form",
   },
   {
-    id: "project-name-empty", source: "validation", match: { status: 400, messageRegex: rx("^name cannot be empty$|^name is required$") },
+    id: "project-name-empty", source: "validation", match: { status: 400, messageRegex: rx("^name cannot be empty$") },
     title: "The name cannot be empty",
     what: "{serverMessage}",
     why: "A project with a blank name cannot be told apart in lists.",

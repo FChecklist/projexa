@@ -98,7 +98,7 @@ export const progressGuides = guides([
     severity: "warn", returnLabel: BACK,
   },
   {
-    id: "progress-name-length", source: "validation", match: { status: 400, messageRegex: rx("name must be 200 characters or fewer|^name is required$") },
+    id: "progress-name-length", source: "validation", match: { status: 400, messageRegex: rx("name must be 200 characters or fewer|projectId and name are required") },
     title: "Fix the activity name",
     what: "{serverMessage}",
     why: "An activity needs a name of 1 to 200 letters.",

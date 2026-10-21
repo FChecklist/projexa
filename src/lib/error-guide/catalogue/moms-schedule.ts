@@ -9,15 +9,6 @@ const sched = proj("/schedule");
 
 export const momsScheduleGuides = guides([
   {
-    id: "mom-title-required", source: "validation", match: { status: 400, messageRegex: rx("^title is required$") },
-    title: "Give the meeting a title",
-    what: "{serverMessage}",
-    why: "The title is how people find these minutes later.",
-    steps: ["Type a short title, such as Weekly site meeting 12 Oct.", "Save again."],
-    fix: { label: "Type the title", to: proj("/moms/new"), where: "MoMs > New > Title", focus: "title" },
-    severity: "warn", returnLabel: MBACK,
-  },
-  {
     id: "mom-link-expired", source: "auth", match: { status: [404, 410], messageRegex: rx("This link has expired") },
     title: "This shared link has run out",
     what: "{serverMessage}",
@@ -72,7 +63,7 @@ export const momsScheduleGuides = guides([
     severity: "block", returnLabel: SBACK,
   },
   {
-    id: "schedule-task-title", source: "validation", match: { status: 400, messageRegex: rx("^title is required$|projectId and title are required")  },
+    id: "schedule-task-title", source: "validation", match: { status: 400, messageRegex: rx("projectId and title are required")  },
     title: "Name the task",
     what: "{serverMessage}",
     why: "A task with no title cannot be recognised on the board.",

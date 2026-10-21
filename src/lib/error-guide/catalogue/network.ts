@@ -34,15 +34,6 @@ export const networkGuides = guides([
     fix: { label: "Reload this screen", to: here, where: "This screen" },
   },
   {
-    id: "net-required-generic", source: "validation", match: { status: 400, messageRegex: rx("(is|are) required\\.?$|required \\(") },
-    title: "A needed box is empty",
-    what: "{serverMessage}",
-    why: "The form needs this to save.",
-    steps: ["Find the box named in the message.", "Fill it in.", "Save again."],
-    severity: "warn", returnLabel: BACK,
-    fix: { label: "Back to the form", to: here, where: "This screen > the form" },
-  },
-  {
     id: "net-conflict-generic", source: "conflict", match: { status: 409 },
     title: "This clashes with something already there",
     what: "{serverMessage}",

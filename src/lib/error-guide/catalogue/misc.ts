@@ -104,15 +104,6 @@ export const miscGuides = guides([
     severity: "info", returnLabel: "Back to the list",
   },
   {
-    id: "misc-customer-name", source: "validation", match: { status: 400, messageRegex: rx("^name is required$") },
-    title: "Name the customer",
-    what: "{serverMessage}",
-    why: "Bills and reports show the customer's name.",
-    steps: ["Type the customer's name.", "Save again."],
-    fix: { label: "Type the name", to: "/customers/new", where: "Customers > New > Name", focus: "name" },
-    severity: "warn", returnLabel: "Back to Customers",
-  },
-  {
     id: "misc-unsaved-leave", source: "validation", match: { code: "UNSAVED_CHANGES" },
     title: "You have changes that are not saved",
     what: "You are leaving a form with unsaved typing.",

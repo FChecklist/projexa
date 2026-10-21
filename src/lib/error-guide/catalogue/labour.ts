@@ -8,15 +8,6 @@ const lab = proj("/labour");
 
 export const labourGuides = guides([
   {
-    id: "labour-name-required", source: "validation", match: { status: 400, messageRegex: rx("^name is required$") },
-    title: "Type the worker's name",
-    what: "{serverMessage}",
-    why: "Attendance and wages are recorded per named worker.",
-    steps: ["Type the worker's name.", "Save again."],
-    fix: { label: "Type the name", to: proj("/labour/new"), where: "Labour > New worker > Name", focus: "name" },
-    severity: "warn", returnLabel: "Back to the form",
-  },
-  {
     id: "labour-daily-rate", source: "validation", match: { status: 400, messageRegex: rx("dailyRate must be a number of 0 or more") },
     title: "Daily rate must be a number",
     what: "{serverMessage}",

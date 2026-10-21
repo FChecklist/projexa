@@ -4,6 +4,7 @@
 // apiPath (raised by the screens themselves) are not counted here.
 import type { Guide } from "../types";
 import { ALL_GUIDES, CATALOGUE_MODULES } from "./all";
+import { baseGuides } from "./base";
 import fixtures from "./harvested-messages.json";
 
 export type Fixture = { message: string; status: number | null; where: string[] };
@@ -21,16 +22,7 @@ export function guideMatchesMessage(g: Guide, message: string, status: number | 
   return statusOnly && status !== null;
 }
 
-// The framework's base catalogue (catalogue/base.ts) supplies status-only fallbacks for these statuses.
-// Until this branch is rebased onto it, mirror them here so the coverage numbers are the real ones.
-const BASE_FALLBACK_STATUSES: Guide[] = [
-  { id: "base:validation-generic", source: "validation", match: { status: [400, 422] }, title: "-", what: "-", why: "-", steps: ["-"], severity: "warn" },
-  { id: "base:not-found", source: "server", match: { status: 404 }, title: "-", what: "-", why: "-", steps: ["-"], severity: "warn" },
-  { id: "base:rate-limit", source: "network", match: { status: 429 }, title: "-", what: "-", why: "-", steps: ["-"], severity: "warn" },
-  { id: "base:permission-denied", source: "permission", match: { status: 403 }, title: "-", what: "-", why: "-", steps: ["-"], severity: "warn" },
-  { id: "base:server-error", source: "server", match: { status: [500, 502, 503, 504] }, title: "-", what: "-", why: "-", steps: ["-"], severity: "warn" },
-  { id: "base:auth-expired", source: "auth", match: { status: 401 }, title: "-", what: "-", why: "-", steps: ["-"], severity: "warn" },
-];
+const BASE_FALLBACK_STATUSES: Guide[] = baseGuides;
 
 export function mapFixtures(guides: Guide[] = [...ALL_GUIDES, ...BASE_FALLBACK_STATUSES]): { mapped: Map<string, string[]>; unmapped: Fixture[] } {
   const mapped = new Map<string, string[]>();
