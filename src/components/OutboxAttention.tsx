@@ -18,7 +18,6 @@
 // Mounted once, in (app)/layout.tsx, as a small card in the bottom-right corner.
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { GuidedPanel, type PanelAction } from "@/components/GuidedPanel";

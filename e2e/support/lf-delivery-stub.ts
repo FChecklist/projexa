@@ -55,6 +55,8 @@ export function deliveryFixtures(): Kinds {
   const day = today()
   return {
     activities: [{ id: "act-1", category_id: null, name: "Interior fit-out", unit: "m2", planned_quantity: "1200", created_at: "2026-09-01T08:00:00Z" }],
+    // the BOQ header the laptop keeps beside its lines: without it the lines carry no BOQ and a BOQ screen opened straight from the laptop says "not in the copy"
+    boqs: [{ id: BOQ_ID, project_id: PROJECT_ID, version: 1, title: "Harbor View - Fit-out", status: "approved", parent_boq_id: null, created_at: "2026-09-01T08:00:00Z" }],
     boq_lines: [
       { id: "dl-line-1", boq_id: BOQ_ID, activity_id: "act-1", item_code: "HV-101", description: LONG_LINE_TEXT, unit: "m2", quantity: "480", category: "Partitions", parent_line_item_id: null, created_at: "2026-09-01T08:00:00Z", rate: "85.50", amount: "41040.00" },
       { id: "dl-line-2", boq_id: BOQ_ID, activity_id: "act-1", item_code: "HV-102", description: "Ceiling paint, two coats", unit: "m2", quantity: "300", category: "Finishes", parent_line_item_id: null, created_at: "2026-09-01T08:00:00Z", rate: "12.00", amount: "3600.00" },

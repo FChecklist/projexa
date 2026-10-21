@@ -3,13 +3,12 @@
 // GUIDED ERROR RECOVERY, router-free edition. The same inline panel as GuidedError (what happened, why, numbered steps, the exact place to fix it,
 // a way back) for the places that cannot rely on the Next app router: the on-laptop shell's own screens, the sign-in page's inline messages, the
 // browser-capability notices. It never opens a popup. Differences from GuidedError, on purpose:
-//   - the "fix" link is a plain <a>/next-link, never router.push, so it also works in the static on-laptop shell (which intercepts same-origin links);
+//   - the "fix" link is a plain <a> (never next/link, which prefetches pages from the server; never router.push), so it also works in the static on-laptop shell (which intercepts same-origin links);
 //   - extra buttons are passed in (`actions`) because here an action is often "do it now" (send a new code, try again, go back), not a link;
 //   - the title / what / why / steps may be overridden by the screen when only it knows the exact words ("Line budget was not saved").
 // Everything else (the matcher, the guide contract, the report, the highlight) is the framework's. Docs: docs/ERROR_GUIDE.md.
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
-import Link from "next/link";
 import { AlertTriangle, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { reportClientError } from "@/lib/local-first/client-error-report";
@@ -155,9 +154,9 @@ export function GuidedPanel(props: GuidedPanelProps) {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {fix ? (
           <Button asChild size="sm">
-            <Link href={fix.href} onClick={goFix} data-testid="guided-error-fix">
+            <a href={fix.href} onClick={goFix} data-testid="guided-error-fix">
               {fix.label}
-            </Link>
+            </a>
           </Button>
         ) : null}
         {(actions ?? []).map((a) => (
