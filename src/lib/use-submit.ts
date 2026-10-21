@@ -46,6 +46,8 @@ import { isTaskErrorCode, messageFor } from "@/lib/task-errors";
 import { viaPxApi } from "@/lib/px-api";
 import { markSubmitSignal } from "@/lib/client-log/fetch-capture";
 import { logAction } from "@/lib/client-log/install";
+import { apiPathOf, fieldFromBody } from "@/lib/error-guide/context";
+import { markReturnReady } from "@/lib/error-guide/return-trail";
 
 /** The ceiling on a write. Ten seconds, per R-277. */
 export const SUBMIT_TIMEOUT_MS = 10_000;
@@ -88,7 +90,20 @@ export type SubmitFailure = {
   message: string;
   /** Whether offering "Try again" is honest for this kind of failure. */
   retryable: boolean;
+  /** GUIDED ERRORS: the facts src/lib/error-guide/match.ts needs. All optional; a failure without them still gets a guide. */
+  status?: number;
+  code?: string;
+  /** The backend's own words, alone (`message` is the whole sentence built around them). */
+  serverMessage?: string;
+  apiPath?: string;
+  method?: string;
+  field?: string;
 };
+
+/** A failure with the facts of the call that produced it attached. */
+function withFacts(failure: SubmitFailure, facts: Partial<SubmitFailure>): SubmitFailure {
+  return { ...failure, ...facts };
+}
 
 /**
  * A backend reason, terminated so it cannot run into the sentence that
@@ -340,6 +355,7 @@ export function useSubmit<T = unknown>({
       markSubmitSignal(guard.signal);
 
       const init = request.init ?? {};
+      const callFacts = { apiPath: apiPathOf(request.input), method: (init.method ?? "GET").toUpperCase() };
       const ceiling = setTimeout(() => {
         abortedAs = "timeout";
         guard.abort();
@@ -360,7 +376,16 @@ export function useSubmit<T = unknown>({
           // screen's handler, so every create form gets it and none of them
           // can render a coded refusal as prose.
           logAction(actionName, "failed", Date.now() - startedAt);
-          setFailure(submitFailure("refused", label, refusalReason(body, res.status)));
+          const bodyCode = body && typeof body === "object" && typeof (body as { code?: unknown }).code === "string" ? (body as { code: string }).code : undefined;
+          setFailure(
+            withFacts(submitFailure("refused", label, refusalReason(body, res.status)), {
+              ...callFacts,
+              status: res.status,
+              code: bodyCode,
+              serverMessage: backendMessage(body, res.status),
+              field: fieldFromBody(body),
+            })
+          );
           setState("idle");
           return;
         }
@@ -378,11 +403,12 @@ export function useSubmit<T = unknown>({
           logAction(actionName, "failed", Date.now() - startedAt);
           inFlight.current = false;
           if (!live.current) return;
-          setFailure(submitFailure("unconfirmed", label, err instanceof Error ? err.message : null));
+          setFailure(withFacts(submitFailure("unconfirmed", label, err instanceof Error ? err.message : null), callFacts));
           setState("idle");
           return;
         }
         logAction(actionName, "ok", Date.now() - startedAt);
+        markReturnReady(typeof window !== "undefined" ? window.location.pathname : "");
         inFlight.current = false;
       } catch (err) {
         clearTimeout(ceiling);
@@ -421,7 +447,7 @@ export function useSubmit<T = unknown>({
             return;
           }
         }
-        setFailure(submitFailure(kind, label, null, ceilingMs));
+        setFailure(withFacts(submitFailure(kind, label, null, ceilingMs), callFacts));
         setState("idle");
       }
     })();

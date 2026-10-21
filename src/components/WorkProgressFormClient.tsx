@@ -49,6 +49,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 // FieldRenderer generator is NOT, because D-28's three layout requirements
 // above are exactly what a generic renderer cannot serve. The frame still
 // owns the breadcrumb, the primary and the message band.
+import { GuidedSubmitFailure } from "@/components/GuidedError";
 import { FormScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { FormField } from "@/components/ui/form-field";
 import BoqLinePicker from "@/components/BoqLinePicker";
@@ -505,11 +506,12 @@ export default function WorkProgressFormClient({
       // The failure is a MESSAGE on the screen, not a notification: the kit's
       // message area persists until the next submit, which is the whole point
       // of moving off toast.error().
-      messages={
-        submit.failure ? [...messages, { level: "error" as const, text: submit.failure.message }] : messages
-      }
+      messages={messages} // the hook's failure is shown by <GuidedSubmitFailure> below
       banner={activitiesError || boqError || queued.length > 0 ? banner : undefined}
     >
+      <div className="px-4 pt-3 empty:hidden">
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
+      </div>
       <section className="border-t border-ct-border px-4 py-3">
         <h3 className="mb-3 text-[13px] font-medium text-ct-navy">Progress entry</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

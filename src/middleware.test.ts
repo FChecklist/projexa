@@ -111,6 +111,13 @@ describe("the logged-out page gate still works", () => {
     expect(url.searchParams.get("redirectTo")).toBe("/dashboard");
   });
 
+  test("GUIDED ERRORS: a deep link comes back whole -- the query string is part of the destination, not dropped", async () => {
+    const response = await middleware(request("/permits/new?projectId=p1&focus=name"));
+    const url = new URL(response.headers.get("location")!, ORIGIN);
+    expect(url.pathname).toBe("/login");
+    expect(url.searchParams.get("redirectTo")).toBe("/permits/new?projectId=p1&focus=name");
+  });
+
   test("both marketing landing documents stay reachable logged out", async () => {
     for (const route of ["/", "/how-it-works"]) {
       const response = await middleware(request(route, { "accept-language": "en" }));
