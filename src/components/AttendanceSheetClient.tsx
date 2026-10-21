@@ -153,7 +153,11 @@ export default function AttendanceSheetClient({
     if (loading || !sheetDraft.restored || draftApplied.current) return;
     draftApplied.current = true;
     const saved = sheetDraft.value.marks ?? {};
-    if (Object.keys(saved).length > 0) setMarks((prev) => ({ ...prev, ...saved }));
+    if (Object.keys(saved).length > 0) {
+      setMarks((prev) => ({ ...prev, ...saved }));
+      // a past day opens read-only; unsaved marks put back on it are edits in progress, so it opens for editing
+      setEditing(true);
+    }
   }, [loading, sheetDraft.restored, sheetDraft.value]);
 
   const vendorName = (id: string | null) => (id && vendors.find((v) => v.id === id)?.vendorName) || "—";
@@ -166,20 +170,16 @@ export default function AttendanceSheetClient({
   function setStatus(rosterId: string, status: AttendanceStatus) {
     if (!editing) return;
     setSheetFault(null);
-    setMarks((prev) => {
-      const next = { ...prev, [rosterId]: { status, hoursWorked: prev[rosterId]?.hoursWorked ?? "" } };
-      sheetDraft.set({ marks: next });
-      return next;
-    });
+    const next = { ...marks, [rosterId]: { status, hoursWorked: marks[rosterId]?.hoursWorked ?? "" } };
+    setMarks(next);
+    sheetDraft.set({ marks: next });
   }
 
   function setHours(rosterId: string, hoursWorked: string) {
     setSheetFault(null);
-    setMarks((prev) => {
-      const next = { ...prev, [rosterId]: { status: prev[rosterId]?.status ?? null, hoursWorked } };
-      sheetDraft.set({ marks: next });
-      return next;
-    });
+    const next = { ...marks, [rosterId]: { status: marks[rosterId]?.status ?? null, hoursWorked } };
+    setMarks(next);
+    sheetDraft.set({ marks: next });
   }
 
   // P / H / A anywhere in a worker's row marks that worker, so a whole sheet
