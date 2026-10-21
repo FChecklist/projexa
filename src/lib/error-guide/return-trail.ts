@@ -9,6 +9,8 @@ import { pathOf, withParam, withoutParam } from "./urls";
 export const TRAIL_KEY = "px-return-trail";
 export const TRAIL_MAX = 5;
 export const TRAIL_TTL_MS = 2 * 60 * 60 * 1000;
+/** How long after it was made a saved ("ready") entry keeps showing on the screens the person lands on next. */
+export const FOLLOW_AFTER_SAVE_MS = 30 * 60 * 1000;
 /** The query parameter that carries the trail entry's id on the destination URL. */
 export const RETURN_PARAM = "returnTo";
 /** Fired on window when a trail entry changes, so the strip updates without polling. */
@@ -106,6 +108,10 @@ export function entryForScreen(pathname: string, search: string, storage: Storag
     if (hit) return hit;
   }
   for (let i = list.length - 1; i >= 0; i--) if (list[i].destination === pathname) return list[i];
+  // The person fixed the problem and SAVED on the destination screen, and the save moved them on (a create screen lands on the record it just
+  // made: /materials/new -> /materials/<id>). The way back must follow them there, or it is lost at the exact moment it is needed. Only an
+  // entry that was marked ready (a write succeeded on its destination) and is recent; "Stay here" or "Back" removes it.
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].ready && now - list[i].createdAt < FOLLOW_AFTER_SAVE_MS) return list[i];
   return null;
 }
 
