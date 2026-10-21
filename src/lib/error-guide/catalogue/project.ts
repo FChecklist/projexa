@@ -133,8 +133,8 @@ const projectServerGuides = guides([
   {
     id: "project-create-failed", source: "server", match: { status: [500, 503], method: "POST", apiPath: "/projects" },
     title: "The project was not created",
-    what: "We could not create the project. Nothing was saved.",
-    why: "The service had a problem. Your typing is still on screen.",
+    what: "We could not confirm that the project was created. It may or may not have been saved.",
+    why: "The service did not answer in time, and it may still have finished the save. Your typing is still on screen.",
     steps: ["Wait a few seconds.", "Press Save again.", "Check Projects first so you do not create it twice."],
     retry: true, severity: "warn", returnLabel: "Back to the form",
     fix: { label: "Check the project list", to: "/projects", where: "Projects" },
