@@ -340,3 +340,35 @@ describe("Project360Client: the baseline control is always reachable", () => {
     await waitFor(() => expect(posts).toBeGreaterThan(before));
   });
 });
+
+// R-100 live dead end: cost side entered, contract side never entered, baseline v3 confirmed. The card must say WHICH side is missing, where,
+// and -- when a baseline with figures locks the contract side -- offer the revision that is the only way to change it.
+describe("Project360Client: which side of the baseline is missing, and the locked-contract path", () => {
+  const COST_ONLY = { ...ANALYSIS_ROW, boqId: "boq-9", hasBaseline: true, baselineHasFigures: false, contractAtFirstConfirmation: "NOT_SET", expectedProfitGross: "NOT_SET", profitVsExpectedDelta: "NOT_SET",
+    baselineFigureStatus: { hasFigures: false, contractMissingLines: 4, costMissingLines: 0, contractMissingLineIds: ["l1", "l2"], costMissingLineIds: [] }, contractSideLocked: false, contractLockedByVersion: null };
+  const asOwner = { "/api/organization": () => jsonRes({ role: "owner", organization: { country: "AE" } }) };
+
+  test("names the missing side with counts and links to the exact line; no generic 'No cost figures yet'", async () => {
+    const { getByTestId, queryByText, getAllByText } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: COST_ONLY }), ...asOwner });
+    await waitFor(() => expect(getByTestId("project360-baseline-missing")).toBeDefined());
+    expect(getByTestId("project360-baseline-refresh").textContent).toContain("Contract quantity/rate missing on 4 lines.");
+    expect(getByTestId("project360-missing-contract-link").getAttribute("href")).toBe("/scope/boq-9?focus=boq-grid-row-l1");
+    expect(document.querySelector('[data-testid="project360-missing-cost-link"]')).toBeNull();
+    expect(queryByText("No cost figures yet")).toBeNull();
+    expect(getAllByText("No contract figures yet").length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-testid="project360-contract-locked"]')).toBeNull();
+  });
+
+  test("contract side locked by a baseline with figures: says so, and the button creates a revision with a way back", async () => {
+    sessionStorage.clear();
+    const LOCKED = { ...COST_ONLY, contractSideLocked: true, contractLockedByVersion: 3 };
+    const { getByTestId } = renderClient({ "/api/reports/boq-analysis": () => jsonRes({ row: LOCKED }), ...asOwner });
+    await waitFor(() => expect(getByTestId("project360-contract-locked")).toBeDefined());
+    expect(getByTestId("project360-contract-locked").textContent).toContain("Contract values are locked by baseline v3. To change them create a revision of this BOQ and confirm a baseline there.");
+    fireEvent.click(getByTestId("project360-create-revision"));
+    const trail = JSON.parse(sessionStorage.getItem("px-return-trail") ?? "[]");
+    expect(trail.length).toBe(1);
+    expect(trail[0].destination).toBe("/scope/boq-9/revise");
+    expect(trail[0].label).toBe("Profit & Loss");
+  });
+});

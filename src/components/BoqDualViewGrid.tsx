@@ -168,6 +168,8 @@ export type DualViewBoq = {
   id: string;
   status: string;
   hasConfirmedBaseline?: boolean;
+  /** R-100: only a baseline WITH figures locks the contract side (older servers omit it: then any baseline locks). */
+  contractSideLocked?: boolean;
   latestBaselineVersion?: number | null;
   lineItems: DualViewLine[];
   moneyView?: { projectValue: MoneyFigure; contractValue: MoneyFigure; variance: MoneyFigure; variancePercent: MoneyFigure; rootLineCount: number };
@@ -415,7 +417,7 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
     );
   }
 
-  const contractLocked = internal.hasConfirmedBaseline === true;
+  const contractLocked = (internal.contractSideLocked ?? internal.hasConfirmedBaseline) === true;
   // R-50: a viewer without cost visibility gets no project-side keys at all, so the cost group, the variance columns and the
   // cost summary are not drawn (not blank, not NOT_SET: absent), and the same goes when the parent saw the budget overlay withheld.
   const costHidden = costHiddenByParent || projectSideHidden(internal);
