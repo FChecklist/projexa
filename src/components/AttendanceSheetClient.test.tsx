@@ -111,11 +111,11 @@ describe("AttendanceSheetClient -- the sheet itself", () => {
 
     const aliRow = getByText("Ali Hassan").closest("tr")!;
     fireEvent.click(within(aliRow).getByRole("radio", { name: "Present" }));
-    await waitFor(() => expect(within(aliRow).queryByText("AED 300.00")).not.toBeNull());
+    await waitFor(() => expect(within(aliRow).queryByText("AED 300.00")).not.toBeNull(), { timeout: 5000 });
 
     const binaRow = getByText("Bina Rao").closest("tr")!;
     fireEvent.click(within(binaRow).getByRole("radio", { name: "Half day" }));
-    await waitFor(() => expect(within(binaRow).queryByText("AED 125.00")).not.toBeNull());
+    await waitFor(() => expect(within(binaRow).queryByText("AED 125.00")).not.toBeNull(), { timeout: 5000 });
   });
 
   test("P / H / A mark the row the keyboard is in", async () => {

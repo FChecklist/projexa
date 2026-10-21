@@ -32,6 +32,7 @@ export function ActionFailurePanel({
   draftKey,
   className,
   sentence,
+  quiet,
 }: {
   failure: ActionFailureState | null;
   entityType?: string;
@@ -43,6 +44,8 @@ export function ActionFailurePanel({
   className?: string;
   /** The screen's own complete sentence for what happened; it replaces the guide's one-line "what happened" (the steps and the fix stay the guide's). */
   sentence?: string;
+  /** A state of the screen, not a failure that just happened: not written to the device log (see GuidedError). */
+  quiet?: boolean;
 }) {
   const ctx = useMemo(
     () => (failure ? contextFromError(failure.err, { entityType, entityId, projectId, ...(failure.field ? { field: failure.field } : {}), ...(failure.message ? { serverMessage: failure.message } : {}) }) : null),
@@ -56,7 +59,7 @@ export function ActionFailurePanel({
   }, [failure]);
 
   if (!ctx) return null;
-  return <GuidedError ctx={ctx} message={sentence} onRetry={failure?.retry ?? onRetry} retryable={retryable} draftKey={draftKey} className={className} />;
+  return <GuidedError ctx={ctx} message={sentence} onRetry={failure?.retry ?? onRetry} retryable={retryable} draftKey={draftKey} className={className} quiet={quiet} />;
 }
 
 export default ActionFailurePanel;

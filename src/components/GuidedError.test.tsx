@@ -142,6 +142,12 @@ describe("GuidedError", () => {
     expect(reports.length).toBe(2);
   });
 
+  test("a quiet panel (a state of the screen, not a failure that just happened) is shown in full but never written to the device log", () => {
+    const { getByTestId } = render(<GuidedError ctx={ctx({ serverMessage: "x" })} guide={FIX_GUIDE} quiet />);
+    expect(getByTestId("guided-error-title").textContent?.length).toBeGreaterThan(0);
+    expect(reports.length).toBe(0);
+  });
+
   test("with no guide given it looks one up: a timed-out write says it MAY HAVE BEEN SAVED and links to the list, not to the form", () => {
     const { getByTestId } = render(<GuidedError ctx={ctx({ code: "TIMEOUT", status: 0 })} />);
     expect(getByTestId("guided-error").getAttribute("data-guide-id")).toBe("timeout-write");

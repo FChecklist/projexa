@@ -51,6 +51,7 @@ export function ScopeState({
           entityType="boq"
           entityId={entityId}
           projectId={projectId}
+          quiet
         />
       </div>
       {back ? (
