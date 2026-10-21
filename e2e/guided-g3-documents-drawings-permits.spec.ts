@@ -119,6 +119,17 @@ test.describe("guided errors G3 - drawings", () => {
     await expect(page.locator("#rev")).toHaveValue("B");
     await expect(page.getByTestId("drawing-rechoose")).toBeVisible();
   });
+
+  test("DRW4 a drawing with no revision: Save stays closed and the button names the revision", async ({ page }) => {
+    const project = await createAuditProject(page.request, "drawing-rev");
+    await page.goto(`/drawings/new?projectId=${project.id}`);
+    await page.locator("#name").fill(`${AUDIT} No rev ${uniqueSuffix()}`);
+    await page.locator("#drawingNo").fill("AR-900");
+    await page.locator("#file").setInputFiles({ name: "x.dwg", mimeType: "application/octet-stream", buffer: Buffer.from("AC1027") });
+    const save = page.getByRole("button", { name: /^Save/ }).first();
+    await expect(save).toBeDisabled();
+    await expect(save).toContainText("Rev");
+  });
 });
 
 test.describe("guided errors G3 - permits", () => {

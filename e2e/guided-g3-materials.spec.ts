@@ -177,4 +177,17 @@ test.describe("guided errors G3 - materials", () => {
     const receipts = await readJson<{ receipts: { materialId: string; quantity: string | number }[] }>(page.request, `/api/materials?projectId=${project.id}`);
     expect(receipts.receipts.some((r) => r.materialId === material.id && Number(r.quantity) === 12)).toBe(true);
   });
+
+  test("M10 new material: a name of only spaces and no unit keep Save closed and the button names what is missing", async ({ page }) => {
+    const project = await createAuditProject(page.request, "material-required");
+    await page.goto(`/materials/new?projectId=${project.id}`);
+    await page.locator("#name").fill("     ");
+    const save = saveButton(page);
+    await expect(save).toBeDisabled();
+    await expect(save).toContainText("Name");
+    await expect(save).toContainText("Unit");
+    await page.locator("#name").fill(`${AUDIT} Spaces ${uniqueSuffix()}`);
+    await expect(save).toContainText("Unit");
+    await expect(save).not.toContainText("Name");
+  });
 });

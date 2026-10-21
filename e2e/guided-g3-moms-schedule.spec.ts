@@ -109,6 +109,16 @@ test.describe("guided errors G3 - minutes of meeting", () => {
     await expectGuide(page, { id: "report-share-expired" });
     await context.close();
   });
+
+  test("MOM7 a meeting with the date cleared: Save stays closed and the button names the date", async ({ page }) => {
+    const project = await createAuditProject(page.request, "mom-nodate");
+    await page.goto(`/moms/new?projectId=${project.id}`);
+    await page.locator("#title").fill(`${AUDIT} No date ${uniqueSuffix()}`);
+    await page.locator("#scheduledAt").fill("");
+    const save = saveButton(page);
+    await expect(save).toBeDisabled();
+    await expect(save).toContainText("Date");
+  });
 });
 
 test.describe("guided errors G3 - schedule", () => {
@@ -233,5 +243,14 @@ test.describe("guided errors G3 - schedule", () => {
     await expectGuide(page);
     await expect(panel(page).getByTestId("guided-error-retry")).toBeVisible();
     await expect(page.locator("#title")).not.toHaveValue("");
+  });
+
+  test("SCH10 a task with no title or start date: Save stays closed and the button names both", async ({ page }) => {
+    const project = await createAuditProject(page.request, "task-required");
+    await page.goto(`/schedule/tasks/new?projectId=${project.id}`);
+    const save = saveButton(page);
+    await expect(save).toBeDisabled();
+    await expect(save).toContainText("Title");
+    await expect(save).toContainText("Start Date");
   });
 });

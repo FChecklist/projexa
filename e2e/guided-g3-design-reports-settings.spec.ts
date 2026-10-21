@@ -93,6 +93,16 @@ test.describe("guided errors G3 - design studio", () => {
     await expect(page.getByTestId("reject-reason-short")).toContainText("at least 5 characters");
     await expect(page.getByRole("button", { name: "Send back" })).toBeDisabled();
   });
+
+  test("DS6 timesheet: negative hours are explained at once and Save stays closed", async ({ page }) => {
+    const project = await createAuditProject(page.request, "ds-negative");
+    const task = await addTask(page, project.id, "DesignNeg");
+    await page.goto(`/design-studio/timesheets/new?projectId=${project.id}&taskId=${task.id}`);
+    await page.locator("#new-entry-hours").fill("-2");
+    await expectGuide(page, { id: "design-timesheet-hours", what: "-2" });
+    await expect(page.getByRole("button", { name: /^Save/ }).first()).toBeDisabled();
+    await followFix(page, { path: "/design-studio/timesheets/new", focus: "new-entry-hours" });
+  });
 });
 
 test.describe("guided errors G3 - reports", () => {
