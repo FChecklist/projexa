@@ -1,5 +1,7 @@
 import { ExpiredShareNotice } from "@/components/ExpiredShareNotice";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
+import { SharedReportUnavailable } from "@/components/SharedReportUnavailable";
+import { loadSharedReport, type SharedProjectStatus } from "@/lib/shared-report";
 import { buildWorkProgressReport, formatParentOnlyPercent, sumRootAmtTotal, type BoqLineItem, type Activity, type Category, type ProgressEntry } from "@/lib/work-progress-report";
 import { formatMoney } from "@/lib/format-money";
 import { formatNumber } from "@/lib/format-number";
@@ -27,73 +29,41 @@ function money(n: number) {
 // unauthenticated fetch (never callVeridian/callVeridianRaw, which always
 // resolve an API key first) -- the whole point of this page is that it
 // needs no credentials of any kind, session or Bearer.
-type SharedWorkProgressReport = {
-  reportType?: "work_progress";
-  projectId: string; from: string; to: string; boqTitle: string | null;
-  lineItems: BoqLineItem[]; activities: Activity[]; categories: Category[]; entries: ProgressEntry[];
-};
-
-// R67 E-12 (R-136): the second report that can be shared publicly. Item E-09
-// had to leave Share on the Reports screen copying an in-app URL because this
-// page rendered the Work Progress Report specifically -- a token for any other
-// report would have resolved to a page that could not draw it. The share
-// service gained the type and this page gained the renderer in the same change,
-// never one without the other.
-type SharedProjectStatusLine = {
-  lineItemId: string; category: string | null; code: string | null; description: string;
-  budget: number | null; vendorName: string | null; vendorAmount: number | null;
-};
-type SharedProjectStatusReport = {
-  reportType: "project_status";
-  projectId: string; from: string; to: string; boqTitle: string | null;
-  dashboard: {
-    projectName: string; contractValue: number | null; projectValue: number | null; budget: number | null;
-    revenue: number; expenses: number; earnedValue: number | null;
-    percentByValue: number | null; progressPercent: number;
-  };
-  lines: SharedProjectStatusLine[];
-  totals: { budget: number | null; vendorAmount: number };
-};
-
-type SharedReport = SharedWorkProgressReport | SharedProjectStatusReport;
-
-async function fetchSharedReport(token: string): Promise<SharedReport | null> {
-  const res = await fetch(`${VERIDIAN_ORIGIN}/api/reports/share/${encodeURIComponent(token)}`, { cache: "no-store" });
-  if (!res.ok) return null;
-  return res.json();
-}
+// Project Status (R67 E-12 / R-136). The public copy is schedule, progress and
+// scope ONLY -- owner ruling D91: an unauthenticated token never carries cost.
+// VERIDIAN redacts at the source; this page does not render a money figure for
+// it at all, and it reads the payload through interpretSharedReport() so a
+// shape it did not expect is a guided notice, never a 500 (live bug 2026-10-22:
+// `data.totals.budget` threw once `totals` was redacted away).
 
 /** The en dash. On a public page as everywhere else, absent is not zero. */
 const EMPTY = "–";
 
-function figure(n: number | null | undefined) {
-  return n === null || n === undefined ? EMPTY : money(n);
+function pct(n: number | null) {
+  return n === null ? EMPTY : `${formatNumber(n, { fractionDigits: 1 })}%`;
+}
+function count(n: number | null) {
+  return n === null ? EMPTY : formatNumber(n, { fractionDigits: 0 });
 }
 
-function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
-  const d = data.dashboard;
+const MAIN: React.CSSProperties = { maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem", fontFamily: "sans-serif" };
+
+function SharedProjectStatusView({ data }: { data: SharedProjectStatus }) {
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem", fontFamily: "sans-serif" }}>
-      <p style={{ fontSize: "0.75rem", color: "#888", marginBottom: "0.25rem" }}>Shared, read-only — expires automatically</p>
-      <h1 style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>{d.projectName}</h1>
+    <main style={MAIN}>
+      <p style={{ fontSize: "0.75rem", color: "#888", marginBottom: "0.25rem" }}>Shared, read-only {"—"} expires automatically</p>
+      <h1 style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>{data.projectName}</h1>
       <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "1.5rem" }}>
         Project Status{data.boqTitle ? ` · BOQ ${data.boqTitle}` : ""}
+        {data.from && data.to ? ` · ${data.from} to ${data.to}` : ""}
       </p>
 
       <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         {([
-          ["Contract Value", figure(d.contractValue)],
-          ["Project Value", figure(d.projectValue)],
-          ["Budget", figure(d.budget)],
-          ["Revenue", figure(d.revenue)],
-          ["Expenses", figure(d.expenses)],
-          ["Earned Value", figure(d.earnedValue)],
-          // R67 D-61 (second-merge fix): formatNumber(), not a direct
-          // toFixed() -- money-format-rule.test.ts bans the method itself
-          // anywhere under src/app, not only where a locale mismatch is
-          // visible today.
-          ["% complete (by BOQ value)", d.percentByValue === null ? EMPTY : `${formatNumber(d.percentByValue, { fractionDigits: 1 })}%`],
-          ["% complete (by activity log)", `${formatNumber(d.progressPercent, { fractionDigits: 1 })}%`],
+          ["% complete (by activity log)", pct(data.progressPercent)],
+          ["Tasks", count(data.taskCount)],
+          ["Delayed tasks", count(data.delayedTaskCount)],
+          ["Photos", count(data.photoCount)],
         ] as const).map(([label, value]) => (
           <div key={label}>
             <dt style={{ fontSize: "0.75rem", color: "#888" }}>{label}</dt>
@@ -102,9 +72,18 @@ function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
         ))}
       </dl>
 
-      <h2 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Subcontractor / Budget breakup</h2>
+      {data.categories.length > 0 && (
+        <>
+          <h2 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Progress by category</h2>
+          <ul style={{ fontSize: "0.875rem", marginBottom: "2rem", paddingLeft: "1.25rem" }}>
+            {data.categories.map((c, i) => <li key={`${c.name}-${i}`}>{c.name}: {pct(c.percentComplete)}</li>)}
+          </ul>
+        </>
+      )}
+
+      <h2 style={{ fontSize: "1rem", marginBottom: "0.5rem" }}>Scope</h2>
       {data.lines.length === 0 ? (
-        <p style={{ fontSize: "0.875rem", color: "#666" }}>No budget lines recorded for this project.</p>
+        <p style={{ fontSize: "0.875rem", color: "#666" }}>No scope lines recorded for this project.</p>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
           <thead>
@@ -112,29 +91,20 @@ function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
               <th style={{ textAlign: "left", padding: "0.5rem" }}>Category</th>
               <th style={{ textAlign: "left", padding: "0.5rem" }}>Code</th>
               <th style={{ textAlign: "left", padding: "0.5rem" }}>Description</th>
-              <th style={{ textAlign: "right", padding: "0.5rem" }}>Budget</th>
-              <th style={{ textAlign: "left", padding: "0.5rem" }}>Vendor</th>
-              <th style={{ textAlign: "right", padding: "0.5rem" }}>Vendor amount</th>
+              <th style={{ textAlign: "right", padding: "0.5rem" }}>Quantity</th>
+              <th style={{ textAlign: "left", padding: "0.5rem" }}>Unit</th>
             </tr>
           </thead>
           <tbody>
             {data.lines.map((l) => (
-              <tr key={l.lineItemId} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={l.key} style={{ borderBottom: "1px solid #eee" }}>
                 <td style={{ padding: "0.5rem" }}>{l.category ?? EMPTY}</td>
                 <td style={{ padding: "0.5rem" }}>{l.code ?? EMPTY}</td>
                 <td style={{ padding: "0.5rem" }}>{l.description}</td>
-                <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(l.budget)}</td>
-                <td style={{ padding: "0.5rem" }}>{l.vendorName ?? EMPTY}</td>
-                <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(l.vendorAmount)}</td>
+                <td style={{ padding: "0.5rem", textAlign: "right" }}>{l.quantity === null ? EMPTY : formatNumber(l.quantity, { fractionDigits: 2 })}</td>
+                <td style={{ padding: "0.5rem" }}>{l.unit ?? EMPTY}</td>
               </tr>
             ))}
-            <tr style={{ borderTop: "2px solid #ddd", fontWeight: 600 }}>
-              <td style={{ padding: "0.5rem" }}>Grand Total</td>
-              <td /><td />
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(data.totals.budget)}</td>
-              <td />
-              <td style={{ padding: "0.5rem", textAlign: "right" }}>{figure(data.totals.vendorAmount)}</td>
-            </tr>
           </tbody>
         </table>
       )}
@@ -144,15 +114,28 @@ function SharedProjectStatus({ data }: { data: SharedProjectStatusReport }) {
 
 export default async function SharedReportPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const data = await fetchSharedReport(token);
-  if (!data) return <main><ExpiredShareNotice kind="report" token={token} /></main>;
+  const verdict = await loadSharedReport(VERIDIAN_ORIGIN, token);
 
-  if (data.reportType === "project_status") return <SharedProjectStatus data={data} />;
+  if (verdict.kind === "unavailable") {
+    if (verdict.reason === "expired") return <main><ExpiredShareNotice kind="report" token={token} /></main>;
+    return <main><SharedReportUnavailable reason={verdict.reason} /></main>;
+  }
+  if (verdict.kind === "attendance_summary") {
+    return <main><SharedReportUnavailable reason="wrong-page" openHref={`/share/attendance/${encodeURIComponent(token)}`} openLabel="Open the shared attendance summary" /></main>;
+  }
+  if (verdict.kind === "project_status") return <SharedProjectStatusView data={verdict} />;
 
-  const report = buildWorkProgressReport({
-    lineItems: data.lineItems, entries: data.entries, activities: data.activities, categories: data.categories,
-    from: data.from, to: data.to,
-  });
+  const data = verdict.data;
+  let report: ReturnType<typeof buildWorkProgressReport>;
+  try {
+    report = buildWorkProgressReport({
+      lineItems: data.lineItems as BoqLineItem[], entries: data.entries as ProgressEntry[],
+      activities: data.activities as Activity[], categories: data.categories as Category[],
+      from: data.from, to: data.to,
+    });
+  } catch {
+    return <main><SharedReportUnavailable reason="unreadable" /></main>;
+  }
 
   return (
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem", fontFamily: "sans-serif" }}>
