@@ -6,43 +6,78 @@
 // site is never reduced by it. The optional change order is the approved one this scope comes from (CHANGE OF SCOPE): the server links the two when
 // it accepts the revision. A BOQ can be revised only once, so while a revision of it is waiting to be sent this screen says so instead of saving.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+// GUIDED ERRORS (G1): faults on the new rows are named on their input AND told in the guided panel; the new rows are kept in a draft.
+import { ActionFailurePanel, codedFailure, type ActionFailureState } from "@/components/ActionFailure";
+import { FaultPanel } from "@/components/FaultPanel";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { boqDraftFaults, faultsByField, newLineFaults, stillTrue, type Fault } from "@/lib/error-guide/g1-faults";
+import { ScopeState, scopeWriteFailure } from "./ScopeGuided";
 import { emptyLine, toDrafts, type LineItemDraft } from "@/lib/boq-helpers";
 import { revisionLabel } from "@/lib/boq-lineage";
 import type { ShellScreenProps } from "../types";
 import type { ScopeReviseData } from "./scope-adapter";
 import { addScopeItemsOffline, scopeNotQueuedMessage, validateBoqDraft } from "./scope-writes";
 import { ScopeLinesEditor, money } from "./ScopeEditorParts";
-import { NOT_SYNCED, NO_PROJECT, Note, StateMessage, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
+import { NOT_SYNCED, NO_PROJECT, Note, keptNote, mayOffer, projectQuery, textInput, writeAccess } from "./DesignChangeShared";
 
 const BACK = { href: "/scope", label: "Back to Scope of Work" };
 
 export default function ScopeAddItemScreen({ shell, data }: ShellScreenProps<ScopeReviseData>) {
-  const [items, setItems] = useState<LineItemDraft[]>([emptyLine()]);
+  const draftKey = `boq-add-item:${data.state === "ready" ? data.boq.id : "none"}`;
+  const draft = useDraft<{ items: LineItemDraft[] }>(draftKey, { items: [emptyLine()] });
+  const items = draft.value.items;
+  const setItems = (next: LineItemDraft[] | ((prev: LineItemDraft[]) => LineItemDraft[])) => draft.set({ items: typeof next === "function" ? next(items) : next });
   const [changeOrderId, setChangeOrderId] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [faults, setFaults] = useState<Fault[]>([]);
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<ActionFailureState | null>(null);
+  const readyData = data.state === "ready" ? data : null;
+  const parentDrafts = readyData ? toDrafts([...readyData.parent]) : [];
 
-  if (data.state === "no_project") return <StateMessage testId="scope-additem-screen" state="no_project" title="Add a scope item" back={BACK}>{NO_PROJECT}</StateMessage>;
-  if (data.state === "not_synced") return <StateMessage testId="scope-additem-screen" state="not_synced" title="Add a scope item" back={BACK}>{NOT_SYNCED}</StateMessage>;
-  if (data.state === "not_found") return <StateMessage testId="scope-additem-screen" state="not_found" title="Add a scope item" back={BACK}>This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</StateMessage>;
-  if (data.state === "parent_waiting") return <StateMessage testId="scope-additem-screen" state="parent_waiting" title="Add a scope item" back={BACK}>This BOQ is still waiting to be sent. A scope item can be added once the server has accepted it.</StateMessage>;
-  if (data.state === "money_hidden") return <StateMessage testId="scope-additem-screen" state="money_hidden" title="Add a scope item" back={BACK}>Quantities and rates are hidden for your role, so a scope item cannot be added from the laptop.</StateMessage>;
+  // a fixed fault leaves the panel as soon as it is fixed
+  useEffect(() => {
+    if (faults.length === 0 || !readyData) return;
+    setFaults((prev) => stillTrue(prev, newLineFaults(boqDraftFaults(readyData.boq.title, [...parentDrafts, ...items]), parentDrafts.length)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.value.items]);
+
+  if (data.state === "no_project") return <ScopeState testId="scope-additem-screen" state="no_project" title="Add a scope item" back={BACK} sentence={NO_PROJECT} />;
+  if (data.state === "not_synced") return <ScopeState testId="scope-additem-screen" state="not_synced" title="Add a scope item" back={BACK} sentence={NOT_SYNCED} projectId={data.projectId ?? undefined} />;
+  if (data.state === "not_found") return <ScopeState testId="scope-additem-screen" state="not_found" title="Add a scope item" back={BACK} sentence="This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet." projectId={data.projectId ?? undefined} />;
+  if (data.state === "parent_waiting") return <ScopeState testId="scope-additem-screen" state="parent_waiting" title="Add a scope item" back={BACK} sentence="This BOQ is still waiting to be sent. A scope item can be added once the server has accepted it." projectId={data.projectId} />;
+  if (data.state === "money_hidden") return <ScopeState testId="scope-additem-screen" state="money_hidden" title="Add a scope item" back={BACK} sentence="Quantities and rates are hidden for your role, so a scope item cannot be added from the laptop." projectId={data.projectId} />;
   const { projectId, boq, parent, progress, changeOrders, revisionWaiting } = data;
   const back = { href: `/scope/${encodeURIComponent(boq.id)}${projectQuery(projectId)}`, label: "Back to this BOQ" };
   if (!mayOffer(shell.data.role, "create_boq_revision")) {
-    return <StateMessage testId="scope-additem-screen" state="role" title="Add a scope item" back={back}>Your role can read BOQs but not change them.</StateMessage>;
+    return <ScopeState testId="scope-additem-screen" state="role" title="Add a scope item" back={back} sentence="Your role can read BOQs but not change them." projectId={projectId} entityId={boq.id} />;
   }
 
   async function save() {
     // the whole set is checked as the server will see it: a repeated item code or a parent code that matches nothing is told in words now
     const filled = items.filter((l) => l.description.trim() || (l.itemCode ?? "").trim() || l.quantity.trim() || l.rate.trim());
-    if (filled.length === 0) return setError("Write the new scope item first: what it is, its unit, quantity and rate.");
+    if (filled.length === 0) {
+      const message = "Write the new scope item first: what it is, its unit, quantity and rate.";
+      setError(message);
+      setFaults([{ code: "BOQ_LINE_DESCRIPTION_REQUIRED", line: 1, field: "boq-line-0-description", message: `${message} Nothing was saved.` }]);
+      setAttempt((n) => n + 1);
+      return;
+    }
     const errs = validateBoqDraft(boq.title, [...toDrafts([...parent]), ...filled]);
-    if (errs.lines) return setError(errs.lines);
+    const found = newLineFaults(boqDraftFaults(boq.title, [...toDrafts([...parent]), ...items]), parent.length);
+    setFailure(null);
+    if (errs.lines || found.length > 0) {
+      setError(errs.lines ?? null);
+      setFaults(found);
+      setAttempt((n) => n + 1);
+      return;
+    }
     setError(null);
+    setFaults([]);
     setBusy(true);
     const result = await addScopeItemsOffline(
       {
@@ -52,7 +87,11 @@ export default function ScopeAddItemScreen({ shell, data }: ShellScreenProps<Sco
       writeAccess(shell)
     );
     setBusy(false);
-    if (!result.queued) return setNote(scopeNotQueuedMessage(result.reason));
+    if (!result.queued) {
+      setFailure(scopeWriteFailure(result.reason, scopeNotQueuedMessage(result.reason), result.reason === "change_order" ? "scope-additem-change-order" : undefined));
+      return;
+    }
+    draft.clear();
     setNote(keptNote(shell));
     shell.navigate(`/scope/${encodeURIComponent(result.tempId)}${projectQuery(projectId)}`);
   }
@@ -65,12 +104,26 @@ export default function ScopeAddItemScreen({ shell, data }: ShellScreenProps<Sco
         This keeps every existing line and adds the new one(s) as a new revision ({revisionLabel(boq.version + 1)}). Nothing already in the BOQ is changed or removed.
       </p>
       <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); void save(); }}>
-        <ScopeLinesEditor lines={items} onChange={setItems} testIdPrefix="scope-additem" />
+        {draft.restored ? (
+          <p className="text-[12.5px] text-px-muted" data-testid="draft-restored">
+            We kept the item(s) you typed earlier.{" "}
+            <button type="button" className="underline underline-offset-2" onClick={() => { draft.startFresh(); setFaults([]); setError(null); setFailure(null); }}>Start fresh</button>
+          </p>
+        ) : null}
+        <FaultPanel faults={faults} attempt={attempt} entityType="boq" entityId={boq.id} projectId={projectId} draftKey={draftKey} />
+        {faults.length === 0 ? <ActionFailurePanel failure={failure} entityType="boq" entityId={boq.id} projectId={projectId} draftKey={draftKey} sentence={failure?.message} /> : null}
+        <ScopeLinesEditor lines={items} onChange={setItems} testIdPrefix="scope-additem" faultMessages={faultsByField(faults)} />
         <Button type="button" variant="outline" size="sm" data-testid="scope-additem-more" onClick={() => setItems((prev) => [...prev, emptyLine()])}>+ Add another item</Button>
         {revisionWaiting ? (
-          <p role="alert" className="rounded border border-px-error-border bg-px-error-light p-3 text-sm text-px-error" data-testid="scope-additem-waiting">
-            A revision of this BOQ is already waiting to be sent, and a BOQ can be revised only once. Wait until it has been sent, then add the item to the new revision.
-          </p>
+          <div data-testid="scope-additem-waiting">
+            <ActionFailurePanel
+              failure={codedFailure("REVISION_WAITING", "A revision of this BOQ is already waiting to be sent, and a BOQ can be revised only once. Wait until it has been sent, then add the item to the new revision.")}
+              sentence="A revision of this BOQ is already waiting to be sent, and a BOQ can be revised only once. Wait until it has been sent, then add the item to the new revision."
+              entityType="boq"
+              entityId={boq.id}
+              projectId={projectId}
+            />
+          </div>
         ) : null}
         {changeOrders.length > 0 ? (
           <label className="block max-w-xl text-sm">Because of a change order (optional)

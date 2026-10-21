@@ -43,7 +43,7 @@
 // The greying of Qty/Rate on a sub-task row was already right; it keeps its
 // behaviour and gains the reason in words rather than only in a title
 // attribute.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -51,14 +51,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CreateScreen } from "@/components/screens/CreateScreen";
 import { createdHref } from "@/components/CreatedReceipt";
-import { useSubmit, formFailure } from "@/lib/use-submit";
+import { useSubmit } from "@/lib/use-submit";
 import { fetchJson } from "@/lib/fetch-json";
 import { findRecentBoq, lookForCreated, type BoqHeaderRow } from "@/lib/recover-created";
 import {
   emptyLine, childPercentSum, collectLines, toPayloadLineItems,
   // R67 D-24: the per-field sentences, from the same module the incomplete-line
   // banner reads, so one field has one message.
-  lineMissingFields, LINE_FIELD_MESSAGE,
+  lineMissingFields, LINE_FIELD_MESSAGE, TITLE_REQUIRED_MESSAGE,
   type LineField, type LineItemDraft,
 } from "@/lib/boq-helpers";
 import { draftBoqTotal, draftLineAmount } from "@/lib/boq-helpers";
@@ -69,6 +69,18 @@ import { useShellChain } from "@/components/shell/shell-chain-context";
 import BoqCategorySelect, { useBoqCategories } from "@/components/BoqCategorySelect";
 import type { CreateField } from "@/lib/create-screen";
 import { viaPxApi } from "@/lib/px-api";
+// GUIDED ERRORS (G1): what is typed survives leaving through a "Fix it now" link (the whole grid, not just the title), every fault the form can
+// see is named on the input it is about, and the first one is brought into view when Save is pressed. See src/lib/error-guide/g1-faults.ts.
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import {
+  BOQ_TITLE_ID, boqDraftFaults, boqLineId, faultFailure, faultsByField, fieldFromServerMessage, remapFaults, stillTrue,
+  type BoqColumn, type Fault,
+} from "@/lib/error-guide/g1-faults";
+import type { SubmitFailure } from "@/lib/use-submit";
+
+// The online title box is the shared CreateScreen field "title"; every other surface answers to the shared id "boq-title".
+const TITLE_REMAP = { [BOQ_TITLE_ID]: "title" } as const;
 
 const FIELDS: CreateField[] = [
   {
@@ -78,6 +90,8 @@ const FIELDS: CreateField[] = [
     required: true,
     placeholder: "e.g. Civil Works — Phase 1",
     wide: true,
+    // GUIDED ERRORS: leaving an empty title box says so beside the box, in words (the Save button names it too).
+    validate: (value) => (value.trim() ? null : TITLE_REQUIRED_MESSAGE),
   },
 ];
 
@@ -135,15 +149,21 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
   const router = useRouter();
   // R67 C-06: the shell chain context this save reports its receipt into.
   const { pushReceipt } = useShellChain();
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
+  // GUIDED ERRORS (G1): the title AND every line live in one draft (sessionStorage, 2 h), so a "Fix it now" link, a sign-in that ran out or a reload
+  // brings the whole BOQ back, however many lines it has. Thrown away after a successful save.
+  const draftKey = `boq-new:${projectId}`;
+  const draft = useDraft<{ title: string; lines: LineItemDraft[] }>(draftKey, { title: "", lines: [emptyLine()] });
+  const values: Record<string, string> = { title: draft.value.title };
+  const lines = draft.value.lines;
+  const setLines = (update: (prev: LineItemDraft[]) => LineItemDraft[]) => draft.set({ lines: update(lines) });
   // R67 I-05 (R-177): the org's registered category list, shared with
   // /scope/revise so both screens offer exactly the same vocabulary.
   const { categories, failed: categoriesFailed, addLocal } = useBoqCategories();
-  // A line the form can see is wrong, checked before anything is sent. Kept
-  // apart from the submit's own failure so a local complaint and a server
-  // refusal can never be mistaken for one another.
-  const [lineError, setLineError] = useState<string | null>(null);
+  // GUIDED ERRORS (G1): every fault the form can see, found before anything is sent (g1-faults.ts). Kept apart from the submit's own failure so a
+  // local complaint and a server refusal can never be mistaken for one another. `attempt` goes up each time Save finds faults: the first bad input
+  // is brought into view and outlined.
+  const [faults, setFaults] = useState<Fault[]>([]);
+  const [attempt, setAttempt] = useState(0);
   // R67 I-05 x integration: registering a category org-wide can fail without
   // the SAVE failing -- the name still lands on this line. That is a separate
   // sentence from a refused save, so it has its own persistent slot rather
@@ -255,18 +275,50 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
         text: `Saved BOQ ${(values.title ?? "").trim()} — ${savedLineItems} lines`,
         href: `/scope/${savedId}`,
       });
+      draft.clear();
       router.replace(createdHref("/scope", savedId, (values.title ?? "").trim()));
     },
   });
 
   function save() {
-    // Checked BEFORE anything is sent, so a malformed line costs no round
-    // trip and the complaint names the line rather than the request.
-    const { error: invalid } = collectLines(lines);
-    setLineError(invalid ?? null);
-    if (invalid) return;
+    // Checked BEFORE anything is sent, so a malformed line costs no round trip and the complaint names the line, the input and what to do.
+    const found = remapFaults(boqDraftFaults(values.title ?? "", lines), TITLE_REMAP);
+    setFaults(found);
+    if (found.length > 0) {
+      setAttempt((n) => n + 1);
+      return;
+    }
     submit.submit();
   }
+
+  // A fixed fault leaves the panel as soon as it is fixed (nothing new is shouted while the person is still typing a line).
+  useEffect(() => {
+    if (faults.length === 0) return;
+    setFaults((prev) => stillTrue(prev, remapFaults(boqDraftFaults(values.title ?? "", lines), TITLE_REMAP)));
+  }, [draft.value.title, draft.value.lines]);
+
+  const faultMessages = faultsByField(faults);
+  const faultAt = (index: number, column: BoqColumn): string | null => faultMessages[boqLineId(index, column)] ?? null;
+
+  useEffect(() => {
+    if (!attempt) return;
+    const field = remapFaults(faults, TITLE_REMAP)[0]?.field;
+    const el = field ? findFocusTarget(field) : null;
+    if (el) highlightElement(el);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attempt]);
+
+  // A refusal from the server that names a line is taken to that line's input, exactly like a fault the form found itself.
+  const serverFailure: SubmitFailure | null =
+    submit.failure && submit.failure.kind === "refused"
+      ? { ...submit.failure, field: submit.failure.field ?? fieldFromServerMessage(submit.failure.serverMessage ?? submit.failure.message, lines) }
+      : submit.failure;
+  const serverField = serverFailure?.field;
+  useEffect(() => {
+    if (!serverField) return;
+    const el = findFocusTarget(serverField);
+    if (el) highlightElement(el);
+  }, [serverField, submit.failure]);
 
   const scopeHref = `/scope?projectId=${encodeURIComponent(projectId)}`;
 
@@ -278,17 +330,25 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
       title="New Bill of Quantities"
       fields={FIELDS}
       values={values}
-      onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))}
+      onChange={(name, value) => draft.set({ title: name === "title" ? value : draft.value.title })}
       extraMissing={missingLineFields(lines)}
       // R67 I-05: a category that could not be REGISTERED org-wide is stated
       // here, persistently, and does not block the save -- the name is already
       // on the line and the BOQ is still correct.
       banner={
-        categoryNotice ? (
-          <p role="status" className="text-[12px] text-px-muted">{categoryNotice}</p>
-        ) : undefined
+        <>
+          {draft.restored && (
+            <p className="text-[12.5px] text-px-muted" data-testid="draft-restored">
+              We kept what you typed earlier: the title and {lines.filter((l) => l.description || l.quantity || l.rate).length || "all"} line(s).{" "}
+              <button type="button" className="underline underline-offset-2" onClick={draft.startFresh}>
+                Start fresh
+              </button>
+            </p>
+          )}
+          {categoryNotice ? <p role="status" className="text-[12px] text-px-muted">{categoryNotice}</p> : null}
+        </>
       }
-      failure={lineError ? formFailure(lineError) : submit.failure}
+      failure={faults.length > 0 ? faultFailure(faults) : serverFailure}
       onRetry={submit.submit}
       saving={submit.saving}
       saved={submit.saved}
@@ -343,14 +403,16 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                       <Input
                         className="min-w-[200px]"
                         aria-label={`Description, line ${i + 1}`}
+                        id={boqLineId(i, "description")}
+                        data-testid={boqLineId(i, "description")}
                         placeholder="Excavation to reduced level"
                         value={line.description}
-                        aria-invalid={lineFieldError(i, "description") ? true : undefined}
-                        aria-describedby={lineFieldError(i, "description") ? `line-${i}-description-error` : undefined}
+                        aria-invalid={lineFieldError(i, "description") || faultAt(i, "description") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "description") || faultAt(i, "description") ? `line-${i}-description-error` : undefined}
                         onChange={(e) => updateLine(i, "description", e.target.value)}
                         onBlur={() => blurLine(i, "description")}
                       />
-                      <LineFieldError id={`line-${i}-description-error`} message={lineFieldError(i, "description")} />
+                      <LineFieldError id={`line-${i}-description-error`} message={lineFieldError(i, "description") ?? faultAt(i, "description")} />
                     </td>
                     <td className="px-1 py-1">
                       {/* R67 I-05: the org's registered list, with an inline
@@ -381,46 +443,52 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                       <Input
                         className="w-[80px]"
                         aria-label={`Unit, line ${i + 1}`}
+                        id={boqLineId(i, "unit")}
+                        data-testid={boqLineId(i, "unit")}
                         placeholder="m3"
                         value={line.unit}
                         onChange={(e) => updateLine(i, "unit", e.target.value)}
-                        aria-invalid={lineFieldError(i, "unit") ? true : undefined}
-                        aria-describedby={lineFieldError(i, "unit") ? `line-${i}-unit-error` : undefined}
+                        aria-invalid={lineFieldError(i, "unit") || faultAt(i, "unit") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "unit") || faultAt(i, "unit") ? `line-${i}-unit-error` : undefined}
                         onBlur={() => blurLine(i, "unit")}
                       />
-                      <LineFieldError id={`line-${i}-unit-error`} message={lineFieldError(i, "unit")} />
+                      <LineFieldError id={`line-${i}-unit-error`} message={lineFieldError(i, "unit") ?? faultAt(i, "unit")} />
                     </td>
                     <td className="px-1 py-1">
                       <Input
                         className="w-[90px] text-right tabular-nums"
                         aria-label={`Qty, line ${i + 1}`}
+                        id={boqLineId(i, "quantity")}
+                        data-testid={boqLineId(i, "quantity")}
                         placeholder="120"
                         type="number"
                         value={line.quantity}
                         onChange={(e) => updateLine(i, "quantity", e.target.value)}
-                        aria-invalid={lineFieldError(i, "quantity") ? true : undefined}
-                        aria-describedby={lineFieldError(i, "quantity") ? `line-${i}-quantity-error` : undefined}
+                        aria-invalid={lineFieldError(i, "quantity") || faultAt(i, "quantity") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "quantity") || faultAt(i, "quantity") ? `line-${i}-quantity-error` : undefined}
                         onBlur={() => blurLine(i, "quantity")}
                         disabled={isSubTask}
                         title={isSubTask ? SUB_TASK_REASON : undefined}
                       />
-                      <LineFieldError id={`line-${i}-quantity-error`} message={lineFieldError(i, "quantity")} />
+                      <LineFieldError id={`line-${i}-quantity-error`} message={lineFieldError(i, "quantity") ?? faultAt(i, "quantity")} />
                     </td>
                     <td className="px-1 py-1">
                       <Input
                         className="w-[90px] text-right tabular-nums"
                         aria-label={`Rate, line ${i + 1}`}
+                        id={boqLineId(i, "rate")}
+                        data-testid={boqLineId(i, "rate")}
                         placeholder="45"
                         type="number"
                         value={line.rate}
                         onChange={(e) => updateLine(i, "rate", e.target.value)}
-                        aria-invalid={lineFieldError(i, "rate") ? true : undefined}
-                        aria-describedby={lineFieldError(i, "rate") ? `line-${i}-rate-error` : undefined}
+                        aria-invalid={lineFieldError(i, "rate") || faultAt(i, "rate") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "rate") || faultAt(i, "rate") ? `line-${i}-rate-error` : undefined}
                         onBlur={() => blurLine(i, "rate")}
                         disabled={isSubTask}
                         title={isSubTask ? SUB_TASK_REASON : undefined}
                       />
-                      <LineFieldError id={`line-${i}-rate-error`} message={lineFieldError(i, "rate")} />
+                      <LineFieldError id={`line-${i}-rate-error`} message={lineFieldError(i, "rate") ?? faultAt(i, "rate")} />
                       {/* The reason in WORDS, once per row, rather than only in
                           a title attribute nobody hovers. */}
                       {isSubTask && <p className="mt-0.5 text-[11px] text-px-muted">{SUB_TASK_REASON}</p>}
@@ -432,33 +500,45 @@ export default function ScopeCreateClient({ projectId }: { projectId: string }) 
                       <Input
                         className="w-[110px]"
                         aria-label={`Item code, line ${i + 1}`}
+                        id={boqLineId(i, "itemCode")}
+                        data-testid={boqLineId(i, "itemCode")}
                         placeholder="A-10"
                         value={line.itemCode ?? ""}
                         onChange={(e) => updateLine(i, "itemCode", e.target.value)}
+                        aria-invalid={faultAt(i, "itemCode") ? true : undefined}
+                        aria-describedby={faultAt(i, "itemCode") ? `line-${i}-itemCode-error` : undefined}
                       />
+                      <LineFieldError id={`line-${i}-itemCode-error`} message={faultAt(i, "itemCode")} />
                     </td>
                     <td className="px-1 py-1">
                       <Input
                         className="w-[110px]"
                         aria-label={`Parent code, line ${i + 1}`}
+                        id={boqLineId(i, "parentItemCode")}
+                        data-testid={boqLineId(i, "parentItemCode")}
                         placeholder="A-10"
                         value={line.parentItemCode ?? ""}
                         onChange={(e) => updateLine(i, "parentItemCode", e.target.value)}
+                        aria-invalid={faultAt(i, "parentItemCode") ? true : undefined}
+                        aria-describedby={faultAt(i, "parentItemCode") ? `line-${i}-parentItemCode-error` : undefined}
                       />
+                      <LineFieldError id={`line-${i}-parentItemCode-error`} message={faultAt(i, "parentItemCode")} />
                     </td>
                     <td className="px-1 py-1">
                       <Input
                         className="w-[100px] text-right tabular-nums"
                         aria-label={`Breakdown %, line ${i + 1}`}
+                        id={boqLineId(i, "breakdownPercentage")}
+                        data-testid={boqLineId(i, "breakdownPercentage")}
                         placeholder="40"
                         type="number"
                         value={line.breakdownPercentage ?? ""}
                         onChange={(e) => updateLine(i, "breakdownPercentage", e.target.value)}
-                        aria-invalid={lineFieldError(i, "breakdownPercentage") ? true : undefined}
-                        aria-describedby={lineFieldError(i, "breakdownPercentage") ? `line-${i}-breakdownPercentage-error` : undefined}
+                        aria-invalid={lineFieldError(i, "breakdownPercentage") || faultAt(i, "breakdownPercentage") ? true : undefined}
+                        aria-describedby={lineFieldError(i, "breakdownPercentage") || faultAt(i, "breakdownPercentage") ? `line-${i}-breakdownPercentage-error` : undefined}
                         onBlur={() => blurLine(i, "breakdownPercentage")}
                       />
-                      <LineFieldError id={`line-${i}-breakdownPercentage-error`} message={lineFieldError(i, "breakdownPercentage")} />
+                      <LineFieldError id={`line-${i}-breakdownPercentage-error`} message={lineFieldError(i, "breakdownPercentage") ?? faultAt(i, "breakdownPercentage")} />
                       {childSum != null && <p className="mt-0.5 text-[11px] text-px-muted">{childSum}% total</p>}
                     </td>
                     <td className="px-1 py-1">

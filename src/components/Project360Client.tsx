@@ -28,6 +28,9 @@ import { Download, Loader2, Printer } from "lucide-react";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { formatNumber } from "@/lib/format-number";
 import { ApiError, fetchJson, errorMessage } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): a refused baseline, a missing evidence reference, a missing BOQ and a failed read are each told in the inline panel.
+import { ActionFailurePanel, codedFailure, type ActionFailureState } from "@/components/ActionFailure";
+import { baselineEvidenceFault, faultError } from "@/lib/error-guide/g1-faults";
 import { project360ToCsv } from "@/lib/project-360-export";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 
@@ -90,11 +93,11 @@ export default function Project360Client({ projectId, projectName }: { projectId
   const [tasks, setTasks] = useState<GanttTask[]>([]);
   const [billingClaims, setBillingClaims] = useState<BillingClaim[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailureState | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [evidence, setEvidence] = useState("");
   const [confirming, setConfirming] = useState(false);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<ActionFailureState | null>(null);
   const [confirmedNote, setConfirmedNote] = useState<{ at: string; evidence: string } | null>(null);
 
   // Re-reads ONLY the analysis row, never from a cache. Resolves to whether it now says a baseline exists (a failed read is "not known": false).
@@ -110,8 +113,9 @@ export default function Project360Client({ projectId, projectName }: { projectId
 
   async function confirmBaseline(boqId: string) {
     const ref = evidence.trim();
-    if (!ref) {
-      setConfirmError("Name the evidence first — a PO, a signed proposal, an email — so the baseline can be checked later.");
+    const evidenceFault = baselineEvidenceFault(ref);
+    if (evidenceFault) {
+      setConfirmError({ err: faultError(evidenceFault), field: evidenceFault.field, at: Date.now() });
       return;
     }
     setConfirming(true);
@@ -140,10 +144,10 @@ export default function Project360Client({ projectId, projectName }: { projectId
         if (await rereadAnalysis()) {
           done(new Date().toISOString());
         } else {
-          setConfirmError(`${reason}. It may still have been saved — the figures were re-checked and the baseline is not there yet. Wait a moment and press Confirm baseline again only if it still shows "Not yet baselined".`);
+          setConfirmError({ err, message: `${reason}. It may still have been saved — the figures were re-checked and the baseline is not there yet. Wait a moment and press Confirm baseline again only if it still shows "Not yet baselined".`, field: "baseline-evidence", at: Date.now() });
         }
       } else {
-        setConfirmError(reason);
+        setConfirmError({ err, field: "baseline-evidence", at: Date.now() });
       }
     } finally {
       setConfirming(false);
@@ -170,7 +174,7 @@ export default function Project360Client({ projectId, projectName }: { projectId
         setTasks(ganttRes.tasks ?? []);
         setBillingClaims(billingRes.claims ?? []);
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, "Couldn't load the Project 360 analysis"));
+        if (!cancelled) setError({ err, at: Date.now(), retry: () => setReloadKey((k) => k + 1) });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -183,7 +187,18 @@ export default function Project360Client({ projectId, projectName }: { projectId
     return <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
   }
   if (error || !analysis) {
-    return <p className="py-10 text-center text-sm text-px-error">{error ?? "No analysis available"}</p>;
+    return (
+      <div className="py-6">
+        <ActionFailurePanel
+          failure={error ?? codedFailure("EMPTY_REPORT", "No analysis is available for this project yet.")}
+          entityType="project"
+          entityId={projectId}
+          projectId={projectId}
+          onRetry={() => setReloadKey((k) => k + 1)}
+          retryable
+        />
+      </div>
+    );
   }
 
   const pendingChangeOrders = changeOrders.filter((c) => c.status !== "approved" && c.status !== "rejected");
@@ -292,6 +307,9 @@ export default function Project360Client({ projectId, projectName }: { projectId
                 <div className="flex flex-wrap items-start gap-2">
                   <Input
                     aria-label="Evidence for the baseline"
+                    id="baseline-evidence"
+                    data-testid="baseline-evidence"
+                    aria-invalid={confirmError ? true : undefined}
                     className="max-w-md"
                     placeholder="Evidence: PO number, signed proposal, email date…"
                     value={evidence}
@@ -301,10 +319,18 @@ export default function Project360Client({ projectId, projectName }: { projectId
                   <Button type="button" onClick={() => void confirmBaseline(analysis.boqId as string)} disabled={confirming}>
                     {confirming ? "Confirming…" : "Confirm baseline"}
                   </Button>
-                  {confirmError && <p role="alert" className="w-full text-xs text-px-error">{confirmError}</p>}
+                  {confirmError && (
+                    <div className="w-full">
+                      <ActionFailurePanel failure={confirmError} entityType="boq" entityId={analysis.boqId as string} projectId={projectId} />
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p className="text-xs text-px-muted">This project has no BOQ yet — create one first, then confirm its baseline here.</p>
+                <ActionFailurePanel
+                  failure={codedFailure("NO_BOQ", "This project has no BOQ yet, so there is nothing to confirm as the baseline.")}
+                  entityType="project"
+                  projectId={projectId}
+                />
               )}
             </div>
           )}

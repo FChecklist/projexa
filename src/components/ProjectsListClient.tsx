@@ -25,7 +25,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ListScreen, ScreenFrame, type FieldMessage, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
-import DataLoadError from "@/components/DataLoadError";
+// GUIDED ERRORS (G1): a project list that could not be read is told in the inline panel (what happened, why, what to do, Try again), not as a bare line.
+import { ActionFailurePanel, codedFailure, type ActionFailureState } from "@/components/ActionFailure";
+import { ApiError } from "@/lib/fetch-json";
 // WO ai-work-link-ui-and-projects-tab (2026-09-29). The one-click "Copy AI work link" row action (AiWorkLinkCompact.tsx) and the
 // "New project with my AI" header button (AiWorkLinkButtons.tsx, showMainTrigger=false -- this screen has no single project of its
 // own to point the main "AI work link for this project" trigger at, only the new-project path makes sense here).
@@ -71,6 +73,7 @@ export default function ProjectsListClient() {
   const [rows, setRows] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<ActionFailureState | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [status, setStatus] = useState("");
   const { money } = useOrgMoney();
@@ -95,14 +98,18 @@ export default function ProjectsListClient() {
         // The rows are CLEARED on failure, so the empty-state sentence below
         // can never be rendered over a read that did not succeed.
         setRows([]);
-        setLoadError(body.error ?? `Couldn't load your projects (HTTP ${res.status})`);
+        const message = body.error ?? `Couldn't load your projects (HTTP ${res.status})`;
+        setLoadError(message);
+        setLoadFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: "/api/projects/overview", method: "GET" }), at: Date.now(), retry: () => void load() });
         return;
       }
       setRows((body.projects ?? []) as ProjectRow[]);
       setLoadError(null);
+      setLoadFailure(null);
     } catch (err) {
       setRows([]);
       setLoadError(err instanceof Error ? err.message : "Couldn't load your projects");
+      setLoadFailure({ err, at: Date.now(), retry: () => void load() });
     } finally {
       setLoading(false);
       inFlight.current = false;
@@ -170,7 +177,7 @@ export default function ProjectsListClient() {
 
       {loadError ? (
         <div className="px-4 py-3">
-          <DataLoadError messages={[`Could not load projects: ${loadError}`]} onRetry={() => void load()} />
+          <ActionFailurePanel failure={loadFailure ?? codedFailure("UNKNOWN_LOAD", loadError)} entityType="project" onRetry={() => void load()} retryable />
         </div>
       ) : loading ? (
         <p className="px-4 py-6 text-[13px] text-ct-muted" aria-busy="true">Loading your projects…</p>

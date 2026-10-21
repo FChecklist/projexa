@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DocumentJobPanel, type CreateChoice } from "@/components/upload/DocumentJobPanel";
+import { FaultPanel } from "@/components/FaultPanel";
+import { ActionFailurePanel, codedFailure } from "@/components/ActionFailure";
 import { useDocumentJob } from "@/hooks/use-document-job";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { canSendProjectDocument, SEND_DOCUMENT_ROLE_NOTE } from "@/lib/project-document-access";
@@ -63,7 +65,12 @@ export function UploadProjectDocumentScreen({
 
   if (!role) return null;
   if (!canSendProjectDocument(role)) {
-    return <p className="text-sm text-muted-foreground" data-testid="doc-role-note">{SEND_DOCUMENT_ROLE_NOTE}</p>;
+    // GUIDED ERRORS (G1): a role that may not do this is told in the guided panel (who can, what to do), with the note's own sentence kept
+    return (
+      <div className="max-w-3xl" data-testid="doc-role-note">
+        <ActionFailurePanel failure={codedFailure("ROLE_TOO_LOW", SEND_DOCUMENT_ROLE_NOTE, { status: 403, at: 0 })} sentence={SEND_DOCUMENT_ROLE_NOTE} entityType="import" />
+      </div>
+    );
   }
 
   const idle = job.phase.kind === "idle" || job.phase.kind === "failed";
@@ -117,6 +124,7 @@ export function UploadProjectDocumentScreen({
             <Label htmlFor="doc-file">{waitingForFile ? "Choose the same file again to finish" : "Project file"}</Label>
             <Input
               id="doc-file"
+              name="import-file"
               ref={fileInput}
               type="file"
               accept={DOCUMENT_ACCEPT.join(",")}
@@ -127,6 +135,14 @@ export function UploadProjectDocumentScreen({
               Accepted: {acceptList(DOCUMENT_POLICY)}, up to {formatSize(DOCUMENT_POLICY.maxBytes)}. Excel (.xlsx) workbooks are read today; other types are refused with a reason.
             </p>
             {fileError && <p className="text-sm text-px-error" role="alert" data-testid="doc-file-error">{fileError}</p>}
+            {/* GUIDED ERRORS (G1): the same fault in full -- what happened, why, what to do -- with the file box as the place to correct */}
+            {fileError && file && (
+              <FaultPanel
+                faults={[{ code: "DOC_FILE_INVALID", field: "doc-file", message: `${file.name} cannot be read here: ${fileError.replace(/\.$/, "")}. Choose an Excel (.xlsx) workbook within the size limit. Nothing was sent.` }]}
+                attempt={1}
+                entityType="import"
+              />
+            )}
           </div>
 
           {!waitingForFile && (

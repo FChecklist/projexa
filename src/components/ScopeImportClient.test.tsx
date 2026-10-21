@@ -175,15 +175,18 @@ describe("ScopeImportClient revision choice and outcome (D-25)", () => {
     expect(decodeURIComponent(target)).toContain("Imported BOQ Villa 21 · Rev0 · 2 lines");
   });
 
-  test("a failed import KEEPS the preview and puts the server's own message in the band, never a toast", async () => {
-    const { input, findByText, getByRole } = mount(CLEAN_DRY_RUN, {
+  test("a failed import KEEPS the preview and puts the server's own message in the guided panel, never a toast", async () => {
+    const { input, findByText, getByRole, findByTestId } = mount(CLEAN_DRY_RUN, {
       importResponse: () => jsonRes({ error: "Project not found" }, 404),
     });
     fireEvent.change(input);
     await findByText("2 lines ready, 0 with errors");
 
     fireEvent.click(getByRole("button", { name: "Save" }));
-    expect(await findByText("Project not found")).toBeDefined();
+    // GUIDED ERRORS (G1): the panel carries the server's own words (in "what happened") and says what to do.
+    const panel = await findByTestId("guided-error");
+    expect(panel.textContent).toContain("Project not found");
+    expect(panel.querySelector('[data-testid="guided-error-steps"]')).not.toBeNull();
     // The rows the user was looking at are still there.
     expect(await findByText("Partition")).toBeDefined();
   });

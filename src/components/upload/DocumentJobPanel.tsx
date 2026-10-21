@@ -14,6 +14,8 @@
 // the one way forward, "read it again and accept the shortfall".
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
+// GUIDED ERRORS (G1): a refused or failed read is told in the guided panel (what happened, why, what to do, the exact place), not as one bare line.
+import { ActionFailurePanel } from "@/components/ActionFailure";
 import type { DocumentPhase } from "@/hooks/use-document-job";
 import type { DocJob, DocQuestion, DocReconciliation } from "@/lib/project-from-document-client";
 
@@ -214,8 +216,14 @@ export function DocumentJobPanel({
 
   const canAccept = onAcceptShortfall && phase.code === "extraction_total_mismatch" && /less than/i.test(phase.message);
   return (
-    <div className="space-y-2" role="alert" data-testid="doc-failed" data-code={phase.code ?? ""}>
-      <p className="text-sm font-medium">{phase.message}</p>
+    <div className="space-y-2" data-testid="doc-failed" data-code={phase.code ?? ""}>
+      <ActionFailurePanel
+        failure={{
+          err: Object.assign(new Error(phase.message), { ...(phase.status !== undefined ? { status: phase.status } : {}), apiPath: "/api/projects/from-document", method: "POST" }),
+          at: 0,
+        }}
+        entityType="import"
+      />
       {phase.issues.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground" data-testid="doc-issues">
           {phase.issues.map((issue, i) => (

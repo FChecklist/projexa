@@ -30,10 +30,9 @@
 // page-local copy.
 import { Suspense } from "react";
 import { PageHeading } from "@/components/PageHeading";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ModuleListSkeletonBody } from "@/components/ModuleListSkeleton";
-import { ModuleProjectNotice } from "@/components/ModuleProjectNotice";
+import { NoProjectGuide } from "@/components/NoProjectGuide";
 import { ProjectRequiredCard } from "@/components/ProjectRequiredCard";
 import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { fetchScopeList, getProjectName, getScreenColumns, resolveProjectForModule } from "@/lib/module-list-source";
@@ -73,7 +72,7 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
     return (
       <>
         <PageHeading title="Scope of Work (BOQ)" />
-        <ModuleProjectNotice errorMessage={errorMessage} />
+        <NoProjectGuide kind="load-failed" message={errorMessage} />
       </>
     );
   }
@@ -90,9 +89,7 @@ async function ScopeSection({ requestedProjectId, tab }: { requestedProjectId?: 
     return (
       <>
         <PageHeading title="Scope of Work (BOQ)" />
-        <Card>
-          <CardContent className="p-8 text-center text-sm text-px-muted">No active projects yet.</CardContent>
-        </Card>
+        <NoProjectGuide kind="none-exist" moduleLabel="BOQs" />
       </>
     );
   }

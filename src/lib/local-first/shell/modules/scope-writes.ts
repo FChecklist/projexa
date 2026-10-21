@@ -116,19 +116,27 @@ const inventedCodeNames = (code: string, rowId: string) => code === `_row_${rowI
  * reduces. `progress` maps a parent line id to the percent complete of its latest entry. Same rule as findScopeReductionViolations.
  */
 export function scopeReductions(parent: readonly BoqLineItemRow[], progress: ReadonlyMap<string, number>, lines: LineItemDraft[]): string[] {
+  return scopeReductionTargets(parent, progress, lines).map((t) => t.message);
+}
+
+/**
+ * The same lines as scopeReductions, each with WHERE to correct it (GUIDED ERRORS, G1): `lineIndex` is the row of the form whose Qty or Rate was
+ * reduced (the person raises it again), or null when the line was removed altogether (the person adds it back).
+ */
+export function scopeReductionTargets(parent: readonly BoqLineItemRow[], progress: ReadonlyMap<string, number>, lines: LineItemDraft[]): { message: string; lineIndex: number | null }[] {
   const kept = lines.filter((l) => !isBlank(l));
   const draftByKey = new Map(kept.map((l) => [keyOfDraft(l), l]));
-  const out: string[] = [];
+  const out: { message: string; lineIndex: number | null }[] = [];
   for (const row of parent) {
     const pct = progress.get(row.id);
     if (!pct || pct <= 0) continue;
     const next = draftByKey.get(keyOfRow(row)) ?? (row.itemCode ? undefined : kept.find((l) => inventedCodeNames(trim(l.itemCode), row.id)));
     if (!next) {
-      out.push(`"${row.description}" is ${pct}% complete on site and would be removed entirely`);
+      out.push({ message: `"${row.description}" is ${pct}% complete on site and would be removed entirely`, lineIndex: null });
       continue;
     }
     const amount = draftLineAmount(next, kept);
-    if (amount !== null && amount - Number(row.amount) < 0) out.push(`"${row.description}" is ${pct}% complete on site and this revision reduces it`);
+    if (amount !== null && amount - Number(row.amount) < 0) out.push({ message: `"${row.description}" is ${pct}% complete on site and this revision reduces it`, lineIndex: lines.indexOf(next) });
   }
   return out;
 }

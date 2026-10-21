@@ -134,25 +134,23 @@ describe("BudgetAnalyticalClient (R67 D-62)", () => {
         headers: { "Content-Type": "application/json" },
       });
     const view = render(<BudgetAnalyticalClient projectId="proj-1" />);
-    await waitFor(() =>
-      expect(
-        view.getByText(/Construction module is not enabled for this organisation/)
-      ).toBeTruthy()
-    );
+    // GUIDED ERRORS (G1): the backend's own words are in the guided panel, with what to do and a "Try again".
+    await waitFor(() => expect(view.getByTestId("guided-error").textContent).toContain("Construction module is not enabled for this organisation"));
     expect(view.queryByText("Loading the budget…")).toBeNull();
     // The old screen's permanent state. It must not be reachable through an error.
     expect(view.queryByText("No BOQ line items yet.")).toBeNull();
-    expect(view.getByRole("button", { name: /Retry/i })).toBeTruthy();
+    expect(view.getByTestId("guided-error-steps")).toBeTruthy();
+    expect(view.getByRole("button", { name: /Try again/i })).toBeTruthy();
   });
 
   test("Retry re-reads the budget, and a second attempt that succeeds replaces the error", async () => {
     budgetResponse = () =>
       new Response(JSON.stringify({ error: "Upstream timed out" }), { status: 504, headers: { "Content-Type": "application/json" } });
     const view = render(<BudgetAnalyticalClient projectId="proj-1" />);
-    await waitFor(() => expect(view.getByText(/Upstream timed out/)).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId("guided-error").textContent).toContain("Upstream timed out"));
 
     budgetResponse = () => ok(REPORT);
-    fireEvent.click(view.getByRole("button", { name: /Retry/i }));
+    fireEvent.click(view.getByRole("button", { name: /Try again/i }));
     await waitFor(() => expect(view.getByText("Blockwork")).toBeTruthy());
     expect(view.queryByText(/Upstream timed out/)).toBeNull();
   });

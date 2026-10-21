@@ -69,6 +69,8 @@ import { formatNumber } from "@/lib/format-number";
 import { useOrgMoney } from "@/lib/use-org-money";
 import { CurrencyNotSetNotice } from "@/components/CurrencyNotSetNotice";
 import { fetchJson, ApiError } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): a BOQ list that could not be read is told in the inline panel (what happened, why, what to do, Try again).
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
 import { BOQ_LIST_COLUMNS } from "@/lib/module-list-columns";
 import { type ModuleListInitial } from "@/lib/module-list-state";
 import PaneState from "@/components/PaneState";
@@ -268,6 +270,9 @@ export default function ScopeClient({
   const [readError, setReadError] = useState<{ status: number | null; message: string | null } | null>(
     initial?.errorMessage ? { status: null, message: initial.errorMessage } : null
   );
+  const [readFailure, setReadFailure] = useState<ActionFailureState | null>(
+    initial?.errorMessage ? { err: Object.assign(new Error(initial.errorMessage), { apiPath: "/api/scope", method: "GET" }), at: 0 } : null
+  );
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(initial && !initial.errorMessage ? new Date() : null);
   // The list the server sent answers THIS project; a switch still fetches.
@@ -297,6 +302,7 @@ export default function ScopeClient({
     setStatus("loading");
     setStartedAt(Date.now());
     setReadError(null);
+    setReadFailure(null);
     try {
       const data = await fetchJson(`/api/scope?projectId=${encodeURIComponent(projectId)}&include=variation,headers`, {
         signal: signal ?? AbortSignal.timeout(LOAD_TIMEOUT_MS),
@@ -324,6 +330,13 @@ export default function ScopeClient({
             : null,
       });
       setStatus("error");
+      setReadFailure({
+        err: isTimeoutError(err)
+          ? Object.assign(new Error("The construction data service timed out."), { code: "TIMEOUT", status: 0, apiPath: "/api/scope", method: "GET" })
+          : err,
+        at: Date.now(),
+        retry: () => void load(),
+      });
     }
     // `initial` is intentionally not a dependency: it is a server payload
     // object, read only on the seeded first run, and listing it would re-run
@@ -498,6 +511,9 @@ export default function ScopeClient({
 
       <Card className="shadow-card">
         <CardContent className="p-4">
+          {status === "error" && readFailure ? (
+            <ActionFailurePanel failure={readFailure} entityType="boq" projectId={projectId} onRetry={() => void load()} retryable />
+          ) : (
           <PaneState
             status={status}
             entity="the scope of work"
@@ -700,6 +716,7 @@ export default function ScopeClient({
             </Table>
             </div>
           </PaneState>
+          )}
         </CardContent>
       </Card>
       {/* R67 G-05: said once, at the foot of the screen -- it explains the

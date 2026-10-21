@@ -17,7 +17,13 @@ import { Button } from "@/components/ui/button";
 import BoqLineGrid from "@/components/BoqLineGrid";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDayMonthYear } from "@/lib/format-date";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): faults the form finds, a refusal from the server and the scope-reduction block are all told in the inline panel, each taking
+// the person to the exact input; what was typed (title and every line) is kept in a draft across a "Fix it now" trip. See g1-faults.ts.
+import { FaultPanel } from "@/components/FaultPanel";
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { boqDraftFaults, boqLineId, faultsByField, fieldFromServerMessage, remapFaults, siFileFault, stillTrue, type Fault } from "@/lib/error-guide/g1-faults";
 import { conflictLabel, conflictQuantity, overrideActionLabel, type ScopeReductionConflict } from "@/lib/scope-conflicts";
 import {
   type Boq, type BoqLineItemRow, type LineItemDraft,
@@ -36,10 +42,20 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   const searchParams = useSearchParams();
   const sourceChangeOrderId = searchParams.get("fromChangeOrder");
   const [boq, setBoq] = useState<Boq | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
+  const [loadError, setLoadError] = useState<ActionFailureState | null>(null);
+  // The revision starts as a copy of the BOQ (`seed`); anything the person changes is kept in a draft (sessionStorage, 2 h) that wins over the
+  // seed, so leaving through a "Fix it now" link and coming back never loses the edits.
+  const [seed, setSeed] = useState<{ title: string; lines: LineItemDraft[] } | null>(null);
+  const draft = useDraft<{ title: string | null; lines: LineItemDraft[] | null }>(`boq-revise:${boqId}`, { title: null, lines: null });
+  const title = draft.value.title ?? seed?.title ?? "";
+  const lines = draft.value.lines ?? seed?.lines ?? [emptyLine()];
+  const setTitle = (v: string) => draft.set({ title: v, lines });
+  const setLines = (update: (prev: LineItemDraft[]) => LineItemDraft[]) => draft.set({ title, lines: update(lines) });
   const [titleBlurred, setTitleBlurred] = useState(false);
-  const [lines, setLines] = useState<LineItemDraft[]>([emptyLine()]);
+  // faults found by the form (fields, in reading order) and the failure of the last request
+  const [faults, setFaults] = useState<Fault[]>([]);
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<ActionFailureState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [scopeBlock, setScopeBlock] = useState<string | null>(null);
   const [messages, setMessages] = useState<FieldMessage[]>([]);
@@ -81,16 +97,14 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
     try {
       const data = await fetchJson<Boq & { lineItems: BoqLineItemRow[] }>(`/api/scope/${boqId}`);
       setBoq(data);
-      setTitle(data.title);
       const rows = data.lineItems ?? [];
-      setLines(rows.length > 0 ? toDrafts(rows) : [emptyLine()]);
+      setSeed({ title: data.title, lines: rows.length > 0 ? toDrafts(rows) : [emptyLine()] });
       setLoadError(null);
-      // The category picklist is loaded once for the screen by
-      // useBoqCategories() above -- the org's editable list, not a per-project
-      // one derived from values already written. Nothing to fetch here.
+      // The category picklist is loaded once for the screen by useBoqCategories() above -- the org's editable list, not a per-project one derived
+      // from values already written. Nothing to fetch here.
     } catch (err) {
       setBoq(null);
-      setLoadError(errorMessage(err, "Couldn't load the current scope to revise"));
+      setLoadError({ err, at: Date.now() });
     }
   }
 
@@ -99,6 +113,20 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   function updateLine(index: number, field: keyof LineItemDraft, value: string) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [field]: value } : l)));
   }
+
+  // the revision title box is "revision-title" here; every other screen calls it "boq-title"
+  const TITLE_REMAP = { "boq-title": "revision-title" } as const;
+  const currentFaults = (): Fault[] => {
+    const siFault = siFile ? siFileFault(siFile) : null;
+    return [...remapFaults(boqDraftFaults(title, lines, { titleLabel: "revision" }), TITLE_REMAP), ...(siFault ? [siFault] : [])];
+  };
+  // A fixed fault leaves the panel as soon as it is fixed; nothing new is shouted while a line is still being typed.
+  useEffect(() => {
+    if (faults.length === 0) return;
+    setFaults((prev) => stillTrue(prev, currentFaults()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.value.title, draft.value.lines, siFile]);
+  const faultMessages = faultsByField(faults);
 
   const missing = useMemo(() => missingBoqFields(title, lines), [title, lines]);
   const titleError = titleBlurred && !title.trim() ? TITLE_REQUIRED_MESSAGE : null;
@@ -117,49 +145,44 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
     body.set("boqId", revisionId);
     body.set("description", `Site instruction authorising revision of "${title}"`);
     body.set("costImpact", String(siCostImpact));
-    const res = await fetch("/api/site-instructions", { method: "POST", body });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 207) return data.attachmentError ?? "The site instruction could not be attached";
-    if (!res.ok) return data.error ?? "The site instruction could not be attached";
-    return null;
+    try {
+      const data = await fetchJson<{ attachmentError?: string }>("/api/site-instructions", { method: "POST", body });
+      // 207: the record landed, the file did not
+      return data?.attachmentError ?? null;
+    } catch (err) {
+      return err instanceof Error && err.message ? err.message : "The site instruction could not be attached";
+    }
   }
 
   async function submitRevision(allowScopeReductionOverride = false) {
-    const { valid: validLines, error: lineError } = collectLines(lines);
-    if (lineError) {
-      setMessages([{ level: "error", text: lineError }]);
+    // Everything the form can see is wrong is told BEFORE anything is sent: which line, which input, what to type.
+    const found = currentFaults();
+    setFaults(found);
+    if (found.length > 0) {
+      setAttempt((n) => n + 1);
       return;
     }
+    const { valid: validLines } = collectLines(lines);
     setSubmitting(true);
     setScopeBlock(null);
     setConflicts([]);
     setMessages([]);
+    setFailure(null);
     try {
-      const res = await fetch(`/api/scope/${boqId}/revisions`, {
+      const data = await fetchJson<{ id?: string; projectId?: string }>(`/api/scope/${boqId}/revisions`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title, lineItems: toPayloadLineItems(validLines), allowScopeReductionOverride,
           ...(sourceChangeOrderId ? { sourceChangeOrderId } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 409) {
-        // Owner's hard-block rule: this revision would reduce/remove scope
-        // already completed on site. Surface the real reason, the REAL LINES
-        // (D-27's conflicts[]), and let the user explicitly override instead of
-        // silently failing.
-        setScopeBlock(data.error ?? "This revision reduces scope already completed on site.");
-        setConflicts(Array.isArray(data.conflicts) ? data.conflicts : []);
-        return;
-      }
-      if (!res.ok) throw new Error(data.error ?? "Failed to create revision");
 
       const revisionId: string = data.id ?? boqId;
       setSavedRevisionId(revisionId);
-      const attachmentError = await attachSiteInstruction(revisionId, boq?.projectId ?? data.projectId);
+      draft.clear();
+      const attachmentError = await attachSiteInstruction(revisionId, boq?.projectId ?? data.projectId ?? "");
       if (attachmentError) {
-        // The revision IS saved. Say so, keep the file, and offer a Retry that
-        // can actually succeed -- navigating away here would lose the file.
+        // The revision IS saved. Say so, keep the file, and offer a Retry that can actually succeed -- navigating away here would lose the file.
         setMessages([
           { level: "warning", text: "Revision saved; the site instruction could not be attached - retry from the BOQ page" },
           { level: "error", text: attachmentError },
@@ -172,7 +195,19 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       }
       router.push(`/scope/${revisionId}`);
     } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't create revision" }]);
+      if (err instanceof ApiError && err.status === 409 && /scope reduction/i.test(err.message)) {
+        // Owner's hard-block rule: this revision would reduce/remove scope already completed on site. Surface the real reason, the REAL LINES
+        // (D-27's conflicts[]), take the person to the first of those lines, and let them explicitly override instead of silently failing.
+        const found = (err.body as { conflicts?: ScopeReductionConflict[] } | null)?.conflicts;
+        const list = Array.isArray(found) ? found : [];
+        setScopeBlock(err.message);
+        setConflicts(list);
+        const first = list[0];
+        const at = first ? lines.findIndex((l) => (first.itemCode ? (l.itemCode ?? "").trim() === first.itemCode : l.description.trim() === first.description)) : -1;
+        setFailure({ err, field: at >= 0 ? boqLineId(at, "quantity") : undefined, at: Date.now() });
+        return;
+      }
+      setFailure({ err, field: fieldFromServerMessage(err instanceof Error ? err.message : "", lines), at: Date.now(), retry: () => void submitRevision(allowScopeReductionOverride) });
     } finally {
       setSubmitting(false);
     }
@@ -200,8 +235,7 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
-        <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+        <ActionFailurePanel failure={loadError} entityType="boq" entityId={boqId} onRetry={() => load()} retryable />
       </div>
     );
   }
@@ -221,6 +255,16 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
       messages={messages}
     >
       <div className="space-y-3 px-4 py-3">
+        {draft.restored && (
+          <p className="text-[12.5px] text-px-muted" data-testid="draft-restored">
+            We kept what you typed earlier on this revision.{" "}
+            <button type="button" className="underline underline-offset-2" onClick={() => { draft.startFresh(); setFaults([]); setFailure(null); }}>
+              Start again from the BOQ
+            </button>
+          </p>
+        )}
+        <FaultPanel faults={faults} attempt={attempt} entityType="boq" entityId={boqId} projectId={boq.projectId} draftKey={`boq-revise:${boqId}`} remap={TITLE_REMAP} />
+        {faults.length === 0 && <ActionFailurePanel failure={failure} entityType="boq" entityId={boqId} projectId={boq.projectId} draftKey={`boq-revise:${boqId}`} />}
         {sourceChangeOrderId && (
           <p className="rounded-md border border-ct-border bg-ct-cloud/40 px-3 py-2 text-[13px] text-ct-muted" data-testid="revise-linked-change-order-banner">
             This revision will be linked to the approved Change Order that caused it.
@@ -231,16 +275,16 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
           <Input
             id="revision-title"
             aria-required="true"
-            aria-invalid={!!titleError}
-            aria-describedby={titleError ? "revision-title-error" : undefined}
+            aria-invalid={!!(titleError || faultMessages["boq-title"])}
+            aria-describedby={titleError || faultMessages["boq-title"] ? "revision-title-error" : undefined}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => setTitleBlurred(true)}
             placeholder="e.g. Civil Works - Phase 1"
           />
-          {titleError && (
+          {(titleError || faultMessages["boq-title"]) && (
             <p id="revision-title-error" role="alert" className="flex items-start gap-1 text-[11px] text-px-error">
-              <span aria-hidden="true">⚠</span><span>{titleError}</span>
+              <span aria-hidden="true">⚠</span><span>{titleError ?? faultMessages["boq-title"]}</span>
             </p>
           )}
         </div>
@@ -254,6 +298,7 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
             onAddCategory={registerCategory}
             onRemove={(index) => setLines((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)))}
             onAdd={() => setLines((prev) => [...prev, emptyLine()])}
+            faultMessages={faultMessages}
           />
           <p className="text-xs text-ct-muted">Removing a line, or reducing its quantity/rate, is blocked if that item is already recorded as complete on site.</p>
         </div>
@@ -269,7 +314,14 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
             accept=".pdf,image/*"
             className="block w-full text-[13px]"
             onChange={(e) => setSiFile(e.target.files?.[0] ?? null)}
+            aria-invalid={faultMessages["site-instruction"] ? true : undefined}
+            aria-describedby={faultMessages["site-instruction"] ? "site-instruction-error" : undefined}
           />
+          {faultMessages["site-instruction"] && (
+            <p id="site-instruction-error" role="alert" className="flex items-start gap-1 text-[11px] text-px-error">
+              <span aria-hidden="true">⚠</span><span>{faultMessages["site-instruction"]}</span>
+            </p>
+          )}
           <p className="text-[11.5px] text-px-muted">Attach the client&apos;s instruction that authorises this change</p>
           <label className="flex items-start gap-2 pt-1 text-[12.5px] text-px-ink">
             <input
@@ -296,8 +348,8 @@ export default function ScopeReviseClient({ boqId }: { boqId: string }) {
 
         {scopeBlock && (
           <div className="rounded-md border border-px-error-border bg-px-error-light p-3">
-            <p className="text-sm text-px-error">{scopeBlock}</p>
-
+            {/* the sentence itself is in the panel above; these are the lines it is about */}
+            <p className="text-sm text-px-error">Lines with work already recorded on site:</p>
             {conflicts.length > 0 && (
               <div className="mt-2 overflow-x-auto rounded-md border border-px-error-border bg-px-white">
                 <Table>

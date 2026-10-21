@@ -7,6 +7,8 @@ if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 const { act, cleanup, fireEvent, render, screen } = await import("@testing-library/react");
+// GUIDED ERRORS (G1): a failed read is shown in the guided panel, which needs the router for its "Fix it now" link.
+mock.module("next/navigation", () => ({ useRouter: () => ({ push: () => {}, replace: () => {}, prefetch: () => {} }), usePathname: () => "/projects/from-file" }));
 const { DocumentJobPanel } = await import("./DocumentJobPanel");
 import type { DocumentPhase } from "@/hooks/use-document-job";
 import { parseJob } from "@/lib/project-from-document-client";

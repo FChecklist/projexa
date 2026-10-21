@@ -31,6 +31,7 @@ import { GuidedError } from "@/components/GuidedError";
 import { contextFromError, fieldFromBody } from "@/lib/error-guide/context";
 import { useDraft } from "@/lib/error-guide/use-draft";
 import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import { faultError, projectFormFaults } from "@/lib/error-guide/g1-faults";
 
 /**
  * R67 D-01 (lane D1, folded into this canonical component under D-11's rule).
@@ -90,9 +91,11 @@ export default function ProjectCreateClient() {
 
   async function createProject() {
     if (missing.length > 0 || submitting) return;
-    const dateProblem = projectDateProblem(startDate, targetDate);
-    if (dateProblem) {
-      setFailure({ err: Object.assign(new Error(dateProblem.message), { code: "FIELD_INVALID" }), field: dateProblem.field, message: dateProblem.message });
+    // Everything the form can see is wrong is told BEFORE anything is sent (a name over 200 letters, a year that cannot be right, dates the wrong
+    // way round), with the input outlined. src/lib/error-guide/g1-faults.ts.
+    const [problem] = projectFormFaults({ name, description, startDate, targetDate });
+    if (problem) {
+      setFailure({ err: faultError(problem), field: problem.field, message: problem.message });
       return;
     }
     setSubmitting(true);
