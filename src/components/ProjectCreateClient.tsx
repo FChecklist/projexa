@@ -22,7 +22,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { missingProjectFields, projectSaveDisabledReason } from "@/lib/project-form";
+import { missingProjectFields, projectSaveDisabledReason, resolveProjectName } from "@/lib/project-form";
+import { ApiError } from "@/lib/fetch-json";
+import { ensureOrganization, NO_ORGANIZATION_PATTERN, withOrgRetry } from "@/lib/org/ensure-org-client";
+import { browserEnsureDeps } from "@/lib/org/browser-ensure";
+import { reportClientError } from "@/lib/local-first/client-error-report";
 
 /**
  * R67 D-01 (lane D1, folded into this canonical component under D-11's rule).
@@ -63,17 +67,26 @@ export default function ProjectCreateClient() {
       // returns the created row itself (status 201) -- so the new project's
       // id is available here and the user lands on the real object, never
       // back on an empty form.
-      const created = await fetchJson<{ id?: string }>("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || undefined,
-          startDate: startDate || undefined,
-          targetDate: targetDate || undefined,
-        }),
-      });
-      toast.success(`Created project ${name.trim()}`);
+      // Nothing is required: an empty name becomes "New project <date>" (renamable later).
+      const projectName = resolveProjectName(name);
+      const post = () =>
+        fetchJson<{ id?: string }>("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: projectName,
+            description: description.trim() || undefined,
+            startDate: startDate || undefined,
+            targetDate: targetDate || undefined,
+          }),
+        });
+      const created = await withOrgRetry(
+        post,
+        () => ensureOrganization(browserEnsureDeps()),
+        (e) => e instanceof ApiError && e.status === 400 && NO_ORGANIZATION_PATTERN.test(e.message),
+        (detail) => reportClientError("org-provision", new Error(detail), "ProjectCreateClient"),
+      );
+      toast.success(`Created project ${projectName}`);
       // R67 F-21 (carried over from the deleted CreateProjectDialog, which
       // decision D-01 replaced with this route): the shell's project list is
       // held in a session store, so mark that ONE key stale and the new
@@ -110,7 +123,7 @@ export default function ProjectCreateClient() {
       <div className="space-y-3 px-4 py-3">
         <div className="space-y-1.5">
           <Label htmlFor="name">Project Name</Label>
-          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeview Residence — Phase 2" />
+          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional. e.g. Lakeview Residence — Phase 2" />
           {fieldError("name") && <p className="text-[12.5px] text-px-error">{fieldError("name")}</p>}
         </div>
         <div className="space-y-1.5">
