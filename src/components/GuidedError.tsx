@@ -5,7 +5,7 @@
 //   way back), "Try again" when trying again is honest, and "Copy details" for the complete plain-text report.
 // It is an inline panel (role="alert"), never a popup. Docs: docs/ERROR_GUIDE.md. Contract: src/lib/error-guide/types.ts.
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Info, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,38 @@ import { hereOf, pathOf } from "@/lib/error-guide/urls";
 import { newTrailId, pushReturn, withReturnTo } from "@/lib/error-guide/return-trail";
 import { contextFromFailure, type FailureFacts } from "@/lib/error-guide/context";
 import type { Guide, GuideContext } from "@/lib/error-guide/types";
+
+/**
+ * How a screen that is NOT drawn by the Next router moves to another address. The laptop shell (src/lib/local-first/shell/LocalShell.tsx) draws
+ * every screen itself and moves with its own navigate(); a "Fix it now" link or a "Back to ..." button pushed through the Next router there would
+ * ask the network for a page. The shell provides its navigate here, and GuidedError / ReturnStrip use it when it is present. Elsewhere it is null
+ * and the Next router is used, exactly as before.
+ */
+export const GuidedNavigationContext = createContext<((href: string) => void) | null>(null);
+
+/**
+ * The Next router, or null where no Next router is mounted (the laptop shell's tests, a screen drawn outside the app router). A panel must never
+ * crash the screen it is explaining a failure on, so a missing router is not an error here: navigation then falls back to the shell's navigate or
+ * a plain page load. The hook is called the same way on every render, so the order of hooks never changes.
+ */
+export function useSafeRouter(): ReturnType<typeof useRouter> | null {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
+/** Moves to another address by the best means this screen has. */
+export function useGuidedNavigate(): (href: string) => void {
+  const router = useSafeRouter();
+  const shellNavigate = useContext(GuidedNavigationContext);
+  return (href) => {
+    if (shellNavigate) shellNavigate(href);
+    else if (router) router.push(href);
+    else if (typeof window !== "undefined") window.location.assign(href);
+  };
+}
 
 export type GuidedErrorProps = {
   ctx: GuideContext;
@@ -64,7 +96,7 @@ const TONE = {
 } as const;
 
 export function GuidedError({ ctx, guide, onRetry, retryable, message, draftKey, className }: GuidedErrorProps) {
-  const router = useRouter();
+  const go = useGuidedNavigate();
   const resolved = useMemo(() => resolveGuide(guide ?? matchGuide(ctx), ctx), [guide, ctx]);
   const [copied, setCopied] = useState<"idle" | "yes" | "no">("idle");
   const trailId = useMemo(() => newTrailId(), [resolved.guide.id, ctx.serverMessage, ctx.status]);
@@ -99,7 +131,7 @@ export function GuidedError({ ctx, guide, onRetry, retryable, message, draftKey,
     if (needsTrail) {
       pushReturn({ id: trailId, returnUrl: here, label: resolved.returnLabel.startsWith("Back to ") ? resolved.returnLabel.slice(8) : resolved.returnLabel, destination: fix.href, draftKey });
     }
-    router.push(fixHref);
+    go(fixHref);
   }
 
   async function copy() {
