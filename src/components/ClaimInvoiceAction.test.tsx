@@ -113,7 +113,7 @@ describe("ClaimInvoiceAction", () => {
     fireEvent.click(view.getByTestId("claim-invoice-confirm"));
     expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(true);
     await waitFor(() => view.getByTestId("claim-invoice-error"));
-    expect(view.getByTestId("guided-error-what").textContent).toContain("may have been saved");
+    expect(view.getByTestId("guided-error-what").textContent).toContain("may already have been raised");
     expect((view.getByTestId("claim-invoice-confirm") as HTMLButtonElement).disabled).toBe(false);
   });
 });

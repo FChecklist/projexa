@@ -1,7 +1,7 @@
 // Change orders: create, edit, submit for e-signature, cancel, link to a BOQ revision.
 // Server messages: compliance-tracker construction-change-order-service.ts,
 // construction-boq-service.ts (link to revision), api/v1/projexa/change-orders/[id].
-import { ent, guides, proj, rx } from "./_helpers";
+import { ent, guides, here, proj, rx } from "./_helpers";
 
 const BACK = "Back to the change order";
 const list = proj("/change-orders");
@@ -33,15 +33,6 @@ export const changeOrderGuides = guides([
     steps: ["Type 0 or a whole number like 7 (use minus for days saved).", "Save again."],
     fix: { label: "Fix the days", to: proj("/change-orders/new"), where: "Change Orders > New > Schedule impact (days)" },
     severity: "warn", returnLabel: "Back to the form",
-  },
-  {
-    id: "co-signer-required", source: "validation", match: { status: 400, messageRegex: rx("At least one signer is required") },
-    title: "Add at least one signer",
-    what: "{serverMessage}",
-    why: "A change order becomes valid only after someone signs it.",
-    steps: ["Open the change order.", "Add the client or approver's name and e-mail as a signer.", "Press Submit again."],
-    fix: { label: "Open the change order", to: ent("/change-orders"), where: "Change Orders > this order > Signers" },
-    severity: "block", returnLabel: BACK,
   },
   {
     id: "co-not-found", source: "server", match: { status: 404, messageRegex: rx("^Change order not found$") },
@@ -105,5 +96,96 @@ export const changeOrderGuides = guides([
     steps: ["Open Scope of Work.", "Open the revision named in the message."],
     fix: { label: "Open Scope of Work", to: proj("/scope"), where: "Scope of Work > the revision" },
     severity: "info", returnLabel: BACK,
+  },
+  // ===== GROUP G2 (guided errors): faults the change-order screens find ITSELF before anything is sent (src/lib/error-guide/g2-faults.ts) =====
+  {
+    id: "co-fault-title-missing", source: "validation", match: { code: "CO_TITLE_MISSING" },
+    title: "Give the change order a title",
+    what: "{serverMessage}",
+    why: "The title is how everyone recognises this change on the list and in the signing e-mail. Nothing was saved.",
+    steps: ["Click the Title box.", "Type a short title, such as Extra false ceiling in lobby.", "Press Save again."],
+    fix: { label: "Go to the Title box", to: here, where: "Change Orders > New Change Order > Title" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "co-fault-title-long", source: "validation", match: { code: "CO_TITLE_LONG" },
+    title: "The title is too long",
+    what: "{serverMessage}",
+    why: "A title is a short name, up to 200 letters. Put the detail in the Reason box. Nothing was saved.",
+    steps: ["Shorten the title.", "Move the detail into the Reason box.", "Press Save again."],
+    fix: { label: "Go to the Title box", to: here, where: "Change Orders > New Change Order > Title" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "co-fault-cost-not-number", source: "validation", match: { code: "CO_COST_NOT_NUMBER" },
+    title: "The cost change must be a number",
+    what: "{serverMessage}",
+    why: "The money change is added into the project's budget, so it must be digits. A minus sign means a saving. Nothing was saved.",
+    steps: ["Remove letters, currency signs and commas.", "Type digits only, for example 50000, or -15000 for a saving.", "Press Save again."],
+    fix: { label: "Go to Cost Impact", to: here, where: "Change Orders > New Change Order > Cost Impact" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "co-fault-days-invalid", source: "validation", match: { code: "CO_DAYS_INVALID" },
+    title: "Days must be a whole number",
+    what: "{serverMessage}",
+    why: "The schedule moves by whole days. A minus sign means time saved. Nothing was saved.",
+    steps: ["Type a whole number such as 5, or -2 for time saved.", "Leave the box empty if the schedule does not change.", "Press Save again."],
+    fix: { label: "Go to Schedule Impact", to: here, where: "Change Orders > New Change Order > Schedule Impact" },
+    severity: "warn", returnLabel: "Back to the form",
+  },
+  {
+    id: "co-fault-signer-name", source: "validation", match: { code: "CO_SIGNER_NAME_MISSING" },
+    title: "Type the signer's name",
+    what: "{serverMessage}",
+    why: "The signing request is addressed to a named person, and their name is written on the signed record. Nothing was sent.",
+    steps: ["Click the Signer name box.", "Type the full name of the person who will sign.", "Press Send again."],
+    fix: { label: "Go to Signer name", to: here, where: "Change Orders > this change order > Send for Approval > Signer name" },
+    severity: "warn", returnLabel: "Back to the change order",
+  },
+  {
+    id: "co-fault-signer-email-missing", source: "validation", match: { code: "CO_SIGNER_EMAIL_MISSING" },
+    title: "Type the signer's e-mail",
+    what: "{serverMessage}",
+    why: "The signing link is sent to this address. Without it nobody can sign. Nothing was sent.",
+    steps: ["Click the Signer email box.", "Type the e-mail address of the person who will sign.", "Press Send again."],
+    fix: { label: "Go to Signer email", to: here, where: "Change Orders > this change order > Send for Approval > Signer email" },
+    severity: "warn", returnLabel: "Back to the change order",
+  },
+  {
+    id: "co-fault-signer-email-invalid", source: "validation", match: { code: "CO_SIGNER_EMAIL_INVALID" },
+    title: "That e-mail does not look right",
+    what: "{serverMessage}",
+    why: "A signing link sent to an incomplete address would never arrive, and the change order would wait for ever. Nothing was sent.",
+    steps: ["Look for a missing @, a missing part after the dot, or a space.", "Correct the address, for example name@company.com.", "Press Send again."],
+    fix: { label: "Go to Signer email", to: here, where: "Change Orders > this change order > Send for Approval > Signer email" },
+    severity: "warn", returnLabel: "Back to the change order",
+  },
+  {
+    id: "co-no-approved-boq", source: "prerequisite", match: { code: "CO_NO_APPROVED_BOQ" },
+    title: "This project has no approved BOQ",
+    what: "{serverMessage}",
+    why: "A BOQ revision is made from the project's approved BOQ, and there is none to revise yet. The change order itself is unaffected.",
+    steps: ["Open Scope of Work for this project.", "Approve the BOQ.", "Come back and press Create BOQ Revision again."],
+    fix: { label: "Open Scope of Work", to: proj("/scope"), where: "Scope of Work > the BOQ > Approve" },
+    severity: "warn", returnLabel: "Back to the change order",
+  },
+  {
+    id: "co-signer-required", source: "validation", match: { status: 400, messageRegex: rx("^At least one signer is required$"), apiPath: "/api/change-orders" },
+    title: "A signer is needed",
+    what: "{serverMessage}",
+    why: "A change order is approved only when a named person signs it. Nothing was sent.",
+    steps: ["Press Fix it now: the signer boxes are outlined.", "Type the signer's name and e-mail.", "Press Send again."],
+    fix: { label: "Go to Signer name", to: here, where: "Change Orders > this change order > Send for Approval", focus: "co-signer-name" },
+    severity: "warn", returnLabel: "Back to the change order",
+  },
+  {
+    id: "co-permission", source: "permission", match: { status: 403, messageRegex: rx("your role does not permit"), apiPath: "/api/change-orders" },
+    title: "Only a manager can change this",
+    what: "Your role may look at change orders but not create or send them. {serverMessage}",
+    why: "Change orders move money and time, so they need the Owner, Admin or Project Manager role. Nothing was saved.",
+    steps: ["Ask the Owner or an Admin of your organisation to give you the Project Manager role, or to make this change order for you.", 'Once they have, press "Try again". What you typed is kept.'],
+    fix: { label: "Open the team settings", to: "/settings", where: "Settings > Team" },
+    retry: true, severity: "block", returnLabel: "Back to the change order",
   },
 ]);
