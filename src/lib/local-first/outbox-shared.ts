@@ -53,13 +53,6 @@ export function getSharedOutbox(userId: string): Outbox {
       onlineHandlers.set(userId, handler);
       window.addEventListener("online", handler);
     }
-    // Device log: a save made here is an action in the project timeline when the server answers (applied / turned down).
-    created.subscribe((e) => {
-      if ((e.type !== "applied" && e.type !== "rejected")) return;
-      void Promise.all([import("./ai/registry"), import("../client-log/install"), import("../client-log/outbox-actions")])
-        .then(([registry, install, actions]) => actions.logOutboxEvent(e, { labelOf: (id) => registry.findFunction(id)?.label, log: install.logActionIfInstalled }))
-        .catch(() => {});
-    });
     // Resume whatever a reload (or a closed tab) left in the outbox.
     void created.refresh().then(() => created.flush());
   }
