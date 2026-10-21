@@ -12,22 +12,13 @@ import { APPROVE_SELF_REASON, approveBlockedReason, formatAmount } from "@/lib/b
 import { revisionLabel } from "@/lib/boq-lineage";
 import { formatDateTime } from "@/lib/format-date";
 import { viaPxApi } from "@/lib/px-api";
+// GUIDED ERRORS (G1): a refused approval, and a screen that cannot open, are told in the guided panel (what happened, why, what to do, the way back).
+import { ActionFailurePanel } from "@/components/ActionFailure";
+import { ScopeState } from "./ScopeGuided";
 import type { ShellScreenProps } from "../types";
 import type { ScopeObjectData } from "./scope-adapter";
 import { useRowWindow } from "./use-row-window";
 import { mayOffer, projectQuery } from "./DesignChangeShared";
-
-function Message({ state, children }: { state: string; children: string }) {
-  return (
-    <section data-testid="scope-object" data-state={state}>
-      <h1 className="font-heading text-2xl text-px-ink">BOQ</h1>
-      <p className="mt-3 text-sm text-px-muted">{children}</p>
-      <p className="mt-3 text-sm">
-        <a className="text-px-ink underline underline-offset-2" href="/scope">Back to Scope of Work</a>
-      </p>
-    </section>
-  );
-}
 
 type RowLine = {
   id: string; itemCode?: string | null; description: string; parentLineItemId?: string | null; unit: string; quantity: string | number;
@@ -107,7 +98,7 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   const [approving, setApproving] = useState(false);
   const [approved, setApproved] = useState(false);
   const [selfBlocked, setSelfBlocked] = useState(false);
-  const [approveNote, setApproveNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [approveNote, setApproveNote] = useState<{ ok: boolean; text: string; status?: number; code?: string } | null>(null);
   /** `value` must be read from the event by the caller, synchronously (see the category input below). */
   const setDraft = useCallback((lineId: string, value: string) => setDrafts((d) => ({ ...d, [lineId]: value })), []);
 
@@ -192,13 +183,15 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
       const message = typeof body.error === "string" ? body.error : "";
       if (!res.ok) {
         if (res.status === 403 && /independent approver/i.test(message)) setSelfBlocked(true);
-        throw new Error(message || "Could not approve this BOQ.");
+        setApproveNote({ ok: false, text: message || "Could not approve this BOQ.", status: res.status });
+        return;
       }
       setApproved(true);
       setApproveNote({ ok: true, text: "Approved." });
       shell.refresh();
     } catch (err) {
-      setApproveNote({ ok: false, text: err instanceof Error ? err.message : "Could not approve this BOQ." });
+      // a request that never got an answer (TypeError) is the OFFLINE guide, not a refusal
+      setApproveNote({ ok: false, text: err instanceof Error ? err.message : "Could not approve this BOQ.", ...(err instanceof TypeError ? { status: 0, code: "OFFLINE" } : {}) });
     } finally {
       setApproving(false);
     }
@@ -208,11 +201,20 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
   // (e2e/lf-lifecycle-large-project.spec.ts). See use-row-window.ts for what keeps working (focus, printing, the row count for a screen reader).
   const { plan: rows, windowed, gapHeight, attachBody, onFocus: onBodyFocus, onBlur: onBodyBlur } = useRowWindow(data.state === "local" ? data.lines.length : 0);
 
-  if (data.state === "no_project") return <Message state="no_project">There is no project on this laptop yet. Open PROJEXA once while you are online.</Message>;
-  if (data.state === "not_synced") return <Message state="not_synced">This BOQ&apos;s project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online.</Message>;
-  if (data.state === "not_found") return <Message state="not_found">This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet.</Message>;
+  const OBJECT_BACK = { href: "/scope", label: "Back to Scope of Work" };
+  if (data.state === "no_project") return <ScopeState testId="scope-object" state="no_project" title="BOQ" back={OBJECT_BACK} sentence="There is no project on this laptop yet. Open PROJEXA once while you are online." />;
+  if (data.state === "not_synced") return <ScopeState testId="scope-object" state="not_synced" title="BOQ" back={OBJECT_BACK} sentence="This BOQ's project has not finished copying to this laptop yet. It will appear here as soon as it has, while you are online." projectId={data.projectId ?? undefined} />;
+  if (data.state === "not_found") return <ScopeState testId="scope-object" state="not_found" title="BOQ" back={OBJECT_BACK} sentence="This BOQ is not in the copy on this laptop. It may be in another project, or it may not have been copied yet." projectId={data.projectId ?? undefined} />;
 
-  if (data.state === "sent") return <Message state="sent">This BOQ has been sent to the server. It is being copied back to this laptop and will open here in a moment.</Message>;
+  if (data.state === "sent") {
+    return (
+      <section data-testid="scope-object" data-state="sent">
+        <h1 className="font-heading text-2xl text-px-ink">BOQ</h1>
+        <p className="mt-3 text-sm text-px-muted">This BOQ has been sent to the server. It is being copied back to this laptop and will open here in a moment.</p>
+        <p className="mt-3 text-sm"><a className="text-px-ink underline underline-offset-2" href="/scope">Back to Scope of Work</a></p>
+      </section>
+    );
+  }
 
   if (data.state === "waiting") {
     // A BOQ or revision made on this laptop, not yet accepted by the server: its lines as the person typed them, marked as waiting.
@@ -280,10 +282,19 @@ export default function ScopeObjectScreen({ shell, data }: ShellScreenProps<Scop
         );
       })() : null}
       {approveNote ? (
-        <p role={approveNote.ok ? "status" : "alert"} className="mt-2 text-sm text-px-ink" data-testid="boq-local-approve-note" data-ok={approveNote.ok ? "1" : "0"}>
-          {approveNote.text}
-          {!approveNote.ok && selfBlocked && !approveNote.text.includes(APPROVE_SELF_REASON) ? ` ${APPROVE_SELF_REASON}` : ""}
-        </p>
+        approveNote.ok ? (
+          <p role="status" className="mt-2 text-sm text-px-ink" data-testid="boq-local-approve-note" data-ok="1">{approveNote.text}</p>
+        ) : (
+          <div className="mt-2 max-w-3xl" data-testid="boq-local-approve-note" data-ok="0">
+            <ActionFailurePanel
+              failure={{ err: Object.assign(new Error(approveNote.text), { ...(approveNote.status !== undefined ? { status: approveNote.status } : {}), ...(approveNote.code ? { code: approveNote.code } : {}), apiPath: `/api/scope/${encodeURIComponent(boq.id)}/approve`, method: "POST" }), at: 0 }}
+              sentence={`${approveNote.text}${selfBlocked && !approveNote.text.includes(APPROVE_SELF_REASON) ? ` ${APPROVE_SELF_REASON}` : ""}`}
+              entityType="boq"
+              entityId={boq.id}
+              projectId={boq.projectId}
+            />
+          </div>
+        )
       ) : null}
       {boq.status !== "superseded" && mayOffer(shell.data.role, "create_boq_revision") ? (
         <p className="mt-1 text-sm">

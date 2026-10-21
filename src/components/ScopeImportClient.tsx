@@ -11,19 +11,21 @@ import { readScopeHeaders } from "@/lib/scope-list-reads";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
-import type { FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): a file that cannot be read, rows that cannot be imported and a refusal from the server are each told in the inline panel
+// (what happened, why, what to do), with the file box outlined as the place to fix it. See src/lib/error-guide/g1-faults.ts.
+import { FaultPanel } from "@/components/FaultPanel";
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
+import { importFileFault, type Fault } from "@/lib/error-guide/g1-faults";
 import { revisionLabel } from "@/lib/boq-lineage";
 import { formatAmount } from "@/lib/boq-helpers";
 
 export const EXPECTED_COLUMNS_SENTENCE =
   "Columns expected: Category, Code, Description, Unit, Qty, Rate (Amount is calculated). Sub-tasks: Parent Item Code + Breakdown %.";
-
-const ACCEPTED_EXTENSIONS = [".xlsx", ".csv"] as const;
 
 export type PreviewRow = {
   category: string | null;
@@ -67,7 +69,10 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [messages, setMessages] = useState<FieldMessage[]>([]);
+  // faults found by the form (the file itself, rows that cannot be imported) and the failure of the last request
+  const [faults, setFaults] = useState<Fault[]>([]);
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<ActionFailureState | null>(null);
   // null = import as a NEW BOQ. A BOQ id = import as the next revision of it.
   const [reviseOf, setReviseOf] = useState<string | null>(null);
 
@@ -113,19 +118,18 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
               ? `Importing ${readyLines} lines…`
               : undefined;
 
-  function isAccepted(candidate: File): boolean {
-    const name = candidate.name.toLowerCase();
-    return ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
-  }
-
   async function chooseFile(candidate: File) {
-    if (!isAccepted(candidate)) {
-      setMessages([{ level: "error", text: `${candidate.name} is not an .xlsx or .csv file.` }]);
+    // The file is checked BEFORE it is sent: no file, the wrong kind, empty, too big (g1-faults.ts importFileFault).
+    const fault = importFileFault(candidate);
+    setFailure(null);
+    if (fault) {
+      setFaults([fault]);
+      setAttempt((n) => n + 1);
       return;
     }
+    setFaults([]);
     setFile(candidate);
     setTitle((current) => current || candidate.name.replace(/\.[^.]+$/, ""));
-    setMessages([]);
     await runDryRun(candidate);
   }
 
@@ -133,16 +137,37 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
   async function runDryRun(candidate: File) {
     setParsing(true);
     setPreview(null);
+    setFailure(null);
     try {
       const body = new FormData();
       body.set("file", candidate);
       body.set("projectId", projectId);
-      const res = await fetch("/api/scope/import?dryRun=1", { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Couldn't read this spreadsheet");
-      setPreview({ rows: data.rows ?? [], issues: data.issues ?? [], summary: data.summary ?? { totalRows: 0, readyLines: 0, rowsWithErrors: 0 } });
+      const data = await fetchJson<Partial<DryRun>>("/api/scope/import?dryRun=1", { method: "POST", body });
+      const next: DryRun = { rows: data.rows ?? [], issues: data.issues ?? [], summary: data.summary ?? { totalRows: 0, readyLines: 0, rowsWithErrors: 0 } };
+      setPreview(next);
+      // Rows that cannot be imported, or a file with nothing in it, are told here in full, not only as red lines in the table.
+      const blocking = next.issues.filter((i) => i.blocking);
+      const name = candidate.name;
+      if (blocking.length > 0) {
+        const rowsWith = new Set(blocking.map((i) => i.row)).size;
+        setFaults([{
+          code: "IMPORT_ROWS_BLOCKED", field: "import-file",
+          message: `${rowsWith} row${rowsWith === 1 ? "" : "s"} in ${name} cannot be imported. The first: ${blocking[0].message} The problems are listed under the table. Correct them in the spreadsheet, save it, and choose it again. Nothing was imported.`,
+        }]);
+        setAttempt((n) => n + 1);
+      } else if (next.summary.readyLines === 0) {
+        setFaults([{
+          code: "IMPORT_NO_ROWS", field: "import-file",
+          message: `No usable lines were found in ${name} (${next.summary.totalRows} row${next.summary.totalRows === 1 ? "" : "s"} read). The sheet may be empty, or the header row may be missing or on another sheet. Download the template, copy your lines into it, and choose the file again. Nothing was imported.`,
+        }]);
+        setAttempt((n) => n + 1);
+      } else {
+        setFaults([]);
+      }
     } catch (err) {
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't read this spreadsheet" }]);
+      setFaults([]);
+      // The preview is dropped but the chosen file stays: the person can press "Try again" or choose a corrected file.
+      setFailure({ err, field: "import-file", at: Date.now(), retry: () => void runDryRun(candidate) });
     } finally {
       setParsing(false);
     }
@@ -151,7 +176,7 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
   async function runImport() {
     if (!file || !preview) return;
     setImporting(true);
-    setMessages([]);
+    setFailure(null);
     try {
       const body = new FormData();
       body.set("file", file);
@@ -159,11 +184,11 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
       body.set("title", title.trim() || file.name.replace(/\.[^.]+$/, ""));
       if (reviseOf) body.set("parentBoqId", reviseOf);
 
-      const res = await fetch("/api/scope/import", { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Couldn't import this BOQ");
-      const saved = data.boq as { id?: string; title?: string; version?: number } | undefined;
-      if (!saved?.id) throw new Error("The scope service reported success but returned no saved BOQ. Nothing has been imported — please try again.");
+      const data = await fetchJson<{ boq?: { id?: string; title?: string; version?: number }; importSummary?: { importedLineItems?: number } }>("/api/scope/import", { method: "POST", body });
+      const saved = data.boq;
+      if (!saved?.id) {
+        throw Object.assign(new Error("The scope service reported success but returned no saved BOQ. Nothing has been imported - please try again."), { code: "UNCONFIRMED" });
+      }
 
       const importedLines = data.importSummary?.importedLineItems ?? preview.summary.readyLines;
       const notice = `Imported BOQ ${saved.title ?? title} · ${revisionLabel(saved.version ?? 1)} · ${importedLines} lines`;
@@ -172,9 +197,8 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
       // same reason MoMsClient reads ?deleted=).
       router.push(`/scope/${saved.id}?imported=${encodeURIComponent(notice)}`);
     } catch (err) {
-      // The preview is deliberately KEPT -- the user's file selection and the
-      // rows they were looking at survive a failed import.
-      setMessages([{ level: "error", text: err instanceof Error ? err.message : "Couldn't import this BOQ" }]);
+      // The preview is deliberately KEPT -- the user's file selection and the rows they were looking at survive a failed import.
+      setFailure({ err, field: "import-title", at: Date.now(), retry: () => void runImport() });
     } finally {
       setImporting(false);
     }
@@ -191,9 +215,11 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
       onBack={() => router.push(`/scope?projectId=${projectId}`)}
       saveDisabled={!!importDisabledReason}
       saveDisabledReason={importDisabledReason}
-      messages={messages}
+      messages={[]}
     >
       <div className="space-y-4 px-4 py-3">
+        <FaultPanel faults={faults} attempt={attempt} entityType="import" projectId={projectId} />
+        {faults.length === 0 && <ActionFailurePanel failure={failure} entityType="import" projectId={projectId} />}
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -208,6 +234,8 @@ export default function ScopeImportClient({ projectId }: { projectId: string }) 
           <p className="text-[13px] text-px-ink">Drop an .xlsx or .csv here, or choose a file.</p>
           <input
             ref={fileInput}
+            id="import-file"
+            data-testid="import-file"
             type="file"
             aria-label="BOQ spreadsheet"
             accept=".xlsx,.csv"

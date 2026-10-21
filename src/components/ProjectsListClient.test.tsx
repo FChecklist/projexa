@@ -136,10 +136,12 @@ describe("ProjectsListClient", () => {
       return ok({ currencies: [] });
     });
     const view = render(<ProjectsListClient />);
+    // GUIDED ERRORS (G1): the backend's words arrive in the guided panel, with the steps and a "Try again".
     await waitFor(() => {
-      expect(view.getByText(/Could not load projects: The construction data service did not respond in time\./)).toBeTruthy();
+      expect(view.getByTestId("guided-error").textContent).toContain("The construction data service did not respond in time.");
     });
-    expect(view.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(view.getByTestId("guided-error-steps")).toBeTruthy();
+    expect(view.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(view.queryByText("No projects yet.")).toBeNull();
   });
 

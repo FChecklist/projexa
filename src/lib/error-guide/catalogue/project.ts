@@ -1,9 +1,9 @@
 // Projects: create, pick, open, dashboard, copy to laptop.
 // Server messages: compliance-tracker construction-dashboard-service.ts, api/v1/projexa/projects,
 // PROJEXA api/last-project, api/dashboard-hierarchy.
-import { guides, proj, rx } from "./_helpers";
+import { guides, here, proj, rx } from "./_helpers";
 
-export const projectGuides = guides([
+const projectServerGuides = guides([
   {
     id: "project-none-selected", source: "prerequisite", match: { code: "NO_PROJECT" },
     title: "Choose a project first",
@@ -140,3 +140,48 @@ export const projectGuides = guides([
     fix: { label: "Check the project list", to: "/projects", where: "Projects" },
   },
 ]);
+
+// GUIDED ERRORS, GROUP G1 -- faults the New Project form finds itself (src/lib/error-guide/g1-faults.ts projectFormFaults). Source "validation": the
+// framework takes the person to ctx.field (name / startDate / targetDate) on the same screen; what was typed is kept in the project-new draft.
+const PROJECT_BACK = "Back to your new project";
+export const projectFormGuides = guides([
+  {
+    id: "project-name-too-long-form", source: "validation", match: { code: "PROJECT_NAME_TOO_LONG" },
+    title: "The project name is too long",
+    what: "{serverMessage}",
+    why: "A name can hold 200 letters. Longer names do not fit on lists, reports and the top bar.",
+    steps: ["Click the Project Name box (it is outlined).", "Shorten the name; put the details in the Description box.", "Press Save again."],
+    fix: { label: "Go to the name", to: here, where: "This screen > Project Name" },
+    severity: "warn", returnLabel: PROJECT_BACK,
+  },
+  {
+    id: "project-date-invalid-form", source: "validation", match: { code: "PROJECT_DATE_INVALID" },
+    title: "A date cannot be right",
+    what: "{serverMessage}",
+    why: "Project dates must be real days in a sensible year. A year typed with too few or too many digits makes a date like 0002 or 20250.",
+    steps: ["Click the date box that is outlined.", "Pick the day from the calendar, or type day, month and the full 4-digit year.", "Press Save again."],
+    fix: { label: "Go to the date", to: here, where: "This screen > the outlined date" },
+    severity: "warn", returnLabel: PROJECT_BACK,
+  },
+  {
+    id: "project-date-order-form", source: "validation", match: { code: "PROJECT_DATE_ORDER" },
+    title: "The target date is before the start date",
+    what: "{serverMessage}",
+    why: "A project cannot finish before it starts.",
+    steps: ["Look at Start Date and Target Date.", "Change one of them so the target is the later day.", "Press Save again."],
+    fix: { label: "Go to the target date", to: here, where: "This screen > Target Date" },
+    severity: "warn", returnLabel: PROJECT_BACK,
+  },
+  {
+    id: "project-none-exist", source: "prerequisite", match: { code: "NO_PROJECTS_YET" },
+    title: "Create your first project",
+    what: "{serverMessage}",
+    why: "BOQs, progress, bills and the rest all belong to a project, and this organisation has none yet.",
+    steps: ["Press Create a project.", "Type its name and press Save.", "You come back here, and it is ready to use."],
+    fix: { label: "Create a project", to: "/projects/new", where: "Projects > New Project", focus: "name" },
+    severity: "block", returnLabel: "Back to this screen",
+  },
+]);
+
+
+export const projectGuides = guides([...projectServerGuides, ...projectFormGuides]);

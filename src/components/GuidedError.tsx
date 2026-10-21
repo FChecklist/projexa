@@ -63,6 +63,8 @@ export type GuidedErrorProps = {
   /** The draft key of the form on screen, remembered so the way back finds what was typed. */
   draftKey?: string;
   className?: string;
+  /** A STATE the screen is in (not copied yet, role too low), not a failure that just happened: shown in full but not written to the device log. */
+  quiet?: boolean;
 };
 
 async function copyText(text: string): Promise<boolean> {
@@ -95,7 +97,7 @@ const TONE = {
   info: "border-px-info-border bg-px-info-light text-px-info",
 } as const;
 
-export function GuidedError({ ctx, guide, onRetry, retryable, message, draftKey, className }: GuidedErrorProps) {
+export function GuidedError({ ctx, guide, onRetry, retryable, message, draftKey, className, quiet }: GuidedErrorProps) {
   const go = useGuidedNavigate();
   const resolved = useMemo(() => resolveGuide(guide ?? matchGuide(ctx), ctx), [guide, ctx]);
   const [copied, setCopied] = useState<"idle" | "yes" | "no">("idle");
@@ -105,6 +107,7 @@ export function GuidedError({ ctx, guide, onRetry, retryable, message, draftKey,
   // The occurrence goes to the device log (the full report, with the steps before it), once per distinct failure shown.
   const reportKey = `${resolved.guide.id}|${ctx.status ?? ""}|${ctx.code ?? ""}|${ctx.serverMessage ?? ""}`;
   useEffect(() => {
+    if (quiet) return;
     reportClientError("guided-error", new Error(`${resolved.guide.id}: ${resolved.title}${ctx.serverMessage ? ` -- ${ctx.serverMessage}` : ""}`), ctx.route);
   }, [reportKey]);
 

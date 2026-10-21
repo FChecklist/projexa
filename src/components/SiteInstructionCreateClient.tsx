@@ -8,6 +8,9 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GuidedSubmitFailure } from "@/components/GuidedError";
+import { FaultPanel } from "@/components/FaultPanel";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { siDateFault, siFileFault, type Fault } from "@/lib/error-guide/g1-faults";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,12 +45,19 @@ export default function SiteInstructionCreateClient({
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState<FieldMessage[]>([]);
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [toContractor, setToContractor] = useState("");
-  const [description, setDescription] = useState("");
-  const [drawingRef, setDrawingRef] = useState("");
-  const [costImpact, setCostImpact] = useState(false);
+  // GUIDED ERRORS (G1): what is typed is kept in a draft (sessionStorage, 2 h), so leaving through a "Fix it now" link, a sign-in that ran out or a
+  // reload loses nothing; thrown away after a successful save. The chosen FILE cannot be kept by a browser: the person is told to choose it again.
+  const draftKey = `si-new:${projectId}:${boqId ?? ""}`;
+  const draft = useDraft(draftKey, { issueDate: new Date().toISOString().slice(0, 10), toContractor: "", description: "", drawingRef: "", costImpact: false });
+  const { issueDate, toContractor, description, drawingRef, costImpact } = draft.value;
+  const setIssueDate = (v: string) => draft.set({ issueDate: v });
+  const setToContractor = (v: string) => draft.set({ toContractor: v });
+  const setDescription = (v: string) => draft.set({ description: v });
+  const setDrawingRef = (v: string) => draft.set({ drawingRef: v });
+  const setCostImpact = (v: boolean) => draft.set({ costImpact: v });
   const [file, setFile] = useState<File | null>(null);
+  // the date is judged once the person has left the box (a year is typed digit by digit: 0002, 0020, 0202, 2026)
+  const [dateLeft, setDateLeft] = useState(false);
 
   // What the last request actually carried, so the lookup after a timeout matches THAT save even if a field was edited since.
   const sent = useRef<{ issueDate: string; toContractor: string; description: string; hasFile: boolean } | null>(null);
@@ -80,6 +90,7 @@ export default function SiteInstructionCreateClient({
     },
     onSuccess: (data) => {
       const receipt = readCreatedSiteInstruction(data);
+      draft.clear();
       setScreenMessage("site-instructions.object", { level: receipt.level, text: receipt.text });
       router.push(`/site-instructions/${receipt.id}?projectId=${encodeURIComponent(projectId)}`);
     },
@@ -88,8 +99,11 @@ export default function SiteInstructionCreateClient({
 
   const missing = missingSiteInstructionFields({ issueDate, toContractor, description });
   const fileError = siteInstructionFileError(file ? { name: file.name, size: file.size } : null);
+  // A value that is WRONG (not merely missing) is told at once in the guided panel, with the input outlined: a year that cannot be right, a file of
+  // the wrong kind, an empty file, one that is too big.
+  const liveFaults: Fault[] = [dateLeft ? siDateFault(issueDate) : null, file ? siFileFault(file, "file") : null].filter((f): f is Fault => f !== null);
   const disabledReason = saving ? "Saving…" : fileError ?? missingSiteInstructionReason(missing);
-  const saveDisabled = saving || missing.length > 0 || !!fileError;
+  const saveDisabled = saving || missing.length > 0 || !!fileError || liveFaults.length > 0 || !!siDateFault(issueDate);
 
   function createInstruction() {
     if (saveDisabled) {
@@ -117,10 +131,19 @@ export default function SiteInstructionCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
-        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
+        {draft.restored && (
+          <p className="text-[12.5px] text-px-muted" data-testid="draft-restored">
+            We kept what you typed earlier (choose the instruction file again if you had one).{" "}
+            <button type="button" className="underline underline-offset-2" onClick={draft.startFresh}>
+              Start fresh
+            </button>
+          </p>
+        )}
+        <FaultPanel faults={liveFaults} attempt={liveFaults.length} entityType="site-instruction" projectId={projectId} draftKey={draftKey} />
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} draftKey={draftKey} />
         <div className="space-y-1.5">
           <Label htmlFor="issueDate">Issue date</Label>
-          <Input id="issueDate" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+          <Input id="issueDate" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} onBlur={() => setDateLeft(true)} aria-invalid={dateLeft && siDateFault(issueDate) ? true : undefined} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="toContractor">To contractor</Label>

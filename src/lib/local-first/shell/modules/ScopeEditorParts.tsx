@@ -9,19 +9,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { draftBoqTotal, draftLineAmount, childPercentSum, formatAmount, type LineItemDraft } from "@/lib/boq-helpers";
 import { textInput } from "./DesignChangeShared";
+import { boqLineId, type BoqColumn } from "@/lib/error-guide/g1-faults";
 
-export function ScopeLinesEditor({ lines, onChange, testIdPrefix }: { lines: LineItemDraft[]; onChange: (next: LineItemDraft[]) => void; testIdPrefix: string }) {
+export function ScopeLinesEditor({ lines, onChange, testIdPrefix, faultMessages }: {
+  lines: LineItemDraft[];
+  onChange: (next: LineItemDraft[]) => void;
+  testIdPrefix: string;
+  /** GUIDED ERRORS (G1): the faults found when Save was pressed, by input id (g1-faults.ts boqLineId); each is shown under its input and the input is marked invalid. */
+  faultMessages?: Record<string, string>;
+}) {
   const set = (i: number, field: keyof LineItemDraft, value: string) => onChange(lines.map((l, idx) => (idx === i ? { ...l, [field]: value } : l)));
   const cell = (i: number, field: keyof LineItemDraft, label: string, opts: { numeric?: boolean; disabled?: boolean; width?: string } = {}) => (
+    <>
     <Input
       className={`${opts.width ?? "w-[90px]"} ${opts.numeric ? "text-right tabular-nums" : ""}`}
       aria-label={`${label}, line ${i + 1}`}
+      id={boqLineId(i, field as BoqColumn)}
       data-testid={`${testIdPrefix}-${i}-${String(field)}`}
+      aria-invalid={faultMessages?.[boqLineId(i, field as BoqColumn)] ? true : undefined}
       inputMode={opts.numeric ? "decimal" : undefined}
       disabled={opts.disabled}
       value={String(lines[i]![field] ?? "")}
       {...textInput((v) => set(i, field, v))}
     />
+    {faultMessages?.[boqLineId(i, field as BoqColumn)] ? (
+      <p role="alert" className="mt-0.5 flex items-start gap-1 text-[11px] text-px-error" data-testid={`${testIdPrefix}-${i}-${String(field)}-fault`}>
+        <span aria-hidden="true">⚠</span>
+        <span>{faultMessages[boqLineId(i, field as BoqColumn)]}</span>
+      </p>
+    ) : null}
+    </>
   );
   return (
     <div className="overflow-x-auto">

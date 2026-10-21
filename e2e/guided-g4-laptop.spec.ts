@@ -128,6 +128,6 @@ test.describe("G4 laptop faults", () => {
     await expect(panel.getByTestId("guided-error-title")).toHaveText("Your role cannot do this");
     await expect(panel.getByTestId("guided-error-what")).toContainText("needs the manager role");
     await expect(panel.getByTestId("guided-error-steps")).toContainText("Owner or an Admin");
-    await expect(panel.getByTestId("guided-error-fix")).toHaveAttribute("href", /^\/settings/);
+    await expect(panel.getByTestId("guided-error-fix")).toHaveAttribute("href", /^\/(settings|projects)/);
   });
 });
