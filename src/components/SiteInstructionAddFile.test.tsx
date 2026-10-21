@@ -4,9 +4,12 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { SiteInstructionAddFile } from "./SiteInstructionViews";
+
+// the guide panel navigates with the app router
+mock.module("next/navigation", () => ({ useRouter: () => ({ push() {}, replace() {}, refresh() {}, back() {}, prefetch() {} }), usePathname: () => "/site-instructions/si1", useSearchParams: () => new URLSearchParams() }));
 
 const realFetch = globalThis.fetch;
 let calls: Array<{ url: string; hasFile: boolean; fields: Record<string, unknown> }>;
@@ -27,10 +30,14 @@ const choose = (view: ReturnType<typeof render>, name: string) =>
   fireEvent.change(view.getByLabelText(/Add file/), { target: { files: [new File(["x"], name, { type: "application/pdf" })] } });
 
 describe("SiteInstructionAddFile", () => {
-  test("the button is disabled until a file is chosen, then posts the file to this instruction and says it was added", async () => {
+  test("pressing Add file with no file chosen sends nothing and the guide panel says to choose one; then a file is posted and said to be added", async () => {
     const view = render(<SiteInstructionAddFile id="si 1" />);
     const button = view.getByTestId("si-add-file-button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => view.getByTestId("guided-error"));
+    expect(view.getByTestId("guided-error-what").textContent).toContain("Choose the PDF or photo");
+    expect(calls).toEqual([]);
     choose(view, "si.pdf");
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
@@ -47,8 +54,8 @@ describe("SiteInstructionAddFile", () => {
     const view = render(<SiteInstructionAddFile id="si1" />);
     choose(view, "si.pdf");
     fireEvent.click(view.getByTestId("si-add-file-button"));
-    await waitFor(() => expect(view.getByTestId("si-add-file-note").getAttribute("data-ok")).toBe("0"));
-    expect(view.getByTestId("si-add-file-note").textContent).toContain("Your role cannot add files to site instructions");
+    await waitFor(() => view.getByTestId("guided-error"));
+    expect(view.getByTestId("guided-error-what").textContent).toContain("Your role cannot add files to site instructions");
   });
 
   test("a file that is not a PDF or photo is stopped in the browser; nothing is sent", () => {
