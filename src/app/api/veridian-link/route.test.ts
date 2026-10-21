@@ -26,7 +26,7 @@ mock.module("@/lib/supabase/auth-guard", () => ({
 
 // The real module reads VERIDIAN_API_BASE_URL and imports the database, which
 // is the whole reason this redirect exists instead of a client-side constant.
-mock.module("@/lib/veridian-client", () => ({ VERIDIAN_ORIGIN: ORIGIN }));
+mock.module("@/lib/veridian-client", () => ({ VERIDIAN_ORIGIN: ORIGIN, VeridianApiError: class VeridianApiError extends Error {} }));
 
 const { GET } = await import("./route");
 

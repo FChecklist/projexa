@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { autoProvisionOrganization, PROVISION_FAILED_CODE, PROVISION_FAILED_MESSAGE } from "@/lib/org/auto-provision";
 import { createClient } from "./server";
 import { getClaimsWithRetry } from "./get-claims-with-retry";
 import { recordRequestOrg } from "@/lib/request-timing";
@@ -87,7 +88,7 @@ export function requireRole(ctx: AuthContext, allowed: readonly string[]): NextR
 // (to refresh first) or the JWKS cache is cold -- see auth-js's GoTrueClient
 // for the exact fallback rules. This eliminates the redundant round-trip
 // instead of just relocating it.
-export async function requireAuth(): Promise<AuthContext> {
+export async function requireAuth(opts: { autoProvision?: boolean } = {}): Promise<AuthContext> {
   const supabase = await createClient();
 
   // R46 (production incident, 2026-08-25: 39 uncaught 500s across 13 routes
@@ -167,6 +168,18 @@ export async function requireAuth(): Promise<AuthContext> {
   if (membershipError) {
     console.error("[requireAuth] memberships query failed twice -- not a genuine 'no organization' case, surfacing as a transient failure instead:", membershipError.message);
     return { user, organizationId: null, role: null, response: NextResponse.json({ error: "Could not verify organization membership, please retry" }, { status: 503 }) };
+  }
+
+  if (!membership) {
+    // A signed-in person with no organisation (e-mail-code sign-in creates the auth user only) is set up silently, once, then carried on: never
+    // blocked with "No organization". A live invitation for their address is the one exception (they are about to join, not start their own).
+    // Opt-out (autoProvision: false) for /api/org/repair, whose contract is to answer 400 for a person with no organisation (parity with the Edge Function).
+    const auto = opts.autoProvision === false ? ({ ok: false, reason: "invite_pending" } as const) : await autoProvisionOrganization(supabase as never, user);
+    if (auto.ok) {
+      ({ data: membership, error: membershipError } = await fetchMembership());
+    } else if (auto.reason === "failed") {
+      return { user, organizationId: null, role: null, response: NextResponse.json({ error: PROVISION_FAILED_MESSAGE, code: PROVISION_FAILED_CODE }, { status: 503 }) };
+    }
   }
 
   if (!membership) {

@@ -29,8 +29,8 @@ describe("M03 input validation", () => {
   test("M03-03 receipt is built from the stored row: two-decimal hours, task number and title", () => {
     expect(timeLoggedReceipt({ hours: "3", spentOn: "2026-09-02", taskNumber: 12, taskTitle: "Joinery" })).toContain("3.00 h on #12 Joinery");
   });
-  test("M03-04 project form: the name is the one required field, whitespace-only counts as empty", () => {
-    expect(missingProjectFields({ name: " " })).toEqual(["Project Name"]);
+  test("M03-04 project form: no field is required (an empty name gets a default), Save only pauses while saving", () => {
+    expect(missingProjectFields({ name: " " })).toEqual([]);
     expect(missingProjectFields({ name: "  x " })).toEqual([]);
     expect(projectSaveDisabledReason([], true)).toBe("Saving…");
     expect(projectSaveDisabledReason(["Project Name"], false)).toBe("Project Name");

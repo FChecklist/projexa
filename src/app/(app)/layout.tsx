@@ -4,6 +4,7 @@ import { VeriChatProvider } from "@/components/veri-chat/veri-chat-context";
 import M24Shell from "@/components/shell/M24Shell";
 import { ShellScreenProvider } from "@/components/shell/shell-screen-context";
 import { WorkspacePrepare } from "@/components/WorkspacePrepare";
+import { OrgEnsure } from "@/components/OrgEnsure";
 import { OutboxAttention } from "@/components/OutboxAttention";
 import { AiAttach } from "@/lib/local-first/ai/AiAttach";
 import { LocalFirstDefault } from "@/components/local-first/LocalFirstDefault";
@@ -56,6 +57,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <VeriChatProvider>
       {/* LOCAL-FIRST: a signed-in person is on the laptop-first path by default (renders nothing; first, so it runs before any effect reads the flag). */}
       <LocalFirstDefault />
+      {/* A signed-in person with no organisation (e-mail-code sign-in) gets one silently; renders nothing unless that fails. */}
+      <OrgEnsure />
       <ShellScreenProvider>
         <M24Shell>{children}</M24Shell>
         <WorkspacePrepare />

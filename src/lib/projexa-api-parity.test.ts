@@ -85,6 +85,7 @@ const membershipOf = (company: string) => {
   return [id.membership, ...(id.more ?? [])].find((m) => m.organization_id === company) ?? null;
 };
 mock.module("@/lib/db", () => ({
+  orgInvites: {},
   veridianCredentials: { organizationId: "organization_id", veridianApiKey: "veridian_api_key" },
   db: {
     select: (fields?: Record<string, unknown>) => ({
@@ -118,6 +119,14 @@ mock.module("@/lib/db", () => ({
 export const clock = { now: 0 };
 const cacheStore = new Map<string, { at: number; value: unknown }>();
 let revalidated: { tags: string[]; paths: string[] } = { tags: [], paths: [] };
+// The golden records the Edge Function's answer for a signed-in person with no organisation ("No organization", 400). The Next pipeline now
+// provisions such a person silently inside requireAuth() (src/lib/org/auto-provision.ts); the browser does the equivalent for the Edge path
+// (OrgEnsure). This contract is about the shared route answers, so the auto-provision step is held off here.
+mock.module("@/lib/org/auto-provision", () => ({
+  PROVISION_FAILED_MESSAGE: "x",
+  PROVISION_FAILED_CODE: "ORG_PROVISION_FAILED",
+  autoProvisionOrganization: async () => ({ ok: false, reason: "invite_pending" }),
+}));
 mock.module("next/cache", () => ({
   unstable_cache: <A extends unknown[], R>(cb: (...args: A) => Promise<R>, keyParts: string[] = [], options: { revalidate?: number | false } = {}) => {
     const fixedKey = `${cb.toString()}-${keyParts.join(",")}`;

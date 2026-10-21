@@ -42,17 +42,15 @@ describe("ProjectCreateClient", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  test("Save is disabled and NAMES the fields still missing, rather than sitting inert", () => {
+  test("Save is live with every field empty: nothing is required, the name is optional", () => {
     const { container } = render(<ProjectCreateClient />);
 
     const save = Array.from(container.querySelectorAll("button")).find((b) =>
       (b.textContent ?? "").startsWith("Save")
     );
     expect(save).toBeDefined();
-    expect(save?.disabled).toBe(true);
-    // Not "2 required fields" and not a title attribute nobody hovers: the
-    // user's own words for the fields, on the button.
-    expect(save?.textContent).toContain("Project Name");
+    expect(save?.disabled).toBe(false);
+    expect(save?.textContent).not.toContain("Project Name");
   });
 
   test("there is no Product field -- only the project name is asked for", () => {
