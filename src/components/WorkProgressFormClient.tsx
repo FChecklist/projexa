@@ -49,7 +49,12 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 // FieldRenderer generator is NOT, because D-28's three layout requirements
 // above are exactly what a generic renderer cannot serve. The frame still
 // owns the breadcrumb, the primary and the message band.
-import { GuidedSubmitFailure } from "@/components/GuidedError";
+import { GuidedError, GuidedSubmitFailure } from "@/components/GuidedError";
+import FormFaultPanel from "@/components/FormFaultPanel";
+import { clearDraft, loadDraft, saveDraft } from "@/lib/error-guide/use-draft";
+import { highlightElement, findFocusTarget } from "@/lib/error-guide/focus";
+import { overHundredField, progressFaults, todayIso as localToday, type Fault } from "@/lib/error-guide/g2-faults";
+import { currentScreen } from "@/lib/error-guide/context";
 import { FormScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { FormField } from "@/components/ui/form-field";
 import BoqLinePicker from "@/components/BoqLinePicker";
@@ -106,7 +111,37 @@ const ENTRY_BASIS_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localToday();
+}
+
+// GUIDED ERRORS (G2): what was typed survives leaving the form (a "Fix it now" link, a sign-in that ran out, a reload) -- see src/lib/error-guide/use-draft.ts.
+// The chosen photo is kept too, when it is small enough to fit in session storage (a larger one is remembered by name and the person is asked to choose it again).
+const DRAFT_PHOTO_MAX_BYTES = 1_500_000;
+type DraftPhoto = { name: string; type: string; size: number; dataUrl: string | null };
+type FormDraft = { values: Record<string, unknown>; photo: DraftPhoto | null };
+const draftKeyFor = (projectId: string) => `work-progress-new:${projectId}`;
+
+function readAsDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const r = new FileReader();
+      r.onload = () => resolve(typeof r.result === "string" ? r.result : null);
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(file);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function fileFromDraft(p: DraftPhoto): Promise<File | null> {
+  if (!p.dataUrl) return null;
+  try {
+    const blob = await (await fetch(p.dataUrl)).blob();
+    return new File([blob], p.name, { type: p.type || blob.type });
+  } catch {
+    return null;
+  }
 }
 
 
@@ -152,6 +187,49 @@ export default function WorkProgressFormClient({
   const [queued, setQueued] = useState<QueuedWorkProgressEntry[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
+  // GUIDED ERRORS (G2): faults the form found itself (nothing was sent), shown as the guide panel AND on the field; "attempted" turns on the
+  // "missing" messages, which would be noise while the person is still filling the form in.
+  const [attempted, setAttempted] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const [photoToChoose, setPhotoToChoose] = useState<string | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  // The entry was saved but its photo was not: the person stays here with a way to send the photo again.
+  const [photoFailed, setPhotoFailed] = useState<{ entryId: string; file: File } | null>(null);
+  const draftKey = draftKeyFor(projectId);
+
+  // Put back what was typed before the person left this form (and say so, so a surprise is never silent).
+  useEffect(() => {
+    const saved = loadDraft<FormDraft>(draftKey);
+    if (saved && saved.values && Object.keys(saved.values).length > 0) {
+      setValues((v) => ({ ...v, ...saved.values }));
+      setRestored(true);
+      if (saved.values.remarks) setMoreOpen(true);
+    }
+    if (saved?.photo) {
+      setMoreOpen(true);
+      void fileFromDraft(saved.photo).then((f) => {
+        if (f) setPhoto(f);
+        else setPhotoToChoose(saved.photo!.name);
+      });
+    }
+    setDraftReady(true);
+  }, [draftKey]);
+
+  // Keep the draft in step with the form (only after the first restore, so an empty first render cannot wipe a saved draft).
+  useEffect(() => {
+    if (!draftReady) return;
+    const { photo: _drop, boqId: _boq, ...plain } = values as Record<string, unknown>;
+    const meaningful = Object.entries(plain).some(([k, v]) => k !== "entryDate" && k !== "entryBasis" && v !== undefined && v !== "") || !!photo;
+    if (!meaningful) { clearDraft(draftKey); return; }
+    let live = true;
+    (async () => {
+      let p: DraftPhoto | null = null;
+      if (photo) p = { name: photo.name, type: photo.type, size: photo.size, dataUrl: photo.size <= DRAFT_PHOTO_MAX_BYTES ? await readAsDataUrl(photo) : null };
+      else if (photoToChoose) p = { name: photoToChoose, type: "", size: 0, dataUrl: null };
+      if (live) saveDraft<FormDraft>(draftKey, { values: plain, photo: p });
+    })();
+    return () => { live = false; };
+  }, [values, photo, photoToChoose, draftKey, draftReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +391,20 @@ export default function WorkProgressFormClient({
   // /api/scope fetch below already answers it, so this needs no extra call.
   const projectHasBoq = boqs.length > 0;
   const missingRequired = missingProgressFields(values, projectHasBoq);
+  // Every fault in what is typed, in screen order. The "missing" ones are only SHOWN after a first press of Log Entry; the others (a percentage
+  // of 140, a date in the future, a photo that is too big) are shown beside the field the moment they exist.
+  const faults: Fault[] = progressFaults(
+    { ...values, photo: photo ? { name: photo.name, size: photo.size, type: photo.type } : null },
+    { projectHasBoq, hasActivities: activities.length > 0 }
+  );
+  const isMissingCode = (c: string) => /_MISSING$|^WP_NO_ACTIVITIES$/.test(c);
+  const shownFaults = faults.filter((f) => attempted || !isMissingCode(f.code));
+  const faultMsg = (field: string) => shownFaults.find((f) => f.field === field)?.message;
+  // The server's "more than 100%" refusal belongs beside the number that caused it.
+  const serverFieldMessage = (field: string) => {
+    const f = submit.failure;
+    return f && overHundredField(f.serverMessage) === field ? f.serverMessage : undefined;
+  };
 
 
   function setField(field: string, value: unknown) {
@@ -343,11 +435,15 @@ export default function WorkProgressFormClient({
   }
 
   function currentPhoto(): File | null {
-    return values.photo instanceof File ? values.photo : null;
+    return photo;
   }
 
   function resetForm() {
     setValues({ entryDate: todayIso(), entryBasis: "DELTA" });
+    setPhoto(null);
+    setPhotoToChoose(null);
+    setAttempted(false);
+    clearDraft(draftKey);
     onLogged();
   }
 
@@ -387,11 +483,17 @@ export default function WorkProgressFormClient({
       // R42 seq22 fix: the online path never uploaded a photo before this --
       // see uploadQueuedPhoto()'s own comment for the full finding.
       if (photo && created?.id) {
-        await uploadQueuedPhoto(created.id, { blob: photo, name: photo.name, type: photo.type }).catch(() => {
-          setMessages([
-            { level: "warning", text: "Progress logged, but the photo failed to upload" },
-          ]);
-        });
+        let photoOk = true;
+        await uploadQueuedPhoto(created.id, { blob: photo, name: photo.name, type: photo.type }).catch(() => { photoOk = false; });
+        if (!photoOk) {
+          // The entry IS saved; only the picture is not. Stay here, say exactly that, and offer the photo again -- never a silent "logged".
+          setPhotoFailed({ entryId: created.id, file: photo });
+          clearDraft(draftKey);
+          setValues({ entryDate: todayIso(), entryBasis: "DELTA" });
+          setPhoto(null);
+          onLogged();
+          return;
+        }
       }
       resetForm();
       // R67 D-28: Save used to leave the user on an emptied form, with no way
@@ -411,17 +513,13 @@ export default function WorkProgressFormClient({
   });
 
   async function handleSubmit() {
-    const missing = missingRequired;
-    if (missing.length > 0) {
-      // R67 B-09 (DE-22): NAME the fields, do not count them. "2 required
-      // fields missing" makes the user hunt; "Activity, BOQ line" does not.
-      setMessages([{ level: "error", text: `Still needed: ${missingFieldNames(missing)}` }]);
-      return;
-    }
-    const pct = Number(values.percentComplete);
-    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
-      setFieldErrors((e) => ({ ...e, percentComplete: "% complete must be between 0 and 100" }));
-      setMessages([{ field: "percentComplete", level: "error", text: "% complete must be between 0 and 100" }]);
+    setAttempted(true);
+    if (faults.length > 0) {
+      // Nothing is sent. The guide panel says what is wrong and what to do; the first wrong field is outlined and focused now.
+      setMessages([]);
+      const el = findFocusTarget(faults[0].field);
+      if (faults[0].field === "wp-photo") setMoreOpen(true);
+      if (el) highlightElement(el);
       return;
     }
     setMessages([]);
@@ -462,11 +560,7 @@ export default function WorkProgressFormClient({
   // Activity list failed to load, Activity is unfillable, and telling the
   // user they have "1 required field" left is blaming them for a backend
   // failure. Name the real cause instead.
-  const submitDisabledReason = activitiesError
-    ? "Activities could not be loaded"
-    : missingCount > 0
-      ? `${missingCount} required field${missingCount === 1 ? "" : "s"}`
-      : undefined;
+  const submitDisabledReason = activitiesError ? "Activities could not be loaded" : undefined;
 
   const banner = (
     <>
@@ -501,7 +595,7 @@ export default function WorkProgressFormClient({
       // counting it -- "2 required fields missing" makes the user hunt.
       submitLabel={submitLabelFor(missingRequired)}
       submitting={submit.saving}
-      submitDisabled={missingCount > 0 || Boolean(activitiesError) || submit.saving}
+      submitDisabled={Boolean(activitiesError) || submit.saving}
       submitDisabledReason={submitDisabledReason}
       // The failure is a MESSAGE on the screen, not a notification: the kit's
       // message area persists until the next submit, which is the whole point
@@ -509,16 +603,39 @@ export default function WorkProgressFormClient({
       messages={messages} // the hook's failure is shown by <GuidedSubmitFailure> below
       banner={activitiesError || boqError || queued.length > 0 ? banner : undefined}
     >
-      <div className="px-4 pt-3 empty:hidden">
-        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} />
+      <div className="space-y-3 px-4 pt-3 empty:hidden">
+        {restored && !submit.failure && (
+          <p role="status" data-testid="wp-draft-restored" className="rounded-md border border-px-info-border bg-px-info-light px-3 py-2 text-[12.5px] text-px-info">
+            We put back what you had typed here before you left. Check it, then press Log Entry.
+            {photoToChoose ? ` Your photo "${photoToChoose}" was too big to keep; choose it again under More details.` : ""}
+          </p>
+        )}
+        <FormFaultPanel faults={shownFaults} draftKey={draftKey} />
+        <GuidedSubmitFailure
+          failure={submit.failure ? { ...submit.failure, field: submit.failure.field ?? overHundredField(submit.failure.serverMessage) } : null}
+          onRetry={submit.submit}
+          draftKey={draftKey}
+        />
+        {photoFailed && (
+          <GuidedError
+            ctx={{ ...currentScreen(), projectId, entityId: photoFailed.entryId, entityType: "work_progress_entry", status: 0, code: "WP_PHOTO_UPLOAD_FAILED", serverMessage: `The entry was saved, but the photo "${photoFailed.file.name}" did not upload.` }}
+            onRetry={() => {
+              const pf = photoFailed;
+              void uploadQueuedPhoto(pf.entryId, { blob: pf.file, name: pf.file.name, type: pf.file.type })
+                .then(() => { setPhotoFailed(null); router.push(`/work-progress/${pf.entryId}?logged=1`); })
+                .catch(() => { /* the panel stays; the person can try again or open the saved entry */ });
+            }}
+            retryable
+          />
+        )}
       </div>
       <section className="border-t border-ct-border px-4 py-3">
         <h3 className="mb-3 text-[13px] font-medium text-ct-navy">Progress entry</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField label="Activity" required error={fieldErrors.activityId}>
+          <FormField label="Activity" required error={fieldErrors.activityId || faultMsg("wp-activity")}>
             {(props) => (
               <Select value={(values.activityId as string) ?? ""} onValueChange={(v) => setField("activityId", v)}>
-                <SelectTrigger {...props}><SelectValue placeholder="Choose an activity" /></SelectTrigger>
+                <SelectTrigger {...props} data-testid="wp-activity"><SelectValue placeholder="Choose an activity" /></SelectTrigger>
                 <SelectContent>
                   {activities.map((a) => (
                     <SelectItem key={a.id} value={a.id}>{a.unit ? `${a.name} (${a.unit})` : a.name}</SelectItem>
@@ -533,6 +650,7 @@ export default function WorkProgressFormClient({
               <p className="text-[12px] text-ct-muted">This project has no activities yet. Add the first one to start recording progress.</p>
               <div className="mt-2 flex flex-wrap items-start gap-2">
                 <Input
+                  data-testid="first-activity-name"
                   aria-label="Name of the first activity"
                   className="max-w-sm"
                   placeholder="e.g. Brick partition"
@@ -568,7 +686,7 @@ export default function WorkProgressFormClient({
           <FormField
             label={boqLineLabelFor(projectHasBoq)}
             required={projectHasBoq}
-            error={fieldErrors.boqLineItemId}
+            error={fieldErrors.boqLineItemId || faultMsg("wp-boq-line")}
             className="sm:col-span-2"
             hint={selectedLine ? `${selectedLine.description} · ${selectedLine.unit} · rate ${selectedLine.rate}` : undefined}
           >
@@ -613,29 +731,32 @@ export default function WorkProgressFormClient({
                 <Label> already renders as this control's own `ariaLabel`,
                 overriding its "BOQ line" default. */}
             {() => (
-              <BoqLinePicker
-                projectId={projectId}
-                boqId={selectedBoqId}
-                value={(values.boqLineItemId as string) ?? null}
-                onChange={(lineId) => setField("boqLineItemId", lineId ?? "")}
-                ariaLabel={boqLineLabelFor(projectHasBoq)}
-              />
+              <div data-testid="wp-boq-line" tabIndex={-1}>
+                <BoqLinePicker
+                  projectId={projectId}
+                  boqId={selectedBoqId}
+                  value={(values.boqLineItemId as string) ?? null}
+                  onChange={(lineId) => setField("boqLineItemId", lineId ?? "")}
+                  ariaLabel={boqLineLabelFor(projectHasBoq)}
+                />
+              </div>
             )}
           </FormField>
 
-          <FormField label="Date" required error={fieldErrors.entryDate}>
+          <FormField label="Date" required error={fieldErrors.entryDate || faultMsg("wp-date")}>
             {(props) => (
-              <Input {...props} type="date" value={(values.entryDate as string) ?? ""} onChange={(e) => setField("entryDate", e.target.value)} />
+              <Input {...props} data-testid="wp-date" type="date" max={todayIso()} value={(values.entryDate as string) ?? ""} onChange={(e) => setField("entryDate", e.target.value)} />
             )}
           </FormField>
 
           {/* The unit sits INSIDE the control, because a quantity typed with no
               unit in sight is the mis-keying this module keeps producing. */}
-          <FormField label="Quantity done" required error={fieldErrors.quantityDone}>
+          <FormField label="Quantity done" required error={fieldErrors.quantityDone || faultMsg("wp-quantity") || serverFieldMessage("wp-quantity")}>
             {(props) => (
               <div className="relative">
                 <Input
                   {...props}
+                  data-testid="wp-quantity"
                   type="number"
                   inputMode="decimal"
                   min={0}
@@ -651,10 +772,11 @@ export default function WorkProgressFormClient({
             )}
           </FormField>
 
-          <FormField label="% complete" required hint={PERCENT_HINT} error={fieldErrors.percentComplete}>
+          <FormField label="% complete" required hint={PERCENT_HINT} error={fieldErrors.percentComplete || faultMsg("wp-percent") || serverFieldMessage("wp-percent")}>
             {(props) => (
               <Input
                 {...props}
+                data-testid="wp-percent"
                 type="number"
                 inputMode="decimal"
                 min={0}
@@ -700,12 +822,12 @@ export default function WorkProgressFormClient({
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <FormField label="Remarks" className="sm:col-span-2">
                 {(props) => (
-                  <Textarea {...props} rows={3} value={(values.remarks as string) ?? ""} onChange={(e) => setField("remarks", e.target.value)} />
+                  <Textarea {...props} data-testid="wp-remarks" rows={3} value={(values.remarks as string) ?? ""} onChange={(e) => setField("remarks", e.target.value)} />
                 )}
               </FormField>
-              <FormField label="Site photo" className="sm:col-span-2" hint={photo ? `Selected: ${photo.name}` : undefined}>
+              <FormField label="Site photo" className="sm:col-span-2" error={faultMsg("wp-photo")} hint={photo ? `Selected: ${photo.name}` : photoToChoose ? `Choose "${photoToChoose}" again` : undefined}>
                 {(props) => (
-                  <Input {...props} type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+                  <Input {...props} data-testid="wp-photo" type="file" accept="image/*" onChange={(e) => { setPhotoToChoose(null); setPhoto(e.target.files?.[0] ?? null); }} />
                 )}
               </FormField>
             </div>

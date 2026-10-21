@@ -59,8 +59,10 @@ describe("ExceptionsClient", () => {
 
   test("a failed load shows the real error, not a silent blank screen", async () => {
     globalThis.fetch = (async () => jsonRes({ error: "No organisation on this account" }, 400)) as typeof fetch;
-    const { getByText } = render(<ExceptionsClient projectId="proj-1" />);
-    await waitFor(() => expect(getByText(/No organisation on this account/)).toBeDefined());
+    const { getByTestId } = render(<ExceptionsClient projectId="proj-1" />);
+    // GUIDED: a failed read is the guide panel (what happened, why, steps, Try again), never a blank screen
+    await waitFor(() => expect(getByTestId("guided-error")).toBeDefined());
+    expect(getByTestId("guided-error").getAttribute("data-guide-id")).toBe("no-organisation");
   });
 
   // Regression coverage for a real bug (fixed 2026-09-21): this component

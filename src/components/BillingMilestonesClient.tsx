@@ -13,6 +13,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+// GUIDED ERRORS (G2): a refusal or a wrong entry on this screen is the guide panel (what happened, why, numbered steps, the exact place to fix it,
+// the way back), the typed milestone survives leaving the screen, and nothing is sent while the form has a fault.
+import { GuidedError } from "@/components/GuidedError";
+import FormFaultPanel from "@/components/FormFaultPanel";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { contextFromError, currentScreen } from "@/lib/error-guide/context";
+import { claimFaults, invoiceInputFaults, messageFor, type Fault } from "@/lib/error-guide/g2-faults";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import type { GuideContext } from "@/lib/error-guide/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,24 +118,30 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
   const [boqChecked, setBoqChecked] = useState(false);
   // A failed lookup (timeout, 5xx) is NOT "no approved BOQ": it is "could not check". Keep the two apart so a timeout is never shown as a business fact.
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The latest refusal of a write on this screen, as a guide panel (null = none).
+  const [failure, setFailure] = useState<GuideContext | null>(null);
+  const [createAttempted, setCreateAttempted] = useState(false);
+  const [invoiceFaults, setInvoiceFaults] = useState<{ claimId: string; faults: Fault[] } | null>(null);
   const [taxLoaded, setTaxLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [timelines, setTimelines] = useState<Record<string, Timeline>>({});
 
-  const [formOpen, setFormOpen] = useState(false);
+  const draft = useDraft(`billing-milestone-new:${projectId}`, { open: false, customerId: "", milestoneDescription: "", scheduledDate: "", retentionPercent: "0" });
+  const formOpen = draft.value.open;
+  const { customerId, milestoneDescription, scheduledDate, retentionPercent } = draft.value;
+  const setFormOpen = (open: boolean) => draft.set({ open });
   const [saving, setSaving] = useState(false);
-  const [customerId, setCustomerId] = useState("");
-  const [milestoneDescription, setMilestoneDescription] = useState("");
-  const [scheduledDate, setScheduledDate] = useState("");
-  const [retentionPercent, setRetentionPercent] = useState("0");
 
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
-  const [invoicingId, setInvoicingId] = useState<string | null>(null);
-  const [billDate, setBillDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [taxTemplateId, setTaxTemplateId] = useState("");
+  // The invoice form (which claim, which bill date, which tax template) is kept too, so coming back from "log the progress first" finds it as it was.
+  const invoiceDraft = useDraft(`billing-invoice:${projectId}`, { invoicingId: null as string | null, billDate: new Date().toISOString().slice(0, 10), taxTemplateId: "" });
+  const { invoicingId, billDate, taxTemplateId } = invoiceDraft.value;
+  const setInvoicingId = (v: string | null) => invoiceDraft.set({ invoicingId: v });
+  const setBillDate = (v: string) => invoiceDraft.set({ billDate: v });
+  const setTaxTemplateId = (v: string) => invoiceDraft.set({ taxTemplateId: v });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,7 +158,6 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
     } catch (err) {
       const message = errorMessage(err, "Couldn't load billing milestones");
       setLoadError(message);
-      toast.error(message);
     } finally {
       setBoqChecked(true);
       setLoading(false);
@@ -169,27 +183,47 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
     return customers.find((c) => c.id === id)?.customerName ?? id;
   }
 
+  const createProblems = claimFaults({ customerId, milestoneDescription, scheduledDate, retentionPercent, hasBoq: !!boqId });
+  const createShown = createProblems.filter((f) => createAttempted && f.code !== "BILL_NO_APPROVED_BOQ");
+
   async function createClaim() {
-    if (!milestoneDescription.trim() || !customerId || !boqId || !scheduledDate) return;
+    setCreateAttempted(true);
+    setFailure(null);
+    if (createProblems.length > 0) {
+      const el = findFocusTarget(createProblems[0].field);
+      if (el) highlightElement(el);
+      return;
+    }
     setSaving(true);
     try {
       await fetchJson("/api/billing-claims", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildClaimCreatePayload(projectId, boqId, customerId, milestoneDescription, scheduledDate, retentionPercent)),
+        body: JSON.stringify(buildClaimCreatePayload(projectId, boqId!, customerId, milestoneDescription, scheduledDate, retentionPercent)),
       });
       toast.success("Billing milestone created");
-      setMilestoneDescription(""); setCustomerId(""); setScheduledDate(""); setRetentionPercent("0");
-      setFormOpen(false);
+      draft.startFresh();
+      setCreateAttempted(false);
       await load();
     } catch (err) {
-      toast.error(errorMessage(err, "The billing milestone was not created"));
+      setFailure(contextFromError(err, { projectId, entityType: "progress_claim" }));
     } finally {
       setSaving(false);
     }
   }
 
   async function transition(claimId: string, action: "draft" | "submit" | "approve" | "reject" | "invoice", extra: Record<string, unknown> = {}) {
+    if (action === "invoice") {
+      const problems = invoiceInputFaults({ billDate: String(extra.billDate ?? ""), taxTemplateId: String(extra.taxTemplateId ?? ""), hasTemplates: taxTemplates.length > 0, ids: { billDate: `bill-date-${claimId}`, taxTemplate: `tax-template-${claimId}` } });
+      if (problems.length > 0) {
+        setInvoiceFaults({ claimId, faults: problems });
+        const el = findFocusTarget(problems[0].field);
+        if (el) highlightElement(el);
+        return;
+      }
+    }
+    setInvoiceFaults(null);
+    setFailure(null);
     setBusyId(claimId);
     try {
       const result = await fetchJson(`/api/billing-claims/${encodeURIComponent(claimId)}`, {
@@ -203,10 +237,10 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
         toast.success(`${invoiceLabel(r.invoiceNumber)} raised`, { action: { label: "Open invoice", onClick: () => router.push(invoicePath(r.invoiceId)) } });
       } else toast.success(`Billing milestone ${action === "draft" ? "drafted" : action === "submit" ? "submitted" : action === "approve" ? "approved" : action === "reject" ? "rejected" : "invoiced"}`);
       setRejectingId(null); setRejectionReason("");
-      setInvoicingId(null);
+      invoiceDraft.startFresh();
       await load();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't update the billing milestone"));
+      setFailure(contextFromError(err, { projectId, entityId: claimId, entityType: "progress_claim" }));
     } finally {
       setBusyId(null);
     }
@@ -220,26 +254,19 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
         const timeline = await fetchJson<Timeline>(`/api/billing-claims/${encodeURIComponent(claimId)}`);
         setTimelines((prev) => ({ ...prev, [claimId]: timeline }));
       } catch (err) {
-        toast.error(errorMessage(err, "Couldn't load this milestone's timeline"));
+        setFailure(contextFromError(err, { projectId, entityId: claimId, entityType: "progress_claim" }));
       }
     }
   }
 
-  const saveLabel = saving
-    ? "Saving…"
-    : !milestoneDescription.trim()
-      ? `Save (${NAME_REQUIRED})`
-      : !customerId
-        ? `Save (${CUSTOMER_REQUIRED})`
-        : !scheduledDate
-          ? `Save (${SCHEDULED_DATE_REQUIRED})`
-          : "Save";
+  const saveLabel = saving ? "Saving…" : "Save";
 
   return (
     <div className="space-y-4">
+      {failure && <GuidedError ctx={failure} onRetry={() => void load()} draftKey={`billing-milestone-new:${projectId}`} />}
       <div className="flex flex-col items-end gap-1">
         {!formOpen ? (
-          <Button onClick={() => setFormOpen(true)} disabled={!boqId} title={boqChecked && !boqId && !loadError ? NO_APPROVED_BOQ_REASON : undefined}>
+          <Button data-testid="billing-new-milestone" onClick={() => setFormOpen(true)} disabled={!boqId} title={boqChecked && !boqId && !loadError ? NO_APPROVED_BOQ_REASON : undefined}>
             <Plus className="size-4" /> New Billing Milestone
           </Button>
         ) : null}
@@ -251,15 +278,20 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
           </p>
         ) : null}
         {!formOpen && boqChecked && !boqId && !loadError ? (
-          <p className="max-w-md text-right text-sm text-px-muted" data-testid="billing-no-approved-boq">
-            {NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.
-          </p>
+          <div className="w-full max-w-xl text-left" data-testid="billing-no-approved-boq">
+            <GuidedError
+              ctx={{ ...currentScreen(), projectId, status: 0, code: "BILL_NO_APPROVED_BOQ", entityType: "boq", serverMessage: NO_APPROVED_BOQ_REASON }}
+              message={`${NO_APPROVED_BOQ_REASON} Approve the BOQ on Scope of Work first.`}
+            />
+          </div>
         ) : null}
       </div>
 
       {formOpen && (
         <Card className="shadow-card">
           <CardContent className="space-y-3 p-4">
+            {draft.restored && <p role="status" data-testid="billing-draft-restored" className="rounded-md border border-px-info-border bg-px-info-light px-3 py-2 text-[12.5px] text-px-info">We put back the milestone you had typed before you left. Check it, then press Save.</p>}
+            <FormFaultPanel faults={createShown} draftKey={`billing-milestone-new:${projectId}`} />
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="claim-customer">Customer</Label>
@@ -267,30 +299,35 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
                   id="claim-customer"
                   className="h-9 w-56 rounded-md border border-px-border bg-transparent px-3 text-sm"
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
+                  data-testid="claim-customer"
+                  onChange={(e) => draft.set({ customerId: e.target.value })}
                 >
                   <option value="">Select a customer…</option>
                   {customers.map((c) => <option key={c.id} value={c.id}>{c.customerName}</option>)}
                 </select>
+                {messageFor(createShown, "claim-customer") && <p role="alert" className="max-w-56 text-xs text-px-error">{messageFor(createShown, "claim-customer")}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="claim-scheduled-date">Scheduled date</Label>
-                <Input id="claim-scheduled-date" type="date" className="w-40" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
+                <Input id="claim-scheduled-date" type="date" className="w-40" value={scheduledDate} onChange={(e) => draft.set({ scheduledDate: e.target.value })} />
+                {messageFor(createShown, "claim-scheduled-date") && <p role="alert" className="max-w-40 text-xs text-px-error">{messageFor(createShown, "claim-scheduled-date")}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="claim-retention">Retention %</Label>
-                <Input id="claim-retention" type="number" min={0} max={100} className="w-28" value={retentionPercent} onChange={(e) => setRetentionPercent(e.target.value)} />
+                <Input id="claim-retention" type="text" inputMode="decimal" className="w-28" value={retentionPercent} onChange={(e) => draft.set({ retentionPercent: e.target.value })} />
+                {messageFor(createShown, "claim-retention") && <p role="alert" className="max-w-40 text-xs text-px-error">{messageFor(createShown, "claim-retention")}</p>}
               </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="claim-description">Milestone description</Label>
-              <Textarea id="claim-description" value={milestoneDescription} onChange={(e) => setMilestoneDescription(e.target.value)} placeholder="e.g. Foundation complete, ready to bill" />
+              <Textarea id="claim-description" value={milestoneDescription} onChange={(e) => draft.set({ milestoneDescription: e.target.value })} placeholder="e.g. Foundation complete, ready to bill" />
+              {messageFor(createShown, "claim-description") && <p role="alert" className="text-xs text-px-error">{messageFor(createShown, "claim-description")}</p>}
             </div>
             <div className="flex gap-2">
               <Button
+                data-testid="claim-save"
                 onClick={createClaim}
-                disabled={saving || !milestoneDescription.trim() || !customerId || !scheduledDate}
-                title={!milestoneDescription.trim() ? NAME_REQUIRED : !customerId ? CUSTOMER_REQUIRED : !scheduledDate ? SCHEDULED_DATE_REQUIRED : undefined}
+                disabled={saving}
               >
                 {saveLabel}
               </Button>
@@ -300,7 +337,7 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
         </Card>
       )}
 
-      <Card className="shadow-card">
+      <Card className="shadow-card" data-testid="billing-claims-list" tabIndex={-1}>
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
@@ -349,7 +386,8 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
                         {c.status === "client_approved" && (
                           <Button
                             size="sm"
-                            disabled={busy || taxTemplates.length === 0}
+                            data-testid={`claim-invoice-open-${c.id}`}
+                            disabled={busy}
                             title={taxLoaded && taxTemplates.length === 0 ? NO_TAX_TEMPLATE_REASON : undefined}
                             onClick={() => setInvoicingId(invoicingId === c.id ? null : c.id)}
                           >
@@ -397,7 +435,8 @@ export default function BillingMilestonesClient({ projectId }: { projectId: stri
                             {taxTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                           </select>
                         </div>
-                        <Button size="sm" disabled={busy || !billDate || !taxTemplateId} onClick={() => transition(c.id, "invoice", { billDate, taxTemplateId })}>Confirm invoice</Button>
+                        {invoiceFaults?.claimId === c.id && <div className="basis-full"><FormFaultPanel faults={invoiceFaults.faults} /></div>}
+                        <Button size="sm" data-testid={`claim-invoice-confirm-${c.id}`} disabled={busy} onClick={() => transition(c.id, "invoice", { billDate, taxTemplateId })}>Confirm invoice</Button>
                         <Button size="sm" variant="ghost" onClick={() => setInvoicingId(null)}>Cancel</Button>
                       </div>
                     )}

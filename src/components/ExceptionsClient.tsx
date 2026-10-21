@@ -27,8 +27,11 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
-import { toast } from "sonner";
+import { fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G2): a failed read of the exceptions report is the guide panel (what happened, why, steps, Try again), never a toast plus a bare red line.
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
 
 type ExceptionRecordType =
   | "change_order" | "boq" | "boq_line_item" | "work_progress_entry" | "site_diary"
@@ -71,7 +74,8 @@ export default function ExceptionsClient({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [checks, setChecks] = useState<ExceptionCheck[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<GuideContext | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,16 +86,14 @@ export default function ExceptionsClient({ projectId }: { projectId: string }) {
       .then((d) => { if (!cancelled) setChecks(d.checks ?? []); })
       .catch((err) => {
         if (cancelled) return;
-        const message = errorMessage(err, "Couldn't load the exceptions report");
-        setError(message);
-        toast.error(message);
+        setError(contextFromError(err, { projectId, entityType: "exceptions_report" }));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, attempt]);
 
   if (loading) return <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>;
-  if (error) return <p className="py-10 text-center text-sm text-px-error">{error}</p>;
+  if (error) return <div className="py-6"><GuidedError ctx={error} onRetry={() => setAttempt((a) => a + 1)} /></div>;
 
   const flaggedCount = checks.filter((c) => c.flagged).length;
   const sorted = [...checks].sort((a, b) => a.item - b.item || a.title.localeCompare(b.title));

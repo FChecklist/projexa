@@ -255,8 +255,11 @@ test("O-16 site instruction: a year that cannot be right is named in the panel a
   await page.locator("#issueDate").fill("0002-03-04");
   await page.locator("#issueDate").blur();
   await expectGuidedPanel(page, { id: "si-date-invalid", what: /year 2/, where: /Issue date/ });
+  // Save is not greyed out (G2): pressing it sends nothing, the same panel stays and the box is outlined
+  await btn(page, /^Save/).click();
+  await expectGuidedPanel(page, { id: "si-date-invalid", what: /year 2/, where: /Issue date/ });
   await expectHighlighted(page, "#issueDate");
-  await expect(btn(page, /^Save/)).toBeDisabled();
+  await expect(page).toHaveURL(/\/site-instructions\/new/);
 });
 
 test("O-17 Approve refused by the server for a stale screen (someone else approved it first): the panel, and the screen re-reads", async () => {
