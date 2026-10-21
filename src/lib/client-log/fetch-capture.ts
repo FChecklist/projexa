@@ -3,7 +3,7 @@
 // (only the request id the server sends back), and it never changes what the caller sees: the Response is handed back untouched
 // (the body is read from a CLONE, and only for a failure).
 
-import { routePattern } from "./fingerprint";
+import { describeWrite, isBackgroundWrite } from "./plain-action";
 import { scrubText } from "./redact";
 import type { Capture } from "./capture";
 
@@ -20,6 +20,8 @@ export function markSubmitSignal(signal: AbortSignal): void {
 export const EDGE_PATH_MARK = "/functions/v1/projexa-api";
 const SELF_PATHS = ["/api/client-logs", "/api/local-first/client-error"];
 const SLOW_ABORT_MS = 5_000;
+
+export { describeWrite };
 
 export type TrackedCall = { method: string; path: string };
 
@@ -40,16 +42,6 @@ export function trackedCall(input: unknown, init: RequestInit | undefined, origi
   } catch {
     return null;
   }
-}
-
-/** "Update . budgets / approve" -- the words a person would use for a write, not a URL. */
-export function describeWrite(method: string, path: string): string {
-  const verb = method === "DELETE" ? "Delete" : method === "POST" ? "Create or run" : "Update";
-  const words = routePattern(path)
-    .split("/")
-    .filter((s) => s && s !== "api" && s !== ":id")
-    .map((s) => s.replace(/[-_]/g, " "));
-  return `${verb} · ${words.join(" / ") || "item"}`;
 }
 
 async function serverWords(res: Response): Promise<string> {
@@ -73,6 +65,10 @@ export type FetchCaptureDeps = {
   now?: () => number;
   origin: () => string;
   getProjectId: () => string | null;
+  /** The browser's own word on whether it has a network. A request made while it says "no" is expected to fail and is not a problem. */
+  isOnline?: () => boolean;
+  /** True while the page is being closed or navigated away from: the browser cancels what is in flight, which is not a problem either. */
+  isLeaving?: () => boolean;
 };
 
 /** Returns a fetch that behaves exactly like `original`, plus the capture described above. */
@@ -88,6 +84,15 @@ export function wrapFetch(original: typeof fetch, deps: FetchCaptureDeps): typeo
     if (!call) return original(input, init);
     const started = now();
     const viaSubmit = !!(init?.signal && submitSignals.has(init.signal));
+    const onlineNow = () => {
+      try {
+        return deps.isOnline ? deps.isOnline() : true;
+      } catch {
+        return true;
+      }
+    };
+    const startedOffline = !onlineNow();
+    const background = call.method !== "GET" && call.method !== "HEAD" && call.method !== "OPTIONS" && isBackgroundWrite(call.path);
     try {
       const res = await original(input, init);
       const ms = now() - started;
@@ -107,7 +112,7 @@ export function wrapFetch(original: typeof fetch, deps: FetchCaptureDeps): typeo
             })
           );
         }
-        if (call.method !== "GET" && call.method !== "HEAD" && call.method !== "OPTIONS" && !viaSubmit) {
+        if (call.method !== "GET" && call.method !== "HEAD" && call.method !== "OPTIONS" && !viaSubmit && !background) {
           deps.capture.captureAction({
             actionName: describeWrite(call.method, call.path),
             outcome: res.status >= 400 ? "failed" : "ok",
@@ -126,8 +131,10 @@ export function wrapFetch(original: typeof fetch, deps: FetchCaptureDeps): typeo
       try {
         const name = err instanceof Error ? err.name : "";
         const cancelled = name === "AbortError" && ms < SLOW_ABORT_MS; // the person (or the page) cancelled it: not a failure
-        deps.capture.crumb("api", `${call.method} ${call.path} ${cancelled ? "cancelled" : "failed"} ${ms}ms`);
-        if (!cancelled) {
+        // No network (it said so when the call started, or says so now) or the page is going away: expected, not a problem to report.
+        const expected = startedOffline || !onlineNow() || (deps.isLeaving ? deps.isLeaving() : false);
+        deps.capture.crumb("api", `${call.method} ${call.path} ${cancelled ? "cancelled" : expected ? "not sent (offline)" : "failed"} ${ms}ms`);
+        if (!cancelled && !expected) {
           const timedOut = name === "TimeoutError" || name === "AbortError";
           deps.capture.captureError({
             kind: "api_failure",
@@ -139,7 +146,7 @@ export function wrapFetch(original: typeof fetch, deps: FetchCaptureDeps): typeo
             httpStatus: 0,
             durationMs: ms,
           });
-          if (call.method !== "GET" && call.method !== "HEAD" && !viaSubmit) {
+          if (call.method !== "GET" && call.method !== "HEAD" && !viaSubmit && !background) {
             deps.capture.captureAction({ actionName: describeWrite(call.method, call.path), outcome: "failed", durationMs: ms, apiPath: call.path, httpMethod: call.method, httpStatus: 0 });
           }
         }

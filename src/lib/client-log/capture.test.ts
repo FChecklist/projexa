@@ -102,7 +102,7 @@ describe("capture: redaction (secrets never reach the outbox)", () => {
 
 describe("fetch capture", () => {
   const origin = "https://px.test";
-  function wrapped(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>, route = "/budgets/41") {
+  function wrapped(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>, route = "/budgets/41", extra: { isOnline?: () => boolean; isLeaving?: () => boolean } = {}) {
     const r = rig(route);
     let t = 5_000;
     const calls: { input: unknown; init?: RequestInit }[] = [];
@@ -111,7 +111,7 @@ describe("fetch capture", () => {
       t += 120;
       return impl(input, init);
     }) as typeof fetch;
-    const f = wrapFetch(original, { capture: r.capture, origin: () => origin, now: () => t, getProjectId: () => "proj-9" });
+    const f = wrapFetch(original, { capture: r.capture, origin: () => origin, now: () => t, getProjectId: () => "proj-9", ...extra });
     return { ...r, f, calls };
   }
   const settle = () => new Promise((res) => setTimeout(res, 0));
@@ -145,6 +145,40 @@ describe("fetch capture", () => {
     expect(cancelled.queue.length).toBe(0);
   });
 
+  test("offline: a call made while the browser says it has no network is not logged as a problem, a call made online still is", async () => {
+    let online = false;
+    const offline = wrapped(async () => { throw new TypeError("Failed to fetch"); }, "/budgets/41", { isOnline: () => online });
+    await expect(offline.f("/api/projects")).rejects.toThrow();
+    await expect(offline.f("/api/budgets/1", { method: "PATCH" })).rejects.toThrow();
+    expect(offline.queue.length).toBe(0); // no api_failure and no failed action
+    online = true;
+    await expect(offline.f("/api/projects")).rejects.toThrow();
+    expect(offline.queue.map((e) => e.kind)).toEqual(["api_failure"]);
+    // started online, the network dropped before it failed: also expected
+    let flip = true;
+    const drop = wrapped(async () => { flip = false; throw new TypeError("Failed to fetch"); }, "/budgets/41", { isOnline: () => flip });
+    await expect(drop.f("/api/projects")).rejects.toThrow();
+    expect(drop.queue.length).toBe(0);
+  });
+
+  test("a call cut off because the page is going away is not a problem", async () => {
+    const gone = wrapped(async () => { throw new TypeError("Failed to fetch"); }, "/budgets/41", { isOnline: () => true, isLeaving: () => true });
+    await expect(gone.f("/api/projects")).rejects.toThrow();
+    expect(gone.queue.length).toBe(0);
+  });
+
+  test("writes are actions in plain words; background writes (drafts, preferences, sync) are not", async () => {
+    const w = wrapped(async () => new Response("{}", { status: 200 }));
+    await w.f("/api/scope/3f2a9c1e-1111-4222-8333-444455556666", { method: "PATCH" });
+    await w.f("/api/screen-drafts", { method: "POST" });
+    await w.f("/api/local-first/client-error", { method: "POST" });
+    await w.f("/api/user-preference", { method: "PUT" });
+    expect(w.queue.map((e) => [e.kind, e.actionName, e.outcome])).toEqual([["action", "Saved a BOQ", "ok"]]);
+    const bad = wrapped(async () => new Response("{}", { status: 403 }));
+    await bad.f("/api/scope/3f2a9c1e-1111-4222-8333-444455556666/approve", { method: "POST" });
+    expect(bad.queue.filter((e) => e.kind === "action").map((e) => [e.actionName, e.outcome])).toEqual([["Approved a BOQ", "failed"]]);
+  });
+
   test("a successful write is an action with outcome ok; reads are only steps; the log's own endpoints are never tracked", async () => {
     const w = wrapped(async () => new Response("{}", { status: 200 }));
     await w.f("/api/budgets/12/approve", { method: "POST" });
@@ -152,7 +186,7 @@ describe("fetch capture", () => {
     await w.f("/api/client-logs", { method: "POST" });
     await w.f("/api/local-first/client-error", { method: "POST" });
     await w.f("https://other.example/api/x", { method: "POST" });
-    expect(w.queue.map((e) => [e.kind, e.outcome, e.actionName])).toEqual([["action", "ok", "Create or run · budgets / approve"]]);
+    expect(w.queue.map((e) => [e.kind, e.outcome, e.actionName])).toEqual([["action", "ok", "Approved a budget"]]);
     expect(w.queue[0]).toMatchObject({ projectId: "proj-9", httpMethod: "POST", apiPath: "/api/budgets/12/approve", durationMs: 120 });
     expect(w.capture.breadcrumbs.snapshot().map((b) => b.label)).toEqual(["POST /api/budgets/12/approve 200 120ms", "GET /api/budgets 200 120ms"]);
   });
@@ -168,7 +202,9 @@ describe("fetch capture", () => {
   test("the edge function answers the same routes: tracked by its API path", () => {
     expect(trackedCall("https://x.supabase.co/functions/v1/projexa-api/api/exceptions?projectId=1", undefined, origin)).toEqual({ method: "GET", path: "/api/exceptions" });
     expect(trackedCall("/_next/static/a.js", undefined, origin)).toBeNull();
-    expect(describeWrite("DELETE", "/api/permits/3f2a9c1e-1111-4222-8333-444455556666")).toBe("Delete · permits");
+    expect(describeWrite("DELETE", "/api/permits/3f2a9c1e-1111-4222-8333-444455556666")).toBe("Deleted a permit");
+    expect(describeWrite("PATCH", "/api/scope/3f2a9c1e-1111-4222-8333-444455556666")).toBe("Saved a BOQ");
+    expect(describeWrite("POST", "/api/scope/3f2a9c1e-1111-4222-8333-444455556666/approve")).toBe("Approved a BOQ");
   });
 });
 
