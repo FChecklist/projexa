@@ -176,6 +176,21 @@ test("more than the line has (server refusal): shown beside the quantity, nothin
   expect(await entryCount(page), "the refused entry was not saved").toBe(before);
 });
 
+test("the BOQ line was replaced by a newer BOQ revision (server answers 'BOQ line item not found'): the panel says so, outlines the line box, keeps everything typed", async ({ page }) => {
+  // The server's answer is supplied here (a real revision race cannot be forced on demand); the wording is the server's own, see construction-progress-service.ts.
+  await page.route(/\/api\/work-progress$/, (route) => route.request().method() === "POST"
+    ? route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "BOQ line item not found" }) })
+    : route.continue());
+  await openForm(page);
+  await fillValid(page, { qty: "2", pct: "10" });
+  await logEntry(page).click();
+  await expect(guidePanel(page)).toHaveAttribute("data-guide-id", "wp-line-gone", { timeout: 30_000 });
+  await expectCompleteGuide(page, { id: "wp-line-gone", minSteps: 2 });
+  await pressFixAndExpectHighlight(page, "wp-boq-line");
+  await expect(page.getByTestId("wp-quantity")).toHaveValue("2");
+  await expect(page.getByTestId("wp-percent")).toHaveValue("10");
+});
+
 test("what was typed survives leaving the form and coming back (quantity, percent, remarks, activity)", async ({ page }) => {
   await openForm(page);
   await pickActivity(page);
