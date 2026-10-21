@@ -1,7 +1,7 @@
 // Work progress: activities, categories, progress entries (percent / quantity), manual overrides.
 // Server messages: compliance-tracker construction-progress-service.ts,
 // construction-exception-capture-service.ts, PROJEXA api/activities, auth-guard USER_NOT_LINKED.
-import { guides, here, proj, rx } from "./_helpers";
+import { guides, proj, rx } from "./_helpers";
 
 const BACK = "Back to Work Progress";
 const wp = proj("/work-progress");
@@ -150,14 +150,5 @@ export const progressGuides = guides([
     steps: ["Open Work Progress and look at the latest entries.", "If your entry is listed, do nothing more.", "If it is not listed, enter it again."],
     fix: { label: "Check recent entries", to: wp, where: "Work Progress > Recent entries" },
     severity: "warn", returnLabel: BACK,
-  },
-  {
-    id: "progress-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/work-progress" },
-    title: "Work Progress did not load",
-    what: "The progress list could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it fails again, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
   },
 ]);

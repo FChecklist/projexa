@@ -6,7 +6,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 
 ## Counts
 
-- Guides: **322** in **19** modules
+- Guides: **316** in **19** modules
 - Distinct in-app screens used as fix destinations: **55** (every one checked against the real route list by the test)
 - Real server messages harvested (compliance-tracker + PROJEXA): **901**; mapped to a guide: **901**; unmapped (TODO): **0**
 - Of the mapped ones, **467** are covered only by a general fallback guide (see the last section)
@@ -41,7 +41,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `auth-last-owner` (conflict, block) | If every owner or admin left, nobody could manage the company. | **Someone must stay as owner or admin.** {serverMessage} Steps: 1) First give another person the owner or admin role. 2) Then change this person's role. | Open the team list: Settings > Team > Role (/settings) | Back to Settings |
 | `auth-member-not-found` (server, warn) | They were removed (maybe by another admin) while this page was open. | **That team member is gone.** {serverMessage} Steps: 1) Refresh the team list. 2) Check the person is still listed. | Open the team list: Settings > Team (/settings) | Back to Settings |
 
-## Projects (16)
+## Projects (15)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -60,7 +60,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `project-batch-too-many` (validation, warn) | The dashboard shows a limited number of projects at a time. | **Too many (or no) projects chosen.** {serverMessage} Steps: 1) Choose between one and the allowed number of projects. 2) Open the dashboard again. | Open the dashboard: Dashboard > project filter (/dashboard) | Back to the dashboard |
 | `project-boq-mismatch` (conflict, warn) | The BOQ you picked belongs to another project. | **That BOQ is from a different project.** {serverMessage} Steps: 1) Open this project's Scope of Work. 2) Pick the BOQ listed there. | Open Scope of Work: Scope of Work > this project's BOQ (/scope) | Back to my report |
 | `project-create-failed` (server, warn) | The service had a problem. Your typing is still on screen. | **The project was not created.** We could not create the project. Nothing was saved. Steps: 1) Wait a few seconds. 2) Press Save again. 3) Check Projects first so you do not create it twice. | Check the project list: Projects (/projects) | Back to the form |
-| `project-load-failed` (server, warn) | This is a temporary problem; your data is safe. | **Projects did not load.** The project list could not be read. Steps: 1) Press Try again. 2) If it keeps failing, check your internet. | Reload projects: This screen (/work-progress) | Back to projects |
 
 ## Scope of Work (BOQ) (45)
 
@@ -112,7 +111,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `boq-customer-approval-order` (prerequisite, block) | Your company must approve the BOQ first, and the customer approval can be recorded only once. | **Customer approval is out of order.** {serverMessage} Steps: 1) Get the BOQ approved inside your company first. 2) Then record the customer's approval once. 3) If it is already recorded, nothing more is needed. | Open the BOQ: Scope of Work > this BOQ > Approvals (/scope/E1) | Back to my BOQ |
 | `boq-decision-invalid` (validation, warn) | Only the listed decisions are accepted. | **Choose approve or reject.** {serverMessage} Steps: 1) Press the Approve or Reject button again. 2) If it repeats, reload the page. | Open the BOQ: Scope of Work > this BOQ (/scope/E1) | Back to my BOQ |
 
-## Work Progress (17)
+## Work Progress (16)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -132,7 +131,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `progress-user-not-linked` (permission, block) | Progress is recorded under a named user. Your sign-in is not yet linked to a user in this company. | **Your account is not a team user.** {serverMessage} Steps: 1) Ask your admin to add you under Settings > Team using this same e-mail. 2) Sign out and sign in again. 3) Enter the progress again. | Open the team list: Settings > Team (/settings) | Back to Work Progress |
 | `progress-exception-fields` (validation, warn) | The exception form needs these boxes filled in. | **A required box is empty or too long.** {serverMessage} Steps: 1) Read which box is named. 2) Fill it in, or shorten it. 3) Save again. | Open the exceptions list: Analysis > Exceptions (/analysis/exceptions) | Back to Exceptions |
 | `progress-saved-maybe` (network, warn) | Saving again could count the same work twice. | **Progress may already be saved.** The connection broke while saving, so we cannot be sure your entry was recorded. Steps: 1) Open Work Progress and look at the latest entries. 2) If your entry is listed, do nothing more. 3) If it is not listed, enter it again. | Check recent entries: Work Progress > Recent entries (/work-progress) | Back to Work Progress |
-| `progress-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Work Progress did not load.** The progress list could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Work Progress |
 
 ## Change Orders (11)
 
@@ -150,7 +148,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `co-link-not-approved` (prerequisite, block) | Only a signed change order can change the BOQ. | **Approve the change order first.** {serverMessage} Steps: 1) Wait for the signature to complete. 2) Then make the BOQ revision. | Open the change order: Change Orders > this order > Status (/change-orders/E1) | Back to the change order |
 | `co-link-already` (conflict, info) | One change order can only be applied to one revision. | **This change is already in a BOQ revision.** {serverMessage} Steps: 1) Open Scope of Work. 2) Open the revision named in the message. | Open Scope of Work: Scope of Work > the revision (/scope) | Back to the change order |
 
-## Billing (14)
+## Billing (13)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -167,9 +165,8 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `billing-boq-not-approved` (prerequisite, block) | The agreed rates must be fixed before money is claimed. | **Approve the BOQ before billing.** Billing works only on an approved BOQ. Steps: 1) Open the BOQ and submit it. 2) Ask a second person to approve it. 3) Come back to billing. | Open Scope of Work: Scope of Work > Submit / Approve (/scope) | Back to Billing |
 | `billing-invoice-failed` (server, warn) | A temporary problem. Check the list before trying again so you do not bill twice. | **The invoice was not created.** The invoice could not be saved. Steps: 1) Open Invoices and check whether it is listed. 2) If not listed, press Create invoice again. | Check Invoices: Invoices (/invoices) | Back to Billing |
 | `billing-claim-create-failed` (server, warn) | A temporary problem. Nothing was changed. | **The billing milestone was not saved.** The milestone could not be saved. Steps: 1) Wait a few seconds. 2) Check the list. 3) Save again if it is not there. | Open Billing: Billing Milestones (/billing-milestones) | Back to Billing |
-| `billing-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Billing did not load.** The billing list could not be read. Steps: 1) Press Try again. 2) If it keeps failing, check your internet. | Reload: This screen (/work-progress) | Back to Billing |
 
-## Materials (19)
+## Materials (18)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -187,13 +184,12 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `materials-duplicate-order` (conflict, info) | An identical open order stops the same delivery being ordered twice by mistake. | **This order already exists.** {serverMessage} Steps: 1) Open Materials and find the existing order. 2) Change the date or quantity if this is a different order. | Open Materials: Materials > Orders (/materials) | Back to Materials |
 | `materials-issue-more-than-stock` (validation, warn) | Stock cannot go below zero, so you cannot issue more than has been received and not yet issued. | **You are issuing more than is in stock.** {serverMessage} Steps: 1) Look at the stock figure in the message above. 2) Type that figure, or a smaller quantity, in the quantity box. 3) If material arrived that was never recorded, record that receipt first (Materials, Receipt), then come back. | Fix the quantity: This screen > Quantity (/work-progress) | Back to the issue form |
 | `materials-warehouse-name` (validation, warn) | A stock entry needs an item, a store, a quantity, a date and a type. | **Fill the stock entry form.** {serverMessage} Steps: 1) Fill every box that is marked. 2) Save again. | Back to the form: Inventory > Stock entries > New (/inventory/stock-entries/new) | Back to the form |
-| `materials-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Materials did not load.** The materials list could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Materials |
 | `materials-qty-not-positive` (validation, warn) | A receipt or an issue of nothing, or of a negative amount, would corrupt the stock figure. | **Quantity must be more than zero.** {serverMessage} Steps: 1) Click the quantity box. 2) Type a number greater than 0, for example 120. 3) Press Save again. | Fix the quantity: This screen > Quantity (/work-progress) | Back to the form |
 | `materials-reorder-negative` (validation, warn) | The reorder level is the stock figure at which the material is flagged Low, so it cannot be below zero. | **Reorder level must be zero or more.** {serverMessage} Steps: 1) Click the reorder level box. 2) Type a number of zero or more, or clear the box for no threshold. 3) Press Save again. | Fix the reorder level: This screen > Reorder level (/work-progress) | Back to the form |
 | `materials-nothing-on-hand` (prerequisite, block) | Material can only be issued after a receipt has put it into stock. | **Nothing is on hand to issue.** {serverMessage} Steps: 1) Record the receipt of the material that arrived. 2) Come back with the strip at the top. 3) Choose the material and issue it. | Record a receipt: Materials > Receipt > New (/materials/receipts/new, box: materialId) | Back to the issue form |
 | `input-date-in-future` (validation, warn) | Receipts, issues, attendance and time are records of things that already happened, so a future day would be a mistake. | **That date has not happened yet.** {serverMessage} Steps: 1) Click the date box. 2) Choose today or an earlier day. 3) Press Save again. | Fix the date: This screen > the date box (/work-progress) | Back to the form |
 
-## Labour (18)
+## Labour (17)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -212,7 +208,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `labour-import-columns` (upload, warn) | The first row of the sheet must have headings named Name and Daily Rate. | **The worker sheet is missing a column.** {serverMessage} Steps: 1) Open your sheet. 2) Rename the heading row so it says Name and Daily Rate. 3) Upload it again. | Open the import page: Labour > Import (/labour/import) | Back to Labour |
 | `labour-project-or-roster` (prerequisite, block) | Attendance is shown for a project or for one worker. | **Choose a project or worker.** {serverMessage} Steps: 1) Pick a project. 2) Open Labour from inside it. | Pick a project: Projects (/projects) | Back to Labour |
 | `labour-saved-maybe` (network, warn) | Saving again could be refused as a duplicate. | **Attendance may already be saved.** The connection broke while saving, so we cannot be sure it was recorded. Steps: 1) Open that day's attendance. 2) If your marks are there, you are done. 3) If not, mark and save again. | Check attendance: Labour > Attendance (/labour) | Back to Labour |
-| `labour-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Attendance did not load.** The attendance sheet could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Labour |
 | `labour-rate-invalid` (validation, warn) | The attendance cost of every day is the daily rate multiplied by the days worked, so the rate must be a real amount. | **Daily rate must be zero or more.** {serverMessage} Steps: 1) Click the daily rate box. 2) Type the pay for one day as digits only, for example 180. 3) Press Save again. | Fix the daily rate: This screen > Daily rate (/work-progress) | Back to the form |
 | `labour-attendance-future-sheet` (validation, block) | Attendance records who came to site, so it can only be marked for today or an earlier day. | **That sheet is for a future day.** {serverMessage} Steps: 1) Open the sheet for today. 2) Mark each worker. 3) Press Save sheet. | Open today's sheet: Labour > Attendance > today (/labour/attendance/2026-10-21) | Back to the sheet |
 
@@ -236,7 +231,7 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `file-empty` (validation, block) | A file of 0 bytes has no content, so uploading it would store nothing useful. It is usually a copy that did not finish. | **That file is empty.** {serverMessage} Steps: 1) Open the original file on your device and check that it has content. 2) Choose the file again, or a different file. 3) Press Save again. | Choose another file: This screen > the file box (/work-progress) | Back to the form |
 | `file-rejected` (validation, block) | This box only takes the file types and sizes listed under it, so the file was stopped before anything was sent. | **That file cannot be uploaded.** {serverMessage} Steps: 1) Read the limit under the file box. 2) Choose a different file, or save the file again in an accepted type or at a smaller size. 3) Press Save again. | Choose another file: This screen > the file box (/work-progress) | Back to the form |
 
-## Drawings, permits, RFIs and site records (19)
+## Drawings, permits, RFIs and site records (18)
 
 | Screen / guide | What the user did wrong or what is missing | What the screen says | Where it takes them | How they come back |
 |---|---|---|---|---|
@@ -248,7 +243,6 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `drawing-legal-hold` (permission, block) | A legal hold keeps records safe from deletion. | **This drawing is on legal hold.** {serverMessage} Steps: 1) Do not try to remove it. 2) Ask the owner of the project if the hold can be lifted. | Open the drawing: Drawings > this drawing (/drawings/E1) | Back to Drawings |
 | `drawing-retention` (conflict, block) | Drawings can be deleted only in the first 24 hours; after that they are kept for records. | **It is too late to delete this drawing.** {serverMessage} Steps: 1) Upload the corrected drawing as a new one. 2) Mark the old drawing as Superseded. | Open the drawing: Drawings > this drawing > Status (/drawings/E1) | Back to Drawings |
 | `drawing-open-failed` (server, warn) | The file storage did not answer in time. | **The drawing could not be opened.** {serverMessage} Steps: 1) Wait ten seconds. 2) Press Try again. | Back to the drawing: Drawings > this drawing (/drawings/E1) | Back to Drawings |
-| `drawing-name-required` (validation, warn) | People find drawings by their name or number. | **Name the drawing.** The drawing name is empty. Steps: 1) Type the drawing number and name. 2) Save again. | Name the drawing: Drawings > New > Name (/drawings/new) | Back to Drawings |
 | `permit-name` (validation, warn) | The name tells your team what the permit allows. | **Name the permit.** {serverMessage} Steps: 1) Type the permit name. 2) Save again. | Name the permit: Permits > New > Permit name (/permits/new) | Back to Permits |
 | `permit-pdf-required` (upload, warn) | A permit is kept as a PDF so it opens the same way for everyone. | **Attach the permit as a PDF.** {serverMessage} Steps: 1) Scan or export the permit as a PDF. 2) Choose the PDF. 3) Save again. | Attach the PDF: Permits > New > Attach PDF (/permits/new) | Back to Permits |
 | `permit-not-found` (server, warn) | It was removed or belongs to another project. | **This permit cannot be found.** {serverMessage} Steps: 1) Open the permit list. 2) Find it by name. | Open Permits: Permits (/permits) | Back to Permits |
@@ -305,11 +299,11 @@ For every way a real person can get stuck, the screen shows: a short title, a fu
 | `design-timesheet-missing` (server, warn) | It may have been deleted by someone else. | **That timesheet cannot be found.** The timesheet was removed or belongs to another company. Steps: 1) Open the timesheet list. 2) Find the right day. | Open Design Studio: Design Studio > Timesheets (/design-studio) | Back to Design Studio |
 | `design-cost-no-rate` (prerequisite, warn) | Cost is hours multiplied by rate. | **A designer has no rate set.** Cost analysis needs an hourly rate for each designer, and one is missing. Steps: 1) Open the employee. 2) Add their rate. 3) Run the analysis again. | Open employees: Employees > this person > Rate (/employees) | Back to Design Studio |
 | `design-floorplan-file` (upload, warn) | Only drawings and images of the supported types can be shown. | **The floor plan file could not be read.** The floor plan is damaged or in a type we cannot open. Steps: 1) Export the plan as PDF or image. 2) Upload it again. | Open Floor Plans: Floor Plans (/floor-plans) | Back to Design Studio |
-| `design-load-failed` (server, warn) | A temporary problem. Your data is safe. | **Design Studio did not load.** The Design Studio data could not be read. Steps: 1) Press Try again. 2) If it fails again, check your internet. | Reload: This screen (/work-progress) | Back to Design Studio |
 | `design-item-open` (validation, warn) | An empty board has nothing to show. | **Add something to the board first.** A mood board needs at least one item. Steps: 1) Add an image or note. 2) Save again. | Open the board: Mood Boards > this board > Add item (/mood-boards/E1) | Back to Design Studio |
 | `design-no-tasks` (prerequisite, block) | Every timesheet entry is logged against a task, so the time can be costed and reported. | **Add a task before logging time.** {serverMessage} Steps: 1) Create the task in Schedule. 2) Come back with the strip at the top. 3) Choose the task and log your time. | Create a task: Schedule > New task > Title (/schedule/tasks/new, box: title) | Back to the timesheet |
 | `design-day-not-submitted` (conflict, warn) | Only a day the designer has submitted can be approved or sent back. It may already have been decided by someone else. | **That day is not waiting for review.** {serverMessage} Steps: 1) Reload the review list. 2) Pick a day that is still waiting. | Reload the review list: This screen (/work-progress) | Back to Review |
 | `design-timesheet-locked` (conflict, block) | Once an entry is submitted or approved it is locked so that costs and pay stay correct. | **This entry can no longer be changed.** {serverMessage} Steps: 1) Ask your reviewer to send the day back. 2) Then change the entry and submit the day again. | Open Design Studio: Design Studio > Timesheets (/design-studio) | Back to Design Studio |
+| `design-pick-task` (validation, warn) | Every row of time is logged against a task so that it can be costed and reported. | **Pick the task for this row.** {serverMessage} Steps: 1) Open the Task list on the entry row. 2) Choose the task the time was spent on. 3) Press Add entry again. | Choose the task: This screen > Add entry row > Task (/work-progress) | Back to Design Studio |
 
 ## Reports and Analysis (14)
 
@@ -465,7 +459,6 @@ These guides have no server message to read; the screen (or fetch layer) has to 
 | `OFFLINE` | `docs-upload-offline` | Files can be uploaded only when you are online. |
 | `EMPTY_FILE` | `file-empty` | A file of 0 bytes has no content, so uploading it would store nothing useful. It is usually a copy that did not finish. |
 | `FILE_REJECTED` | `file-rejected` | This box only takes the file types and sizes listed under it, so the file was stopped before anything was sent. |
-| `NAME_REQUIRED` | `drawing-name-required` | People find drawings by their name or number. |
 | `EXPIRY_BEFORE_ISSUE` | `permit-expiry-order` | A permit cannot end before it begins. |
 | `MOM_UNSAVED` | `mom-not-saved-yet` | A shared link points to the saved version. |
 | `EDIT_CONFLICT` | `mom-edited-elsewhere` | PROJEXA protects both versions. |
@@ -491,6 +484,7 @@ These guides have no server message to read; the screen (or fetch layer) has to 
 | `NO_TASKS` | `design-no-tasks` | Every timesheet entry is logged against a task, so the time can be costed and reported. |
 | `DAY_NOT_SUBMITTED` | `design-day-not-submitted` | Only a day the designer has submitted can be approved or sent back. It may already have been decided by someone else. |
 | `TIMESHEET_LOCKED` | `design-timesheet-locked` | Once an entry is submitted or approved it is locked so that costs and pay stay correct. |
+| `TASK_NOT_PICKED` | `design-pick-task` | Every row of time is logged against a task so that it can be costed and reported. |
 | `EMPTY_REPORT` | `report-empty` | Reports are built from approved BOQs, progress and bills. None exist yet in this period. |
 | `SHARE_EXPIRED` | `report-share-expired` | Shared links stop working after a set time. |
 | `NO_EXCEPTIONS_DATA` | `analysis-exceptions-none` | It compares BOQ, progress and bills. |

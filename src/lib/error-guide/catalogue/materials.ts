@@ -133,15 +133,6 @@ export const materialsGuides = guides([
     severity: "warn", returnLabel: "Back to the form",
   },
   {
-    id: "materials-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/materials" },
-    title: "Materials did not load",
-    what: "The materials list could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it fails again, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
-  },
-  {
     id: "materials-qty-not-positive", source: "validation", match: { code: "QTY_NOT_POSITIVE" },
     title: "Quantity must be more than zero",
     what: "{serverMessage}",

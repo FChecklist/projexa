@@ -1,7 +1,7 @@
 // Billing milestones, progress claims, interim bills, invoices, tax templates, retention.
 // Server messages: compliance-tracker construction-billing-workflow-service.ts,
 // construction-valuation-service.ts, api/v1/projexa/billing-claims.
-import { guides, here, proj, rx } from "./_helpers";
+import { guides, proj, rx } from "./_helpers";
 
 const BACK = "Back to Billing";
 const bm = proj("/billing-milestones");
@@ -123,14 +123,5 @@ export const billingGuides = guides([
     steps: ["Wait a few seconds.", "Check the list.", "Save again if it is not there."],
     retry: true, severity: "warn", returnLabel: BACK,
     fix: { label: "Open Billing", to: bm, where: "Billing Milestones" },
-  },
-  {
-    id: "billing-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/billing" },
-    title: "Billing did not load",
-    what: "The billing list could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it keeps failing, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
   },
 ]);

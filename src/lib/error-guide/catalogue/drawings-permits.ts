@@ -79,15 +79,6 @@ export const drawingsPermitsGuides = guides([
     fix: { label: "Back to the drawing", to: ent("/drawings"), where: "Drawings > this drawing" },
   },
   {
-    id: "drawing-name-required", source: "validation", match: { code: "NAME_REQUIRED", field: "name" },
-    title: "Name the drawing",
-    what: "The drawing name is empty.",
-    why: "People find drawings by their name or number.",
-    steps: ["Type the drawing number and name.", "Save again."],
-    fix: { label: "Name the drawing", to: proj("/drawings/new"), where: "Drawings > New > Name" },
-    severity: "warn", returnLabel: DBACK,
-  },
-  {
     id: "permit-name", source: "validation", match: { status: 400, messageRegex: rx("^Permit name is required$") },
     title: "Name the permit",
     what: "{serverMessage}",

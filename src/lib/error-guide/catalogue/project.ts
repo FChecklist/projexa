@@ -1,7 +1,7 @@
 // Projects: create, pick, open, dashboard, copy to laptop.
 // Server messages: compliance-tracker construction-dashboard-service.ts, api/v1/projexa/projects,
 // PROJEXA api/last-project, api/dashboard-hierarchy.
-import { guides, here, proj, rx } from "./_helpers";
+import { guides, proj, rx } from "./_helpers";
 
 export const projectGuides = guides([
   {
@@ -138,14 +138,5 @@ export const projectGuides = guides([
     steps: ["Wait a few seconds.", "Press Save again.", "Check Projects first so you do not create it twice."],
     retry: true, severity: "warn", returnLabel: "Back to the form",
     fix: { label: "Check the project list", to: "/projects", where: "Projects" },
-  },
-  {
-    id: "project-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/projects" },
-    title: "Projects did not load",
-    what: "The project list could not be read.",
-    why: "This is a temporary problem; your data is safe.",
-    steps: ["Press Try again.", "If it keeps failing, check your internet."],
-    retry: true, severity: "warn", returnLabel: "Back to projects",
-    fix: { label: "Reload projects", to: here, where: "This screen" },
   },
 ]);

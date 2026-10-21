@@ -79,15 +79,6 @@ export const designStudioGuides = guides([
     severity: "warn", returnLabel: BACK,
   },
   {
-    id: "design-load-failed", source: "server", match: { status: [500, 502, 503], method: "GET", apiPath: "/design" },
-    title: "Design Studio did not load",
-    what: "The Design Studio data could not be read.",
-    why: "A temporary problem. Your data is safe.",
-    steps: ["Press Try again.", "If it fails again, check your internet."],
-    retry: true, severity: "warn", returnLabel: BACK,
-    fix: { label: "Reload", to: here, where: "This screen" },
-  },
-  {
     id: "design-item-open", source: "validation", match: { code: "DS_ITEM_REQUIRED", apiPath: "/mood-boards" },
     title: "Add something to the board first",
     what: "A mood board needs at least one item.",
