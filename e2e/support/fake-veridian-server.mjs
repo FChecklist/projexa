@@ -21,6 +21,9 @@ const server = createServer((req, res) => {
   if (url.pathname === "/health") return json(res, 200, { ok: true })
   if (req.headers.authorization !== `Bearer ${KEY}`) return json(res, 401, { error: "Unauthorized" })
   if (req.method === "GET" && url.pathname === "/products") return json(res, 200, { products: PRODUCTS })
+  // The project list the Scope / New BOQ pages read on the server. Empty: the rig's projects live on the laptop, and a 404 here made those pages report
+  // a genuine "project list could not be read" failure to the device log (a POST /api/client-logs the Vercel-budget walk rightly counts).
+  if (req.method === "GET" && url.pathname === "/projects") return json(res, 200, { projects: [] })
   return json(res, 404, { error: "not part of the local VERIDIAN stand-in" })
 })
 

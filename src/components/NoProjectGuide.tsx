@@ -22,7 +22,7 @@ export function NoProjectGuide({ kind, message, moduleLabel }: { kind: NoProject
   }, [kind, message, moduleLabel]);
   return (
     <div className="max-w-3xl" data-testid="no-project-guide" data-kind={kind}>
-      <ActionFailurePanel failure={failure} entityType="project" retryable={kind === "load-failed"} onRetry={kind === "load-failed" ? () => window.location.reload() : undefined} />
+      <ActionFailurePanel failure={failure} entityType="project" retryable={kind === "load-failed"} onRetry={kind === "load-failed" ? () => window.location.reload() : undefined} quiet={kind !== "load-failed"} />
     </div>
   );
 }
