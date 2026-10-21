@@ -22,7 +22,9 @@ import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-r
 export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<ReportsData>) {
   const selected = data.state === "local" ? data.selected : null;
   const reads: SnapshotRead[] = selected?.kind === "fetch" ? [{ name: selected.name, url: selected.url, validate: isReportBody }] : [];
-  const status = useSnapshotRefresh(shell, reads);
+  // R-C11/R-C15: "Run Report" is a real button -- it asks the server again (the screen used to fetch once, silently, and show no control).
+  const [runKey, setRunKey] = useState(0);
+  const status = useSnapshotRefresh(shell, reads, { reloadKey: runKey });
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
   const online = shell.connectivity === "online";
 
@@ -88,13 +90,28 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
         </nav>
         <div className="min-w-0 space-y-3" data-testid="overview-report">
           {!selected ? (
-            <p className="text-sm text-px-muted">Choose a report.</p>
+            <p className="text-sm text-px-muted" data-testid="overview-report-choose">Choose a report on the left, then press Run Report.</p>
           ) : selected.kind === "navigate" ? (
             <p className="text-sm text-px-muted">{selected.label} has its own screen: <a className="text-px-ink underline" href={selected.href}>open it</a>.</p>
           ) : (
             <>
               <h2 className="text-lg font-semibold text-px-ink">{selected.label}</h2>
               {selected.value === "weekly-project" && !data.weekStart ? <p className="text-sm text-px-muted">This report needs a week start; open it with one chosen on the online Reports screen.</p> : null}
+              <div className="flex flex-wrap items-center gap-3" data-testid="overview-report-actions">
+                <button
+                  type="button"
+                  data-testid="reports-run"
+                  disabled={!online || status === "refreshing"}
+                  onClick={() => setRunKey((k) => k + 1)}
+                  className="rounded-md bg-px-ink px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                >
+                  {status === "refreshing" ? "Running…" : "Run Report"}
+                </button>
+                {!online ? <span className="text-xs text-px-muted">Needs a connection to run again.</span> : null}
+                {(status === "server" || status === "offline" || status === "timeout") && online ? (
+                  <button type="button" data-testid="reports-retry" onClick={() => setRunKey((k) => k + 1)} className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink">Retry</button>
+                ) : null}
+              </div>
               {snap ? (
                 <div data-state="snapshot" className="space-y-3">
                   <div className="flex flex-wrap items-center gap-3">
@@ -116,7 +133,15 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
                         setCopied({ ok: await copyTextToClipboard(text), text });
                       }}
                     >
-                      Copy text for WhatsApp
+                      Share: copy text for WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="overview-report-pdf"
+                      className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs text-px-ink"
+                      onClick={() => window.print()}
+                    >
+                      Export PDF
                     </button>
                   </div>
                   {copied?.ok ? <p className="text-xs text-px-ink" role="status" data-testid="overview-report-copied">Copied. Paste it into WhatsApp.</p> : null}
@@ -132,7 +157,7 @@ export default function ReportsLocalScreen({ shell, data }: ShellScreenProps<Rep
               ) : (
                 <p data-state="none" className="text-sm text-px-muted" data-testid="overview-report-none">
                   {online
-                    ? "Fetching this report from the server…"
+                    ? status === "refreshing" ? "Fetching this report from the server…" : "Press Run Report to fetch this report from the server."
                     : "This report has not been saved on this laptop yet. It will be fetched, and can be exported, once the laptop is connected."}
                 </p>
               )}

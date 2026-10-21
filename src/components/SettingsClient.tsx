@@ -218,6 +218,11 @@ export default function SettingsClient({
               <div className="font-medium text-px-ink">{currency?.baseCurrency?.code ?? "Not set"}</div>
             )}
           </div>
+          {/* R-63: a plain, always-readable line, whatever the role -- the control above is only a drop-down for people who may change it. */}
+          <p className="col-span-2 text-sm text-px-ink sm:col-span-4" data-testid="settings-currency-line">
+            {currencyLoading ? "Currency: loading…" : `Currency: ${currency?.baseCurrency?.code ?? "not set yet"}`}
+            <span className="text-px-muted"> — only an owner or administrator can change it.</span>
+          </p>
         </CardContent>
       </Card>
 

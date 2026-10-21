@@ -145,7 +145,8 @@ describe("with NO network, every screen of the group opens from the laptop's own
     go("/local/settings");
     const { findByTestId, getByTestId } = render(<LocalShell />);
     expect((await findByTestId("settings")).getAttribute("data-state")).toBe("local");
-    expect(getByTestId("settings-currency-code").textContent).toContain("INR");
+    expect(getByTestId("settings-currency-code").textContent).toContain("Currency: INR");
+    expect(getByTestId("settings-currency-code").textContent).toContain("owner or administrator");
     expect(getByTestId("settings-category-list").textContent).toContain("Civil");
     expect(getByTestId("settings-team").textContent).toContain("Mira Manager");
     expect(document.body.textContent).not.toContain("a.example.test");

@@ -35,7 +35,7 @@ export default function SettingsLocalScreen({ data }: ShellScreenProps<SettingsD
         {data.currency.state !== "local" ? (
           <Unavailable m={data.currency} />
         ) : data.currency.value ? (
-          <span data-testid="settings-currency-code">{data.currency.value.code}{data.currency.value.name ? ` (${data.currency.value.name})` : ""}</span>
+          <span data-testid="settings-currency-code">Currency: {data.currency.value.code}{data.currency.value.name ? ` (${data.currency.value.name})` : ""}<span className="text-px-muted"> — only an owner or administrator can change it.</span></span>
         ) : (
           <span className="text-px-muted">Not set</span>
         )}

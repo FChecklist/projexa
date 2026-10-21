@@ -17,9 +17,12 @@ import { refreshSnapshot, snapshotCacheFor, snapshotKey, type RefreshOutcome, ty
 
 export type SnapshotRead = { name: SnapshotName; url: string; validate: (body: unknown) => boolean };
 
-export type RefreshStatus = "idle" | "refreshing" | RefreshOutcome<unknown>["state"];
+export type RefreshStatus = "idle" | "refreshing" | "timeout" | RefreshOutcome<unknown>["state"];
 
-export function useSnapshotRefresh(shell: ShellApi, reads: readonly SnapshotRead[], options: { fetchImpl?: typeof fetch } = {}): RefreshStatus {
+/** A read that has not answered in this long is given up on and SAID so (R-C11: it used to wait for ever). */
+export const SNAPSHOT_READ_TIMEOUT_MS = 45_000;
+
+export function useSnapshotRefresh(shell: ShellApi, reads: readonly SnapshotRead[], options: { fetchImpl?: typeof fetch; reloadKey?: number; timeoutMs?: number } = {}): RefreshStatus {
   const [status, setStatus] = useState<RefreshStatus>("idle");
   const online = shell.connectivity === "online";
   const signature = reads.map((r) => `${snapshotKey(r.name)}@${r.url}`).join("\n");
@@ -32,6 +35,8 @@ export function useSnapshotRefresh(shell: ShellApi, reads: readonly SnapshotRead
     if (!online || !signature) return;
     const controller = new AbortController();
     let cancelled = false;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, options.timeoutMs ?? SNAPSHOT_READ_TIMEOUT_MS);
     void (async () => {
       const { shell: s, reads: rs, fetchImpl } = latest.current;
       setStatus("refreshing");
@@ -39,6 +44,7 @@ export function useSnapshotRefresh(shell: ShellApi, reads: readonly SnapshotRead
       const outcomes = await Promise.all(
         rs.map((r) => refreshSnapshot(cache, r.name, r.url, r.validate as (b: unknown) => b is unknown, { fetchImpl, signal: controller.signal }))
       );
+      clearTimeout(timer);
       if (cancelled) return;
       const states = outcomes.map((o) => o.state);
       if (states.some((st) => st === "fresh" || st === "refused")) {
@@ -49,13 +55,14 @@ export function useSnapshotRefresh(shell: ShellApi, reads: readonly SnapshotRead
       }
       // The least good outcome is the one worth saying.
       const order: RefreshStatus[] = ["refused", "signed_out", "server", "offline", "invalid", "fresh"];
-      setStatus(order.find((o) => states.includes(o as never)) ?? "fresh");
+      setStatus(timedOut && !states.includes("fresh") ? "timeout" : (order.find((o) => states.includes(o as never)) ?? "fresh"));
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       controller.abort();
     };
-  }, [online, signature]);
+  }, [online, signature, options.reloadKey]);
 
   return online ? status : "idle";
 }
@@ -68,6 +75,8 @@ export function refreshNote(status: RefreshStatus, hasSnapshot: boolean): string
     case "server":
     case "offline":
       return hasSnapshot ? "The server is not answering just now, so these are the figures last saved on this laptop." : "The server is not answering just now. The figures will appear once it does.";
+    case "timeout":
+      return hasSnapshot ? "The server took too long, so these are the figures last saved on this laptop. Press Run Report to try again." : "The server took too long to answer. Press Run Report to try again.";
     case "signed_out":
       return "Sign in again to bring these figures up to date.";
     case "refused":
