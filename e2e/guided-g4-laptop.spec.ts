@@ -50,7 +50,8 @@ test.describe("G4 laptop faults", () => {
     await expect(note.getByTestId("guided-error-steps")).toContainText("connect this laptop to the internet");
     await goOnline(context, l.net, l.app);
     await expect(page.getByTestId("outbox-waiting")).toHaveCount(0, { timeout: 120_000 });
-    expect(l.sync.pushes.filter((p) => p.function_id === "update_line_item_budget")).toHaveLength(1);
+    // the note goes as soon as the op is sent, the push is recorded a moment later: wait for it rather than read it once.
+    await expect.poll(() => l.sync.pushes.filter((p) => p.function_id === "update_line_item_budget").length, { timeout: 60_000 }).toBe(1);
   });
 
   test("a queued change the server turns down: 'Line budget was not saved' names the line, shows the typed value, and one button re-enters it", async ({ page, context }) => {
@@ -92,7 +93,8 @@ test.describe("G4 laptop faults", () => {
 
   test("a sync conflict: both values are shown with Keep mine / Keep theirs inside the guided panel", async ({ page, context }) => {
     const l = await laptop(page, context, "manager");
-    l.sync.answers.set("update_line_item_budget", { status: "conflict" });
+    // the server's row has a different budget % for the same line: both people changed the same field -> the card (not a silent merge)
+    l.sync.answers.set("update_line_item_budget", { status: "conflict", theirs: { budget_percentage: "60" } });
     await openBudget(page);
     await typePercent(page, "dl-line-1", "35");
     await page.getByTestId("scope-budget-dl-line-1-save").click();
