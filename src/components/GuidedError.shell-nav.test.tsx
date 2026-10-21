@@ -11,7 +11,7 @@ import { setUnmatchedLogger } from "@/lib/error-guide/match";
 import type { GuideContext } from "@/lib/error-guide/types";
 
 // NOTE: next/navigation is deliberately NOT mocked here: there is no app router, which is the situation this file is about.
-const ctx = (over: Partial<GuideContext> = {}): GuideContext => ({ route: "/permits/new", search: "?projectId=p1", projectId: "p1", method: "POST", apiPath: "/api/permits", status: 404, serverMessage: "BOQ not found", ...over });
+const ctx = (over: Partial<GuideContext> = {}): GuideContext => ({ route: "/permits/new", search: "?projectId=p1", projectId: "p1", method: "POST", apiPath: "/api/permits", status: 404, serverMessage: "That could not be found", ...over });
 
 beforeEach(() => {
   sessionStorage.clear();
