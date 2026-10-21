@@ -19,7 +19,7 @@ test.setTimeout(300_000);
 
 const NO_LOCAL = () => { try { localStorage.setItem("px-local-first-off", "1"); } catch { /* ignore */ } };
 
-async function signIn(page: Page, who: keyof typeof USERS, opts: { stayOnPage?: boolean; leaves?: string | RegExp | null } = {}) {
+async function signIn(page: Page, who: keyof typeof USERS, opts: { stayOnPage?: boolean; leaves?: string | RegExp | ((u: URL) => boolean) | null } = {}) {
   await signInByCode(page, USERS[who].email, { code: realTestCode, timeoutMs: 90_000, ...opts });
 }
 
