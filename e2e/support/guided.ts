@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { USERS, type UserKey } from "../users";
 import { signInByCode, realTestCode } from "./sign-in";
 
@@ -105,6 +105,12 @@ export async function expectGuidedPanel(page: Page, want: PanelExpect = {}): Pro
   const steps = await p.getByTestId("guided-error-steps").locator("li").count();
   expect(steps, "1 to 4 numbered steps").toBeGreaterThanOrEqual(1);
   expect(steps).toBeLessThanOrEqual(4);
+  {
+    const txt = async (id: string) => ((await p.getByTestId(id).first().innerText().catch(() => "")) || "").split(/\s+/).join(" ").trim();
+    const fix = p.getByTestId("guided-error-fix").first();
+    const rec = { test: test.info().title, file: test.info().file.split("e2e").pop(), guideId: await p.getAttribute("data-guide-id"), title: await txt("guided-error-title"), what: await txt("guided-error-what"), why: await txt("guided-error-why"), where: await txt("guided-error-where"), steps: await p.getByTestId("guided-error-steps").locator("li").allInnerTexts(), fixLabel: await txt("guided-error-fix"), fixHref: await fix.getAttribute("href").catch(() => null), url: page.url() };
+    (await import("node:fs")).appendFileSync("C:/ct/auditw/guided-dump.jsonl", JSON.stringify(rec) + String.fromCharCode(10));
+  }
   if (want.id) await expect(p).toHaveAttribute("data-guide-id", want.id);
   if (want.title) await expect(p.getByTestId("guided-error-title")).toContainText(want.title);
   if (want.what) await expect(p.getByTestId("guided-error-what")).toContainText(want.what);
@@ -129,6 +135,10 @@ export async function pressFix(page: Page): Promise<void> {
 export async function backFromStrip(page: Page, label: RegExp | string): Promise<void> {
   const strip = page.getByTestId("return-strip");
   await expect(strip, "the way-back strip").toBeVisible({ timeout: 20_000 });
+  {
+    const strip = ((await page.getByTestId("return-strip").innerText().catch(() => "")) || "").split(/\s+/).join(" ").trim();
+    (await import("node:fs")).appendFileSync("C:/ct/auditw/guided-dump.jsonl", JSON.stringify({ test: test.info().title, file: test.info().file.split("e2e").pop(), backStrip: strip, backLabel: ((await page.getByTestId("return-strip-back").innerText().catch(() => "")) || "").trim() }) + String.fromCharCode(10));
+  }
   await expect(page.getByTestId("return-strip-back")).toContainText(label);
   await page.getByTestId("return-strip-back").click();
 }

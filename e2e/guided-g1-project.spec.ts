@@ -40,7 +40,7 @@ test("P-01 a name over 200 letters: told in full, the name box outlined, nothing
   await page.locator("#name").fill(long);
   await page.locator("#description").fill("kept while the name is corrected");
   await save(page).click();
-  const p = await expectGuidedPanel(page, { id: "project-name-too-long-form", what: /200 letters/, where: /Project Name/ });
+  const p = await expectGuidedPanel(page, { id: "project-name-too-long-form", what: /most that can be saved is 200/, where: /Project Name/ });
   await expect(p.getByTestId("guided-error-fix")).toBeVisible();
   await expectHighlighted(page, "#name");
   expect(posted, "nothing was sent").toBe(0);
@@ -95,7 +95,7 @@ test("P-04 the server is down when Save is pressed: the panel says it may not be
   await page.locator("#name").fill(name);
   const fail = await failOnce(page, "/api/projects", "POST", 503, { error: "The construction data service did not respond in time." });
   await save(page).click();
-  await expectGuidedPanel(page, { what: /did not respond in time/, retry: true });
+  await expectGuidedPanel(page, { what: /may or may not have been saved/, retry: true });
   expect(fail.hits()).toBe(1);
   await expect(page.locator("#name")).toHaveValue(name);
   await panel(page).getByTestId("guided-error-retry").click();
@@ -154,7 +154,7 @@ test("P-07 the project list cannot be read: the panel, Try again, then the list"
   const page = S.page;
   const fail = await failOnce(page, "/api/projects/overview", "GET", 503, { error: "The construction data service did not respond in time." });
   await page.goto("/projects");
-  await expectGuidedPanel(page, { what: /did not respond in time/, retry: true });
+  await expectGuidedPanel(page, { what: /may or may not have been saved/, retry: true });
   expect(fail.hits()).toBe(1);
   await panel(page).getByTestId("guided-error-retry").click();
   await expect(page.getByTestId("guided-error")).toHaveCount(0, { timeout: 30_000 });

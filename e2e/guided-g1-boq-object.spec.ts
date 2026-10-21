@@ -234,7 +234,7 @@ test("O-15 site instruction from a BOQ: the link carries the BOQ; a .txt file is
   await page.locator("#toContractor").fill(`${AUDIT} contractor`);
   await page.locator("#description").fill(`${AUDIT} instruction`);
   await page.locator("#file").setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("not a pdf") });
-  await expectGuidedPanel(page, { id: "si-file-invalid", what: /is not a PDF or a photo/, where: /Instruction file/ });
+  await expectGuidedPanel(page, { id: "si-fault-file-type", what: /is not a PDF or a photo/, where: /Instruction file/ });
   await expectHighlighted(page, "#file");
   await expect(page.locator("#toContractor")).toHaveValue(`${AUDIT} contractor`);
   const pdf = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF");
