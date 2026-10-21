@@ -127,7 +127,13 @@ export function installClientLog(): () => void {
     win.addEventListener("unhandledrejection", onRejection);
 
     // 2) every failed /api call + every write
-    const wrapped = wrapFetch(originalFetch, { capture, origin: () => win.location.origin, getProjectId: currentProjectId });
+    let leaving = false;
+    const onLeave = () => { leaving = true; };
+    const onBack = () => { leaving = false; };
+    win.addEventListener("pagehide", onLeave);
+    win.addEventListener("beforeunload", onLeave);
+    win.addEventListener("pageshow", onBack);
+    const wrapped = wrapFetch(originalFetch, { capture, origin: () => win.location.origin, getProjectId: currentProjectId, isOnline: () => win.navigator.onLine !== false, isLeaving: () => leaving });
     win.fetch = wrapped;
 
     // 3) console.error as a warning-level line (React and our own code log real problems there). Never re-enters itself.
@@ -218,6 +224,9 @@ export function installClientLog(): () => void {
       win.removeEventListener("online", onOnline);
       win.removeEventListener("popstate", noteRoute);
       win.removeEventListener("pagehide", onHide);
+      win.removeEventListener("pagehide", onLeave);
+      win.removeEventListener("beforeunload", onLeave);
+      win.removeEventListener("pageshow", onBack);
       win.document.removeEventListener("visibilitychange", onHide);
       win.document.removeEventListener("click", onClick, true);
       win.document.removeEventListener("submit", onSubmit, true);
@@ -274,6 +283,18 @@ export function logRenderError(error: Error & { digest?: string }, where?: strin
 export function logAction(actionName: string, outcome: "ok" | "failed", durationMs?: number | null): void {
   try {
     ensure()?.capture.captureAction({ actionName, outcome, durationMs: durationMs ?? null });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Like logAction, but NEVER installs the log: if nothing has installed it yet this does nothing. For callers on the first-load / workspace
+ * prepare path (the outbox), which must not patch fetch, open a database or add listeners as a side effect of reporting.
+ */
+export function logActionIfInstalled(actionName: string, outcome: "ok" | "failed", durationMs?: number | null): void {
+  try {
+    installed?.capture.captureAction({ actionName, outcome, durationMs: durationMs ?? null });
   } catch {
     /* ignore */
   }

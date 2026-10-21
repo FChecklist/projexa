@@ -158,7 +158,7 @@ describe("System log: Project timeline", () => {
     const list = await view.findByTestId("timeline-list");
     const rows = within(list).getAllByRole("listitem");
     expect(rows.map((r) => r.getAttribute("data-testid"))).toEqual(["timeline-action", "timeline-error"]);
-    expect(rows[0]!.textContent).toContain("Create Budget — done (0.4 s)");
+    expect(rows[0]!.textContent).toContain("Created a budget — worked (0.4 s)");
     expect(rows[1]!.textContent).toContain("Problem: Saving or changing Budgets did not work");
     expect(a.calls.some((c) => c.startsWith("/api/client-logs/timeline?projectId=p1"))).toBe(true);
   });
@@ -179,10 +179,19 @@ describe("report helpers", () => {
     expect(issue.title).toBe("Something odd");
     expect(buildCopyReport(issue)).toContain("(no steps were recorded)");
   });
+  test("timeline writes read in plain words, older stored names too, in the order given", () => {
+    const rows = timelineEntries([
+      { id: "1", kind: "action", action_name: "Saved a BOQ", outcome: "ok", occurred_at: "a" },
+      { id: "2", kind: "action", action_name: "Update · scope", outcome: "failed", occurred_at: "b" },
+      { id: "3", kind: "action", action_name: "Create or run · scope / approve", outcome: "ok", occurred_at: "c" },
+      { id: "4", kind: "action", action_name: "Create Permit", outcome: "ok", occurred_at: "d" },
+    ]);
+    expect(rows.map((r) => r.text)).toEqual(["Saved a BOQ — worked", "Saved a BOQ — failed", "Approved a BOQ — worked", "Created a permit — worked"]);
+  });
   test("timeline entries mark errors and failed actions", () => {
     const [a, b] = timelineEntries([{ id: "1", kind: "action", action_name: "Approve", outcome: "failed", occurred_at: "x" }, { id: "2", kind: "render_error", route: "/scope/3", occurred_at: "y" }]);
     expect(a!.isError).toBe(false);
-    expect(a!.text).toBe("Approve — did not go through");
+    expect(a!.text).toBe("Approve — failed");
     expect(b!.isError).toBe(true);
     expect(b!.text).toBe('The screen "Scope" could not open');
   });
