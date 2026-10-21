@@ -104,6 +104,8 @@ export default function AttendanceSheetClient({
   const draftKey = `attendance-sheet:${projectId}:${attendanceDate}`;
   const sheetDraft = useDraft<{ marks: Record<string, Mark> }>(draftKey, { marks: {} });
   const draftApplied = useRef(false);
+  // set by the person's own marking only, so loading the server's rows never writes a draft
+  const edited = useRef(false);
   const [savedLine, setSavedLine] = useState<string | null>(null);
 
   // A past date is a record: it opens read-only and takes an explicit Edit.
@@ -148,6 +150,11 @@ export default function AttendanceSheetClient({
 
   useEffect(() => { void load(); }, [load]);
 
+  // Every mark the person makes is kept on this device until the sheet is saved.
+  useEffect(() => {
+    if (edited.current) sheetDraft.set({ marks });
+  }, [marks]);
+
   // Put the unsaved marks back once the sheet has loaded (the server's rows come first, the person's own marks win over them).
   useEffect(() => {
     if (loading || !sheetDraft.restored || draftApplied.current) return;
@@ -170,16 +177,14 @@ export default function AttendanceSheetClient({
   function setStatus(rosterId: string, status: AttendanceStatus) {
     if (!editing) return;
     setSheetFault(null);
-    const next = { ...marks, [rosterId]: { status, hoursWorked: marks[rosterId]?.hoursWorked ?? "" } };
-    setMarks(next);
-    sheetDraft.set({ marks: next });
+    edited.current = true;
+    setMarks((prev) => ({ ...prev, [rosterId]: { status, hoursWorked: prev[rosterId]?.hoursWorked ?? "" } }));
   }
 
   function setHours(rosterId: string, hoursWorked: string) {
     setSheetFault(null);
-    const next = { ...marks, [rosterId]: { status: marks[rosterId]?.status ?? null, hoursWorked } };
-    setMarks(next);
-    sheetDraft.set({ marks: next });
+    edited.current = true;
+    setMarks((prev) => ({ ...prev, [rosterId]: { status: prev[rosterId]?.status ?? null, hoursWorked } }));
   }
 
   // P / H / A anywhere in a worker's row marks that worker, so a whole sheet
@@ -232,6 +237,7 @@ export default function AttendanceSheetClient({
       );
       // The sheet stays on screen in display mode: the supervisor's next act
       // is usually to check what was recorded, not to start again.
+      edited.current = false;
       sheetDraft.clear();
       setEditing(false);
     } catch (err) {
@@ -245,6 +251,7 @@ export default function AttendanceSheetClient({
   function discardEdits() {
     setConfirmingDiscard(false);
     setEditing(false);
+    edited.current = false;
     sheetDraft.clear();
     void load();
   }
