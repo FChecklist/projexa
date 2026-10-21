@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { GuidedPanel, type PanelAction } from "@/components/GuidedPanel";
 import { useOutboxState } from "@/lib/local-first/use-outbox-state";
 import { draftHref, draftText } from "@/lib/local-first/outbox-drafts";
 import type { Outbox, OutboxConflict, ResolveChoice } from "@/lib/local-first/outbox";
@@ -74,67 +75,109 @@ function useAct() {
   return { busy, failed, act };
 }
 
+// GUIDED ERRORS (G4): every card below is the same four-part panel the rest of the app uses -- what happened, why, what to do, the exact place to
+// fix it -- with the card's own buttons as its actions. The panel's `ctx.route` is only used for the report and the way back.
+const here = (): { route: string; search: string } => {
+  if (typeof window === "undefined") return { route: "/", search: "" };
+  return { route: window.location.pathname, search: window.location.search };
+};
+
 function ConflictRow({ conflict, outbox }: { conflict: OutboxConflict; outbox: Outbox }) {
   const { busy, failed, act } = useAct();
   const decide = (choice: ResolveChoice) => act(() => outbox.resolve(conflict.opId, choice));
+  const screen = here();
 
   if (conflict.kind === "deleted") {
+    const actions: PanelAction[] = [
+      conflict.canRecreate
+        ? { id: "keep-new", primary: true, label: "Keep my version as a new one", disabled: busy, onClick: () => void decide("keep_as_new") }
+        : { id: "keep-text", primary: true, label: "Keep my text", disabled: busy, onClick: () => void decide("keep_text") },
+      { id: "discard", label: "Discard", disabled: busy, onClick: () => void decide("discard") },
+    ];
     return (
-      <li className="space-y-1.5 border-t border-black/10 pt-2" data-testid="outbox-deleted">
-        <p className="font-medium text-px-ink">
-          {conflict.label ? `${conflict.label}: this` : "This"} was deleted by someone else while you were working, so your change could not be saved.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {conflict.canRecreate ? (
-            <Button size="sm" disabled={busy} onClick={() => void decide("keep_as_new")}>Keep my version as a new one</Button>
-          ) : (
-            <Button size="sm" disabled={busy} onClick={() => void decide("keep_text")}>Keep my text</Button>
-          )}
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void decide("discard")}>Discard</Button>
-        </div>
-        {failed ? <p role="alert" className="text-px-error">{failed}</p> : null}
+      <li data-testid="outbox-deleted">
+        <GuidedPanel
+          ctx={{ ...screen, code: "OUTBOX_DELETED", serverMessage: `${conflict.label ? `${conflict.label}: this` : "This"} was deleted by someone else while you were working, so your change could not be saved.` }}
+          actions={actions}
+          noCopy
+        >
+          {failed ? <p role="alert" className="text-px-error">{failed}</p> : null}
+        </GuidedPanel>
       </li>
     );
   }
 
   const diff = differences(conflict.local, conflict.server?.data, conflict.fields);
   return (
-    <li className="space-y-1.5 border-t border-black/10 pt-2" data-testid="outbox-conflict">
-      <p className="font-medium text-px-ink">
-        {conflict.label ? `${conflict.label}: someone` : "Someone"} else changed the same thing while you were working.
-      </p>
-      {diff.length > 0 ? (
-        <ul className="space-y-0.5 text-px-muted">
-          {diff.map((d) => <li key={d.label}>{d.label}: you wrote <b>{d.mine}</b>, they wrote <b>{d.theirs}</b></li>)}
-        </ul>
-      ) : null}
-      <div className="flex gap-2">
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void decide("keep_theirs")}>Keep theirs</Button>
-        <Button size="sm" disabled={busy} onClick={() => void decide("keep_mine")}>Keep mine</Button>
-      </div>
-      {failed ? <p role="alert" className="text-px-error">{failed}</p> : null}
+    <li data-testid="outbox-conflict">
+      <GuidedPanel
+        ctx={{ ...screen, code: "OUTBOX_CONFLICT", serverMessage: `${conflict.label ? `${conflict.label}: someone` : "Someone"} else changed the same thing while you were working.` }}
+        actions={[
+          { id: "keep-theirs", label: "Keep theirs", disabled: busy, onClick: () => void decide("keep_theirs") },
+          { id: "keep-mine", primary: true, label: "Keep mine", disabled: busy, onClick: () => void decide("keep_mine") },
+        ]}
+        noCopy
+      >
+        {diff.length > 0 ? (
+          <ul className="space-y-0.5 text-px-muted">
+            {diff.map((d) => <li key={d.label}>{d.label}: you wrote <b>{d.mine}</b>, they wrote <b>{d.theirs}</b></li>)}
+          </ul>
+        ) : null}
+        {failed ? <p role="alert" className="text-px-error">{failed}</p> : null}
+      </GuidedPanel>
     </li>
   );
+}
+
+/** The values the person typed, each with its field's name, for the "what you typed" block of a refused change. */
+function typedValues(params: Record<string, unknown>): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (ID_LIKE.test(k)) continue;
+    if (typeof v === "number" && Number.isFinite(v)) out.push({ label: humanise(k), value: String(v) });
+    else if (typeof v === "string" && v.trim() !== "") out.push({ label: humanise(k), value: v });
+    if (out.length === 8) break;
+  }
+  return out;
 }
 
 function DraftCard({ draft, outbox }: { draft: OutboxDraft; outbox: Outbox }) {
   const { busy, failed, act } = useAct();
   const href = draftHref(draft);
   const text = href ? "" : draftText(draft);
+  const typed = typedValues(draft.params);
+  const screen = here();
+  const fix = href
+    ? {
+        label: draft.openAt ? "Go to it and re-enter your values" : "Edit again",
+        href,
+        where: draft.subject ? `${draft.label ?? "The change"} > ${draft.subject}` : draft.label ?? "The screen that edits it",
+        focus: undefined as string | undefined,
+      }
+    : null;
   return (
-    <div className="space-y-1.5 border-t border-black/10 pt-2 first:border-t-0 first:pt-0" data-testid="outbox-draft">
-      <p role="alert" className="text-px-ink">{draft.message}</p>
-      <p className="text-px-muted">What you typed is kept on this laptop until you send it again or discard it.</p>
-      {text ? <p className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-black/10 p-1.5 text-px-muted" data-testid="outbox-draft-text">{text}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        {href ? (
-          <Button size="sm" asChild><Link href={href}>Edit again</Link></Button>
-        ) : text && typeof navigator !== "undefined" && navigator.clipboard ? (
-          <Button size="sm" onClick={() => void navigator.clipboard.writeText(text).catch(() => {})}>Copy text</Button>
+    <div data-testid="outbox-draft">
+      <GuidedPanel
+        ctx={{ ...screen, code: "OUTBOX_REFUSED", serverMessage: draft.message }}
+        title={draft.label ? `${draft.label} was not saved` : "A change was not saved"}
+        what={draft.message}
+        fix={fix}
+        noCopy
+        actions={[
+          ...(!href && text && typeof navigator !== "undefined" && navigator.clipboard ? [{ id: "copy-text", primary: true, label: "Copy text", onClick: () => void navigator.clipboard.writeText(text).catch(() => {}) } as PanelAction] : []),
+          { id: "discard", label: "Discard", disabled: busy, onClick: () => void act(() => outbox.discardDraft(draft.opId)) },
+        ]}
+      >
+        {draft.subject ? <p data-testid="outbox-draft-subject"><span className="font-medium">Which one: </span>{draft.subject}</p> : null}
+        <p className="text-px-muted">What you typed is kept on this laptop until you send it again or discard it.</p>
+        {typed.length > 0 && href ? (
+          <dl data-testid="outbox-draft-values" className="rounded border border-black/10 bg-white/60 p-1.5">
+            {typed.map((t) => <div key={t.label} className="flex gap-2"><dt className="text-px-muted">{t.label}:</dt><dd className="font-medium">{t.value}</dd></div>)}
+          </dl>
         ) : null}
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(() => outbox.discardDraft(draft.opId))}>Discard</Button>
-      </div>
-      {failed ? <p role="alert" className="text-px-error">{failed}</p> : null}
+        {text ? <p className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-black/10 p-1.5 text-px-muted" data-testid="outbox-draft-text">{text}</p> : null}
+        {failed ? <p role="alert" className="text-px-error">{failed}</p> : null}
+      </GuidedPanel>
     </div>
   );
 }
@@ -223,21 +266,38 @@ export function OutboxAttention({ outbox: injected, path: pathProp }: { outbox?:
     && drafts.length === 0 && checking.length === 0 && attention.length === 0;
   if (nothing) return null;
 
+  const screen = here();
+  const waitingCode = state.updateRequired ? "OUTBOX_UPDATE_REQUIRED" : state.status === "not_linked" ? "OUTBOX_NOT_LINKED" : state.status === "signed_out" ? "OUTBOX_SIGNED_OUT" : "OUTBOX_OFFLINE";
+
   return (
-    <section aria-label="Changes made on this laptop" data-testid="outbox-attention" className="fixed bottom-4 right-4 z-[90] max-w-sm space-y-2 rounded-lg border border-black/10 bg-white p-3 text-[13px] shadow-lg">
-      {waitingLine ? <p role="status" className="text-px-muted">{waitingLine}</p> : null}
-      {state.status === "not_linked" ? (
-        <Button size="sm" variant="outline" onClick={() => outbox.resume()}>Try again</Button>
+    <section aria-label="Changes made on this laptop" data-testid="outbox-attention" className="fixed bottom-4 right-4 z-[90] max-h-[85vh] w-[26rem] max-w-[calc(100vw-2rem)] space-y-2 overflow-auto rounded-lg border border-black/10 bg-white p-3 text-[13px] shadow-lg">
+      {waitingLine ? (
+        <div data-testid="outbox-waiting">
+          <GuidedPanel
+            ctx={{ ...screen, code: waitingCode, serverMessage: waitingLine }}
+            noCopy
+            actions={state.status === "not_linked" ? [{ id: "retry", label: "Try again", primary: true, onClick: () => outbox.resume() }] : []}
+          />
+        </div>
       ) : null}
 
-      {checking.map((c) => <p key={c.opId} className="text-px-muted" data-testid="outbox-checking">{c.message}</p>)}
+      {checking.map((c) => (
+        <div key={c.opId} data-testid="outbox-checking">
+          <GuidedPanel ctx={{ ...screen, code: "OUTBOX_CHECKING", serverMessage: c.message }} noCopy />
+        </div>
+      ))}
 
       {drafts.map((d) => <DraftCard key={d.opId} draft={d} outbox={outbox} />)}
 
       {notices.map((n) => (
-        <div key={n.opId} className="flex items-start justify-between gap-2 border-t border-black/10 pt-2 first:border-t-0 first:pt-0" data-testid="outbox-notice">
-          <p role="alert" className="text-px-ink">{n.message}</p>
-          <Button size="sm" variant="ghost" onClick={() => void outbox.dismissNotice(n.opId)}>Dismiss</Button>
+        <div key={n.opId} data-testid="outbox-notice">
+          <GuidedPanel
+            ctx={{ ...screen, code: "OUTBOX_REFUSED", serverMessage: n.message }}
+            title="A change was not saved"
+            what={n.message}
+            noCopy
+            actions={[{ id: "dismiss", label: "Dismiss", onClick: () => void outbox.dismissNotice(n.opId) }]}
+          />
         </div>
       ))}
 
@@ -248,23 +308,33 @@ export function OutboxAttention({ outbox: injected, path: pathProp }: { outbox?:
       ) : null}
 
       {attention.map((a) => (
-        <div key={a.opId} className="space-y-1.5 border-t border-black/10 pt-2" data-testid="outbox-needs-you">
-          <p className="text-px-ink">{a.message}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => void outbox.retry(a.opId)}>Send again</Button>
-            <Button size="sm" variant="outline" onClick={() => void outbox.discard(a.opId)}>Stop and keep my text</Button>
-          </div>
+        <div key={a.opId} data-testid="outbox-needs-you">
+          <GuidedPanel
+            ctx={{ ...screen, code: "OUTBOX_NEEDS_YOU", serverMessage: a.message }}
+            noCopy
+            actions={[
+              { id: "send-again", primary: true, label: "Send again", onClick: () => void outbox.retry(a.opId) },
+              { id: "stop", label: "Stop and keep my text", onClick: () => void outbox.discard(a.opId) },
+            ]}
+          />
         </div>
       ))}
 
       {state.blocked.map((b) => (
-        <div key={b.opId} className="flex items-start justify-between gap-2 border-t border-black/10 pt-2" data-testid="outbox-blocked">
-          <p className="text-px-ink">{b.message}</p>
-          <Button size="sm" variant="outline" onClick={() => void outbox.discard(b.opId)}>Keep my text and stop</Button>
+        <div key={b.opId} data-testid="outbox-blocked">
+          <GuidedPanel
+            ctx={{ ...screen, code: "OUTBOX_BLOCKED", serverMessage: b.message }}
+            noCopy
+            actions={[{ id: "stop", primary: true, label: "Keep my text and stop", onClick: () => void outbox.discard(b.opId) }]}
+          />
         </div>
       ))}
 
-      {storageLine ? <p className="text-px-muted" data-testid="outbox-storage">{storageLine}</p> : null}
+      {storageLine ? (
+        <div data-testid="outbox-storage">
+          <GuidedPanel ctx={{ ...screen, code: "STORAGE_SHORT", serverMessage: storageLine }} noCopy />
+        </div>
+      ) : null}
     </section>
   );
 }

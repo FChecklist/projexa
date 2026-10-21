@@ -37,3 +37,25 @@ the form, field messages beside bad inputs, and a "Back to what you were doing" 
 - To keep a form's values across leaving: `const draft = useDraft("my-form", { a: "", b: "" })`, read `draft.value`, write `draft.set({ a })`, call
   `draft.clear()` after a successful save. Reference: `ProjectCreateClient`.
 - Error boundaries: `(app)/error.tsx` shows the panel (guide `screen-crashed`); `global-error.tsx` has no router, so it is the same four parts in plain markup.
+
+## Group G4: sign-in, sessions, the laptop shell, browser problems, 404/403, AI unavailable
+
+Guides: `src/lib/error-guide/catalogue/g4-session-laptop.ts` (codes only G4 screens raise: `LOGIN_*`, `SESSION_*`, `INVITE_*`, `ORG_SETUP_*`, `OUTBOX_*`, `LAPTOP_*`, `BROWSER_*`, `AI_PILL_UNAVAILABLE`, `PAGE_*`). Panel for places without the app router (the on-laptop shell, the sign-in page): `src/components/GuidedPanel.tsx` (same four parts as `GuidedError`, plain links, extra `actions`).
+
+| Fault | Where it is handled | Test |
+| --- | --- | --- |
+| empty / mistyped / misspelled e-mail, empty or short code | `app/login/page.tsx`, `lib/auth/email-code-login.ts` (`suspectedEmailTypo`) | `e2e/guided-g4-sign-in.spec.ts`, `email-code-login.test.ts`, `browser-check.test.ts` |
+| wrong / expired / used code, tries left | login page | guided-g4-sign-in |
+| code not arriving (cooldown, spam, change e-mail), resend wait | login page | guided-g4-sign-in |
+| too many wrong tries (15 min, survives reload), Auth 429, send failure, offline first sign-in | login page | guided-g4-sign-in |
+| sign-in ended while a form is open; signed out in another tab | `SessionGuard`, `lib/error-guide/form-snapshot.ts`, `M24Shell` (keeps `?redirectTo=` path + query) | guided-g4-session, `form-snapshot.test.ts` |
+| deep link with a query while signed out | middleware + login page | guided-g4-session |
+| no organisation yet / set-up failed | `OrgEnsure` | guided-g4-session |
+| invitation not valid / closed / other e-mail / offline | `app/invite/[token]/page.tsx`, `lib/org/invite-failure.ts` | guided-g4-session, `browser-check.test.ts` |
+| offline write waiting, change refused ("Line budget was not saved"), conflict, deleted, needs-you, update required, signed out, not linked | `OutboxAttention`, `ScopeBudgetScreen` (`?draft=&line=`) | `e2e/guided-g4-laptop.spec.ts`, `OutboxAttention.test.tsx` |
+| project not yet copied, record not in the copy, role too low, amounts hidden | `components/local-first/ShellStateNote.tsx` (all three `StateMessage` helpers) | guided-g4-laptop |
+| cookies blocked, site data blocked, store full, no IndexedDB, browser too old | `lib/browser-check.ts`, `BrowserNotice` (sign-in page) | `browser-check.test.ts` |
+| AI unavailable (Copilot buttons, Discuss) with the matching ordinary screen | `CopilotClient`, `VeriComposer`, `lib/copilot-alternatives.ts` | guided-g4-session |
+| 404, no access, System log for a non-owner | `app/not-found.tsx`, `NotFoundGuide`, `AccessDenied` | guided-g4-session |
+
+A refused queued change carries `openAt` (the screen that corrects it) and `subject` (the exact record in words) from the writer that queued it (`EnqueueInput`); a writer that sets them gets the exact "Go to it and re-enter your values" button. Only the Line budget writer sets them so far.

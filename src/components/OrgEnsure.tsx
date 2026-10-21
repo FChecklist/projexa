@@ -9,12 +9,15 @@ import { useRouter } from "next/navigation";
 import { browserEnsureDeps } from "@/lib/org/browser-ensure";
 import { reportClientError } from "@/lib/local-first/client-error-report";
 import { loadShell, resetShellStore, useShell } from "@/lib/shell-store";
-import { ensureOrganization, ENSURE_FAILED_MESSAGE, NO_ORGANIZATION_PATTERN } from "@/lib/org/ensure-org-client";
+import { ensureOrganization, NO_ORGANIZATION_PATTERN } from "@/lib/org/ensure-org-client";
+import { GuidedPanel } from "@/components/GuidedPanel";
+import { currentScreen } from "@/lib/error-guide/context";
 
 export function OrgEnsure() {
   const router = useRouter();
   const shell = useShell({ enabled: false });
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [setting, setSetting] = useState(false);
   const running = useRef(false);
   const autoTried = useRef(false); // the automatic run happens once per mount: a still-failing shell must not loop
 
@@ -23,12 +26,13 @@ export function OrgEnsure() {
   const run = useCallback(async () => {
     if (running.current) return;
     running.current = true;
-    setFailed(false);
+    setFailed(null);
+    setSetting(true);
     try {
       const r = await ensureOrganization(browserEnsureDeps());
       if (r.status === "failed") {
         reportClientError("org-provision", new Error(r.error), "OrgEnsure");
-        setFailed(true);
+        setFailed(r.error);
         return;
       }
       if (r.status === "provisioned") {
@@ -38,6 +42,7 @@ export function OrgEnsure() {
       }
     } finally {
       running.current = false;
+      setSetting(false);
     }
   }, [router]);
 
@@ -48,13 +53,19 @@ export function OrgEnsure() {
     }
   }, [noOrganization, run]);
 
-  if (!failed) return null;
+  // GUIDED ERRORS (G4): while the set-up runs the person is told so (a calm note); if it fails they get the full panel with Try again. Nothing otherwise.
+  if (!failed && !setting) return null;
+  const screen = currentScreen();
   return (
-    <div role="alert" className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-3 border-b border-px-error-border bg-px-error-light px-4 py-2 text-sm text-px-error">
-      <span>{ENSURE_FAILED_MESSAGE}</span>
-      <button type="button" className="rounded border border-px-error-border px-2 py-0.5 font-medium" onClick={() => void run()}>
-        Try again
-      </button>
+    <div className="fixed inset-x-0 top-0 z-50 mx-auto max-w-xl p-3" data-testid="org-ensure">
+      <GuidedPanel
+        ctx={{ route: screen.route, search: screen.search, code: failed ? "ORG_SETUP_FAILED" : "ORG_SETUP_RUNNING", serverMessage: failed ?? undefined }}
+        className="bg-white shadow-lg"
+        fix={null}
+        noCopy={!failed}
+        actions={failed ? [{ id: "retry", label: "Try again", primary: true, onClick: () => void run() }] : []}
+        progress={failed ? undefined : { label: "Creating your organisation..." }}
+      />
     </div>
   );
 }

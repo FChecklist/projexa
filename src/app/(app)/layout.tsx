@@ -9,6 +9,7 @@ import { OutboxAttention } from "@/components/OutboxAttention";
 import { AiAttach } from "@/lib/local-first/ai/AiAttach";
 import { LocalFirstDefault } from "@/components/local-first/LocalFirstDefault";
 import { ReturnStrip } from "@/components/ReturnStrip";
+import { SessionGuard } from "@/components/SessionGuard";
 import { LocalShellHandoff } from "@/components/local-first/LocalShellHandoff";
 
 // R52 PHASE A/B -- this layout now mounts the M24 shell (claude_log id=13,
@@ -64,6 +65,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <M24Shell>
           {/* GUIDED ERRORS: "Back to <what you were doing>" after a fix link, and ?focus= highlighting; renders nothing without a trail. */}
           <ReturnStrip />
+          {/* GUIDED ERRORS (G4): puts back what was typed when a sign-in ended mid-work; renders nothing otherwise. */}
+          <SessionGuard />
           {children}
         </M24Shell>
         <WorkspacePrepare />

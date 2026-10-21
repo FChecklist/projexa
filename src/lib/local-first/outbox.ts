@@ -73,6 +73,13 @@ export type EnqueueInput = {
   /** Words for the person ("New RFI"): used if the change has to be undone. */
   label?: string;
   /**
+   * GUIDED ERRORS: where to correct this change if the server turns it down -- the app path of the screen that edits it, WITHOUT the draft marker
+   * (it is added when the person presses "Edit again"), e.g. "/scope/abc/budget?projectId=p1&line=l9". And `subject`: the exact record in words
+   * ("Item 3.2, Skirting 100 mm"), so the card says WHICH line, not just "a change".
+   */
+  openAt?: string;
+  subject?: string;
+  /**
    * The edited fields as the FORM LOADED them (the version `record.baseVersion` names). The base of the three-way merge;
    * without it, the laptop row's values at enqueue are used (they are the same unless the row was refreshed meanwhile).
    */
@@ -519,6 +526,7 @@ export function createOutbox(options: OutboxOptions): Outbox {
       ...(op.record ? { record: { kind: op.record.kind, id: op.record.id } } : {}),
       ...(op.creates ? { creates: { kind: op.creates.kind, id: op.creates.id } } : {}),
       ...(op.label ? { label: op.label } : {}),
+      ...(op.openAt ? { openAt: op.openAt } : {}), ...(op.subject ? { subject: op.subject } : {}),
       message, ...(code ? { code } : {}), at: now(),
     });
   }
@@ -1013,6 +1021,7 @@ export function createOutbox(options: OutboxOptions): Outbox {
             ...(input.record ? { record: { kind: input.record.kind, id: input.record.id, baseVersion: input.record.baseVersion } } : {}),
             ...(input.creates ? { creates: { kind: input.creates.kind, id: input.creates.id } } : {}),
             ...(input.label ? { label: input.label } : {}),
+            ...(input.openAt ? { openAt: input.openAt } : {}), ...(input.subject ? { subject: input.subject } : {}),
             ...(effect ? { effect, before: beforeValues } : {}),
             clientAt,
             status: "pending", attempts: 0, nextAttemptAt: 0,

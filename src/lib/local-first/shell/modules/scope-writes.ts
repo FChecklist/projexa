@@ -357,6 +357,9 @@ export type BudgetEdit = {
   budgetPercentage: string;
   vendorId: string;
   vendorAmount: string;
+  /** GUIDED ERRORS: the BOQ the line is in, and the line in words ("3.2, Skirting 100 mm"), so a refused budget can say which line and open it again. */
+  boqId?: string;
+  lineLabel?: string;
 };
 export type BudgetErrors = { budgetPercentage?: string; vendorAmount?: string; nothing?: string };
 
@@ -414,6 +417,8 @@ export async function setLineBudgetOffline(input: BudgetEdit, access: DesignChan
       projectId: input.projectId,
       params: { projectId: input.projectId, boqLineItemId: input.lineId, ...budgetPatch(input) },
       label: "Line budget",
+      ...(input.boqId ? { openAt: `/scope/${encodeURIComponent(input.boqId)}/budget?projectId=${encodeURIComponent(input.projectId)}&line=${encodeURIComponent(input.lineId)}` } : {}),
+      ...(input.lineLabel ? { subject: input.lineLabel } : {}),
       record: { kind: BOQ_LINES_KIND, id: input.lineId, baseVersion: row.serverVersion },
     });
     return { queued: true, opId };

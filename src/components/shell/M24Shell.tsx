@@ -239,6 +239,7 @@ import TraditionalMenu from "@/components/shell/TraditionalMenu";
 import { clearBoqDeviceCopiesOnSignOut } from "@/lib/boq-line-cache";
 import { finishLocalWorkspaceOnSignOut } from "@/lib/local-first/sign-out";
 import { reactToSignedOut } from "@/lib/local-first/sign-out-everywhere";
+import { snapshotThisPage } from "@/lib/error-guide/form-snapshot";
 import { isLocalFirstEnabled } from "@/lib/local-first/local-reader";
 import {
   LEGACY_FALLBACK_MESSAGE,
@@ -1148,7 +1149,13 @@ function M24ShellBody({ children }: { children: React.ReactNode }) {
         const leaving = userIdRef.current;
         void reactToSignedOut({
           stillRelevant: () => live && userIdRef.current === leaving,
-          goToLogin: () => router.push("/login"),
+          // GUIDED ERRORS (G4): a sign-out that was not the person's own click (another tab, an expired or revoked token) keeps the page they were on
+          // (path AND query) as ?redirectTo= and copies what they had typed, so signing in puts them back exactly there. Their own click goes to plain /login.
+          goToLogin: (kind) => {
+            if (kind === "deliberate") return router.push("/login");
+            snapshotThisPage("signed-out");
+            router.push(`/login?redirectTo=${encodeURIComponent(window.location.pathname + window.location.search)}&notice=session-ended`);
+          },
           cleanUp: () => {
             setInfo(null);
             setUserId(null);
