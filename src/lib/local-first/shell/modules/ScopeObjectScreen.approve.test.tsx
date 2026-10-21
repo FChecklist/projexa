@@ -87,3 +87,24 @@ describe("laptop-first BOQ screen: Approve", () => {
     await waitFor(() => expect(revalidations.map((r) => r.kind)).toEqual(["boqs", "boq_lines"]));
   });
 });
+
+describe("laptop-first BOQ screen: Approve uses the server's role list (UI audit 2026-10-21)", () => {
+  // The laptop's copy names roles in VERIDIAN's words; the server's gate is PM_OR_ABOVE on PROJEXA's membership role.
+  for (const role of ["manager", "Manager", "branch_manager", "veridian_admin", "owner", "pm", "admin"]) {
+    test(`${role} is offered an enabled Approve`, () => {
+      expect((view(role).getByTestId("boq-local-approve") as HTMLButtonElement).disabled).toBe(false);
+      cleanup();
+    });
+  }
+  for (const role of ["member", "site_engineer", "client_viewer", "viewer"]) {
+    test(`${role} still sees it disabled with the plain reason`, () => {
+      const v = view(role);
+      expect((v.getByTestId("boq-local-approve") as HTMLButtonElement).disabled).toBe(true);
+      expect(v.getByTestId("boq-local-approve-blocked").textContent).toContain("Only an owner, admin or project manager");
+      cleanup();
+    });
+  }
+  test("a role word this build has never heard of is offered, not disabled (the server decides)", () => {
+    expect((view("senior_professional").getByTestId("boq-local-approve") as HTMLButtonElement).disabled).toBe(false);
+  });
+});

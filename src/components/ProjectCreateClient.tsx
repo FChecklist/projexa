@@ -13,7 +13,7 @@
 // PROJEXA has no "product" concept for the user: the form asks for a project
 // name only. VERIDIAN's schema still requires a productId, so POST
 // /api/projects fills it in server-side (see that route).
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { invalidateShell } from "@/lib/shell-store";
@@ -27,6 +27,11 @@ import { ApiError } from "@/lib/fetch-json";
 import { ensureOrganization, NO_ORGANIZATION_PATTERN, withOrgRetry } from "@/lib/org/ensure-org-client";
 import { browserEnsureDeps } from "@/lib/org/browser-ensure";
 import { reportClientError } from "@/lib/local-first/client-error-report";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError, fieldFromBody } from "@/lib/error-guide/context";
+import { useDraft } from "@/lib/error-guide/use-draft";
+import { findFocusTarget, highlightElement } from "@/lib/error-guide/focus";
+import { faultError, projectFormFaults } from "@/lib/error-guide/g1-faults";
 
 /**
  * R67 D-01 (lane D1, folded into this canonical component under D-11's rule).
@@ -43,25 +48,58 @@ export function fieldForProjectError(message: string): string | undefined {
   return undefined;
 }
 
+/** A problem the form can see without asking the server: the dates run backwards. Returns the field and the sentence, or null. */
+export function projectDateProblem(startDate: string, targetDate: string): { field: "targetDate"; message: string } | null {
+  if (startDate && targetDate && targetDate < startDate) {
+    return { field: "targetDate", message: "The target date must be on or after the start date. Pick a later target date, or an earlier start date." };
+  }
+  return null;
+}
+
+const EMPTY_PROJECT = { name: "", description: "", startDate: "", targetDate: "" };
+
 export default function ProjectCreateClient() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [targetDate, setTargetDate] = useState("");
+  // GUIDED ERRORS: what is typed is kept in a draft (sessionStorage, 2 h), so leaving through a "Fix it now" link, a sign-in that ran out or a
+  // reload loses nothing; it is thrown away on a successful save.
+  const draft = useDraft("project-new", EMPTY_PROJECT);
+  const { name, description, startDate, targetDate } = draft.value;
+  const setName = (v: string) => draft.set({ name: v });
+  const setDescription = (v: string) => draft.set({ description: v });
+  const setStartDate = (v: string) => draft.set({ startDate: v });
+  const setTargetDate = (v: string) => draft.set({ targetDate: v });
   const [submitting, setSubmitting] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // The failure as it was caught (kept whole, so the guide can read its status, code and call), or a problem the form found itself.
+  const [failure, setFailure] = useState<{ err: unknown; field?: string; message: string } | null>(null);
+  const saveError = failure?.message ?? null;
 
   const missing = missingProjectFields({ name });
-  // R67 D-01: the refusal is shown BOTH in the screen strip and beside the
-  // field it is about, when it names one.
-  const errorField = saveError ? fieldForProjectError(saveError) : undefined;
+  // R67 D-01: the refusal is shown in the guided panel AND beside the field it is about, when it names one.
+  const errorField = failure ? (failure.field ?? fieldForProjectError(failure.message)) : undefined;
   const fieldError = (field: string) => (errorField === field ? saveError : undefined);
+  const guideCtx = useMemo(
+    () => (failure ? contextFromError(failure.err, { entityType: "project", field: errorField, serverMessage: failure.message }) : null),
+    [failure, errorField]
+  );
+
+  // Scroll to and focus the first bad field, so the person never has to look for it.
+  useEffect(() => {
+    if (!errorField) return;
+    const el = findFocusTarget(errorField);
+    if (el) highlightElement(el);
+  }, [failure, errorField]);
 
   async function createProject() {
     if (missing.length > 0 || submitting) return;
+    // Everything the form can see is wrong is told BEFORE anything is sent (a name over 200 letters, a year that cannot be right, dates the wrong
+    // way round), with the input outlined. src/lib/error-guide/g1-faults.ts.
+    const [problem] = projectFormFaults({ name, description, startDate, targetDate });
+    if (problem) {
+      setFailure({ err: faultError(problem), field: problem.field, message: problem.message });
+      return;
+    }
     setSubmitting(true);
-    setSaveError(null);
+    setFailure(null);
     try {
       // POST /api/projects proxies VERIDIAN's own /projects create, which
       // returns the created row itself (status 201) -- so the new project's
@@ -87,6 +125,7 @@ export default function ProjectCreateClient() {
         (detail) => reportClientError("org-provision", new Error(detail), "ProjectCreateClient"),
       );
       toast.success(`Created project ${projectName}`);
+      draft.clear();
       // R67 F-21 (carried over from the deleted CreateProjectDialog, which
       // decision D-01 replaced with this route): the shell's project list is
       // held in a session store, so mark that ONE key stale and the new
@@ -101,8 +140,8 @@ export default function ProjectCreateClient() {
       // Never a generic "couldn't create": the server's own refusal is the
       // only thing the user can act on. Values are kept, nothing is reset.
       const message = errorMessage(err, "Couldn't create the project");
-      setSaveError(message);
-      toast.error(message);
+      const bodyField = err instanceof ApiError ? fieldFromBody(err.body) : undefined;
+      setFailure({ err, field: bodyField, message: err instanceof Error && err.message ? err.message : message });
     }
     setSubmitting(false);
   }
@@ -118,13 +157,22 @@ export default function ProjectCreateClient() {
       onBack={() => router.push("/dashboard")}
       saveDisabled={submitting || missing.length > 0}
       saveDisabledReason={projectSaveDisabledReason(missing, submitting)}
-      messages={saveError ? [{ level: "error" as const, text: saveError }] : []}
+      messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
+        {guideCtx && <GuidedError ctx={guideCtx} onRetry={failure && !failure.field ? createProject : undefined} draftKey="project-new" />}
+        {draft.restored && !guideCtx && (
+          <p className="text-[12.5px] text-px-muted" data-testid="draft-restored">
+            We kept what you typed earlier.{" "}
+            <button type="button" className="underline underline-offset-2" onClick={draft.startFresh}>
+              Start fresh
+            </button>
+          </p>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="name">Project Name</Label>
-          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional. e.g. Lakeview Residence — Phase 2" />
-          {fieldError("name") && <p className="text-[12.5px] text-px-error">{fieldError("name")}</p>}
+          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional. e.g. Lakeview Residence — Phase 2" aria-invalid={fieldError("name") ? true : undefined} />
+          {fieldError("name") && <p role="alert" className="text-[12.5px] text-px-error">{fieldError("name")}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="description">Description (optional)</Label>
@@ -133,13 +181,13 @@ export default function ProjectCreateClient() {
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
             <Label htmlFor="startDate">Start Date (optional)</Label>
-            <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            {fieldError("startDate") && <p className="text-[12.5px] text-px-error">{fieldError("startDate")}</p>}
+            <Input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} aria-invalid={fieldError("startDate") ? true : undefined} />
+            {fieldError("startDate") && <p role="alert" className="text-[12.5px] text-px-error">{fieldError("startDate")}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="targetDate">Target Date (optional)</Label>
-            <Input id="targetDate" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
-            {fieldError("targetDate") && <p className="text-[12.5px] text-px-error">{fieldError("targetDate")}</p>}
+            <Input id="targetDate" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} aria-invalid={fieldError("targetDate") ? true : undefined} />
+            {fieldError("targetDate") && <p role="alert" className="text-[12.5px] text-px-error">{fieldError("targetDate")}</p>}
           </div>
         </div>
       </div>

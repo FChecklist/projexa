@@ -44,16 +44,34 @@ describe("OrgEnsure", () => {
     const { container } = render(<OrgEnsure />);
     await waitFor(() => expect(reloads).toBe(1));
     expect(ensureCalls).toBe(1);
-    expect(container.textContent).toBe("");
+    await waitFor(() => expect(container.textContent).toBe(""));
   });
 
-  test("a failure shows one plain sentence and Try again, and is reported", async () => {
+  test("while the set-up runs, a calm note says so (no error)", async () => {
+    shellError = "No organization";
+    let release: () => void = () => {};
+    ensureResult = { status: "provisioned" };
+    const gate = new Promise<void>((r) => { release = r; });
+    mock.module("@/lib/org/ensure-org-client", () => ({
+      NO_ORGANIZATION_PATTERN: /no organi[sz]ation/i,
+      ensureOrganization: async () => { ensureCalls++; await gate; return ensureResult; },
+    }));
+    const { OrgEnsure: Fresh } = await import("./OrgEnsure?slow");
+    const { container } = render(<Fresh />);
+    await waitFor(() => expect(container.textContent).toContain("Setting up your workspace"));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    release();
+    await waitFor(() => expect(container.textContent).toBe(""));
+  });
+
+  test("a failure shows the full panel with Try again, and is reported", async () => {
     shellError = "No organization";
     ensureResult = { status: "failed", error: "VERIDIAN down" };
     const { container } = render(<OrgEnsure />);
-    await waitFor(() => expect(container.textContent).toContain("We couldn't set up your workspace just now."));
+    await waitFor(() => expect(container.textContent).toContain("Your workspace could not be set up"));
+    expect(container.textContent).toContain("What to do");
     expect(container.textContent).not.toContain("No organization");
-    expect(reported).toEqual(["VERIDIAN down"]);
+    expect(reported).toContain("VERIDIAN down");
     ensureResult = { status: "provisioned" };
     fireEvent.click(container.querySelector("button")!);
     await waitFor(() => expect(ensureCalls).toBe(2));

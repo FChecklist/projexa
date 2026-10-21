@@ -21,6 +21,10 @@
 // server-side.
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { GuidedError, GuidedSubmitFailure } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, useFormDraft } from "@/lib/guided-form";
 import { ObjectScreen, type FieldMessage } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -188,14 +192,26 @@ export default function DrawingCreateClient({
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [kind, setKind] = useState<DrawingKind>("dwg");
-  const [name, setName] = useState("");
-  const [drawingNo, setDrawingNo] = useState("");
-  const [rev, setRev] = useState("");
-  const [status, setStatus] = useState<DrawingStatus>(DEFAULT_DRAWING_STATUS);
-  const [discipline, setDiscipline] = useState("");
-  const [linkMode, setLinkMode] = useState(false);
-  const [externalUrl, setExternalUrl] = useState("");
+  // G3 guided errors: every typed value (except the chosen file, which a browser never lets a page restore) survives a "Fix it now" detour, a
+  // reload and a sign-in that ran out; thrown away after a successful save.
+  const draftKey = `drawing-new:${projectId ?? "none"}`;
+  const draft = useFormDraft(draftKey, { kind: "dwg", name: "", drawingNo: "", rev: "", status: DEFAULT_DRAWING_STATUS, discipline: "", linkMode: "", externalUrl: "" });
+  const kind = draft.values.kind as DrawingKind;
+  const name = draft.values.name;
+  const drawingNo = draft.values.drawingNo;
+  const rev = draft.values.rev;
+  const status = draft.values.status as DrawingStatus;
+  const discipline = draft.values.discipline;
+  const linkMode = draft.values.linkMode === "true";
+  const externalUrl = draft.values.externalUrl;
+  const setKind = (v: DrawingKind) => draft.onChange("kind", v);
+  const setName = (v: string) => draft.onChange("name", v);
+  const setDrawingNo = (v: string) => draft.onChange("drawingNo", v);
+  const setRev = (v: string) => draft.onChange("rev", v);
+  const setStatus = (v: DrawingStatus) => draft.onChange("status", v);
+  const setDiscipline = (v: string) => draft.onChange("discipline", v);
+  const setLinkMode = (v: boolean) => draft.onChange("linkMode", v ? "true" : "");
+  const setExternalUrl = (v: string) => draft.onChange("externalUrl", v);
   const [urlTouched, setUrlTouched] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
@@ -240,6 +256,7 @@ export default function DrawingCreateClient({
       if (!id) throw new Error("The server did not confirm a saved drawing");
       // The receipt has to outlive this screen, which the push below is
       // about to replace -- see screen-message.ts.
+      draft.clear();
       setScreenMessage("drawings.object", { level: "success", text: `Drawing ${name.trim()} added` });
       router.push(`/drawings/${id}?projectId=${resolvedId}`);
     },
@@ -250,7 +267,7 @@ export default function DrawingCreateClient({
   const extensions = ACCEPTED_EXTENSIONS[kind];
   // Checked the moment a file is chosen: choosing IS the interaction, so
   // waiting for a blur that may never come would hide the problem until Save.
-  const fileError = file ? fileTypeError(file.name, extensions) ?? fileSizeError(file.size, MAX_DRAWING_MB) : undefined;
+  const fileError = file ? (file.size === 0 ? `The file ${file.name} is empty (0 bytes), so there is nothing to upload` : fileTypeError(file.name, extensions) ?? fileSizeError(file.size, MAX_DRAWING_MB)) : undefined;
   const urlError = urlTouched && usingLink ? walkthroughUrlError(externalUrl) : undefined;
   const missing = missingDrawingFields({ name, drawingNo, rev, usingLink, externalUrl, hasFile: !usingLink && file !== null });
   // R67 D-78: the field's OWN label, so the button can name it -- "Save (File
@@ -325,9 +342,7 @@ export default function DrawingCreateClient({
   }
 
   // Field rules and the hook's own failure share ONE message band.
-  const bandMessages: FieldMessage[] = submit.failure
-    ? [...messages, { level: "error" as const, text: submit.failure.message }]
-    : messages;
+  const bandMessages: FieldMessage[] = messages; // the hook's failure is shown by <GuidedSubmitFailure> below
 
   const backToList = () => router.push(resolvedId ? `/drawings?projectId=${resolvedId}` : "/drawings");
 
@@ -351,6 +366,16 @@ export default function DrawingCreateClient({
       messages={bandMessages}
     >
       <div className="space-y-3 px-4 py-3">
+        <DraftRestoredNote draft={draft} />
+        {draft.restored && !file && !usingLink && (
+          <p role="status" data-testid="drawing-rechoose" className="text-[13px] text-ct-muted">
+            Your entries are back. A browser cannot keep a chosen file, so choose the file again.
+          </p>
+        )}
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} draftKey={draftKey} />
+        {file && fileError && (
+          <GuidedError ctx={contextFromFailure(fault(file.size === 0 ? "EMPTY_FILE" : "FILE_REJECTED", "file", fileError), { projectId: resolvedId ?? undefined })} draftKey={draftKey} />
+        )}
         {/* R67 D-78: stated BEFORE the file field, because it is the one thing
             on this screen that makes filling the form in pointless. */}
         {!storageConfigured && (

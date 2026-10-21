@@ -2,6 +2,7 @@ import { PageHeading } from "@/components/PageHeading";
 import { requireAuth } from "@/lib/supabase/auth-guard";
 import { ROLE_GROUPS } from "@/lib/authz/roles";
 import SystemLogClient from "@/components/SystemLogClient";
+import { AccessDenied } from "@/components/NotFoundGuide";
 
 // OWNER SCREEN. Everything that went wrong while people used PROJEXA, and what was done about it.
 // The data is captured on each person's own phone or laptop (src/lib/client-log) and stored as plain rows; the list below is read through
@@ -16,9 +17,9 @@ export default async function SystemLogPage() {
       {allowed ? (
         <SystemLogClient />
       ) : (
-        <p className="text-sm text-px-muted" data-testid="system-log-not-allowed">
-          Only the owner or an administrator of your organisation can see the system log.
-        </p>
+        <div data-testid="system-log-not-allowed">
+          <AccessDenied code="SYSTEM_LOG_OWNER_ONLY" testId="system-log-denied-panel" />
+        </div>
       )}
     </div>
   );

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { GuidedPanel } from "@/components/GuidedPanel";
+import { inviteFailureCode } from "@/lib/org/invite-failure";
 
 // R48_NO_INVITE_UI_01, redemption half.
 //
@@ -39,7 +41,7 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
 
   const [preview, setPreview] = useState<Preview | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code: string; message?: string } | null>(null);
   const [accepting, setAccepting] = useState(false);
 
   useEffect(() => {
@@ -49,11 +51,18 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
       const { data: session } = await supabase.auth.getSession();
       if (!cancelled) setSignedIn(!!session.session);
 
-      const res = await fetch(`/api/org/invites/preview?token=${encodeURIComponent(token)}`);
+      let res: Response;
+      try {
+        res = await fetch(`/api/org/invites/preview?token=${encodeURIComponent(token)}`);
+      } catch {
+        if (!cancelled) setError({ code: inviteFailureCode({ offline: true }) });
+        return;
+      }
       const body = await res.json().catch(() => ({}));
       if (cancelled) return;
       if (!res.ok) {
-        setError((body as { error?: string }).error ?? "This invitation link is not valid.");
+        const message = (body as { error?: string }).error;
+        setError({ code: inviteFailureCode({ status: res.status, message: message ?? "This invitation link is not valid." }), message });
         return;
       }
       setPreview((body as { invite: Preview }).invite);
@@ -66,14 +75,22 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
   const accept = useCallback(async () => {
     setAccepting(true);
     setError(null);
-    const res = await fetch("/api/org/invites/accept", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/org/invites/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+    } catch {
+      setError({ code: inviteFailureCode({ offline: true }) });
+      setAccepting(false);
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      setError((body as { error?: string }).error ?? "Could not accept this invitation.");
+      const message = (body as { error?: string }).error ?? "Could not accept this invitation.";
+      setError({ code: inviteFailureCode({ status: res.status, message }), message });
       setAccepting(false);
       return;
     }
@@ -91,18 +108,17 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <p role="alert" className="text-sm text-px-error">
-              {error}
-            </p>
+            <GuidedPanel
+              ctx={{ route: `/invite/${token}`, search: "", code: error.code, serverMessage: error.message }}
+              testId="invite-guided-error"
+              actions={error.code === "INVITE_OFFLINE" || error.code === "INVITE_FAILED" ? [{ id: "retry", label: "Try again", primary: true, onClick: () => { setError(null); if (preview) void accept(); else window.location.reload(); } }] : []}
+            />
           )}
 
           {!error && !preview && <p className="text-sm text-px-muted">Checking this invitation…</p>}
 
           {preview && !preview.is_open && !error && (
-            <p role="alert" className="text-sm text-px-error">
-              This invitation is no longer open. It has been used, revoked, or has expired. Ask an
-              administrator for a new one.
-            </p>
+            <GuidedPanel ctx={{ route: `/invite/${token}`, search: "", code: "INVITE_CLOSED" }} testId="invite-guided-error" />
           )}
 
           {preview && preview.is_open && (

@@ -141,7 +141,9 @@ describe("R67 D-70: every create route that resolves a project renders the frame
   //     are REQUIRED props -- so a route that renders it cannot render an
   //     unframed failure, and the compiler holds that, not this string match.
   const RESOLVES_PROJECT = /resolveSelectedProject|resolveProjectForModule/;
-  const FRAMED_FAILURE = /CreateScreenUnavailable|CreateProjectMissing/;
+  //   * G1 guided errors: a create route may also render NoProjectGuide, the guided panel for "no project chosen / none exist / list not
+  //     readable" (what happened, why, the exact place, the way back). It is a framed failure too, never a bare Card.
+  const FRAMED_FAILURE = /CreateScreenUnavailable|CreateProjectMissing|NoProjectGuide/;
 
   test("no create page returns a bare Card for a failed project resolution", () => {
     expect(existsSync(APP_DIR)).toBe(true);

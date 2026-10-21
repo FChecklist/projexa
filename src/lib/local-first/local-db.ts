@@ -136,6 +136,9 @@ export type OutboxOp = {
   creates?: { kind: string; id: string };
   /** Plain words for the person ("New RFI"), used when the change has to be undone. */
   label?: string;
+  /** Where to correct this change if the server turns it down (an app path) and the exact record in words. See EnqueueInput. */
+  openAt?: string;
+  subject?: string;
   clientAt: string;
   status: OutboxOpStatus;
   attempts: number;
@@ -175,6 +178,9 @@ export type OutboxDraft = {
   record?: { kind: string; id: string };
   creates?: { kind: string; id: string };
   label?: string;
+  /** Carried from the op: the screen that corrects it again, and the exact record in words. */
+  openAt?: string;
+  subject?: string;
   /** Plain words: what was not saved and why. */
   message: string;
   /** The server's (or this laptop's) reason code, when there was one. */

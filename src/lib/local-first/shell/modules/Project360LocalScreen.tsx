@@ -13,6 +13,9 @@ import type { StatusCount } from "./dashboard-facts";
 import { OverviewBody } from "./OverviewBody";
 import { refreshNote, useSnapshotRefresh, type SnapshotRead } from "./overview-refresh";
 import { useOverviewCatchUp } from "./overview-catch-up";
+// GUIDED ERRORS (G1)
+import { ActionFailurePanel, codedFailure } from "@/components/ActionFailure";
+import { ScopeState } from "./ScopeGuided";
 
 function StatusCard({ title, fact, testId }: { title: string; fact: Fact<StatusCount[]>; testId: string }) {
   return (
@@ -39,12 +42,7 @@ export default function Project360LocalScreen({ shell, data }: ShellScreenProps<
   const project = shell.data.projects.find((p) => p.id === shell.projectId);
 
   if (data.state === "no_project") {
-    return (
-      <section data-testid="overview-project360" data-state="no_project">
-        <h1 className="font-heading text-2xl text-px-ink">Project 360 Analysis</h1>
-        <p className="mt-3 text-sm text-px-muted">There is no project on this laptop yet. Open PROJEXA once while you are online and your projects will be copied here.</p>
-      </section>
-    );
+    return <ScopeState testId="overview-project360" state="no_project" title="Project 360 Analysis" sentence="There is no project on this laptop yet. Open PROJEXA once while you are online and your projects will be copied here." />;
   }
   const snap = data.snapshot;
   const note = refreshNote(status, Boolean(snap));
@@ -71,7 +69,16 @@ export default function Project360LocalScreen({ shell, data }: ShellScreenProps<
           // resolves the BOQ itself and says plainly if the project has none.
           const row = snap?.body.row as { hasBaseline?: unknown } | undefined;
           if (!row || row.hasBaseline !== false) return null;
-          if (shell.connectivity !== "online") return <p data-testid="baseline-needs-connection" className="mt-2 text-xs text-px-muted">No baseline is confirmed for this project yet. Confirming one needs a connection: the server records who confirmed it and on what evidence.</p>;
+          if (shell.connectivity !== "online") return (
+            <div data-testid="baseline-needs-connection" className="mt-2 max-w-3xl">
+              <ActionFailurePanel
+                failure={codedFailure("OFFLINE", "No baseline is confirmed for this project yet. Confirming one needs a connection: the server records who confirmed it and on what evidence.", { status: 0 })}
+                sentence="No baseline is confirmed for this project yet. Confirming one needs a connection: the server records who confirmed it and on what evidence."
+                entityType="project"
+                projectId={data.state === "local" ? data.projectId : undefined}
+              />
+            </div>
+          );
           const projectId = data.state === "local" ? data.projectId : "";
           return (
             <a

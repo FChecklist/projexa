@@ -100,14 +100,14 @@ describe("the proposals", () => {
   test("a project whose proposals could not be read is named with the server's sentence, and the list is not called empty", async () => {
     const approvals = fakeApprovals({ projects: [{ id: "p1", name: "Tower A" }, { id: "p2", name: "Villa B" }], lists: { p1: [proposal()], p2: new ApprovalError("Failed to load the proposals of this project", 500) } });
     render(<ProposalsScreen role="pm" approvals={approvals} documents={fakeDocuments({})} />);
-    expect((await screen.findByTestId("proposals-project-error")).textContent).toBe("Could not read the proposals of Villa B: Failed to load the proposals of this project");
+    expect((await screen.findByTestId("proposals-project-error")).textContent).toContain("Could not read the proposals of Villa B: Failed to load the proposals of this project");
     expect(screen.getAllByTestId("proposal")).toHaveLength(1);
     expect(screen.queryByTestId("proposals-empty")).toBeNull();
   });
 
   test("a failed read of the project list is an error, never 'nothing waits'", async () => {
     render(<ProposalsScreen role="pm" approvals={fakeApprovals({ projectsError: new ApprovalError("Failed to load projects", 502) })} documents={fakeDocuments({})} />);
-    expect((await screen.findByTestId("proposals-load-error")).textContent).toBe("Could not load your projects: Failed to load projects");
+    expect((await screen.findByTestId("proposals-load-error")).textContent).toContain("Could not load your projects: Failed to load projects");
     expect(screen.queryByTestId("proposals-empty")).toBeNull();
   });
 
@@ -158,7 +158,7 @@ describe("Approve", () => {
     render(<ProposalsScreen role="admin" approvals={approvals} documents={fakeDocuments({})} />);
     await screen.findByTestId("proposal");
     await act(async () => void fireEvent.click(screen.getByTestId("proposal-approve")));
-    expect(screen.getByTestId("proposal-error").textContent).toBe("Fill in Unit of measure, A note first.");
+    expect(screen.getByTestId("proposal-error").textContent).toContain("Fill in Unit of measure, A note first.");
     expect(approvals.approvals).toHaveLength(0);
 
     const [unit, note] = screen.getAllByTestId("proposal-answer");
@@ -185,7 +185,7 @@ describe("Approve", () => {
     render(<ProposalsScreen role="pm" approvals={approvals} documents={fakeDocuments({})} />);
     await screen.findByTestId("proposal");
     await act(async () => void fireEvent.click(screen.getByTestId("proposal-approve")));
-    await waitFor(() => expect(screen.getByTestId("proposal-error").textContent).toBe("That proposal has already been decided"));
+    await waitFor(() => expect(screen.getByTestId("proposal-error").textContent).toContain("That proposal has already been decided"));
     expect(screen.getByTestId("proposal")).toBeTruthy();
     expect(screen.queryByTestId("proposal-approved")).toBeNull();
   });

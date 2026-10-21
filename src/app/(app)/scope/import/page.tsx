@@ -1,9 +1,8 @@
 import ScopeImportClient from "@/components/ScopeImportClient";
 import { resolveSelectedProject } from "@/lib/project-selection";
 import { getServerOrganizationId } from "@/lib/supabase/auth-guard";
-import { Card, CardContent } from "@/components/ui/card";
 import { PageHeading } from "@/components/PageHeading";
-import PickProjectPrompt from "@/components/PickProjectPrompt";
+import { NoProjectGuide } from "@/components/NoProjectGuide";
 
 // R67 D-25 x R67 lane D22 (item D-52, rec R-176): the screen the shipped BOQ
 // importer never had. Thin pass-through -- all behaviour lives in
@@ -26,12 +25,9 @@ export default async function ScopeImportPage({ searchParams }: { searchParams: 
   return (
     <div className="flex-1 space-y-6 p-6">
       <PageHeading title="Import BOQ from Excel" />
-      {errorMessage && (
-        <Card className="border-px-error-border bg-px-error-light">
-          <CardContent className="p-4 text-sm text-px-error">Could not load projects: {errorMessage}</CardContent>
-        </Card>
-      )}
-      {!errorMessage && !project && <PickProjectPrompt message="Pick a project in the top rail to import a BOQ into it" />}
+      {/* GUIDED ERRORS (G1): why no project could be found, what to do, and the exact place to do it */}
+      {errorMessage && <NoProjectGuide kind="load-failed" message={errorMessage} />}
+      {!errorMessage && !project && <NoProjectGuide kind="none-chosen" moduleLabel="BOQs" />}
       {project && <ScopeImportClient projectId={project.id} />}
     </div>
   );

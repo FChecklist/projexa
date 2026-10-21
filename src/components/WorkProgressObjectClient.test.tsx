@@ -193,9 +193,10 @@ describe("WorkProgressObjectClient (R67 D-28)", () => {
     globalThis.fetch = router({
       "/api/work-progress/entry-1": () => jsonRes({ error: "The construction data service didn't answer" }, 502),
     });
-    const { findByRole, findByText } = render(<WorkProgressObjectClient entryId="entry-1" />);
-    expect(await findByText(/The construction data service didn't answer/)).toBeDefined();
-    expect(await findByRole("button", { name: "Retry" })).toBeDefined();
+    const { findByRole, findByTestId } = render(<WorkProgressObjectClient entryId="entry-1" />);
+    // GUIDED: the backend's words inside the guide panel, with Try again
+    expect((await findByTestId("guided-error-what")).textContent).toContain("The construction data service didn't answer");
+    expect(await findByRole("button", { name: "Try again" })).toBeDefined();
   });
 
   test("landing here straight from Save confirms the entry in the persistent band", async () => {

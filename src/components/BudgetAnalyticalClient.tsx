@@ -48,7 +48,9 @@ import Link from "next/link";
 import { AnalyticalScreen, KpiTag } from "@fchecklist/veridian-ui-kit/screens";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import DataLoadError from "@/components/DataLoadError";
+// GUIDED ERRORS (G1): a budget that cannot be read or a line that cannot be saved is told in the inline panel (what happened, why, what to do).
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
+import { ApiError } from "@/lib/fetch-json";
 // R67 D-61/D-62: the money helpers are lane G-05's shared modules. D-61
 // briefly shipped its own format-money.ts plus a useCurrencyCode() hook in
 // @/lib/currency; G-05's format-money.ts + useOrgMoney() landed on main first
@@ -97,6 +99,8 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
   const [drafts, setDrafts] = useState<Record<string, { budgetPercentage?: string; vendorAmount?: string }>>({});
   const [savingLineId, setSavingLineId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<ActionFailureState | null>(null);
+  const [saveFailure, setSaveFailure] = useState<ActionFailureState | null>(null);
   const { money } = useOrgMoney();
   const inFlight = useRef(false);
 
@@ -119,14 +123,18 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
         // The old screen had no catch at all: a failed read left it on
         // "Loading…" for ever, with three KPI tags reading "—" above it.
         setReport(null);
-        setLoadError(body.error ?? `Couldn't load the budget (HTTP ${res.status})`);
+        const message = body.error ?? `Couldn't load the budget (HTTP ${res.status})`;
+        setLoadError(message);
+        setLoadFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: "/api/reports/budget-variance", method: "GET" }), at: Date.now() });
         return;
       }
       setReport(body as BudgetReport);
       setLoadError(null);
+      setLoadFailure(null);
     } catch (err) {
       setReport(null);
       setLoadError(err instanceof Error ? err.message : "Couldn't load the budget");
+      setLoadFailure({ err, at: Date.now() });
     } finally {
       setLoading(false);
       inFlight.current = false;
@@ -154,6 +162,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
   async function saveLine(lineItemId: string, patch: { budgetPercentage?: number; vendorId?: string | null; vendorAmount?: number | null }) {
     setSavingLineId(lineItemId);
     setSaveError(null);
+    setSaveFailure(null);
     try {
       const res = await viaPxApi(`/api/scope/line-items/${encodeURIComponent(lineItemId)}`, {
         method: "PATCH",
@@ -162,7 +171,9 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSaveError(body.error ?? `Couldn't save this line (HTTP ${res.status})`);
+        const message = body.error ?? `Couldn't save this line (HTTP ${res.status})`;
+        setSaveError(message);
+        setSaveFailure({ err: Object.assign(new ApiError(message, res.status, body), { apiPath: `/api/scope/line-items/${lineItemId}`, method: "PATCH" }), at: Date.now(), retry: () => void saveLine(lineItemId, patch) });
         return;
       }
       // Re-read rather than patching state by hand: budget and variance are
@@ -176,6 +187,7 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
       await load();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Couldn't save this line");
+      setSaveFailure({ err, at: Date.now(), retry: () => void saveLine(lineItemId, patch) });
     } finally {
       setSavingLineId(null);
     }
@@ -304,15 +316,13 @@ export default function BudgetAnalyticalClient({ projectId }: { projectId: strin
               )}
             </p>
           )}
-          {saveError && (
-            <p role="alert" className="text-[12.5px] text-[color:var(--color-veri-status-late)]">{saveError}</p>
-          )}
+          {saveError && saveFailure && <ActionFailurePanel failure={saveFailure} entityType="boq" projectId={projectId} />}
         </div>
       }
       table={
         loadError ? (
           <div className="px-4 py-3">
-            <DataLoadError messages={[`Couldn't load the budget: ${loadError}`]} onRetry={() => void load()} />
+            <ActionFailurePanel failure={loadFailure ?? { err: new Error(loadError) }} entityType="boq" projectId={projectId} onRetry={() => void load()} retryable />
           </div>
         ) : loading ? (
           <p className="px-4 py-6 text-[13px] text-ct-muted" aria-busy="true">Loading the budget…</p>

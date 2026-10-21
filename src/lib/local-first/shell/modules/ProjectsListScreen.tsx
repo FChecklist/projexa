@@ -9,12 +9,14 @@ import type { ShellScreenProps } from "../types";
 import type { ProjectsListData } from "./platform-adapter";
 import { formatInBase } from "./org-masters";
 import { dayText } from "./platform-format";
-import { NO_PROJECT, OnlineOnly, StateMessage } from "./DocumentsShared";
+import { NO_PROJECT, OnlineOnly } from "./DocumentsShared";
+// GUIDED ERRORS (G1)
+import { ScopeState } from "./ScopeGuided";
 
 const label = (v: string | null) => (v ? v.replace(/_/g, " ") : "-");
 
 export default function ProjectsListScreen({ data }: ShellScreenProps<ProjectsListData>) {
-  if (data.state === "no_project") return <StateMessage testId="projects-list" state="no_project" title="Projects">{NO_PROJECT}</StateMessage>;
+  if (data.state === "no_project") return <ScopeState testId="projects-list" state="no_project" title="Projects" sentence={NO_PROJECT} />;
   const anyValue = data.entries.some((e) => e.project?.projectValue != null);
   return (
     <section data-testid="projects-list" data-state="local">

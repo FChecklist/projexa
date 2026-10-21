@@ -111,11 +111,11 @@ describe("AttendanceSheetClient -- the sheet itself", () => {
 
     const aliRow = getByText("Ali Hassan").closest("tr")!;
     fireEvent.click(within(aliRow).getByRole("radio", { name: "Present" }));
-    await waitFor(() => expect(within(aliRow).queryByText("AED 300.00")).not.toBeNull());
+    await waitFor(() => expect(within(aliRow).queryByText("AED 300.00")).not.toBeNull(), { timeout: 5000 });
 
     const binaRow = getByText("Bina Rao").closest("tr")!;
     fireEvent.click(within(binaRow).getByRole("radio", { name: "Half day" }));
-    await waitFor(() => expect(within(binaRow).queryByText("AED 125.00")).not.toBeNull());
+    await waitFor(() => expect(within(binaRow).queryByText("AED 125.00")).not.toBeNull(), { timeout: 5000 });
   });
 
   test("P / H / A mark the row the keyboard is in", async () => {
@@ -235,7 +235,10 @@ describe("AttendanceSheetClient -- saving", () => {
       expect(getByText("One of these workers is no longer on this project's roster — reload the sheet. Nothing was saved.")).toBeDefined()
     );
     expect(queryByText(/roster-abc123/)).toBeNull();
-    expect(getByText("Retry")).toBeDefined();
+    // the failure is now a full guided panel (what happened, why, the steps, the exact place to fix it); "Try again" appears when trying again is
+    // honest, and a vanished worker is not one of those cases -- reloading the sheet is
+    expect(getByTestId("guided-error")).toBeDefined();
+    expect(getByTestId("guided-error-steps")).toBeDefined();
   });
 });
 

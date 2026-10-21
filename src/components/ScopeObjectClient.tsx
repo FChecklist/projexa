@@ -32,7 +32,11 @@ import { useCurrencies } from "@/lib/currency";
 import { revisionLabel } from "@/lib/boq-lineage";
 import { EMPTY_VALUE } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
-import { fetchJson, errorMessage } from "@/lib/fetch-json";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): a button that fails or an input that is wrong is told in the inline panel (what happened, why, what to do, the exact place,
+// the way back), never in a toast that is gone before it is read. See src/lib/error-guide/g1-faults.ts and docs/ERROR_GUIDE.md.
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
+import { budgetPercentFault, faultError, moneyAmountFault, type Fault } from "@/lib/error-guide/g1-faults";
 import { formatDateTime } from "@/lib/format-date";
 // PROJEXA-BUILD-001 U-33: the switches, the reads and the project search of the browser-first screen. Every GET to /api/scope this
 // file used to send is in boq-read-source.ts now (register row BR-419); with both switches off (the default) the requests are the
@@ -95,7 +99,12 @@ export default function ScopeObjectClient({
   const [boq, setBoq] = useState<Boq | null>(null);
   const [rows, setRows] = useState<BoqLineItemRow[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<ActionFailureState | null>(null);
+  // The one failure on this screen that the person has to read now (a button, a cell, the title): shown in the panel at the top of the body.
+  const [failure, setFailure] = useState<ActionFailureState | null>(null);
+  const [categoryNotice, setCategoryNotice] = useState<string | null>(null);
+  const fail = (err: unknown, extra: Partial<ActionFailureState> = {}) => setFailure({ err, at: Date.now(), ...extra });
+  const failWith = (f: Fault) => setFailure({ err: faultError(f), field: f.field, at: Date.now() });
   const [loading, setLoading] = useState(true);
   // QA D2: set when the server refused an approve because this person created the BOQ.
   const [selfApproveBlocked, setSelfApproveBlocked] = useState(false);
@@ -171,7 +180,7 @@ export default function ScopeObjectClient({
     } catch (err) {
       if (err instanceof BoqLoadSuperseded || !isCurrent()) return;
       setBoq(null);
-      setLoadError(errorMessage(err, "Couldn't load this BOQ"));
+      setLoadError({ err, at: Date.now() });
     } finally {
       // Loading ends when the newest load ends, so the screen never looks finished while a newer load is still running.
       if (isCurrent()) setLoading(false);
@@ -241,15 +250,16 @@ export default function ScopeObjectClient({
   ) {
     setSavingRowId(rowId);
     try {
-      const res = await viaPxApi(`/api/scope/line-items/${rowId}`, {
+      const data = await fetchJson<Partial<BoqLineItemRow>>(`/api/scope/line-items/${rowId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Couldn't save");
       setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, ...data } : r)));
       markSaved(cellKey);
+      // a later good save of the same cell closes the failure that was about it
+      setFailure((f) => (f?.field === cellKey ? null : f));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save budget/vendor");
+      // GUIDED ERRORS: the cell the server's refusal is about is the cell that was just edited.
+      fail(err, { field: cellKey, retry: () => void saveLineItemBudget(rowId, patch, cellKey) });
     } finally {
       setSavingRowId(null);
     }
@@ -260,6 +270,8 @@ export default function ScopeObjectClient({
   // but the name is still applied to the line, so nothing the user did is lost.
   async function registerCategory(name: string) {
     addLocal(name);
+    setCategoryNotice(null);
+    const fallback = `"${name}" was applied to this line but could not be added to the category list.`;
     try {
       const res = await viaPxApi("/api/scope/categories", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -267,10 +279,10 @@ export default function ScopeObjectClient({
       });
       if (!res.ok && res.status !== 409) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error ?? `"${name}" was applied to this line but could not be added to the category list.`);
+        setCategoryNotice(typeof data.error === "string" ? data.error : fallback);
       }
     } catch {
-      toast.error(`"${name}" was applied to this line but could not be added to the category list.`);
+      setCategoryNotice(fallback);
     }
   }
 
@@ -292,15 +304,11 @@ export default function ScopeObjectClient({
 
   async function runAction(action: "submit" | "approve" | "delete") {
     setActionBusy(action);
+    setFailure(null);
     try {
       const method = action === "delete" ? "DELETE" : "POST";
       const path = action === "delete" ? `/api/scope/${boqId}` : `/api/scope/${boqId}/${action}`;
-      const res = await fetch(path, { method });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (action === "approve" && res.status === 403 && /independent approver/i.test(String(data.error ?? ""))) setSelfApproveBlocked(true);
-        throw new Error(data.error ?? `Couldn't ${action} this BOQ`);
-      }
+      await fetchJson(path, { method });
       if (action === "delete") {
         toast.success("BOQ deleted");
         router.push(`/scope?projectId=${boq!.projectId}`);
@@ -309,7 +317,10 @@ export default function ScopeObjectClient({
       toast.success(action === "submit" ? "Submitted for approval" : "Approved");
       await load({ afterWrite: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : `Couldn't ${action} this BOQ`);
+      if (action === "approve" && err instanceof ApiError && err.status === 403 && /independent approver/i.test(err.message)) setSelfApproveBlocked(true);
+      fail(err, { retry: () => void runAction(action) });
+      // The screen may be out of date (someone else already submitted or approved it): read it again so the buttons match the truth.
+      if (err instanceof ApiError && (err.status === 400 || err.status === 409)) void load({ afterWrite: true });
     } finally {
       setActionBusy(null);
     }
@@ -339,27 +350,25 @@ export default function ScopeObjectClient({
 
   async function saveHeader() {
     const title = titleDraft.trim();
-    if (!title) { toast.error(TITLE_REQUIRED_MESSAGE); return; }
+    if (!title) {
+      failWith({ code: "BOQ_TITLE_REQUIRED", field: "boq-title", message: `The BOQ has no title. ${TITLE_REQUIRED_MESSAGE}. Nothing was saved.` });
+      return;
+    }
     setSavingHeader(true);
+    setFailure(null);
     try {
-      const res = await fetch(`/api/scope/${boqId}`, {
+      const data = await fetchJson<{ title?: unknown }>(`/api/scope/${boqId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title }),
       });
-      const data = await res.json().catch(() => ({}));
-      // A 409 here is the revision-lineage guard: this BOQ was superseded (or
-      // revised) between the page loading and Save being pressed. The
-      // upstream's own sentence is shown rather than a generic failure, and
-      // the screen is reloaded so it stops offering an edit it cannot make.
-      if (!res.ok) {
-        if (res.status === 409) await load({ afterWrite: true });
-        throw new Error(data.error ?? "Couldn't save this BOQ");
-      }
       setBoq((prev) => (prev ? { ...prev, title: typeof data.title === "string" ? data.title : title } : prev));
       setMode("display");
       toast.success("BOQ saved");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save this BOQ");
+      // A 409 here is the revision-lineage guard: this BOQ was superseded (or revised) between the page loading and Save being pressed. The
+      // upstream's own sentence is shown, and the screen is reloaded so it stops offering an edit it cannot make.
+      if (err instanceof ApiError && err.status === 409) await load({ afterWrite: true });
+      fail(err, { field: "boq-title", retry: () => void saveHeader() });
     } finally {
       setSavingHeader(false);
     }
@@ -378,8 +387,7 @@ export default function ScopeObjectClient({
   if (loadError) {
     return (
       <div className="space-y-3 p-6">
-        <p role="alert" className="text-[13px] text-px-error">{loadError}</p>
-        <Button variant="outline" size="sm" onClick={() => load()}>Retry</Button>
+        <ActionFailurePanel failure={loadError} entityType="boq" entityId={boqId} onRetry={() => load()} retryable />
       </div>
     );
   }
@@ -580,6 +588,12 @@ export default function ScopeObjectClient({
           this same pass either confirmed or (submit/approve) built for the
           first time — see api/scope/[id]/submit and .../approve. */}
       {removal.card}
+      {(failure || categoryNotice) && (
+        <div className="space-y-2 border-b border-ct-border px-4 py-3" data-testid="boq-failure">
+          <ActionFailurePanel failure={failure} entityType="boq" entityId={boqId} projectId={boq.projectId} />
+          {categoryNotice && <p role="status" className="text-[12px] text-px-muted">{categoryNotice}</p>}
+        </div>
+      )}
       {/* R80/GAP-14: withheld while the header is being edited. Every button
           here navigates away or changes the BOQ's state, and doing either on
           top of an unsaved title would discard it without saying so. */}
@@ -701,11 +715,15 @@ export default function ScopeObjectClient({
                   <TableCell className="text-right">
                     <Input
                       aria-label={`Budget % for ${r.description}`}
+                      id={`${r.id}:budgetPercentage`}
+                      data-testid={`budget-pct-${r.id}`}
                       type="number" disabled={saving} className="w-20 text-right tabular-nums" defaultValue={r.budgetPercentage ?? "25"}
+                      aria-invalid={failure?.field === `${r.id}:budgetPercentage` ? true : undefined}
                       onBlur={(e) => {
-                        const pct = Number(e.target.value);
-                        if (!Number.isFinite(pct)) return;
-                        saveLineItemBudget(r.id, { budgetPercentage: pct }, `${r.id}:budgetPercentage`);
+                        // GUIDED ERRORS: 0 to 100 only. A value outside it is named at once, here, with the cell outlined -- not sent to be refused.
+                        const fault = budgetPercentFault(e.target.value, `${r.id}:budgetPercentage`);
+                        if (fault) { failWith(fault); return; }
+                        saveLineItemBudget(r.id, { budgetPercentage: Number(e.target.value) }, `${r.id}:budgetPercentage`);
                       }}
                     />
                     <SavedTick shown={!!savedCells[`${r.id}:budgetPercentage`]} />
@@ -728,6 +746,8 @@ export default function ScopeObjectClient({
                     saved={!!savedCells[`${r.id}:vendorAmount`]}
                     onCommit={(amount) => saveLineItemBudget(r.id, { vendorAmount: amount }, `${r.id}:vendorAmount`)}
                     readMoneyInput={readMoneyInput}
+                    cellId={`${r.id}:vendorAmount`}
+                    onFault={failWith}
                   />
                   <MoneyCostCell
                     label={`Material amount for ${r.description}`}
@@ -737,6 +757,8 @@ export default function ScopeObjectClient({
                     saved={!!savedCells[`${r.id}:materialAmount`]}
                     onCommit={(amount) => saveLineItemBudget(r.id, { materialAmount: amount }, `${r.id}:materialAmount`)}
                     readMoneyInput={readMoneyInput}
+                    cellId={`${r.id}:materialAmount`}
+                    onFault={failWith}
                   />
                   <MoneyCostCell
                     label={`Manpower amount for ${r.description}`}
@@ -746,6 +768,8 @@ export default function ScopeObjectClient({
                     saved={!!savedCells[`${r.id}:manpowerAmount`]}
                     onCommit={(amount) => saveLineItemBudget(r.id, { manpowerAmount: amount }, `${r.id}:manpowerAmount`)}
                     readMoneyInput={readMoneyInput}
+                    cellId={`${r.id}:manpowerAmount`}
+                    onFault={failWith}
                   />
                   </>)}
                 </TableRow>
@@ -782,8 +806,12 @@ function isCostHidden(rows: Array<{ computedBudget?: number | null; budgetPercen
 }
 
 function MoneyCostCell({
-  label, value, currencyCode, disabled, saved, onCommit, readMoneyInput,
+  label, value, currencyCode, disabled, saved, onCommit, readMoneyInput, cellId, onFault,
 }: {
+  /** The DOM id the "Fix it now" link scrolls to. */
+  cellId: string;
+  /** A value the cell can see is wrong (negative, not a number): told in the panel at once instead of being sent or silently dropped. */
+  onFault: (fault: Fault) => void;
   label: string;
   value: string | number | null | undefined;
   currencyCode: string;
@@ -798,6 +826,8 @@ function MoneyCostCell({
         {currencyCode && <span className="text-[11px] text-px-muted">{currencyCode}</span>}
         <Input
           aria-label={label}
+          id={cellId}
+          data-testid={cellId}
           type="number"
           inputMode="decimal"
           min={0}
@@ -806,8 +836,13 @@ function MoneyCostCell({
           defaultValue={value ?? ""}
           placeholder="–"
           onBlur={(e) => {
+            // an empty box clears the cell back to NOT COSTED; anything else must be a plain number of zero or more
+            if (e.target.value.trim() !== "") {
+              const fault = moneyAmountFault(label.replace(/ for .*/, ""), e.target.value, cellId);
+              if (fault) { onFault(fault); return; }
+            }
             const amount = readMoneyInput(e.target.value);
-            if (amount === undefined) return; // not a number -- leave the cell alone rather than writing 0
+            if (amount === undefined) return;
             onCommit(amount);
           }}
         />

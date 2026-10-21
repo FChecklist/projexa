@@ -13,7 +13,9 @@
 // permits. Actions stays hardcoded outside the columns map, always.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { GuidedError } from "@/components/GuidedError";
+import { contextFromError } from "@/lib/error-guide/context";
+import type { GuideContext } from "@/lib/error-guide/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -144,11 +146,13 @@ export default function ChangeOrdersClient({
   const columns = registryColumns && registryColumns.length > 0 ? registryColumns : COLUMNS;
   const [items, setItems] = useState<ChangeOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailure, setLoadFailure] = useState<GuideContext | null>(null);
   const [signatureStatuses, setSignatureStatuses] = useState<Record<string, SignatureStatus>>({});
   const [signatureStatusLoading, setSignatureStatusLoading] = useState<Record<string, boolean>>({});
 
   async function load() {
     setLoading(true);
+    setLoadFailure(null);
     try {
       const data = await fetchJson(`/api/change-orders?projectId=${encodeURIComponent(projectId)}`);
       const changeOrders: ChangeOrder[] = data.changeOrders ?? [];
@@ -170,8 +174,10 @@ export default function ChangeOrdersClient({
           setSignatureStatusLoading((prev) => ({ ...prev, [c.id]: false }));
         }
       }));
-    } catch {
-      toast.error("Couldn't load change orders");
+    } catch (err) {
+      // GUIDED ERRORS (G2): a failed read is stated on the screen, with what to do, never a toast and never an empty list that looks like "no change orders".
+      setItems([]);
+      setLoadFailure(contextFromError(err, { projectId, entityType: "change_order" }));
     } finally {
       setLoading(false);
     }
@@ -191,6 +197,8 @@ export default function ChangeOrdersClient({
         <CardContent className="p-0">
           {loading ? (
             <div className="grid h-32 place-items-center"><Loader2 className="size-5 animate-spin text-px-muted" /></div>
+          ) : loadFailure ? (
+            <div className="p-4"><GuidedError ctx={loadFailure} onRetry={() => void load()} /></div>
           ) : items.length === 0 ? (
             <div className="py-10 text-center text-sm text-px-muted">
               <p>

@@ -209,7 +209,7 @@ describe("every sign-out path calls the local-first sign-out", () => {
     const branch = source.slice(source.indexOf('event === "SIGNED_OUT"'));
     const body = branch.slice(0, branch.indexOf("return () =>"));
     expect(body).toContain("reactToSignedOut({");
-    expect(body).toContain('goToLogin: () => router.push("/login")');
+    expect(body).toContain('if (kind === "deliberate") return router.push("/login");'); // G4: a sign-out that was not the person's click keeps the page as ?redirectTo=
     const cleanUp = body.slice(body.indexOf("cleanUp:"));
     expect(cleanUp).toContain("finishLocalWorkspaceOnSignOut({ userId: leaving })");
     expect(cleanUp).toContain("toast.message(r.notice");

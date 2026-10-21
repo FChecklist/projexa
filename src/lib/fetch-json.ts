@@ -21,9 +21,15 @@
 // So: read the status first, and keep the backend's own words.
 
 import { viaPxApi } from "@/lib/px-api";
+import { apiPathOf } from "@/lib/error-guide/context";
+import { markReturnReady } from "@/lib/error-guide/return-trail";
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
+  /** GUIDED ERRORS: the facts src/lib/error-guide/match.ts needs to pick the right guide. */
+  code?: string;
+  apiPath?: string;
+  method?: string;
 
   constructor(message: string, status: number, body: unknown) {
     super(message);
@@ -50,13 +56,26 @@ export async function fetchJson<T = any>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
-  const res = await viaPxApi(input, init);
+  const method = (init?.method ?? (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET")).toUpperCase();
+  const apiPath = apiPathOf(input);
+  let res: Response;
+  try {
+    res = await viaPxApi(input, init);
+  } catch (err) {
+    // The request never got an answer. The SAME error object is rethrown (callers that test `instanceof TypeError` keep working) with the facts
+    // the guided-error matcher needs attached to it.
+    attachFacts(err, { apiPath, method, code: failureCode(err) });
+    throw err;
+  }
 
-  // Parse defensively: an error response is not guaranteed to be JSON at all
-  // (a proxy 502, an HTML error page). A parse failure must not mask the status.
   const body: unknown = await res.json().catch(() => null);
 
-  if (!res.ok) throw new ApiError(backendMessage(body, res.status), res.status, body);
+  if (!res.ok) {
+    const error = new ApiError(backendMessage(body, res.status), res.status, body);
+    attachFacts(error, { apiPath, method, code: bodyCode(body) });
+    throw error;
+  }
+  if (method !== "GET" && method !== "HEAD") markReturnReady(typeof window !== "undefined" ? window.location.pathname : "");
 
   return body as T;
 }
@@ -72,6 +91,30 @@ export async function fetchJson<T = any>(
  * The returned string is the reason ALONE -- never a whole sentence -- so the
  * surface that shows it decides how it is framed.
  */
+function bodyCode(body: unknown): string | undefined {
+  const c = body && typeof body === "object" ? (body as { code?: unknown }).code : undefined;
+  return typeof c === "string" && c ? c : undefined;
+}
+
+function failureCode(err: unknown): string | undefined {
+  const name = err instanceof Error ? err.name : "";
+  if (name === "TimeoutError" || name === "AbortError") return "TIMEOUT";
+  return err instanceof TypeError ? "OFFLINE" : undefined;
+}
+
+function attachFacts(err: unknown, facts: { apiPath?: string; method?: string; code?: string }): void {
+  if (!err || typeof err !== "object") return;
+  try {
+    const target = err as { apiPath?: string; method?: string; code?: string; status?: number };
+    if (facts.apiPath) target.apiPath = facts.apiPath;
+    if (facts.method) target.method = facts.method;
+    if (facts.code) target.code = facts.code;
+    if (facts.code === "OFFLINE" || facts.code === "TIMEOUT") target.status ??= 0;
+  } catch {
+    /* a frozen error object: the guide falls back to the generic one */
+  }
+}
+
 export function backendMessage(body: unknown, status: number): string {
   const fromBody =
     body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"

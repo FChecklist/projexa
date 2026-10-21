@@ -55,6 +55,8 @@ export function deliveryFixtures(): Kinds {
   const day = today()
   return {
     activities: [{ id: "act-1", category_id: null, name: "Interior fit-out", unit: "m2", planned_quantity: "1200", created_at: "2026-09-01T08:00:00Z" }],
+    // the BOQ header the laptop keeps beside its lines: without it the lines carry no BOQ and a BOQ screen opened straight from the laptop says "not in the copy"
+    boqs: [{ id: BOQ_ID, project_id: PROJECT_ID, version: 1, title: "Harbor View - Fit-out", status: "approved", parent_boq_id: null, created_at: "2026-09-01T08:00:00Z" }],
     boq_lines: [
       { id: "dl-line-1", boq_id: BOQ_ID, activity_id: "act-1", item_code: "HV-101", description: LONG_LINE_TEXT, unit: "m2", quantity: "480", category: "Partitions", parent_line_item_id: null, created_at: "2026-09-01T08:00:00Z", rate: "85.50", amount: "41040.00" },
       { id: "dl-line-2", boq_id: BOQ_ID, activity_id: "act-1", item_code: "HV-102", description: "Ceiling paint, two coats", unit: "m2", quantity: "300", category: "Finishes", parent_line_item_id: null, created_at: "2026-09-01T08:00:00Z", rate: "12.00", amount: "3600.00" },
@@ -109,7 +111,7 @@ const READ_ONLY_ROLES = new Set(["viewer", "client_viewer", "external_auditor", 
 
 export type Net = { mode: "up" | "down" | "offline" }
 export type PushAnswer = "applied" | "rejected" | "conflict"
-export type PushedOp = { op_id: string; function_id: string; project_id: string; params: Record<string, unknown>; record_kind?: string; client_at?: string }
+export type PushedOp = { op_id: string; function_id: string; project_id: string; params: Record<string, unknown>; record_kind?: string; record?: { kind: string; id: string; base_version?: number }; client_at?: string }
 
 export type DeliverySync = {
   /** "METHOD path" of every request answered, in order. */
@@ -117,7 +119,7 @@ export type DeliverySync = {
   /** Every op the laptop pushed, in arrival order (a re-send of the same op_id is recorded again: that is what "exactly once" checks). */
   pushes: PushedOp[]
   /** How the next op of a function is answered (default: applied). */
-  answers: Map<string, { status: PushAnswer; code?: string }>
+  answers: Map<string, { status: PushAnswer; code?: string; theirs?: Record<string, unknown> }>
   /** The rows of the project as the server now holds them (fixtures + applied pushes). */
   rows: Kinds
 }
@@ -246,7 +248,13 @@ export async function stubDeliverySync(page: Page, who: LocalSession, net: Net, 
         sync.pushes.push(op)
         const answer = sync.answers.get(op.function_id) ?? { status: "applied" as const }
         if (answer.status === "rejected") return { op_id: op.op_id, status: "rejected", error: { code: answer.code ?? "VALIDATION_FAILED" } }
-        if (answer.status === "conflict") return { op_id: op.op_id, status: "conflict", version: 2, base_version: 1, server: null }
+        if (answer.status === "conflict") {
+          // With `theirs` (an EDIT of a row the laptop holds): the server answers with ITS current row, so the laptop shows the "someone changed the same thing" card.
+          // Without it: no row, the real service's answer for a record that is gone.
+          const target = op.record ? (rows[op.record.kind] ?? []).find((r) => r.id === op.record!.id) : undefined
+          const server = answer.theirs && op.record ? { kind: op.record.kind, id: op.record.id, version: 2, updated_at: now, data: { ...(target ?? { id: op.record.id }), ...answer.theirs } } : null
+          return { op_id: op.op_id, status: "conflict", version: 2, base_version: 1, server }
+        }
         const kind = KIND_OF_FUNCTION[op.function_id]
         made += 1
         const id = `srv-${made}`

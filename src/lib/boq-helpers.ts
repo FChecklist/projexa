@@ -6,6 +6,7 @@
 // logic independently testable from the DB/network layer.
 
 import { formatMoney, formatSignedMoney } from "@/lib/format-money";
+import { ROLE_GROUPS } from "@/lib/authz/roles";
 
 export type Boq = {
   id: string;
@@ -470,9 +471,27 @@ export function toPayloadLineItems(validLines: LineItemDraft[]) {
 // that is certain to fail. A UX affordance only -- both server rules stay.
 export const APPROVE_ROLE_REASON = "Only an owner, admin or project manager can approve a BOQ.";
 export const APPROVE_SELF_REASON = "You created this BOQ, so someone else must approve it (independent approver required).";
-const APPROVER_ROLES = ["owner", "admin", "pm"];
+// The server's list is ROLE_GROUPS.PM_OR_ABOVE (src/lib/authz/roles.ts, what api-write-policy.ts enforces for /scope/[id]/approve). The
+// screen uses that SAME list. But the role a laptop holds in its copy comes from VERIDIAN's manifest, which names roles in VERIDIAN's
+// own words ("manager", "branch_manager"), not PROJEXA's membership words ("pm"): comparing those against ["owner","admin","pm"] alone
+// disabled Approve for a manager the server accepts (UI audit 2026-10-21). A VERIDIAN manager or above is therefore an approver too.
+const VERIDIAN_APPROVER_ROLES: readonly string[] = ["manager", "branch_manager", "veridian_admin"];
+// Roles we KNOW cannot approve. Any other word (a role this build has never heard of, e.g. "senior_professional") is unknown: the button is
+// offered and the server decides, with its refusal shown in words -- a wrong guess here must never lock a real approver out.
+const NON_APPROVER_ROLES: readonly string[] = ["site_engineer", "member", "client_viewer", "viewer", "team_member", "external_auditor", "stage_0"];
+
+/** true: may approve; false: known not to; null: not known (offer it, the server decides). Case and spacing do not matter. */
+export function mayApproveBoq(role: string | null | undefined): boolean | null {
+  const r = (role ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!r) return null;
+  if ((ROLE_GROUPS.PM_OR_ABOVE as readonly string[]).includes(r) || VERIDIAN_APPROVER_ROLES.includes(r)) return true;
+  if (NON_APPROVER_ROLES.includes(r)) return false;
+  return null;
+}
+
 export function approveBlockedReason(viewerRole: string | null | undefined, selfBlocked: boolean): string | null {
-  if (viewerRole !== undefined && !(viewerRole && APPROVER_ROLES.includes(viewerRole))) return APPROVE_ROLE_REASON;
+  // undefined = the caller does not know the role (offer it); null / "" = signed in with no role at all (the server refuses).
+  if (viewerRole !== undefined && (!viewerRole || mayApproveBoq(viewerRole) === false)) return APPROVE_ROLE_REASON;
   if (selfBlocked) return APPROVE_SELF_REASON;
   return null;
 }

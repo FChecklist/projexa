@@ -43,6 +43,8 @@ const ScopeCreateClient = (await import("./ScopeCreateClient")).default;
 
 afterEach(() => {
   cleanup();
+  // GUIDED ERRORS (G1): what was typed is kept in a draft in sessionStorage; each test starts from a fresh browser tab.
+  window.sessionStorage.clear();
   // @ts-expect-error -- test-only global fetch stub cleanup
   delete globalThis.fetch;
 });

@@ -408,3 +408,49 @@ describe("useSubmit", () => {
     expect(result.current.failure).toBeNull();
   });
 });
+
+// ─── GUIDED ERRORS: the failure carries the facts of the call that produced it ───────────────────
+import { contextFromFailure } from "./error-guide/context";
+import { matchGuide, resolveGuide, setUnmatchedLogger } from "./error-guide/match";
+
+describe("useSubmit failures feed the guided-error matcher", () => {
+  test("a refusal carries status, the server's code and words, the call and the named field -> the right guide", async () => {
+    setUnmatchedLogger(() => {});
+    stub(400, { error: "permit number already exists", code: "DUPLICATE", field: "number" });
+    const { result } = renderHook(() => useSubmit({ objectLabel: "Permit", buildRequest: () => ({ input: "/api/permits?x=1", init: { method: "POST" } }), onSuccess: () => {} }));
+    act(() => result.current.submit());
+    await waitFor(() => expect(result.current.failure).not.toBeNull());
+    const f = result.current.failure!;
+    expect(f).toMatchObject({ kind: "refused", status: 400, code: "DUPLICATE", serverMessage: "permit number already exists", apiPath: "/api/permits", method: "POST", field: "number" });
+    expect(f.message).toContain("Nothing was saved");
+    const ctx = contextFromFailure(f);
+    expect(ctx).toMatchObject({ status: 400, field: "number", serverMessage: "permit number already exists" });
+    expect(matchGuide(ctx).id).toBe("validation-generic");
+    setUnmatchedLogger();
+  });
+
+  test("a timed-out WRITE becomes the 'may have been saved' guide that links to the LIST", async () => {
+    globalThis.fetch = ((_i: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_res, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError"))))) as typeof globalThis.fetch;
+    const { result } = renderHook(() => useSubmit({ objectLabel: "Permit", buildRequest: () => PERMIT, onSuccess: () => {}, timeoutMs: 30 }));
+    act(() => result.current.submit());
+    await waitFor(() => expect(result.current.failure?.kind).toBe("timeout"));
+    const f = result.current.failure!;
+    expect(f.method).toBe("POST");
+    const ctx = { ...contextFromFailure(f), route: "/permits/new", search: "?projectId=p1", projectId: "p1" };
+    const r = resolveGuide(matchGuide(ctx), ctx);
+    expect(r.guide.id).toBe("timeout-write");
+    expect(r.what.toLowerCase()).toContain("may have been saved");
+    expect(r.fix?.href).toBe("/permits?projectId=p1");
+  });
+
+  test("an unreachable network becomes the offline guide", async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof globalThis.fetch;
+    const { result } = renderHook(() => useSubmit({ objectLabel: "Permit", buildRequest: () => PERMIT, onSuccess: () => {} }));
+    act(() => result.current.submit());
+    await waitFor(() => expect(result.current.failure?.kind).toBe("unreachable"));
+    expect(matchGuide(contextFromFailure(result.current.failure!)).id).toBe("offline");
+  });
+});

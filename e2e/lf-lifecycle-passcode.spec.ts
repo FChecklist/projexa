@@ -97,7 +97,7 @@ test("A17 (P1): a wrong code is refused in plain words and costs nothing; the ri
   await page.locator("#email").fill(made.email);
   await page.locator('button[type="submit"]').click();
   await page.locator("#code").fill("111111");
-  await expect(page.locator("p[role=alert]")).toContainText(/code/i);
+  await expect(page.getByTestId("login-guided-error")).toContainText(/code/i);
   expect(new URL(page.url()).pathname, "a wrong code must not sign anyone in").toBe("/login");
   expect(calls.some((c) => c.path === "/verify")).toBe(true);
   await expect(page.locator("#code")).toHaveValue("");

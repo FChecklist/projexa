@@ -25,6 +25,8 @@ import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatDateNumeric } from "@/lib/format-date";
 import { formatQty } from "@/lib/format-money";
 import { useOrgMoney } from "@/lib/use-org-money";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { useProblem } from "@/lib/guided-form";
 
 type Receipt = {
   id: string;
@@ -113,6 +115,8 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
   const [reason, setReason] = useState("");
   const [voiding, setVoiding] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // G3 guided errors: a refused void is the full guide (what happened, why, steps, the exact place, the way back).
+  const { problem, show, clear } = useProblem({ entityId: receiptId, entityType: "receipt" });
 
   const load = useCallback(async () => {
     try {
@@ -139,6 +143,7 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "void", voidReason: reason.trim() }),
       });
+      clear();
       toast.success("Receipt voided");
       // Re-read rather than trusting the PATCH's row: the object page shows
       // the resolved voider NAME, which only the GET carries.
@@ -147,7 +152,8 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
       setReason("");
       void load();
     } catch (err) {
-      setActionError(errorMessage(err, "Couldn't void this receipt"));
+      setActionError(null);
+      show(err, undefined, () => void voidReceipt());
     } finally {
       setVoiding(false);
     }
@@ -199,6 +205,7 @@ export default function MaterialReceiptObjectClient({ receiptId }: { receiptId: 
         </div>
       )}
 
+      <ProblemPanel problem={problem} className="px-4 py-3" />
       {confirming && !isVoided && (
         <VoidConfirm
           blastRadius={blastRadius}

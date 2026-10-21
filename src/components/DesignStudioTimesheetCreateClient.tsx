@@ -37,6 +37,10 @@
 // untouched and its other twelve screens are unaffected.
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { GuidedError, GuidedSubmitFailure } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, todayLocalIso, useFormDraft } from "@/lib/guided-form";
 import { ObjectScreen } from "@fchecklist/veridian-ui-kit/screens";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,17 +73,24 @@ export default function DesignStudioTimesheetCreateClient({
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksError, setTasksError] = useState<{ status: number | null; message: string | null } | null>(null);
-  const [taskId, setTaskId] = useState(preselectedTaskId ?? "");
-  const [hours, setHours] = useState("");
-  const [spentOn, setSpentOn] = useState(today);
-  const [category, setCategory] = useState<string>(DESIGN_STUDIO_CATEGORIES[0]);
-  const [comments, setComments] = useState("");
+  // G3 guided errors: every typed value survives a "Fix it now" detour (for example to add the missing task) and comes back with the person;
+  // cleared after a successful save.
+  const draftKey = `design-timesheet-new:${projectId}`;
+  const draft = useFormDraft(draftKey, { taskId: preselectedTaskId ?? "", hours: "", spentOn: today, category: DESIGN_STUDIO_CATEGORIES[0] as string, comments: "" });
+  const { taskId, hours, spentOn, category, comments } = draft.values;
+  const setTaskId = (v: string) => draft.onChange("taskId", v);
+  const setHours = (v: string) => draft.onChange("hours", v);
+  const setSpentOn = (v: string) => draft.onChange("spentOn", v);
+  const setCategory = (v: string) => draft.onChange("category", v);
+  const setComments = (v: string) => draft.onChange("comments", v);
+  const [tasksLoaded, setTasksLoaded] = useState(false);
 
   const loadTasks = useCallback(async () => {
     setTasksError(null);
     try {
       const data = await fetchJson<{ tasks?: Task[] }>(`/api/schedule/tasks?projectId=${encodeURIComponent(projectId)}`);
       setTasks(Array.isArray(data.tasks) ? data.tasks : []);
+      setTasksLoaded(true);
     } catch (err) {
       // D-46, carried over: NOT swallowed. An empty dropdown over a failed
       // read is the form blaming the user for a backend fault.
@@ -103,6 +114,9 @@ export default function DesignStudioTimesheetCreateClient({
   // A task that cannot be chosen is not the user's omission -- the reason
   // names the real blocker rather than the field it makes unfillable.
   if (tasksError) missing.push("this project's tasks could not be loaded");
+  const hoursFault = hours.trim() !== "" ? validateHours(hours) : null;
+  const dateFault = spentOn > todayLocalIso() ? `The date ${spentOn} is in the future. Time can only be logged for today or an earlier day.` : null;
+  const noTasks = tasksLoaded && !tasksError && tasks.length === 0;
 
   const submit = useSubmit<SavedEntry>({
     objectLabel: "Timesheet entry",
@@ -128,6 +142,7 @@ export default function DesignStudioTimesheetCreateClient({
     // a toast that outlives the screen it belongs to is exactly the "did that
     // save?" problem this replaces.
     onSuccess: (saved) => {
+      draft.clear();
       const ref = saved.ref ?? saved.id;
       router.push(
         `/design-studio/timesheets/${encodeURIComponent(saved.id)}?projectId=${encodeURIComponent(projectId)}&saved=${encodeURIComponent(savedMessage(ref))}`
@@ -144,15 +159,22 @@ export default function DesignStudioTimesheetCreateClient({
       onSave={submit.submit}
       onCancel={() => router.push(backHref)}
       onBack={() => router.push(backHref)}
-      saveDisabled={submit.saving || submit.saved || missing.length > 0}
+      saveDisabled={submit.saving || submit.saved || missing.length > 0 || !!dateFault}
       // ObjectScreen renders "Save (<reason>)" itself, so the reason alone
       // is what makes the primary read "Save (2 required: Task, Hours)".
       saveDisabledReason={submit.saving ? "Saving..." : requiredReason(missing)}
       // D-72, carried over: a refusal, a timeout and a click that sent nothing
       // are three different sentences, written once in the hook and shown IN
       // PLACE with every value still on the form -- never a fading toast.
-      messages={submit.failure ? [{ level: "error", text: submit.failure.message }] : []}
+      messages={[]}
     >
+      <div className="space-y-3 px-4 pt-3 empty:hidden">
+        <DraftRestoredNote draft={draft} />
+        <GuidedSubmitFailure failure={submit.failure} onRetry={submit.submit} draftKey={draftKey} />
+        {hoursFault && <GuidedError ctx={contextFromFailure(fault("HOURS_RANGE", "new-entry-hours", `${hoursFault} You typed "${hours}".`), { projectId })} draftKey={draftKey} />}
+        {dateFault && <GuidedError ctx={contextFromFailure(fault("DATE_FUTURE", "new-entry-date", dateFault), { projectId })} draftKey={draftKey} />}
+        {noTasks && <GuidedError ctx={contextFromFailure(fault("NO_TASKS", "new-entry-task", "This project has no task yet, and time is always logged against a task."), { projectId })} draftKey={draftKey} />}
+      </div>
       {tasksError && (
         <div className="px-4 pt-3">
           <PaneErrorCard entity="this project's tasks" error={tasksError} onRetry={() => void loadTasks()} />

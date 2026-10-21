@@ -24,6 +24,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { fetchJson } from "@/lib/fetch-json";
+import { ProblemPanel } from "@/components/ProblemPanel";
+import { fault, useProblem } from "@/lib/guided-form";
 import {
   DESIGN_STUDIO_CATEGORIES,
   deleteConfirmation,
@@ -77,6 +79,8 @@ export default function DesignStudioTimesheetObjectClient({
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  // G3 guided errors: a refused save / submit / delete is the full guide (what happened, why, steps, the exact place, the way back).
+  const { problem: guided, show, showFault, clear } = useProblem({ entityId: entryId, entityType: "timesheet", projectId });
 
   const [hours, setHours] = useState("");
   const [category, setCategory] = useState("");
@@ -107,7 +111,8 @@ export default function DesignStudioTimesheetObjectClient({
 
   async function save() {
     const problem = validateHours(hours);
-    if (problem) { setMessage({ level: "error", text: problem }); return; }
+    if (problem) { showFault(fault("HOURS_RANGE", "entry-hours", problem)); return; }
+    clear();
     setBusy(true);
     try {
       await fetchJson(`/api/timesheets/${encodeURIComponent(entryId)}`, {
@@ -119,7 +124,7 @@ export default function DesignStudioTimesheetObjectClient({
       setMessage({ level: "success", text: `${entry?.ref ?? "Entry"} saved` });
       void load();
     } catch (err) {
-      setMessage({ level: "error", text: err instanceof Error ? err.message : "The entry was not saved" });
+      show(err, undefined, () => void save());
     } finally {
       setBusy(false);
     }
@@ -136,7 +141,7 @@ export default function DesignStudioTimesheetObjectClient({
       );
       void load();
     } catch (err) {
-      setMessage({ level: "error", text: err instanceof Error ? err.message : "The entry was not submitted" });
+      show(err, undefined, () => void submit());
     } finally {
       setBusy(false);
     }
@@ -148,7 +153,7 @@ export default function DesignStudioTimesheetObjectClient({
       await fetchJson(`/api/timesheets/${encodeURIComponent(entryId)}`, { method: "DELETE" });
       router.push(backHref);
     } catch (err) {
-      setMessage({ level: "error", text: err instanceof Error ? err.message : "The entry was not deleted" });
+      show(err, undefined, () => void remove());
       setBusy(false);
     } finally {
       setConfirmDelete(false);
@@ -177,6 +182,7 @@ export default function DesignStudioTimesheetObjectClient({
 
   return (
     <>
+      <ProblemPanel problem={guided} className="px-6 pt-4" />
       <ObjectScreen
         breadcrumb={`Design Studio / ${entryProjectName} / Timesheet`}
         title={`Timesheet entry ${entry.ref}`}

@@ -6,7 +6,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 if (typeof globalThis.document === "undefined") GlobalRegistrator.register();
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 
 const push = mock((_: string) => {});
 const realNavigation = await import("next/navigation");
@@ -30,10 +30,14 @@ describe("SiteInstructionCreateClient", () => {
     }
   });
 
-  test("an empty form disables Save and names the missing fields beside it", () => {
+  test("GUIDED: Save on an empty form sends nothing and the guide panel names the missing fields", async () => {
     const view = render(<SiteInstructionCreateClient projectId="p1" />);
-    expect((view.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    const save = view.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
     // the issue date defaults to today, so only the two typed fields are missing
-    expect(view.getByRole("status").textContent).toBe("2 required fields still needed - to contractor, instruction");
+    const panel = await view.findByTestId("fault-panel");
+    expect(panel.getAttribute("data-fault-code")).toBe("SI_CONTRACTOR_MISSING");
+    expect(view.getByTestId("fault-panel-more").textContent).toContain("instructed to do");
   });
 });

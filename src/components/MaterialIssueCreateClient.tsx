@@ -19,7 +19,11 @@
 import { readCurrentBoqLines } from "@/lib/scope-list-reads";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { GuidedError, GuidedSubmitFailure } from "@/components/GuidedError";
+import { DraftRestoredNote } from "@/components/DraftRestoredNote";
+import { contextFromFailure } from "@/lib/error-guide/context";
+import { fault, notANumber, todayLocalIso, useCheckedSubmit, useFormDraft } from "@/lib/guided-form";
+import { useSubmit } from "@/lib/use-submit";
 import { KitObjectScreen } from "@/components/screens/KitObjectScreen";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,7 +31,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchJson, errorMessage } from "@/lib/fetch-json";
 import { formatQty } from "@/lib/format-money";
-import { issueQuantityError } from "@/lib/unit-label";
+import { issueQuantityError, onHandLimitMessage } from "@/lib/unit-label";
 
 type Material = {
   id: string; name: string; unit: string; isActive: boolean;
@@ -54,13 +58,16 @@ export default function MaterialIssueCreateClient({
   const [boqLines, setBoqLines] = useState<BoqLineItem[]>([]);
   const [boqError, setBoqError] = useState<string | null>(null);
 
-  const [materialId, setMaterialId] = useState(initialMaterialId ?? "");
-  const [issuedDate, setIssuedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [quantity, setQuantity] = useState("");
-  const [boqLineItemId, setBoqLineItemId] = useState("");
-  const [issuedTo, setIssuedTo] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [materialsLoaded, setMaterialsLoaded] = useState(false);
+  const [activeMaterialCount, setActiveMaterialCount] = useState(0);
+  // G3 guided errors: every typed value survives a "Fix it now" detour (for example to record the missing receipt) and comes back with the person.
+  const draft = useFormDraft(`material-issue:${projectId}`, { materialId: initialMaterialId ?? "", issuedDate: new Date().toISOString().slice(0, 10), quantity: "", boqLineItemId: "", issuedTo: "" });
+  const { materialId, issuedDate, quantity, boqLineItemId, issuedTo } = draft.values;
+  const setMaterialId = (v: string) => draft.onChange("materialId", v);
+  const setIssuedDate = (v: string) => draft.onChange("issuedDate", v);
+  const setQuantity = (v: string) => draft.onChange("quantity", v);
+  const setBoqLineItemId = (v: string) => draft.onChange("boqLineItemId", v);
+  const setIssuedTo = (v: string) => draft.onChange("issuedTo", v);
 
   async function loadMaterials() {
     try {
@@ -68,10 +75,13 @@ export default function MaterialIssueCreateClient({
       // Only what can actually be issued. Offering a material with nothing on
       // hand is offering a choice that can only end in a refusal.
       setMaterials((data.materials ?? []).filter((m) => m.isActive && (m.onHand ?? 0) > 0));
+      setActiveMaterialCount((data.materials ?? []).filter((m) => m.isActive).length);
       setMaterialsError(null);
     } catch (err) {
       setMaterials([]);
       setMaterialsError(errorMessage(err, "Couldn't load the material master"));
+    } finally {
+      setMaterialsLoaded(true);
     }
   }
 
@@ -103,12 +113,11 @@ export default function MaterialIssueCreateClient({
     ...(quantity ? [] : ["Quantity"]),
   ];
 
-  async function createIssue() {
-    if (missing.length || quantityError) return;
-    setSubmitting(true);
-    setSaveError(null);
-    try {
-      await fetchJson("/api/materials/issues", {
+  const submit = useSubmit<unknown>({
+    objectLabel: "Issue",
+    buildRequest: () => ({
+      input: "/api/materials/issues",
+      init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -116,18 +125,24 @@ export default function MaterialIssueCreateClient({
           boqLineItemId: boqLineItemId || undefined,
           issuedTo: issuedTo.trim() || undefined,
         }),
-      });
-      toast.success("Material issued");
+      },
+    }),
+    onSuccess: () => {
+      draft.clear();
       router.push(`/materials?projectId=${projectId}&tab=issues`);
-    } catch (err) {
-      // The backend's own sentence -- including its on-hand refusal -- stays on
-      // screen rather than in a toast that has gone by the time the storekeeper
-      // looks up.
-      setSaveError(errorMessage(err, "Couldn't record this issue"));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    },
+  });
+
+  // The form's own checks run before anything is sent. Each fault names the exact input, so "Fix it now" highlights it.
+  const checked = useCheckedSubmit(submit, () => {
+    const q = quantity.trim();
+    if (notANumber(q) || Number(q) <= 0) return fault("QTY_NOT_POSITIVE", "quantity", `The quantity "${q}" is not valid. An issue must be a number greater than 0.`);
+    if (selected && Number(q) > onHand) return fault("ISSUE_EXCEEDS_STOCK", "quantity", `${onHandLimitMessage(onHand, selected.unit)}, so ${q} cannot be issued.`);
+    if (issuedDate > todayLocalIso()) return fault("DATE_FUTURE", "issuedDate", `The issued date ${issuedDate} is in the future. An issue records material that has already left the store.`);
+    return null;
+  });
+  const noMaterialsAtAll = materialsLoaded && !materialsError && activeMaterialCount === 0;
+  const nothingOnHand = materialsLoaded && !materialsError && activeMaterialCount > 0 && materials.length === 0;
 
   return (
     <KitObjectScreen
@@ -135,16 +150,20 @@ export default function MaterialIssueCreateClient({
       title="Issue to Site"
       mode="create"
       hasDraft={false}
-      onSave={createIssue}
+      onSave={checked.onSubmit}
       onCancel={() => router.push(`/materials?projectId=${projectId}&tab=issues`)}
       onBack={() => router.push(`/materials?projectId=${projectId}&tab=issues`)}
-      saveDisabled={submitting || missing.length > 0 || !!quantityError}
+      saveDisabled={submit.saving || missing.length > 0}
       saveDisabledReason={
-        submitting ? "Saving…" : missing.length ? missing.join(", ") : quantityError ? quantityError : undefined
+        submit.saving ? "Saving…" : missing.length ? missing.join(", ") : undefined
       }
       messages={[]}
     >
       <div className="space-y-3 px-4 py-3">
+        <DraftRestoredNote draft={draft} />
+        <GuidedSubmitFailure failure={checked.failure} onRetry={checked.onRetry} draftKey={`material-issue:${projectId}`} />
+        {noMaterialsAtAll && <GuidedError ctx={contextFromFailure(fault("NO_MATERIALS", "materialId", "No material has been added to this project yet."), { projectId })} draftKey={`material-issue:${projectId}`} />}
+        {nothingOnHand && <GuidedError ctx={contextFromFailure(fault("NOTHING_ON_HAND", "materialId", "Every material on this project has nothing on hand, so there is nothing to issue."), { projectId })} draftKey={`material-issue:${projectId}`} />}
         <FormField
           label="Material"
           required
@@ -153,8 +172,8 @@ export default function MaterialIssueCreateClient({
         >
           {(f) => (
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={materialId} onValueChange={(next) => { setMaterialId(next); setSaveError(null); }}>
-                <SelectTrigger {...f} className="min-w-64" disabled={materials.length === 0}>
+              <Select value={materialId} onValueChange={(next) => { setMaterialId(next); checked.clearFault(); }}>
+                <SelectTrigger {...f} data-testid="materialId" className="min-w-64" disabled={materials.length === 0}>
                   <SelectValue placeholder={materials.length === 0 ? "Nothing on hand to issue" : "Select material"} />
                 </SelectTrigger>
                 <SelectContent>
@@ -173,13 +192,14 @@ export default function MaterialIssueCreateClient({
         </FormField>
 
         <FormField label="Issued Date" required>
-          {(f) => <Input {...f} type="date" value={issuedDate} onChange={(e) => setIssuedDate(e.target.value)} />}
+          {(f) => <Input {...f} name="issuedDate" type="date" value={issuedDate} onChange={(e) => setIssuedDate(e.target.value)} />}
         </FormField>
 
         <FormField label="Quantity" required error={quantityError}>
           {(f) => (
             <Input
               {...f}
+              name="quantity"
               type="number"
               // The cap is on the control as well as in the message, so the
               // browser's own stepper cannot walk past it.
@@ -187,7 +207,7 @@ export default function MaterialIssueCreateClient({
               min={0}
               step="any"
               value={quantity}
-              onChange={(e) => { setQuantity(e.target.value); setSaveError(null); }}
+              onChange={(e) => { setQuantity(e.target.value); checked.clearFault(); }}
             />
           )}
         </FormField>
@@ -199,7 +219,7 @@ export default function MaterialIssueCreateClient({
           {(f) => (
             <div className="flex flex-wrap items-center gap-2">
               <Select value={boqLineItemId} onValueChange={setBoqLineItemId}>
-                <SelectTrigger {...f} className="min-w-64" disabled={boqLines.length === 0}>
+                <SelectTrigger {...f} data-testid="boqLineItemId" className="min-w-64" disabled={boqLines.length === 0}>
                   <SelectValue placeholder={boqLines.length === 0 ? "No BOQ lines on this project yet" : "Select a BOQ line"} />
                 </SelectTrigger>
                 <SelectContent>
@@ -221,7 +241,6 @@ export default function MaterialIssueCreateClient({
           {(f) => <Input {...f} value={issuedTo} onChange={(e) => setIssuedTo(e.target.value)} placeholder="e.g. Falcon gang 3" />}
         </FormField>
 
-        {saveError && <p role="alert" className="text-[13px] text-px-error">{saveError}</p>}
       </div>
     </KitObjectScreen>
   );

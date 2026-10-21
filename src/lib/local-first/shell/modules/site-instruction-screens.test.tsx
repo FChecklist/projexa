@@ -122,7 +122,9 @@ describe("site instructions, offline, in the shell", () => {
     await findByTestId("si-form");
     fireEvent.input(getByLabelText("To contractor"), { target: { value: "Ace" } });
     fireEvent.submit(getByTestId("si-form"));
-    await waitFor(() => expect(getByTestId("save-note").getAttribute("data-ok")).toBe("0"), { timeout: SAVE_WAIT_MS });
+    // GUIDED ERRORS (G1): the empty instruction is told in the guided panel (what happened, what to do), with the box outlined -- not by the browser's bubble
+    await waitFor(() => expect(getByTestId("guided-error").textContent).toContain("instruction itself is empty"), { timeout: SAVE_WAIT_MS });
+    expect((getByLabelText("Instruction") as HTMLTextAreaElement).getAttribute("aria-invalid")).toBe("true");
     expect(await outbox.listPending()).toEqual([]);
     expect(fetchCalls).toEqual([]);
     expect(window.location.pathname).toBe("/local/site-instructions/new"); // a refused save stays on the form

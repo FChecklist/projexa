@@ -55,7 +55,6 @@
 // and the local math only ever governs the few hundred milliseconds between
 // a keystroke and a save response.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { projectSideHidden } from "@/lib/cost-hidden";
 import { Input } from "@/components/ui/input";
@@ -64,7 +63,11 @@ import { formatNumber } from "@/lib/format-number";
 // PROJEXA-BUILD-001 U-33: the grid's two reads live in boq-read-source.ts, so this file names no /api/scope read (BR-419). They stay on
 // the proxy on purpose: the project-side cost columns are what the Edge gateway never returns.
 import { readBoqDualView } from "@/lib/boq-read-source";
-import { viaPxApi } from "@/lib/px-api";
+import { ApiError, fetchJson } from "@/lib/fetch-json";
+// GUIDED ERRORS (G1): a cell the grid refuses, a contract that is locked and a failed read are told in the inline panel (what happened, why, what to
+// do), with the cell outlined as the place to correct; the typed value is not thrown away until it is saved.
+import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
+import { faultError } from "@/lib/error-guide/g1-faults";
 
 // ─── A4's mathematics, mirrored client-side for live preview (see header). ─
 
@@ -208,6 +211,8 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
   const [loading, setLoading] = useState(true);
   const [customerLoading, setCustomerLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<ActionFailureState | null>(null);
+  const [loadFailure, setLoadFailure] = useState<ActionFailureState | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" } | null>(null);
   // Provisional, in-progress edits -- keyed by lineId -- overlaying the last
   // server-known value so 2-05/2-06 can react on every keystroke, not just
@@ -225,8 +230,10 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
       const data = await fetchBoq(boqId);
       setInternal(data);
       setError(null);
+      setLoadFailure(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load this BOQ's money view");
+      setLoadFailure({ err, at: Date.now(), retry: () => void loadInternal() });
     } finally {
       setLoading(false);
     }
@@ -244,7 +251,7 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
       const data = await fetchBoq(boqId, "customer");
       setCustomer(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't load the customer preview");
+      setFailure({ err, at: Date.now(), message: err instanceof Error && err.message ? `The customer preview could not be shown: ${err.message}` : undefined, retry: () => void switchToCustomer() });
       setView("internal");
     } finally {
       setCustomerLoading(false);
@@ -308,9 +315,15 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
     const kind = field === "qtyProject" || field === "qtyContract" ? "qty" : "rate";
     const check = validateCellEdit(kind, raw);
     if (!check.valid && check.refused) {
-      toast.error(check.reason);
+      // GUIDED ERRORS: told in the panel with the cell outlined -- and the typed value stays in the box for the person to correct.
+      setFailure({
+        err: faultError({ code: "BOQ_CELL_INVALID", field: cellKey, message: `${check.reason} You typed "${raw.trim()}" in ${field.replace(/([A-Z])/g, " $1").toLowerCase()} for "${line.description}". Nothing was saved.` }),
+        field: cellKey,
+        at: Date.now(),
+      });
       return;
     }
+    setFailure((f) => (f?.field === cellKey ? null : f));
     setCellWarning((prev) => {
       const next = { ...prev };
       if (!check.valid && !check.refused) next[cellKey] = check.reason; else delete next[cellKey];
@@ -320,25 +333,18 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
     const value = raw.trim() === "" ? null : Number(raw);
     setSavingCell(cellKey);
     try {
-      const res = await viaPxApi(`/api/scope/line-items/${line.id}`, {
+      const data = await fetchJson<DualViewLine>(`/api/scope/line-items/${line.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: value }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // 2-02: the server's own refusal IS the "REFUSES the edit and
-        // EXPLAINS WHY" — shown verbatim, and the field's own next render
-        // pre-locks (lockedReason below) so a second attempt does not need
-        // to round-trip to be told the same thing again.
-        if (res.status === 409) setLockedReason(data.error ?? "The contract side is locked.");
-        toast.error(data.error ?? "Couldn't save this cell");
-        setDrafts((prev) => { const next = { ...prev }; delete next[line.id]; return next; }); // revert to last known-good
-        return;
-      }
-      setLineFromServer(data as DualViewLine);
+      setLineFromServer(data);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save this cell");
+      // 2-02: the server's own refusal IS the "REFUSES the edit and EXPLAINS WHY" -- shown in the panel, and the field's own next render
+      // pre-locks (lockedReason below) so a second attempt does not need to round-trip to be told the same thing again.
+      if (err instanceof ApiError && err.status === 409) setLockedReason(err.message || "The contract side is locked.");
+      if (err instanceof ApiError) setDrafts((prev) => { const next = { ...prev }; delete next[line.id]; return next; }); // revert to last known-good
+      setFailure({ err, field: cellKey, at: Date.now(), retry: err instanceof ApiError && err.status < 500 ? undefined : () => void commitCell(line, field, raw) });
     } finally {
       setSavingCell(null);
     }
@@ -398,8 +404,13 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
   if (error || !internal) {
     return (
       <div className="space-y-2 border-b border-ct-border px-4 py-4">
-        <p role="alert" className="text-[13px] text-px-error">{error ?? "Couldn't load this BOQ's money view"}</p>
-        <Button variant="outline" size="sm" onClick={() => void loadInternal()}>Retry</Button>
+        <ActionFailurePanel
+          failure={loadFailure ?? { err: new Error(error ?? "Couldn't load this BOQ's money view") }}
+          entityType="boq"
+          entityId={boqId}
+          onRetry={() => void loadInternal()}
+          retryable
+        />
       </div>
     );
   }
@@ -445,7 +456,11 @@ export default function BoqDualViewGrid({ boqId, costHidden: costHiddenByParent 
                 🔒 Contract side locked — confirmed as baseline v{internal.latestBaselineVersion}. Project-side (cost) cells stay editable.
               </p>
             )}
-            {lockedReason && <p role="alert" className="border-b border-ct-border px-4 py-2 text-[12px] text-px-error">{lockedReason}</p>}
+            {failure && (
+              <div className="border-b border-ct-border px-4 py-3" data-testid="boq-grid-failure">
+                <ActionFailurePanel failure={failure} entityType="boq" entityId={boqId} />
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-[12.5px]">
@@ -548,6 +563,8 @@ function GridRow({
       <td className={field === "qtyProject" || field === "qtyContract" ? "border-l border-ct-border px-2 py-1" : "px-2 py-1"}>
         <Input
           ref={(el) => { cellRefs.current[cellKey] = el; }}
+          id={cellKey}
+          aria-invalid={warning ? true : undefined}
           aria-label={`${field} for ${line.description}`}
           type="number" inputMode="decimal"
           className="w-24 text-right tabular-nums"
