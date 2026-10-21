@@ -1,11 +1,14 @@
 // Tests for scripts/error-triage/*: run the real scripts as child processes
 // against a local fake error-log server (no network, no real key).
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+// These tests start real child processes; on a loaded CI runner one of them passed or hit bun's default 5 s limit on identical code.
+setDefaultTimeout(30_000);
 
 const PULL = path.resolve(import.meta.dir, "../../scripts/error-triage/pull-errors.mjs");
 const FIX = path.resolve(import.meta.dir, "../../scripts/error-triage/record-fix.mjs");
