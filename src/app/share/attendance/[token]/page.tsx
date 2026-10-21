@@ -1,7 +1,8 @@
 import { ExpiredShareNotice } from "@/components/ExpiredShareNotice";
-import { formatNumber } from "@/lib/format-number";
 import { VERIDIAN_ORIGIN } from "@/lib/veridian-client";
-import { countCell, headlineSentence, tradeLabel, type AttendanceSummary } from "@/lib/attendance-summary";
+import { SharedReportUnavailable } from "@/components/SharedReportUnavailable";
+import { countCell, headlineSentence, tradeLabel } from "@/lib/attendance-summary";
+import { loadSharedReport } from "@/lib/shared-report";
 
 // R67 D-31 (R-090): the PUBLIC, read-only view an attendance share token
 // resolves to. Deliberately outside src/app/(app)/ -- no sidebar, no nav, no
@@ -12,43 +13,31 @@ import { countCell, headlineSentence, tradeLabel, type AttendanceSummary } from 
 // API key first -- the whole point of this page is that it needs no credentials
 // of any kind.
 //
-// Money is formatted without a currency code, matching the work-progress share
-// page's own money(): the org's currency is a per-org setting a page with no
-// session cannot resolve, and inventing one would be worse than omitting it.
-//
-// R67 MERGE (D-11, lane D1 x lane D21, 2026-09-03): this used
-// `n.toLocaleString(undefined, ...)`, and `undefined` means THE RUNTIME'S OWN
-// locale -- the exact defect D-61's lint rule exists to catch. On a
-// server-rendered public page that is the server's locale on first paint and the
-// visitor's in the browser, so the grouping separator can change under hydration
-// (1,234.50 vs 1.234,50). formatNumber() pins the locale and keeps the same two
-// fraction digits, so the string is identical on both sides. The rule is D1's
-// and did not exist on main, which is why this file arrived unswept.
-function money(n: number) {
-  return formatNumber(n, { fractionDigits: 2 });
-}
-
-async function fetchSharedSummary(token: string): Promise<AttendanceSummary | null> {
-  const res = await fetch(`${VERIDIAN_ORIGIN}/api/reports/share/${encodeURIComponent(token)}`, { cache: "no-store" });
-  if (!res.ok) return null;
-  const data = await res.json();
-  // The same token endpoint serves both shareable report types; a work-progress
-  // token opened on this route is not this page's report and must not be
-  // half-rendered as one.
-  if (data?.reportType !== "attendance_summary") return null;
-  return data as AttendanceSummary;
-}
+// Public copy carries NO cost (owner ruling D91: an unauthenticated token never
+// carries cost) -- VERIDIAN strips the Cost column at the source, so this page
+// has no Cost column and no money formatter. It reads the payload through
+// loadSharedReport(), so a missing field or a different report type is a guided
+// notice, never a 500 (same class as the /share/report live bug, 2026-10-22).
 
 export default async function SharedAttendancePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const data = await fetchSharedSummary(token);
-  if (!data) return <main><ExpiredShareNotice kind="attendance" token={token} /></main>;
+  const verdict = await loadSharedReport(VERIDIAN_ORIGIN, token);
+  if (verdict.kind === "unavailable") {
+    if (verdict.reason === "expired") return <main><ExpiredShareNotice kind="attendance" token={token} /></main>;
+    return <main><SharedReportUnavailable reason={verdict.reason} /></main>;
+  }
+  if (verdict.kind !== "attendance_summary") {
+    return <main><SharedReportUnavailable reason="wrong-page" openHref={`/share/report/${encodeURIComponent(token)}`} openLabel="Open the shared report" /></main>;
+  }
+  const data = verdict;
+  const rows = data.rows.map((r) => ({ trade: r.trade, present: r.present ?? 0, halfDay: r.halfDay ?? 0, absent: r.absent ?? 0, workerDays: r.workerDays ?? 0, cost: 0 }));
+  const headcount = data.headcount ?? rows.reduce((n, r) => n + r.present + r.halfDay, 0);
 
   const cell = { padding: "0.5rem", textAlign: "right" as const };
 
   return (
     <main style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1.5rem", fontFamily: "sans-serif" }}>
-      <p style={{ fontSize: "0.75rem", color: "#888", marginBottom: "0.25rem" }}>Shared, read-only — expires automatically</p>
+      <p style={{ fontSize: "0.75rem", color: "#888", marginBottom: "0.25rem" }}>Shared, read-only {"—"} expires automatically</p>
       <h1 style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>Attendance Summary</h1>
       <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "1rem" }}>
         {data.from && data.to ? (data.from === data.to ? data.from : `${data.from} to ${data.to}`) : "All recorded attendance"}
@@ -56,17 +45,15 @@ export default async function SharedAttendancePage({ params }: { params: Promise
 
       {/* Never print a total the two source aggregates disagree about without
           saying so -- the same rule the authenticated panel and the PDF apply. */}
-      {data.reconciliation?.ties === false && (
+      {data.ties === false && (
         <p style={{ fontSize: "0.8125rem", color: "#b03a3a", marginBottom: "1rem" }}>
-          The per-trade rows do not add up to the totals for this window — treat these figures as provisional.
+          The per-trade rows do not add up to the totals for this window {"—"} treat these figures as provisional.
         </p>
       )}
 
-      <p style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>
-        {headlineSentence(data.headcount, data.rows)}
-      </p>
+      <p style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "1rem" }}>{headlineSentence(headcount, rows)}</p>
 
-      {data.rows.length === 0 ? (
+      {rows.length === 0 ? (
         <p style={{ fontSize: "0.875rem", color: "#666" }}>No attendance was recorded in this window.</p>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
@@ -77,18 +64,16 @@ export default async function SharedAttendancePage({ params }: { params: Promise
               <th style={cell}>Half day</th>
               <th style={cell}>Absent</th>
               <th style={cell}>Worker-days</th>
-              <th style={cell}>Cost</th>
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((row) => (
-              <tr key={row.trade} style={{ borderBottom: "1px solid #eee" }}>
+            {data.rows.map((row, i) => (
+              <tr key={`${row.trade}-${i}`} style={{ borderBottom: "1px solid #eee" }}>
                 <td style={{ padding: "0.5rem" }}>{tradeLabel(row.trade)}</td>
                 <td style={cell}>{countCell(row.present)}</td>
                 <td style={cell}>{countCell(row.halfDay)}</td>
                 <td style={cell}>{countCell(row.absent)}</td>
                 <td style={cell}>{countCell(row.workerDays)}</td>
-                <td style={cell}>{money(row.cost)}</td>
               </tr>
             ))}
             <tr style={{ borderTop: "2px solid #ddd", fontWeight: 600 }}>
@@ -97,7 +82,6 @@ export default async function SharedAttendancePage({ params }: { params: Promise
               <td style={cell}>{countCell(data.totals.halfDay)}</td>
               <td style={cell}>{countCell(data.totals.absent)}</td>
               <td style={cell}>{countCell(data.totals.workerDays)}</td>
-              <td style={cell}>{money(data.totals.cost)}</td>
             </tr>
           </tbody>
         </table>
