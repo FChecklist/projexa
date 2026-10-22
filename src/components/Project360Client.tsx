@@ -31,7 +31,9 @@ import { ApiError, fetchJson, errorMessage } from "@/lib/fetch-json";
 // GUIDED ERRORS (G1): a refused baseline, a missing evidence reference, a missing BOQ and a failed read are each told in the inline panel.
 import { ActionFailurePanel, codedFailure, type ActionFailureState } from "@/components/ActionFailure";
 import { baselineEvidenceFault, faultError } from "@/lib/error-guide/g1-faults";
-import { baselineControlState, mayConfirmBaseline, BASELINE_ROLE_REASON } from "@/lib/baseline-control";
+import { baselineControlState, mayConfirmBaseline, BASELINE_ROLE_REASON, emptyFigureLabel, missingSidesSentence, missingLinesHref, contractLockNotice, type BaselineFigureStatus } from "@/lib/baseline-control";
+import { useGuidedNavigate } from "@/components/GuidedError";
+import { newTrailId, pushReturn, withReturnTo } from "@/lib/error-guide/return-trail";
 import { useOrgRole } from "@/hooks/use-org-role";
 import { project360ToCsv } from "@/lib/project-360-export";
 import { formatDate, formatDateTime } from "@/lib/format-date";
@@ -49,6 +51,9 @@ type ProjectAnalysisRow = {
   boqId?: string | null;
   hasBaseline: boolean;
   baselineHasFigures?: boolean;
+  baselineFigureStatus?: BaselineFigureStatus | null;
+  contractSideLocked?: boolean;
+  contractLockedByVersion?: number | null;
   baselineCount?: number;
   contractAtFirstConfirmation: MoneyFigure;
   contractValueNow: MoneyFigure;
@@ -93,8 +98,9 @@ export default function Project360Client({ projectId, projectName, readTimeoutMs
   const orgMoney = useOrgMoney();
   const { role } = useOrgRole();
   const [analysis, setAnalysis] = useState<ProjectAnalysisRow | null>(null);
-  // A baseline can exist yet carry no cost figures: say that, not "Not yet baselined".
-  const emptyLabel = analysis && analysis.hasBaseline ? "No cost figures yet" : "Not yet baselined";
+  const go = useGuidedNavigate();
+  // A baseline can exist yet lack a side: say which, not "Not yet baselined".
+  const emptyLabel = analysis ? emptyFigureLabel(analysis) : "Not yet baselined";
   const fmt = (v: MoneyFigure) => (v === "NOT_SET" ? emptyLabel : orgMoney.money(v, { fractionDigits: 0 }));
   const fmtPercent = (v: MoneyFigure) => (v === "NOT_SET" ? "—" : `${formatNumber(v, { fractionDigits: 1 })}%`);
 
@@ -119,6 +125,13 @@ export default function Project360Client({ projectId, projectName, readTimeoutMs
     } catch {
       return false;
     }
+  }
+
+  // The contract side is locked: the one thing that works is a revision. The trail brings the person back here afterwards.
+  function openRevision(reviseHref: string) {
+    const id = newTrailId();
+    pushReturn({ id, returnUrl: window.location.pathname + window.location.search, label: "Profit & Loss", destination: reviseHref });
+    go(withReturnTo(reviseHref, id));
   }
 
   async function confirmBaseline(boqId: string) {
@@ -321,6 +334,29 @@ export default function Project360Client({ projectId, projectName, readTimeoutMs
             <div className="mt-3 space-y-2" data-testid="project360-baseline-control">
               {baselineControlState(analysis) === "first" ? (
                 <p className="text-xs text-px-muted">No baseline has been confirmed for this project's BOQ yet — the figures above will read "Not yet baselined" until one is.</p>
+              ) : analysis.baselineFigureStatus && analysis.boqId ? (
+                <div className="space-y-1 text-xs text-px-muted" data-testid="project360-baseline-missing">
+                  <p data-testid="project360-baseline-refresh">A baseline was confirmed, but it does not have the figures the profit needs. {missingSidesSentence(analysis.baselineFigureStatus)}</p>
+                  <p className="flex flex-wrap gap-3">
+                    {analysis.baselineFigureStatus.contractMissingLines > 0 && (
+                      <a className="underline" data-testid="project360-missing-contract-link" href={missingLinesHref(analysis.boqId, analysis.baselineFigureStatus.contractMissingLineIds)}>Show the lines missing contract figures</a>
+                    )}
+                    {analysis.baselineFigureStatus.costMissingLines > 0 && (
+                      <a className="underline" data-testid="project360-missing-cost-link" href={missingLinesHref(analysis.boqId, analysis.baselineFigureStatus.costMissingLineIds)}>Show the lines missing cost figures</a>
+                    )}
+                  </p>
+                  {(() => {
+                    const lock = contractLockNotice(analysis);
+                    return lock ? (
+                      <div className="space-y-2 text-sm text-px-ink" role="status" data-testid="project360-contract-locked">
+                        <p>{lock.text}</p>
+                        <Button type="button" variant="outline" size="sm" data-testid="project360-create-revision" onClick={() => openRevision(lock.reviseHref)}>Create a revision of this BOQ</Button>
+                      </div>
+                    ) : (
+                      <p>Enter the missing figures on those lines, then confirm a fresh baseline here (the earlier one is kept).</p>
+                    );
+                  })()}
+                </div>
               ) : (
                 <p className="text-xs text-px-muted" data-testid="project360-baseline-refresh">A baseline was confirmed, but before this BOQ had its cost figures, so the profit figures cannot be worked out from it. Enter the cost figures on the BOQ if you have not, then confirm a fresh baseline here (the earlier one is kept).</p>
               )}

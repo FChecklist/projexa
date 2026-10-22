@@ -20,3 +20,59 @@ export function mayConfirmBaseline(role: string | null | undefined): boolean {
 }
 
 export const BASELINE_ROLE_REASON = "Only an owner, administrator or project manager can confirm a baseline. Ask one of them to open this screen and press Confirm baseline, giving the PO, signed proposal or e-mail as evidence.";
+
+// R-100 (live dead end on the AUDIT BOQ): a baseline can hold the cost side but not the contract side, and once a baseline WITH figures exists the
+// contract side is locked. The screen must say exactly which side is missing, link to the lines, and -- when the lock applies -- offer the one thing
+// that works: a revision of the BOQ. Pure functions so every sentence is unit-tested.
+export type BaselineFigureStatus = {
+  hasFigures?: boolean;
+  rootLineCount?: number;
+  contractMissingLines: number;
+  costMissingLines: number;
+  contractMissingLineIds?: string[];
+  costMissingLineIds?: string[];
+};
+
+export type FigureRow = {
+  boqId?: string | null;
+  baselineFigureStatus?: BaselineFigureStatus | null;
+  contractSideLocked?: boolean | null;
+  contractLockedByVersion?: number | null;
+};
+
+const lines = (n: number) => `${n} ${n === 1 ? "line" : "lines"}`;
+
+/** "Contract quantity/rate missing on 3 lines; cost quantity/rate missing on 1 line." or null when the server did not say. */
+export function missingSidesSentence(status: BaselineFigureStatus | null | undefined): string | null {
+  if (!status) return null;
+  const parts: string[] = [];
+  if (status.contractMissingLines > 0) parts.push(`Contract quantity/rate missing on ${lines(status.contractMissingLines)}`);
+  if (status.costMissingLines > 0) parts.push(`${parts.length ? "cost" : "Cost"} quantity/rate missing on ${lines(status.costMissingLines)}`);
+  return parts.length ? `${parts.join("; ")}.` : null;
+}
+
+/** The label for a figure that cannot be worked out, naming the side that is missing. */
+export function emptyFigureLabel(row: { hasBaseline?: boolean | null; baselineFigureStatus?: BaselineFigureStatus | null }): string {
+  if (!row.hasBaseline) return "Not yet baselined";
+  const s = row.baselineFigureStatus;
+  if (s && s.contractMissingLines > 0 && s.costMissingLines === 0) return "No contract figures yet";
+  if (s && s.contractMissingLines > 0 && s.costMissingLines > 0) return "No figures yet";
+  return "No cost figures yet";
+}
+
+/** Link to the first line missing a side (the BOQ grid row is found by ?focus=<data-testid>), or to the BOQ when no id is known. */
+export function missingLinesHref(boqId: string, ids: string[] | undefined): string {
+  const base = `/scope/${encodeURIComponent(boqId)}`;
+  return ids && ids.length ? `${base}?focus=${encodeURIComponent(`boq-grid-row-${ids[0]}`)}` : base;
+}
+
+/** Shown only when the contract side is locked AND contract figures are what is missing. */
+export function contractLockNotice(row: FigureRow): { text: string; reviseHref: string } | null {
+  if (!row.boqId || !row.contractSideLocked) return null;
+  if (!row.baselineFigureStatus || row.baselineFigureStatus.contractMissingLines <= 0) return null;
+  const v = row.contractLockedByVersion;
+  return {
+    text: `Contract values are locked by baseline ${v ? `v${v}` : "that was already confirmed"}. To change them create a revision of this BOQ and confirm a baseline there.`,
+    reviseHref: `/scope/${encodeURIComponent(row.boqId)}/revise`,
+  };
+}
