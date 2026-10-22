@@ -42,7 +42,7 @@ const identity = (role: string): DurableIdentity => ({
 
 const CUSTOMERS = [{ id: "c1", customer_name: "Lakeview Developers" }, { id: "c2", customer_name: "Asha Interiors" }];
 
-type Opts = { hide?: boolean; listed?: string[] };
+type Opts = { hide?: boolean; listed?: string[]; unsynced?: string[] };
 async function seedLaptop(role: string, opts: Opts = {}) {
   const hide = Boolean(opts.hide);
   const hidden = (cols: string[]) => (hide ? cols : []);
@@ -66,7 +66,7 @@ async function seedLaptop(role: string, opts: Opts = {}) {
       { id: "e1", user_id: "u9", employee_code: "E-009", job_title: "Site Engineer", employment_type: "full_time", date_of_joining: "2024-06-01", employment_status: "active", company_id: "co1", date_of_birth: "1990-01-01", emergency_contact_phone: "9999999999", income_tax_slab_id: "slab-x" },
       { id: "e2", user_id: "u8", employee_code: "E-008", employment_status: "on_leave", job_title: "Accountant" },
     ] },
-  ], { at: NOW, ...(opts.listed ? { listed: opts.listed } : {}) });
+  ].map((k) => (opts.unsynced?.includes(k.kind) ? { ...k, synced: false } : k)), { at: NOW, ...(opts.listed ? { listed: opts.listed } : {}) });
   const device = await openDeviceMeta(idb);
   await device.meta.setMeta(shellManifestKey("u1"), { at: NOW, user: { id: "u1", name: "Asha Rao", role, org_id: "orgA" }, projects: [{ id: "p1", name: "Cedar Heights Villa", status: "active" }] });
   device.close();
@@ -268,6 +268,57 @@ describe("ERP B screens open OFFLINE from the laptop's own copy", () => {
       expect((await findByTestId("local-shell-not-here")).textContent).toContain("not saved on this laptop yet");
       unmount();
     }
+    expect(fetchCalls).toEqual([]);
+  });
+});
+
+describe("Invoices that have not reached the laptop: never a dead end (R-62)", () => {
+  test("the list, online: says invoices open from the server, with a working link, and a way back", async () => {
+    await seedLaptop("manager", { unsynced: ["invoices"] });
+    setOnline(true);
+    go("/local/invoices");
+    const { findByTestId } = render(<LocalShell />);
+    const screen = await findByTestId("invoices");
+    expect(screen.getAttribute("data-state")).toBe("not_synced");
+    expect(screen.textContent).toContain("Invoices open from the server");
+    const link = screen.querySelector('a[data-testid="invoices-open-from-server"]') as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toMatch(/^\/invoices\?/);
+    expect(link!.getAttribute("target")).toBe("_top");
+    expect(screen.querySelector('a[href="/dashboard"], a[href="/local"]')).not.toBeNull();
+  });
+
+  test("one invoice, online: the link goes to that invoice's own page", async () => {
+    await seedLaptop("manager", { unsynced: ["invoices"] });
+    setOnline(true);
+    go("/local/invoices/i24");
+    const { findByTestId } = render(<LocalShell />);
+    const screen = await findByTestId("invoices-object");
+    const link = screen.querySelector('a[data-testid="invoices-object-open-from-server"]') as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toMatch(/^\/invoices\/i24\?/);
+  });
+
+  test("an invoice not in the laptop's copy (raised after the last sync), online: a link to the server's page, not just 'not copied yet'", async () => {
+    await seedLaptop("manager");
+    setOnline(true);
+    go("/local/invoices/i24");
+    const { findByTestId } = render(<LocalShell />);
+    const screen = await findByTestId("invoices-object");
+    expect(screen.getAttribute("data-state")).toBe("not_found");
+    const link = screen.querySelector('a[data-testid="invoices-object-open-from-server"]') as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toMatch(/^\/invoices\/i24\?/);
+  });
+
+  test("offline: says it opens once connected, still no request", async () => {
+    await seedLaptop("manager", { unsynced: ["invoices"] });
+    go("/local/invoices");
+    const { findByTestId } = render(<LocalShell />);
+    const screen = await findByTestId("invoices");
+    expect(screen.textContent).toContain("Invoices open from the server");
+    expect(screen.textContent).toContain("when you are connected");
+    expect(screen.querySelector('a[data-testid="invoices-object-open-from-server"]')).toBeNull();
     expect(fetchCalls).toEqual([]);
   });
 });
