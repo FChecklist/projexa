@@ -44,9 +44,10 @@ test.describe("G4 sessions", () => {
     await expect(field).toBeVisible({ timeout: 60_000 });
     const typed = `G4 typed before the session ended ${Date.now()}`;
     await field.fill(typed);
+    await page.locator("main textarea").first().fill("G4 question typed before the session ended"); // Save stays closed until the subject and the question are both there
 
     await context.clearCookies(); // the sign-in ends (expired, or signed out in another tab: the cookie is shared by every tab)
-    await page.locator('button[type="submit"]').first().click();
+    await page.getByRole("button", { name: /^Save/ }).first().click();
 
     const panel = page.getByTestId("guided-error").first();
     await expect(panel.getByTestId("guided-error-title")).toContainText("You were signed out", { timeout: 60_000 });

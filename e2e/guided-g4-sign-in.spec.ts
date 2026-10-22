@@ -102,15 +102,14 @@ test.describe("G4 sign-in faults", () => {
   test("code not arriving: after a minute the 'has the code not arrived' panel offers spam check, a new code and Change e-mail", async ({ context }) => {
     await stubAuthOtp(context, null);
     const page = await open(context);
-    await page.clock.install();
     await sendCode(page);
     await expect(page.getByTestId("login-not-arrived")).toHaveCount(0);
-    await page.clock.fastForward(61_000);
+    await page.waitForTimeout(62_000); // the page counts real seconds: a faked clock does not move its resend countdown
     const panel = await expectGuide(page, { title: "Has the code not arrived?", what: new RegExp(EMAIL.split("@")[0]!), why: /Spam|Junk/, testId: "login-not-arrived" });
     await expect(panel.getByTestId("guided-error-steps")).toContainText("Spam");
     await panel.getByTestId("guided-error-action-resend").click();
     await expect(page.getByTestId("login-not-arrived")).toHaveCount(0); // the cooldown starts again
-    await page.getByRole("button", { name: /change e-?mail/i }).click();
+    await page.getByRole("button", { name: /change e-?mail|different e-?mail/i }).click();
     await expect(page.locator("#email")).toHaveValue(EMAIL);
   });
 

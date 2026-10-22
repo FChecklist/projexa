@@ -28,7 +28,7 @@ test.describe("guided errors G3 - documents", () => {
     await page.locator("#document-file").setInputFiles({ name: "site-note.pdf", mimeType: "application/pdf", buffer: pdfBuffer() });
     await page.locator("#document-name").fill(name);
     await page.getByRole("button", { name: /^Save/ }).first().click();
-    await page.waitForURL(/\/documents\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/documents\/[0-9a-z-]{16,}/);
     const list = await readJson<unknown>(page.request, `/api/documents?projectScopeId=${project.id}`);
     expect(rows(list, "documents").some((d) => d.name === name)).toBe(true);
   });
@@ -63,7 +63,7 @@ test.describe("guided errors G3 - documents", () => {
     await expect(page.locator("#document-name")).toHaveValue(name);
     await context.setOffline(false);
     await panel(page).getByTestId("guided-error-retry").click();
-    await page.waitForURL(/\/documents\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/documents\/[0-9a-z-]{16,}/);
     const list = await readJson<unknown>(page.request, `/api/documents?projectScopeId=${project.id}`);
     expect(rows(list, "documents").some((d) => d.name === name)).toBe(true);
   });
@@ -149,7 +149,7 @@ test.describe("guided errors G3 - permits", () => {
 
     await page.locator("#endDate").fill(today(365));
     await page.getByRole("button", { name: /^Save/ }).first().click();
-    await page.waitForURL(/\/permits\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/permits\/[0-9a-z-]{16,}/);
     const list = await readJson<unknown>(page.request, `/api/permits?projectId=${project.id}&all=true`);
     expect(rows(list, "permits").some((p) => p.name === name)).toBe(true);
   });

@@ -157,7 +157,7 @@ test("the list says so when change orders cannot be read (server down), with Try
   const listUrl = /\/api\/change-orders\?/;
   await page.route(listUrl, (route) => route.request().method() === "GET" ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "The construction data service did not respond in time." }) }) : route.continue());
   await page.goto(`/change-orders?projectId=${P}`);
-  await expectCompleteGuide(page, { id: "server-error" });
+  await expectCompleteGuide(page, { id: "net-data-service-slow" });
   await expect(page.getByTestId("guided-error-retry")).toBeVisible();
   await page.unroute(listUrl);
   await page.getByTestId("guided-error-retry").click();

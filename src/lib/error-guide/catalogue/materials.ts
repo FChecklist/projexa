@@ -124,6 +124,16 @@ export const materialsGuides = guides([
     severity: "warn", returnLabel: "Back to the issue form",
   },
   {
+    // the same advice when the stock figure had not loaded in the form yet and the SERVER refused ("Only 10 bags on hand.")
+    id: "materials-issue-more-than-stock-server", source: "validation", match: { status: 400, apiPath: "/api/materials/issues", messageRegex: rx("^Only .+ on hand") },
+    title: "You are issuing more than is in stock",
+    what: "{serverMessage} Nothing was saved.",
+    why: "Stock cannot go below zero, so you cannot issue more than has been received and not yet issued.",
+    steps: ["Look at the stock figure in the message above.", "Type that figure, or a smaller quantity, in the quantity box.", "If material arrived that was never recorded, record that receipt first (Materials, Receipt), then come back."],
+    fix: { label: "Fix the quantity", to: here, where: "This screen > Quantity" },
+    severity: "warn", returnLabel: "Back to the issue form",
+  },
+  {
     id: "materials-warehouse-name", source: "validation", match: { status: 400, messageRegex: rx("^warehouseName is required$|itemId, warehouseId, quantity, and postingDate are required|type must be 'receipt' or 'issue'") },
     title: "Fill the stock entry form",
     what: "{serverMessage}",

@@ -57,9 +57,14 @@ export async function mainProject(page: Page): Promise<ProjectRef> {
 /** An AUDIT-labelled project of its own (so a baseline or a revision made by a spec never touches the shared demo project). */
 export async function makeAuditProject(page: Page, label: string): Promise<ProjectRef> {
   const name = `${AUDIT} ${label}`;
-  const res = await page.request.post("/api/projects", { data: { name } });
-  expect(res.status(), `POST /api/projects ${await res.text()}`).toBe(201);
-  const body = (await res.json()) as { id: string };
+  // a cold data service answers 503 "did not respond in time" (and this laptop's link resets now and then): ask again, like a person would
+  let res = await page.request.post("/api/projects", { data: { name } }).catch(() => null);
+  for (let attempt = 0; attempt < 3 && (!res || [502, 503, 504].includes(res.status())); attempt++) {
+    await page.waitForTimeout(3_000 * (attempt + 1));
+    res = await page.request.post("/api/projects", { data: { name } }).catch(() => null);
+  }
+  expect(res?.status(), `POST /api/projects ${res ? await res.text() : "no answer"}`).toBe(201);
+  const body = (await res!.json()) as { id: string };
   return { id: body.id, name };
 }
 

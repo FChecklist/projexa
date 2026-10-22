@@ -241,7 +241,7 @@ test("O-15 site instruction from a BOQ: the link carries the BOQ; a .txt file is
   await page.locator("#file").setInputFiles({ name: "instruction.pdf", mimeType: "application/pdf", buffer: pdf });
   await expect(page.getByTestId("guided-error")).toHaveCount(0);
   await btn(page, /^Save/).click();
-  await expect(page).toHaveURL(/\/site-instructions\/[0-9a-f-]{8,}/, { timeout: 90_000 });
+  await expect(page).toHaveURL(/\/site-instructions\/[0-9a-z-]{16,}/, { timeout: 90_000 });
   const list = await page.request.get(`/api/site-instructions?projectId=${proj.id}`);
   const { siteInstructions } = (await list.json()) as { siteInstructions: { boqId: string | null; description: string }[] };
   expect(siteInstructions.find((s) => s.description === `${AUDIT} instruction`)?.boqId, "the instruction is linked to the BOQ").toBe(boq.id);

@@ -100,9 +100,14 @@ export function saveButton(page: Page): Locator {
 /** A new, empty project that belongs to nobody's real data: the only way to test "nothing set up yet" faults on a shared org. Never deleted. */
 export async function createAuditProject(request: APIRequestContext, label: string): Promise<{ id: string; name: string }> {
   const name = `${AUDIT} ${label} ${uniqueSuffix()}`;
-  const res = await request.post("/api/projects", { data: { name } });
-  expect(res.ok(), `creating the audit project answered ${res.status()}`).toBe(true);
-  const body = (await res.json()) as { id?: string; project?: { id?: string } };
+  // a cold data service answers 503 "did not respond in time" (and this laptop's link resets now and then): ask again, like a person would
+  let res = await request.post("/api/projects", { data: { name } }).catch(() => null);
+  for (let attempt = 0; attempt < 3 && (!res || [502, 503, 504].includes(res.status())); attempt++) {
+    await new Promise((r) => setTimeout(r, 3_000 * (attempt + 1)));
+    res = await request.post("/api/projects", { data: { name } }).catch(() => null);
+  }
+  expect(res?.ok(), `creating the audit project answered ${res?.status() ?? "nothing"}`).toBe(true);
+  const body = (await res!.json()) as { id?: string; project?: { id?: string } };
   const id = body.id ?? body.project?.id;
   expect(id, "the new project has an id").toBeTruthy();
   return { id: id as string, name };

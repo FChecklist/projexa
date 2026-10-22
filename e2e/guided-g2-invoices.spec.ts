@@ -8,6 +8,13 @@ test.use({ storageState: "playwright/.auth/ceo.json" });
 test.describe.configure({ mode: "serial" });
 
 const save = (page: Page) => page.getByRole("button", { name: /^Save/ });
+/** The customer list loads after the form; "+ New customer" is always its last option, so wait for a real customer and take the first one. */
+async function pickExistingCustomer(page: Page): Promise<void> {
+  await page.getByTestId("inv-customer").click();
+  const real = page.getByRole("option").filter({ hasNotText: /New customer/ }).first();
+  await expect(real, "the test organisation needs at least one customer").toBeVisible({ timeout: 60_000 });
+  await real.click();
+}
 type Inv = { id: string; status: string; grandTotal: string; outstandingAmount: string; items: { description: string }[] };
 
 test("empty invoice: customer and every line box are named, the customer box is outlined, nothing is saved", async ({ page }) => {
@@ -21,8 +28,7 @@ test("empty invoice: customer and every line box are named, the customer box is 
 
 test("a line with quantity 0 and a negative rate is refused line by line; what was typed stays", async ({ page }) => {
   await page.goto("/invoices/new");
-  await page.getByTestId("inv-customer").click();
-  await page.getByRole("option").first().click();
+  await pickExistingCustomer(page);
   await page.getByTestId("inv-line-description-0").fill(`${AUDIT_TAG} probe`);
   await page.getByTestId("inv-line-qty-0").fill("0");
   await page.getByTestId("inv-line-rate-0").fill("-5");
@@ -48,13 +54,12 @@ let invoiceId = "";
 test("a valid draft invoice is saved and the lines persisted", async ({ page }) => {
   await page.goto("/invoices/new");
   const description = `${AUDIT_TAG} ${stamp()} invoice`;
-  await page.getByTestId("inv-customer").click();
-  await page.getByRole("option").first().click();
+  await pickExistingCustomer(page);
   await page.getByTestId("inv-line-description-0").fill(description);
   await page.getByTestId("inv-line-qty-0").fill("2");
   await page.getByTestId("inv-line-rate-0").fill("100");
   await save(page).click();
-  await page.waitForURL(/\/invoices\/[0-9a-z-]+$/, { timeout: 60_000 });
+  await page.waitForURL(/\/invoices\/(?!new)[0-9a-z-]+$/, { timeout: 60_000 }); // not "/invoices/new" itself
   invoiceId = page.url().split("/invoices/")[1]!.split("?")[0]!;
   const inv = await apiJson<Inv>(page, `/api/sales-invoices/${invoiceId}`);
   expect(inv.status).toBe("draft");

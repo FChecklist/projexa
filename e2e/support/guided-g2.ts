@@ -52,9 +52,14 @@ export async function goBackViaStrip(page: Page, expectUrl: RegExp): Promise<voi
 
 /** Reads JSON from the app's own API with the signed-in browser session (to re-read what persisted). */
 export async function apiJson<T = any>(page: Page, path: string): Promise<T> {
-  const res = await page.request.get(path);
-  expect(res.ok(), `GET ${path} => ${res.status()}`).toBeTruthy();
-  return (await res.json()) as T;
+  // the data service answers 503 "did not respond in time" on a cold call and this laptop's link resets now and then: ask again, like a person would (3 more tries)
+  let res = await page.request.get(path).catch(() => null);
+  for (let attempt = 0; attempt < 3 && (!res || [502, 503, 504].includes(res.status())); attempt++) {
+    await page.waitForTimeout(3_000 * (attempt + 1));
+    res = await page.request.get(path).catch(() => null);
+  }
+  expect(res?.ok(), `GET ${path} => ${res?.status() ?? "no answer"}`).toBeTruthy();
+  return (await res!.json()) as T;
 }
 
 /** The text every AUDIT-created record carries so a reviewer can find (and never delete) it. */

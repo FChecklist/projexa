@@ -27,7 +27,7 @@ async function fill(page: Page, testId: string, text: string) {
   await box.fill(text);
 }
 async function openNew(page: Page) {
-  await openLocal(page, `/local/scope/new?projectId=${P}`, "scope-new");
+  await openLocal(page, `/local/scope/new?projectId=${P}`, "scope-new-screen", "ready"); // the New BOQ screen is data-state=ready (the list screens are "local")
   await page.evaluate(() => sessionStorage.clear());
   await page.reload();
   await expect(page.getByTestId("scope-new-screen")).toBeVisible({ timeout: 120_000 });
@@ -90,8 +90,10 @@ test("L-03 duplicate item code, unknown parent and a share over 100 on the lapto
   await fill(page, "scope-new-1-parentItemCode", "NOPE");
   await fill(page, "scope-new-1-breakdownPercentage", "180");
   await page.getByTestId("scope-new-save").click();
-  const p = await expectGuidedPanel(page, { id: "boq-code-duplicate-form" });
-  await expect(p.getByTestId("guided-error-what")).toContainText(/already used on line 1/);
+  // three faults at once: the panel leads with the sub-task's share (line 2) and says how many others are marked; the duplicate code is told in full beside its own box
+  const p = await expectGuidedPanel(page, { id: "boq-breakdown-range" });
+  await expect(p.getByTestId("guided-error-what")).toContainText(/2 other problems are marked/);
+  await expect(page.getByText(/already used on line 1/).first()).toBeVisible();
   await expect(page.locator(id(1, "itemCode"))).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator(id(1, "parentItemCode"))).toHaveAttribute("aria-invalid", "true");
   await expect(page.locator(id(1, "breakdownPercentage"))).toHaveAttribute("aria-invalid", "true");

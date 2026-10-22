@@ -82,7 +82,7 @@ test("a valid instruction is saved and lands on its page; the values persisted",
   await page.locator("#toContractor").fill(to);
   await page.locator("#description").fill("created by the G2 guided-errors spec");
   await save(page).click();
-  await page.waitForURL(/\/site-instructions\/[0-9a-z-]+/, { timeout: 60_000 });
+  await page.waitForURL(/\/site-instructions\/(?!new)[0-9a-z-]+/, { timeout: 60_000 }); // not "/site-instructions/new" itself
   createdId = page.url().split("/site-instructions/")[1]!.split("?")[0]!;
   const found = (await rows(page)).find((r) => r.id === createdId);
   expect(found?.toContractor).toBe(to);

@@ -6475,5 +6475,12 @@
   "where": [
    "projexa:src/lib/supabase/auth-guard.ts"
   ]
+ },
+ {
+  "message": "Only 10 bags on hand",
+  "status": 400,
+  "where": [
+   "projexa:src/app/api/materials/issues/route.ts (the issue is refused verbatim: Only <n> <unit> on hand)"
+  ]
  }
 ]
