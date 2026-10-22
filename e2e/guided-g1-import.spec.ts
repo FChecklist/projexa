@@ -114,7 +114,7 @@ test("I-08 a row whose quantity is not a number: the rows that cannot be importe
   await expect(page.locator("#import-title")).toHaveValue(`${AUDIT} imported boq`);
   await expect(page.getByTestId("guided-error")).toHaveCount(0);
   await save(page).click();
-  await expect(page).toHaveURL(/\/scope\/[0-9a-f-]{8,}\?imported=/, { timeout: 90_000 });
+  await expect(page).toHaveURL(/\/scope\/[0-9a-z-]{16,}\?imported=/, { timeout: 90_000 });
   const id = new URL(page.url()).pathname.split("/").pop()!;
   const body = (await (await page.request.get(`/api/scope/${id}`)).json()) as { title: string; lineItems: { description: string }[] };
   expect(body.title).toBe(`${AUDIT} imported boq`);
@@ -143,7 +143,7 @@ test("I-09 the server is down at the moment of import: the panel and Try again; 
   await expectGuidedPanel(page, { what: /did not respond in time/, retry: true });
   await expect(page.getByText("2 lines ready, 0 with errors")).toBeVisible(); // the preview is kept
   await panel(page).getByTestId("guided-error-retry").click();
-  await expect(page).toHaveURL(/\/scope\/[0-9a-f-]{8,}\?imported=/, { timeout: 90_000 });
+  await expect(page).toHaveURL(/\/scope\/[0-9a-z-]{16,}\?imported=/, { timeout: 90_000 });
   const list = (await (await page.request.get(`/api/scope?projectId=${proj.id}`)).json()) as { boqs?: { title: string }[] };
   expect((list.boqs ?? []).filter((b) => b.title === title)).toHaveLength(1);
 });
@@ -152,7 +152,7 @@ test("I-10 Make a project from a file: a PDF is refused beside the box and in th
   const page = S.page;
   await page.goto("/projects/from-file");
   await expect(page.getByTestId("doc-file")).toBeVisible({ timeout: 60_000 });
-  await page.getByTestId("doc-file").setInputFiles({ name: "boq.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") });
+  await page.getByTestId("doc-file").setInputFiles({ name: "boq.zip", mimeType: "application/zip", buffer: Buffer.from("PK") });
   await expect(page.getByTestId("doc-file-error")).toContainText(/Wrong type/);
   await expectGuidedPanel(page, { id: "doc-file-invalid-form", what: /cannot be read here/, where: /Project file/ });
   await expectHighlighted(page, "#doc-file");
@@ -179,7 +179,8 @@ test("I-12 Make a project from a file: an empty file is refused", async () => {
 });
 
 test("I-13 Make a project from a file as a plain member: the refusal is a guided panel that says who can do it", async ({ browser }) => {
-  const member = await openOnline(browser, "hr");
+  // sending a file needs the member role or above (Sneha is a member and may), so the person told "no" is the client viewer
+  const member = await openOnline(browser, "clientViewer");
   try {
     const page = member.page;
     await page.goto("/projects/from-file");

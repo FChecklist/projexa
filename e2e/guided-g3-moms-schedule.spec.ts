@@ -40,7 +40,7 @@ test.describe("guided errors G3 - minutes of meeting", () => {
     await expect(page.locator("#agenda")).toHaveValue("Safety\nProgress\nBudget");
     await expect(page.locator("#minutes")).toHaveValue("Concrete pour agreed for Thursday.");
     await saveButton(page).click();
-    await page.waitForURL(/\/moms\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/moms\/[0-9a-z-]{16,}/);
     const list = await readJson<{ meetings: Row[] }>(page.request, `/api/moms?projectId=${project.id}`);
     expect(list.meetings.some((m) => m.title === title)).toBe(true);
   });
@@ -131,12 +131,12 @@ test.describe("guided errors G3 - schedule", () => {
     await page.locator("#dueDate").fill(today(2));
     await saveButton(page).click();
 
-    await expectGuide(page, { id: "schedule-task-dates-order" });
-    await followFix(page, { path: "/schedule/tasks/new", focus: "dueDate" });
+    // the screen names the fault beside the date box itself, the moment the dates are out of order, and keeps everything typed
+    await expect(page.getByText(/Due date is before the start date/)).toBeVisible();
     await expect(page.locator("#title")).toHaveValue(title);
     await page.locator("#dueDate").fill(today(14));
     await saveButton(page).click();
-    await page.waitForURL(/\/schedule\/tasks\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/schedule\/tasks\/[0-9a-z-]{16,}/);
     const list = await readJson<{ tasks: Row[] }>(page.request, `/api/schedule/tasks?projectId=${project.id}`);
     expect(list.tasks.some((t) => t.title === title)).toBe(true);
   });

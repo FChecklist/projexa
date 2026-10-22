@@ -31,7 +31,7 @@ test.describe("guided errors G3 - design studio", () => {
     await page.locator("#new-entry-hours").fill("8");
     await expect(panel(page)).toHaveCount(0);
     await page.getByRole("button", { name: /^Save/ }).first().click();
-    await page.waitForURL(/\/design-studio\/timesheets\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/design-studio\/timesheets\/[0-9a-z-]{16,}/);
     const list = await readJson<{ entries: Entry[] }>(page.request, `/api/timesheets?projectId=${project.id}`);
     expect(list.entries.some((e) => Number(e.hours) === 8)).toBe(true);
   });
@@ -55,14 +55,14 @@ test.describe("guided errors G3 - design studio", () => {
     await page.locator("#title").fill(`${AUDIT} First task ${uniqueSuffix()}`);
     await page.locator("#startDate").fill(today());
     await saveButton(page).click();
-    await page.waitForURL(/\/schedule\/tasks\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/schedule\/tasks\/[0-9a-z-]{16,}/);
     await goBack(page, "/design-studio/timesheets/new");
     await expect(page.locator("#new-entry-hours")).toHaveValue("5");
     await expect(page.getByTestId("draft-restored")).toBeVisible();
     await page.locator("#new-entry-task").click();
     await page.getByRole("option").first().click();
     await page.getByRole("button", { name: /^Save/ }).first().click();
-    await page.waitForURL(/\/design-studio\/timesheets\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/design-studio\/timesheets\/[0-9a-z-]{16,}/);
     const list = await readJson<{ entries: Entry[] }>(page.request, `/api/timesheets?projectId=${project.id}`);
     expect(list.entries.some((e) => Number(e.hours) === 5)).toBe(true);
   });
@@ -182,7 +182,12 @@ test.describe("guided errors G3 - settings and invitations", () => {
     const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
     const page = await context.newPage();
     await page.goto(`/invite/${"0".repeat(48)}`);
-    await expectGuide(page, { id: "auth-invite-not-valid" });
+    // this page has its own panel (invite-guided-error) with the same four parts
+    await expect(page.getByTestId("invite-guided-error")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("guided-error-title")).toContainText("not valid");
+    await expect(page.getByTestId("guided-error-what")).not.toHaveText("");
+    await expect(page.getByTestId("guided-error-why")).not.toHaveText("");
+    await expect(page.getByTestId("guided-error-steps")).toContainText("ask the person who invited you");
     await context.close();
   });
 });

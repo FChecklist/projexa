@@ -36,7 +36,7 @@ test.describe("guided errors G3 - materials", () => {
 
     await page.locator("#unitCost").fill("12.5");
     await saveButton(page).click();
-    await page.waitForURL(/\/materials\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/materials\/[0-9a-z-]{16,}/);
 
     const list = await readJson<{ materials: Material[] }>(page.request, `/api/materials/master?projectId=${project.id}`);
     const saved = list.materials.find((m) => m.name === name);
@@ -58,7 +58,7 @@ test.describe("guided errors G3 - materials", () => {
     await expect(page.locator("#name")).toHaveValue(name);
     await page.locator("#reorderLevel").fill("20");
     await saveButton(page).click();
-    await page.waitForURL(/\/materials\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/materials\/[0-9a-z-]{16,}/);
 
     const list = await readJson<{ materials: Material[] }>(page.request, `/api/materials/master?projectId=${project.id}`);
     expect(Number(list.materials.find((m) => m.name === name)?.reorderLevel)).toBe(20);
@@ -112,7 +112,7 @@ test.describe("guided errors G3 - materials", () => {
     await page.locator("#name").fill(name);
     await page.locator("#unit").selectOption("bag");
     await saveButton(page).click();
-    await page.waitForURL(/\/materials\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/materials\/[0-9a-z-]{16,}/);
 
     // the way back, with what was typed still in place
     await goBack(page, "/materials/receipts/new");
@@ -131,10 +131,13 @@ test.describe("guided errors G3 - materials", () => {
     expect(rec.ok()).toBe(true);
 
     await page.goto(`/materials/issues/new?projectId=${project.id}&materialId=${material.id}`);
+    await expect(page.locator('input[name="quantity"]')).toHaveCount(1); // wait until the page has settled (a half-hydrated page can hold the form twice for a moment)
     await page.locator('input[name="quantity"]').fill("50");
     await page.getByRole("button", { name: /^Save/ }).first().click();
 
-    await expectGuide(page, { id: "materials-issue-more-than-stock", what: "10" });
+    // the form refuses it itself once the stock figure has loaded; if the figure was not there yet the server's own refusal gets the same advice (id ends -server)
+    await expectGuide(page, { what: "10" });
+    await expect(panel(page)).toHaveAttribute("data-guide-id", /^materials-issue-more-than-stock/);
     await followFix(page, { path: "/materials/issues/new", focus: "quantity" });
     await page.locator('input[name="quantity"]').fill("4");
     await page.getByRole("button", { name: /^Save/ }).first().click();
@@ -157,15 +160,21 @@ test.describe("guided errors G3 - materials", () => {
     await page.goto(`/materials/${material.id}?projectId=${project.id}`);
     await page.getByRole("button", { name: /^Edit/ }).first().click();
     await page.locator("#material-name").fill("");
-    await page.getByRole("button", { name: /^Save/ }).first().click();
-    await expectGuide(page);
-    await followFix(page, { path: new RegExp(`/materials/${material.id}$`), focus: "material-name" });
+    // the screen no longer lets an empty name be sent: Save closes and its own words name what is missing (the same design as M10 on the new-material form)
+    const save = page.getByRole("button", { name: /^Save/ }).first();
+    await expect(save).toBeDisabled();
+    await expect(save).toContainText(/Name/);
+    await page.locator("#material-name").fill(`${AUDIT} Wire renamed`);
+    await expect(save).toBeEnabled();
   });
 
   test("M9 receipt while the connection is down: explained, nothing lost, Try again stores it", async ({ page, context }) => {
     const project = await createAuditProject(page.request, "receipt-offline");
     const material = await addMaterial(page, project.id, `${AUDIT} Pipe ${uniqueSuffix()}`);
-    await page.goto(`/materials/receipts/new?projectId=${project.id}`);
+    await page.goto(`/materials/receipts/new?projectId=${project.id}&materialId=${material.id}`);
+    // with a single material on the project the Material box is still empty on arrival: the person chooses it (Save names it as missing until then)
+    await page.getByRole("combobox", { name: /Material/ }).click();
+    await page.getByRole("option").first().click();
     await page.locator("#quantity").fill("12");
     await context.setOffline(true);
     await saveButton(page).click();

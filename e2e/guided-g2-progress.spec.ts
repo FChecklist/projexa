@@ -32,11 +32,18 @@ async function pickLine(page: Page, index = 0) {
   await page.getByTestId("wp-boq-line").getByRole("combobox").click();
   await page.getByRole("option", { disabled: false }).nth(index).click();
 }
+/** The boxes are type="number": Chrome refuses letters and commas there, Firefox and Safari accept them. To reach the same refusal a Firefox user would see,
+ *  turn the box into a text box first (what is typed then arrives in the form exactly as typed). */
+async function fillBox(page: Page, testId: string, text: string) {
+  const box = page.getByTestId(testId);
+  if (!/^-?\d*\.?\d*$/.test(text)) await box.evaluate((el) => { (el as HTMLInputElement).type = "text"; });
+  await box.fill(text);
+}
 async function fillValid(page: Page, over: { qty?: string; pct?: string; date?: string } = {}) {
   await pickActivity(page);
   await pickLine(page);
-  await page.getByTestId("wp-quantity").fill(over.qty ?? "0.01");
-  await page.getByTestId("wp-percent").fill(over.pct ?? "0");
+  await fillBox(page, "wp-quantity", over.qty ?? "0.01");
+  await fillBox(page, "wp-percent", over.pct ?? "0");
   if (over.date) await page.getByTestId("wp-date").fill(over.date);
 }
 const logEntry = (page: Page) => page.getByRole("button", { name: /^Log Entry/ });
@@ -119,7 +126,7 @@ test("percentage below 0 and not-a-number are refused the same way", async ({ pa
   await fillValid(page, { pct: "-5" });
   await logEntry(page).click();
   await expectCompleteGuide(page, { code: "WP_PERCENT_RANGE" });
-  await page.getByTestId("wp-percent").fill("abc");
+  await fillBox(page, "wp-percent", "abc");
   await logEntry(page).click();
   await expectCompleteGuide(page, { code: "WP_PERCENT_RANGE" });
 });

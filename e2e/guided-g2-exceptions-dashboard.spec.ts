@@ -15,7 +15,7 @@ test("Exceptions: the report cannot be read -> the guide explains it, Try again 
   let fail = true;
   await page.route(url, (route) => (fail ? route.fulfill(down()) : route.continue()));
   await page.goto(`/analysis/exceptions?projectId=${P}`);
-  await expectCompleteGuide(page, { id: "server-error" });
+  await expectCompleteGuide(page, { id: "net-data-service-slow" });
   await expect(page.getByTestId("guided-error-what")).toContainText("did not respond in time");
   fail = false;
   await page.getByTestId("guided-error-retry").click();
@@ -36,7 +36,7 @@ test("Dashboard: the project dashboard cannot be read -> the guide explains it, 
   let fail = true;
   await page.route(url, (route) => (fail ? route.fulfill(down()) : route.continue()));
   await page.goto(`/dashboard/project?projectId=${P}`);
-  await expectCompleteGuide(page, { id: "server-error" });
+  await expectCompleteGuide(page, { id: "net-data-service-slow" });
   await expect(page.getByTestId("guided-error-what")).toContainText("Couldn't load this project's dashboard");
   fail = false;
   await page.getByTestId("guided-error-retry").click();
@@ -45,7 +45,7 @@ test("Dashboard: the project dashboard cannot be read -> the guide explains it, 
 
 test("Dashboard: no connection at all (offline) -> says nothing was reached and Try again works once back online", async ({ page, context }) => {
   await page.goto(`/dashboard/project?projectId=${P}`);
-  await expect(page.getByText(/earned value|Earned value/i).first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/% complete by BOQ value|Contract value/i).first()).toBeVisible({ timeout: 60_000 });
   const url = /\/api\/dashboard\/project/;
   await page.route(url, (route) => route.abort("internetdisconnected"));
   await page.reload();

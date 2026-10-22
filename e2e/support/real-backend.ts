@@ -156,13 +156,13 @@ export async function projectId(context: BrowserContext): Promise<string> {
 }
 
 /** Opens a screen of the offline shell and waits until the laptop has this project's data (the first copy takes a few minutes: "not_synced" until then). */
-export async function openLocal(page: Page, path: string, testId: string): Promise<void> {
+export async function openLocal(page: Page, path: string, testId: string, wantedState = "local"): Promise<void> {
   const deadline = Date.now() + 600_000;
   for (;;) {
     await page.goto(path);
     const state = await page.getByTestId(testId).getAttribute("data-state", { timeout: 30_000 }).catch(() => null);
-    if (state === "local") return;
-    if (Date.now() > deadline) throw new Error(`${path}: the screen never reached data-state=local (last: ${state})`);
+    if (state === wantedState) return;
+    if (Date.now() > deadline) throw new Error(`${path}: the screen never reached data-state=${wantedState} (last: ${state})`);
     await page.waitForTimeout(10_000);
   }
 }

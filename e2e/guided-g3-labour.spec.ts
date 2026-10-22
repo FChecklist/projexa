@@ -33,7 +33,7 @@ test.describe("guided errors G3 - labour", () => {
 
     await page.locator("#dailyRate").fill("180");
     await saveButton(page).click();
-    await page.waitForURL(/\/labour\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/labour\/[0-9a-z-]{16,}/);
     const roster = await readJson<{ roster: Worker[] }>(page.request, `/api/labour-roster?projectId=${project.id}`);
     const saved = roster.roster.find((w) => w.name === name);
     expect(saved, "the corrected worker is stored").toBeTruthy();
@@ -81,7 +81,7 @@ test.describe("guided errors G3 - labour", () => {
     await page.locator("#trade").fill("Carpenter");
     await page.locator("#dailyRate").fill("150");
     await saveButton(page).click();
-    await page.waitForURL(/\/labour\/[0-9a-f-]{8,}/);
+    await page.waitForURL(/\/labour\/[0-9a-z-]{16,}/);
     await goBack(page, "/labour/attendance/new");
     // the roster now has one person, who is chosen already; the form is usable
     await saveButton(page).click();

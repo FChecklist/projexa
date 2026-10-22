@@ -135,14 +135,10 @@ test("P-06 signed out while typing: 'Sign in again' goes to the sign-in page car
   await save(page).click();
   const p = await expectGuidedPanel(page);
   await expect(p.getByTestId("guided-error-fix")).toContainText(/sign in/i);
-  const seen: string[] = [];
-  page.on("framenavigated", (f) => {
-    if (f === page.mainFrame()) seen.push(f.url());
-  });
-  await p.getByTestId("guided-error-fix").click();
-  await expect.poll(() => seen.some((u) => /\/login\?.*redirectTo=/.test(u)), { timeout: 30_000, message: "the sign-in page was opened with redirectTo=" }).toBe(true);
-  const loginUrl = seen.find((u) => /\/login\?.*redirectTo=/.test(u))!;
-  const back = new URL(loginUrl).searchParams.get("redirectTo");
+  // the link itself is read, not followed: this test user is still signed in on the server, so a real visit to /login would be sent on to /dashboard before the address could be seen
+  const href = await p.getByTestId("guided-error-fix").getAttribute("href");
+  expect(href, "Sign in again is a link to the sign-in page carrying the return address").toMatch(/\/login\?.*redirectTo=/);
+  const back = new URL(href!, page.url()).searchParams.get("redirectTo");
   expect(back, "the sign-in page is told to bring the person back here").toContain("/projects/new");
   // this test user is still signed in on the server, so the address the sign-in page returns to is opened directly
   await page.goto(back!);
@@ -154,7 +150,7 @@ test("P-07 the project list cannot be read: the panel, Try again, then the list"
   const page = S.page;
   const fail = await failOnce(page, "/api/projects/overview", "GET", 503, { error: "The construction data service did not respond in time." });
   await page.goto("/projects");
-  await expectGuidedPanel(page, { what: /may or may not have been saved/, retry: true });
+  await expectGuidedPanel(page, { what: /did not respond in time/, retry: true }); // a list that cannot be read says so; "may or may not have been saved" belongs to Save only
   expect(fail.hits()).toBe(1);
   await panel(page).getByTestId("guided-error-retry").click();
   await expect(page.getByTestId("guided-error")).toHaveCount(0, { timeout: 30_000 });
