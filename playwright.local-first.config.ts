@@ -41,7 +41,8 @@ export default defineConfig({
   testMatch: [/offline-local-first\.spec\.ts/, /guided-g4-laptop\.spec\.ts/,/lf-(ai|delivery|documents|overview|lifecycle|dubai)-.*\.spec\.ts/],  // lf-e10a/b/c, lf-e11, lf-e12 (the peer specs have their own config)
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // One retry in CI only: this job runs ~100 timing-sensitive install / service-worker / sync-interval tests on a shared runner, and across the last 30 main runs it failed 4 times with 4 DIFFERENT single tests (B24, B20, B7, B60), each passing on the next run of the same code. A real regression fails both attempts and still reds the job.
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [["list"]],
   timeout: 360_000,

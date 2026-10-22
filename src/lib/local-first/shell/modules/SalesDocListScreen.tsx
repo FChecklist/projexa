@@ -19,7 +19,7 @@ export default function SalesDocListScreen({ shell, data }: ShellScreenProps<Sal
   const spec = DOC_SPECS[data.kind];
   const result = data.result;
   const testId = data.kind.replace(/_/g, "-");
-  if (result.state !== "local") return <GateScreen testId={testId} title={spec.plural} state={result.state} what={spec.plural.toLowerCase()} />;
+  if (result.state !== "local") return <GateScreen testId={testId} title={spec.plural} state={result.state} what={spec.plural.toLowerCase()} shell={shell} serverPath={spec.base} />;
 
   const needle = search.trim().toLowerCase();
   const matches = result.docs.filter((d) => (status === "all" || d.status === status) && (!needle || `${d.number ?? ""} ${d.customerName ?? ""}`.toLowerCase().includes(needle)));

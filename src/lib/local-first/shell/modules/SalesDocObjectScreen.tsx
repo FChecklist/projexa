@@ -7,20 +7,22 @@ import type { ReactNode } from "react";
 import type { ShellScreenProps } from "../types";
 import { CopyNote, DASH, Screen } from "./DeliveryParts";
 import { DOC_SPECS, type DocData, type DocKind } from "./erp-b-adapter";
-import { Facts, GateScreen, LinesOnServer, MoneyCell, dateOrDash, statusWords } from "./ErpBParts";
+import { Facts, GateScreen, LinesOnServer, MoneyCell, OpenFromServer, dateOrDash, statusWords } from "./ErpBParts";
 
 export type SalesDocObjectScreenData = { kind: DocKind; result: DocData };
 
-export default function SalesDocObjectScreen({ shell, data }: ShellScreenProps<SalesDocObjectScreenData>) {
+export default function SalesDocObjectScreen({ shell, data, params }: ShellScreenProps<SalesDocObjectScreenData>) {
+  const id = params.id ?? "";
   const spec = DOC_SPECS[data.kind];
   const result = data.result;
   const testId = `${data.kind.replace(/_/g, "-")}-object`;
-  if (result.state === "not_allowed" || result.state === "not_synced") return <GateScreen testId={testId} title={spec.label} state={result.state} what={spec.plural.toLowerCase()} />;
+  if (result.state === "not_allowed" || result.state === "not_synced") return <GateScreen testId={testId} title={spec.label} state={result.state} what={spec.plural.toLowerCase()} shell={shell} serverPath={`${spec.base}/${encodeURIComponent(id)}`} />;
   if (result.state === "not_found") {
     return (
       <Screen testId={testId} state="not_found" title={spec.label}>
         <p className="mt-3 text-sm text-px-muted">This {spec.label.toLowerCase()} is not in the copy on this laptop. It may not have been copied yet.</p>
         <p className="mt-3 text-sm"><a className="underline underline-offset-2" href={spec.base}>Back to {spec.plural}</a></p>
+        <OpenFromServer shell={shell} testId={testId} what={`this ${spec.label.toLowerCase()}`} path={`${spec.base}/${encodeURIComponent(id)}`} backHref={spec.base} backLabel={`Back to ${spec.plural}`} />
       </Screen>
     );
   }

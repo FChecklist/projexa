@@ -7,20 +7,44 @@ import type { ReactNode } from "react";
 import { formatAmount } from "@/lib/boq-helpers";
 import { orgStateWords } from "../../org-local";
 import type { ShellApi } from "../types";
+import { serverPageUrl } from "../paths";
 import { DASH, Screen, ServerOnly } from "./DeliveryParts";
 import { formatInBase, type Currency } from "./org-masters";
 
 export const MAX_ROWS = 500;
 
 /** The calm answer when the kind is not there: the role is not sent it, or it has not been copied yet. Never an error. */
-export function GateScreen({ testId, title, state, what }: { testId: string; title: string; state: "not_allowed" | "not_synced"; what: string }) {
+export function GateScreen({ testId, title, state, what, shell, serverPath }: { testId: string; title: string; state: "not_allowed" | "not_synced"; what: string; shell?: ShellApi; serverPath?: string }) {
   return (
     <Screen testId={testId} state={state} title={title}>
       <p className="mt-3 text-sm text-px-muted">{orgStateWords(state, what)}</p>
+      {state === "not_synced" && shell && serverPath ? <OpenFromServer shell={shell} testId={testId} what={what} path={serverPath} backHref="/dashboard" backLabel="Back to the dashboard" /> : null}
     </Screen>
   );
 }
 
+/**
+ * Never a dead end (R-62): a page whose rows are not on this laptop (yet) opens from the server while online, with the exact link and
+ * a way back; offline it says plainly that it opens once connected. target=_top is a real page load (the shell's link interceptor
+ * leaves it to the browser, as ServerOnly does).
+ */
+export function OpenFromServer({ shell, testId, what, path, backHref, backLabel }: { shell: ShellApi; testId: string; what: string; path: string; backHref: string; backLabel: string }) {
+  const online = shell.connectivity === "online";
+  return (
+    <div className="mt-3 text-sm text-px-ink" data-testid={`${testId}-open-from-server-note`}>
+      <p className="font-medium">{`${what.charAt(0).toUpperCase()}${what.slice(1)} open from the server`}</p>
+      {online ? (
+        <p className="mt-1 text-px-muted">
+          {"They will appear on this laptop after the next sync. To see them now, "}
+          <a className="text-px-ink underline underline-offset-2" target="_top" data-testid={`${testId}-open-from-server`} href={serverPageUrl({ path, search: "" })}>open {what} from the server</a>.
+        </p>
+      ) : (
+        <p className="mt-1 text-px-muted">They are not on this laptop yet, so they open from the server when you are connected. Connect to the internet and come back to this page.</p>
+      )}
+      <p className="mt-2"><a className="text-px-muted underline underline-offset-2" href={backHref}>{backLabel}</a></p>
+    </div>
+  );
+}
 /** One money figure exactly as the server sent it: "Hidden for your role" when the sync hid it, a dash when it is unknown. */
 export function MoneyCell({ value, hidden, currency }: { value: number | null; hidden: boolean; currency: Currency | null }) {
   if (hidden) return <span className="text-px-muted" data-hidden="1">Hidden for your role</span>;
