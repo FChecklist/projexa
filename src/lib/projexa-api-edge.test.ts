@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { checkApiReadAccess, resolveReadTier, API_READ_POLICY } from "./authz/api-read-policy";
 import { checkApiWriteAccess, API_WRITE_POLICY, resolveWriteTier } from "./authz/api-write-policy";
 import { ALL_ORG_ROLES } from "./authz/roles";
 import { EDGE_EXTRA_ROUTES } from "../../scripts/vercel-route-inventory.mjs";
@@ -45,6 +46,29 @@ describe("the generated edge policy (AUDIT-100 A2)", () => {
       }
     }
     expect(compared).toBeGreaterThan(5_000);
+  }, 120_000);
+
+  test("READ gate: the ported gate decides EXACTLY as src/lib/authz/api-read-policy.ts for every pattern, GET/HEAD/POST and every role", () => {
+    const concrete = Object.keys(API_READ_POLICY).map((pattern) => "/api" + pattern.replace(/\[[^\]]+\]/g, "x1"));
+    const all = ["/api", "/api/unknown", "/api/unknown/deeper/still", ...concrete, ...concrete.map((p) => p + "/extra")];
+    for (const path of all) expect(generated.resolveReadTier(path), path).toBe(resolveReadTier(path));
+    let compared = 0;
+    for (const path of all) {
+      for (const method of ["GET", "HEAD", "get", "POST"]) {
+        for (const role of [...ALL_ORG_ROLES, null, "nonsense"]) {
+          const want = checkApiReadAccess(method, path, role).allowed;
+          const got = generated.checkApiReadAccess(method, path, role).allowed;
+          if (want !== got) throw new Error(`${method} ${path} as ${role}: original ${want}, edge ${got}`);
+          compared++;
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(5_000);
+    // CAN FAIL: the leaked routes really are refused to the two roles that leaked
+    for (const path of ["/api/employees", "/api/accounts", "/api/vendors", "/api/sales-invoices"]) {
+      expect(generated.checkApiReadAccess("GET", path, "client_viewer").allowed, path).toBe(false);
+      expect(generated.checkApiReadAccess("GET", path, "site_engineer").allowed, path).toBe(false);
+    }
   }, 120_000);
 
   test("CAN FAIL: a policy that lets client_viewer write a BOQ line is told apart from the real one", () => {
