@@ -179,17 +179,17 @@ export function TopRail({
         {brand}
       </div>
 
-      <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>
+      <span aria-hidden className="hidden sm:inline" style={{ color: "var(--color-ct-border2)" }}>
         /
       </span>
 
       {/* A-16: whatever the shell hands over -- the org's name, or
           "Organisation unavailable" beside a real Retry button. */}
-      <span className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-ct-slate)" }}>
+      <span className="hidden items-center gap-1.5 text-[12px] sm:flex" style={{ color: "var(--color-ct-slate)" }}>
         {organisation}
       </span>
 
-      <span aria-hidden style={{ color: "var(--color-ct-border2)" }}>
+      <span aria-hidden className="hidden sm:inline" style={{ color: "var(--color-ct-border2)" }}>
         /
       </span>
 
@@ -306,6 +306,7 @@ export function TopRail({
       </div>
 
       <div className="ml-auto flex items-center gap-1">
+        {/* phone width (7 Nov 2026 smoke): the org name, the breadcrumb slashes and (in ViewModeToggle) the view toggle do not fit a 375px header; they return from the sm breakpoint up */}
         {viewToggle}
         {search}
         {alerts}

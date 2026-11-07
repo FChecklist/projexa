@@ -16,7 +16,7 @@ export default function ViewModeToggle() {
     <div
       role="group"
       aria-label="View"
-      className="mr-0 inline-flex sm:mr-2 overflow-hidden rounded-md border"
+      className="mr-2 hidden overflow-hidden sm:inline-flex rounded-md border"
       style={{ borderColor: "var(--color-ct-border2)" }}
     >
       {OPTIONS.map((o, i) => {
@@ -27,7 +27,7 @@ export default function ViewModeToggle() {
             type="button"
             aria-pressed={on}
             onClick={() => setMode(o.mode)}
-            className="px-1.5 py-1 sm:px-2.5 text-[12px] transition-colors"
+            className="px-2.5 py-1 text-[12px] transition-colors"
             style={{
               minHeight: 28,
               background: on ? "var(--color-ct-navy)" : "#fff",
