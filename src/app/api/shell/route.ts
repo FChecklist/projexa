@@ -161,7 +161,8 @@ export const GET = withTiming("GET", async function GET() {
     isNewUser: pillValue?.ok ? Boolean(pillValue.data.isNewUser) : false,
     capabilityTree: treeValue?.ok ? (treeValue.data.nodes ?? []) : [],
     currencies: currencyValue?.ok ? (currencyValue.data.currencies ?? []) : [],
-    vendors: vendorValue?.ok ? (vendorValue.data.vendors ?? []) : [],
+    // The subcontractor list is commercial data: a read-only client_viewer gets none of it (api-read-policy.ts closes GET /api/vendors for them; this bootstrap must not hand it back by another door).
+    vendors: ctx.role !== "client_viewer" && vendorValue?.ok ? (vendorValue.data.vendors ?? []) : [],
     fetchedAt: Date.now(),
     errors,
   };
