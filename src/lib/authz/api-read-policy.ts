@@ -74,7 +74,7 @@ export const API_READ_POLICY: Readonly<Record<string, ReadTier>> = {
   "/email/[token]": "PUBLIC",
   "/employees": "PM_OR_ABOVE",
   "/employees/[id]": "PM_OR_ABOVE",
-  "/exceptions": "PM_OR_ABOVE",
+  "/exceptions": "ANY_ROLE",
   "/expenses": "PM_OR_ABOVE",
   "/ffe": "PM_OR_ABOVE",
   "/ffe/[id]": "PM_OR_ABOVE",
