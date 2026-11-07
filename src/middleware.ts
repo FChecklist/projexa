@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getClaimsWithRetry } from "./lib/supabase/get-claims-with-retry";
 import { createDurableAuthFetch, hasSessionCookie, isTransientAuthError } from "./lib/supabase/durable-auth";
 import { checkApiWriteAccess, MUTATING_METHODS } from "./lib/authz/api-write-policy";
+import { checkApiReadAccess, readNeedsRole } from "./lib/authz/api-read-policy";
+import { checkPageRoleAccess, pageNeedsRole } from "./lib/authz/page-role-policy";
 import { requiresAuthenticatedPage } from "./lib/authz/page-access";
 import { isLandingRoute, isStaticPublicRoute, localisedMarketingPath } from "./lib/public-page-cache";
 import { canonicalHostRedirect } from "./lib/canonical-host";
@@ -191,7 +193,7 @@ export async function middleware(request: NextRequest) {
   // COST IS BOUNDED TO WRITES: the membership lookup below only runs for
   // POST/PUT/PATCH/DELETE on /api/*, never for a GET or a page navigation, so
   // the read path this middleware handles is unchanged.
-  if (pathname.startsWith("/api/") && MUTATING_METHODS.has(request.method) && userId && supabase) {
+  if (pathname.startsWith("/api/") && (MUTATING_METHODS.has(request.method) || readNeedsRole(request.method, pathname)) && userId && supabase) {
     // R81_F03: ordered the SAME way as auth-guard.ts's requireAuth() (see
     // that function's own comment for the full reasoning) -- without this,
     // a multi-org user could be role-gated here against a DIFFERENT org
@@ -216,7 +218,7 @@ export async function middleware(request: NextRequest) {
     }
 
     const role = (membership as { role?: string } | null)?.role ?? null;
-    const decision = checkApiWriteAccess(request.method, pathname, role);
+    const decision = MUTATING_METHODS.has(request.method) ? checkApiWriteAccess(request.method, pathname, role) : checkApiReadAccess(request.method, pathname, role);
     if (!decision.allowed) {
       // Byte-identical to requireRole()'s own body so the 13 routes that
       // already gate themselves and the 146 gated here are indistinguishable
@@ -250,6 +252,25 @@ export async function middleware(request: NextRequest) {
     // The whole address, query included: a deep link (?projectId=..&focus=..) must come back exactly as it was.
     url.searchParams.set("redirectTo", request.nextUrl.pathname + request.nextUrl.search);
     return withLocaleCookie(NextResponse.redirect(url), request, locale);
+  }
+
+  // Role gate for finance / HR / commercial SCREENS (page-role-policy.ts): a role that may not read their data is sent to the dashboard.
+  // The membership lookup runs only for those few prefixes, never for the screens every role uses. The API read gate above is the real boundary.
+  if (userId && supabase && !pathname.startsWith("/api/") && pageNeedsRole(pathname)) {
+    const { data: pageMembership, error: pageMembershipError } = await supabase
+      .from("memberships")
+      .select("role")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const pageRole = pageMembershipError ? null : ((pageMembership as { role?: string } | null)?.role ?? null);
+    if (!checkPageRoleAccess(pathname, pageRole).allowed) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return withLocaleCookie(NextResponse.redirect(url), request, locale);
+    }
   }
 
   // R67 J-01 (audit R-246): the "already logged in -> go to the app, not the
