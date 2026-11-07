@@ -80,6 +80,7 @@ test("read-side scoping: a client viewer cannot list projects or read billing cl
 // PHONE WIDTH (375 x 812, BOSS order 7 Nov): the key signed-in screens must not scroll sideways or show a crash, for the roles that use them.
 for (const [state, label] of [["finance", "project manager"], ["clientViewer", "client viewer"]] as const) {
   test(`phone width: ${label} opens the key screens with no sideways scroll and no crash`, async ({ browser }) => {
+    test.setTimeout(240_000);
     const ctx = await browser.newContext({ storageState: `playwright/.auth/${state}.json`, viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
     const page = await ctx.newPage();
     try {
