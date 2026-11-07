@@ -136,6 +136,8 @@ export const API_READ_POLICY: Readonly<Record<string, ReadTier>> = {
   "/org/invites": "ORG_ADMIN",
   "/org/invites/preview": "PUBLIC",
   "/org/own-ai": "ORG_ADMIN",
+  // edge-only route (served by the projexa-api Edge Function, no Next route file): any signed-in person of the organisation can read the state
+  "/org/internal-ai": "ANY_ROLE",
   "/org/own-ai/people": "ORG_ADMIN",
   "/org/repair": "ORG_ADMIN",
   "/organization": "ANY_ROLE",

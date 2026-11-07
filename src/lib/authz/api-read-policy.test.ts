@@ -33,7 +33,8 @@ describe("API_READ_POLICY covers the real GET route surface", () => {
     expect(missing).toEqual([]);
   });
   test("no policy entry outlives its route", () => {
-    const stale = Object.keys(API_READ_POLICY).filter((r) => !getRoutes.includes(r));
+    const EDGE_ONLY = ["/org/internal-ai"]; // served only by the projexa-api Edge Function (routes.json edge_only), no Next route file
+    const stale = Object.keys(API_READ_POLICY).filter((r) => !getRoutes.includes(r) && !EDGE_ONLY.includes(r));
     expect(stale).toEqual([]);
   });
 });
