@@ -105684,31 +105684,12 @@
     }
    },
    "expect": {
-    "status": 200,
+    "status": 403,
     "body": {
-     "ok": true,
-     "figures": {
-      "contractValue": "1000.00",
-      "percentByValue": 42
-     },
-     "rows": [
-      {
-       "id": "r1"
-      }
-     ]
+     "error": "Forbidden: your role does not permit this action"
     },
     "retry_after": null,
-    "upstream_calls": [
-     {
-      "method": "GET",
-      "path": "/billing-claims?projectId=v+projectId&all=v+all",
-      "authorization": "Bearer key-org-a",
-      "acting_user": "00000000-0000-4000-8000-000000000004",
-      "acting_email": "site@a.test",
-      "content_type": null,
-      "body": null
-     }
-    ]
+    "upstream_calls": []
    }
   },
   {
@@ -105735,31 +105716,12 @@
     }
    },
    "expect": {
-    "status": 200,
+    "status": 403,
     "body": {
-     "ok": true,
-     "figures": {
-      "contractValue": "1000.00",
-      "percentByValue": 42
-     },
-     "rows": [
-      {
-       "id": "r1"
-      }
-     ]
+     "error": "Forbidden: your role does not permit this action"
     },
     "retry_after": null,
-    "upstream_calls": [
-     {
-      "method": "GET",
-      "path": "/billing-claims?projectId=v+projectId&all=v+all",
-      "authorization": "Bearer key-org-a",
-      "acting_user": "00000000-0000-4000-8000-000000000005",
-      "acting_email": "member@a.test",
-      "content_type": null,
-      "body": null
-     }
-    ]
+    "upstream_calls": []
    }
   },
   {
@@ -105786,31 +105748,12 @@
     }
    },
    "expect": {
-    "status": 200,
+    "status": 403,
     "body": {
-     "ok": true,
-     "figures": {
-      "contractValue": "1000.00",
-      "percentByValue": 42
-     },
-     "rows": [
-      {
-       "id": "r1"
-      }
-     ]
+     "error": "Forbidden: your role does not permit this action"
     },
     "retry_after": null,
-    "upstream_calls": [
-     {
-      "method": "GET",
-      "path": "/billing-claims?projectId=v+projectId&all=v+all",
-      "authorization": "Bearer key-org-a",
-      "acting_user": "00000000-0000-4000-8000-000000000006",
-      "acting_email": null,
-      "content_type": null,
-      "body": null
-     }
-    ]
+    "upstream_calls": []
    }
   },
   {
@@ -112979,22 +112922,12 @@
     }
    },
    "expect": {
-    "status": 200,
+    "status": 403,
     "body": {
-     "projects": []
+     "error": "Forbidden: your role does not permit this action"
     },
     "retry_after": null,
-    "upstream_calls": [
-     {
-      "method": "GET",
-      "path": "/dashboard",
-      "authorization": "Bearer key-org-a",
-      "acting_user": "00000000-0000-4000-8000-000000000006",
-      "acting_email": null,
-      "content_type": null,
-      "body": null
-     }
-    ]
+    "upstream_calls": []
    }
   },
   {
@@ -124879,22 +124812,12 @@
     }
    },
    "expect": {
-    "status": 200,
+    "status": 403,
     "body": {
-     "projects": []
+     "error": "Forbidden: your role does not permit this action"
     },
     "retry_after": null,
-    "upstream_calls": [
-     {
-      "method": "GET",
-      "path": "/projects",
-      "authorization": "Bearer key-org-a",
-      "acting_user": "00000000-0000-4000-8000-000000000006",
-      "acting_email": null,
-      "content_type": null,
-      "body": null
-     }
-    ]
+    "upstream_calls": []
    }
   },
   {
@@ -150433,26 +150356,12 @@
     }
    },
    "expect": {
-    "status": 200,
+    "status": 403,
     "body": {
-     "projects": [
-      {
-       "id": "a"
-      }
-     ]
+     "error": "Forbidden: your role does not permit this action"
     },
     "retry_after": null,
-    "upstream_calls": [
-     {
-      "method": "GET",
-      "path": "/dashboard",
-      "authorization": "Bearer key-org-a",
-      "acting_user": "00000000-0000-4000-8000-000000000006",
-      "acting_email": null,
-      "content_type": null,
-      "body": null
-     }
-    ]
+    "upstream_calls": []
    }
   },
   {

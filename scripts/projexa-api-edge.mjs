@@ -19,6 +19,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { API_WRITE_POLICY, DEFAULT_WRITE_TIER, MUTATING_METHODS } from "../src/lib/authz/api-write-policy.ts";
+import { API_READ_POLICY, DEFAULT_READ_TIER, READ_METHODS } from "../src/lib/authz/api-read-policy.ts";
 import { ROLE_GROUPS } from "../src/lib/authz/roles.ts";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -164,6 +165,10 @@ export function sourceData() {
     roleGroups: Object.fromEntries(Object.entries(ROLE_GROUPS).map(([k, v]) => [k, [...v]])),
     policy: Object.entries(API_WRITE_POLICY), // ORDER MATTERS: resolveWriteTier returns the first match
     defaultTier: DEFAULT_WRITE_TIER,
+    // READ policy (static patterns before wildcard ones, the order resolveReadTier tries them in)
+    readPolicy: Object.entries(API_READ_POLICY).sort((a, b) => Number(a[0].includes("[")) - Number(b[0].includes("["))),
+    defaultReadTier: DEFAULT_READ_TIER,
+    readMethods: [...READ_METHODS].sort(),
     mutatingMethods: [...MUTATING_METHODS].sort(),
     edgeRoutes: edgeRoutes(spec),
     shadowRoutes: shadowRoutes(spec, inventory),
@@ -190,6 +195,12 @@ export function render(data = sourceData()) {
   for (const [p, t] of data.policy) lines.push(`  [${j(p)}, ${j(t)}],`);
   lines.push("]");
   lines.push(`export const DEFAULT_WRITE_TIER = ${j(data.defaultTier)}`);
+  lines.push("/** [pattern, tier] for GET/HEAD, static patterns before wildcard ones (src/lib/authz/api-read-policy.ts). */");
+  lines.push("export const API_READ_POLICY: ReadonlyArray<readonly [string, string]> = [");
+  for (const [p, t] of data.readPolicy) lines.push(`  [${j(p)}, ${j(t)}],`);
+  lines.push("]");
+  lines.push(`export const DEFAULT_READ_TIER = ${j(data.defaultReadTier)}`);
+  lines.push(`export const READ_METHODS: ReadonlySet<string> = new Set(${j(data.readMethods)})`);
   lines.push(`export const MUTATING_METHODS: ReadonlySet<string> = new Set(${j(data.mutatingMethods)})`);
   lines.push("");
   lines.push("export type EdgeMethodSpec = {");
@@ -216,7 +227,7 @@ export function render(data = sourceData()) {
   lines.push("");
   lines.push("/** The data SOURCE_SHA256 is computed over (both repos' tests recompute the hash from this). */");
   lines.push("export function sourceData() {");
-  lines.push("  return { roleGroups: ROLE_GROUPS, policy: API_WRITE_POLICY, defaultTier: DEFAULT_WRITE_TIER, mutatingMethods: [...MUTATING_METHODS], edgeRoutes: EDGE_ROUTES, shadowRoutes: SHADOW_ROUTES }");
+  lines.push("  return { roleGroups: ROLE_GROUPS, policy: API_WRITE_POLICY, defaultTier: DEFAULT_WRITE_TIER, readPolicy: API_READ_POLICY, defaultReadTier: DEFAULT_READ_TIER, readMethods: [...READ_METHODS], mutatingMethods: [...MUTATING_METHODS], edgeRoutes: EDGE_ROUTES, shadowRoutes: SHADOW_ROUTES }");
   lines.push("}");
   lines.push("");
   lines.push(PORTED_DECISION);
@@ -254,6 +265,27 @@ export function checkApiWriteAccess(method: string, pathname: string, role: stri
   const allowedRoles = ROLE_GROUPS[tier] ?? []
   if (allowedRoles.includes(role)) return { allowed: true }
   return { allowed: false, tier }
+}
+export function resolveReadTier(pathname: string): string {
+  const segments = pathname.replace(/^\\/api/, "").split("/").filter(Boolean)
+  if (segments.length === 0) return DEFAULT_READ_TIER
+  for (const [pattern, tier] of API_READ_POLICY) if (matchesPattern(pattern, segments)) return tier
+  let best: { depth: number; tier: string } | null = null
+  for (const [pattern, tier] of API_READ_POLICY) {
+    const depth = pattern.split("/").filter(Boolean).length
+    if (depth >= segments.length || !matchesPattern(pattern, segments.slice(0, depth))) continue
+    if (!best || depth > best.depth) best = { depth, tier }
+  }
+  return best?.tier ?? DEFAULT_READ_TIER
+}
+
+/** Same as checkApiReadAccess (api-read-policy.ts): PUBLIC/ANY_ROLE and a missing membership pass; otherwise the role must be in the tier's group. */
+export function checkApiReadAccess(method: string, pathname: string, role: string | null): { allowed: true } | { allowed: false; tier: string } {
+  if (!READ_METHODS.has(method.toUpperCase())) return { allowed: true }
+  const tier = resolveReadTier(pathname)
+  if (tier === "PUBLIC" || tier === "ANY_ROLE") return { allowed: true }
+  if (role == null) return { allowed: true }
+  return (ROLE_GROUPS[tier] ?? []).includes(role) ? { allowed: true } : { allowed: false, tier }
 }`;
 
 /** The hash both repos' tests recompute from a loaded generated module (canonical: same JSON as render()). */
