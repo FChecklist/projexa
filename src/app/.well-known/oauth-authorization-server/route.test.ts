@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { OAUTH_BASE, OAUTH_ISSUER } from "@/lib/connectors/consent"
-import { GET } from "./route"
+import { GET, POST } from "./route"
 
 // RFC 8414 metadata that AI tools read before they sign a person in. The sign-in service (compliance-tracker) serves the same document.
 describe("/.well-known/oauth-authorization-server", () => {
@@ -19,5 +19,10 @@ describe("/.well-known/oauth-authorization-server", () => {
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: ["projexa"],
     })
+  })
+  test("a POST is refused with 405 and Allow: GET, not a server error", async () => {
+    const res = POST()
+    expect(res.status).toBe(405)
+    expect(res.headers.get("allow")).toBe("GET")
   })
 })

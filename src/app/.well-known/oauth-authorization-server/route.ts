@@ -19,3 +19,10 @@ export function GET() {
     { headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" } },
   );
 }
+
+// Anything but GET gets a plain 405 with the allowed method, never a server error (smoke run 2026-11-07: an empty POST answered 500).
+const NOT_ALLOWED = () => new NextResponse(JSON.stringify({ error: "method_not_allowed" }), { status: 405, headers: { Allow: "GET", "Content-Type": "application/json" } });
+export const POST = NOT_ALLOWED;
+export const PUT = NOT_ALLOWED;
+export const PATCH = NOT_ALLOWED;
+export const DELETE = NOT_ALLOWED;
