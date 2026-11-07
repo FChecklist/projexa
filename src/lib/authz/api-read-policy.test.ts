@@ -52,8 +52,18 @@ describe("the finance / HR / commercial leak found on 2026-11-07 is closed", () 
     expect(checkApiReadAccess("GET", "/api/accounts", "pm").allowed).toBe(false);
     expect(checkApiReadAccess("GET", "/api/accounts", "admin").allowed).toBe(true);
   });
+  test("PROJECT SCOPING (rule B, BOSS 7 Nov): a client viewer cannot list projects or read billing claims, only open a project dashboard by link", () => {
+    for (const p of ["/api/projects", "/api/projects/overview", "/api/billing-claims", "/api/billing-claims/c-1"]) {
+      expect(checkApiReadAccess("GET", p, "client_viewer").allowed, p).toBe(false);
+      for (const role of ["owner", "admin", "pm", "site_engineer", "member"]) {
+        expect(checkApiReadAccess("GET", p, role).allowed === (p.includes("billing") ? ["owner", "admin", "pm"].includes(role) : true), p + " as " + role).toBe(true);
+      }
+    }
+    expect(checkApiReadAccess("GET", "/api/dashboard/project/p-1", "client_viewer").allowed).toBe(true);
+    expect(checkApiReadAccess("GET", "/api/projects/p-1/category-distribution", "client_viewer").allowed).toBe(true);
+  });
   test("a client viewer can still read the project delivery data they are there to see", () => {
-    for (const p of ["/api/scope", "/api/work-progress", "/api/dashboard/project/x", "/api/schedule/gantt", "/api/documents", "/api/drawings", "/api/change-orders", "/api/reports/catalog", "/api/notifications", "/api/projects/overview"]) {
+    for (const p of ["/api/scope", "/api/work-progress", "/api/dashboard/project/x", "/api/schedule/gantt", "/api/documents", "/api/drawings", "/api/change-orders", "/api/reports/catalog", "/api/notifications"]) {
       expect(checkApiReadAccess("GET", p, "client_viewer").allowed).toBe(true);
     }
   });

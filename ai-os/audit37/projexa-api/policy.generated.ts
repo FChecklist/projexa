@@ -2,7 +2,7 @@
 //   src/lib/authz/api-write-policy.ts, src/lib/authz/roles.ts, ai-os/audit37/projexa-api-routes.json, ai-os/audit37/vercel-route-inventory.json
 // The SAME bytes live in projexa ai-os/audit37/projexa-api/policy.generated.ts and compliance-tracker supabase/functions/projexa-api/.
 // SOURCE_SHA256 is the hash of the data below; both repos' tests recompute it, so a hand edit of either copy fails CI.
-export const SOURCE_SHA256 = "58dc31b010482252daab95ef68828251ad057de9bf53ad7e6920ce9703110582"
+export const SOURCE_SHA256 = "a9651d59dcf7c6e8856d48f3118fdef03eaef7ccfa38f0709466181630e22787"
 
 export const ROLE_GROUPS: Readonly<Record<string, readonly string[]>> = {"ORG_ADMIN":["owner","admin"],"PM_OR_ABOVE":["owner","admin","pm"],"FIELD":["owner","admin","pm","site_engineer"],"ANY_MEMBER":["owner","admin","pm","site_engineer","member"],"ANY_ROLE":["owner","admin","pm","site_engineer","member","client_viewer"]}
 
@@ -248,7 +248,7 @@ export const API_READ_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/audit-engagements", "ORG_ADMIN"],
   ["/balance-sheet", "ORG_ADMIN"],
   ["/bank-reconciliation", "ORG_ADMIN"],
-  ["/billing-claims", "ANY_ROLE"],
+  ["/billing-claims", "PM_OR_ABOVE"],
   ["/board", "ANY_MEMBER"],
   ["/capability-tree", "ANY_ROLE"],
   ["/chain-options", "ANY_ROLE"],
@@ -334,9 +334,9 @@ export const API_READ_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/profit-and-loss", "ORG_ADMIN"],
   ["/profit-and-loss-by-project", "ORG_ADMIN"],
   ["/project-budgets", "PM_OR_ABOVE"],
-  ["/projects", "ANY_ROLE"],
+  ["/projects", "ANY_MEMBER"],
   ["/projects/from-document", "ANY_MEMBER"],
-  ["/projects/overview", "ANY_ROLE"],
+  ["/projects/overview", "ANY_MEMBER"],
   ["/punch-list", "ANY_ROLE"],
   ["/purchase-orders", "PM_OR_ABOVE"],
   ["/quotations", "PM_OR_ABOVE"],
@@ -385,7 +385,7 @@ export const API_READ_POLICY: ReadonlyArray<readonly [string, string]> = [
   ["/work-progress/report", "ANY_ROLE"],
   ["/work-progress/report/pdf", "ANY_ROLE"],
   ["/work-progress/report/xlsx", "ANY_ROLE"],
-  ["/billing-claims/[id]", "ANY_ROLE"],
+  ["/billing-claims/[id]", "PM_OR_ABOVE"],
   ["/change-orders/[id]", "ANY_ROLE"],
   ["/change-orders/[id]/signature-status", "ANY_ROLE"],
   ["/client-logs/issues/[id]", "ANY_ROLE"],
