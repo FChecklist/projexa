@@ -31,3 +31,6 @@ thin client for).
 *Added 2026-09-01 as part of a code-quality inspection pass (see
 `public.code_quality_inspection_findings` in the `verdian-ai` Supabase
 project) that found this repo had no README.md at all.*
+
+
+See [KNOWLEDGE-MAP.md](KNOWLEDGE-MAP.md) for what this repository is for and what the other repositories are for (updated 14 Nov 2026).
