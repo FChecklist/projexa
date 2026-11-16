@@ -8,7 +8,7 @@
 import { readScopeHeaders } from "@/lib/scope-list-reads";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ScreenFrame, CompareScreen, type ScreenColumn, type CompareResult, type CompareChangedRow } from "@fchecklist/veridian-ui-kit/screens";
+import { ScreenFrame, CompareScreen, type ScreenColumn } from "@fchecklist/veridian-ui-kit/screens";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { fetchJson } from "@/lib/fetch-json";
 // GUIDED ERRORS (G1): a comparison that cannot be made is told in the inline panel (what happened, why, what to do, the way to the right place).
 import { ActionFailurePanel, type ActionFailureState } from "@/components/ActionFailure";
 import { type Boq, type BoqComparison, formatVariation } from "@/lib/boq-helpers";
+import { toCompareResult } from "@/lib/boq-compare-result";
 
 const DEFAULT_COMPARE_COLUMNS: ScreenColumn[] = [
   { field: "description", label: "Description", type: "text", importance: "High" },
@@ -25,18 +26,6 @@ const DEFAULT_COMPARE_COLUMNS: ScreenColumn[] = [
   { field: "rate", label: "Rate", type: "number", importance: "High" },
   { field: "amount", label: "Amount", type: "number", importance: "High" },
 ];
-
-function toCompareResult(cmp: BoqComparison): CompareResult {
-  const changed: CompareChangedRow[] = cmp.changed.map((c) => {
-    const changedFields: string[] = [];
-    if (c.quantityChange !== 0) changedFields.push("quantity");
-    if (c.rateChange !== 0) changedFields.push("rate");
-    if (c.quantityChange !== 0 || c.rateChange !== 0 || c.breakdownPercentageChange !== 0) changedFields.push("amount");
-    if (c.breakdownPercentageChange !== 0) changedFields.push("breakdownPercentage");
-    return { key: c.key, previous: c.previous, current: c.current, changedFields };
-  });
-  return { added: cmp.added, removed: cmp.removed, changed, warnings: cmp.warnings };
-}
 
 export default function ScopeCompareClient({ boqId, compareColumns }: { boqId: string; compareColumns?: ScreenColumn[] | null }) {
   const router = useRouter();
