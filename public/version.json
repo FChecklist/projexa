@@ -1,0 +1,14 @@
+{
+  "product": "PROJEXA",
+  "version": "0.1.0",
+  "releasedAt": "2026-11-21T06:02:06Z",
+  "releasedAtIST": "2026-11-21T11:32:06+05:30",
+  "commit": "4ffdca272ab6ce4dd7a179c55b71180bf43f3efc",
+  "changes": [
+    {
+      "version": "0.1.0",
+      "releasedAt": "2026-11-21T06:02:06Z",
+      "notes": "Baseline. Version numbering starts here: 0.1.0 is the version already declared in package.json, and 'commit' is the main commit this baseline describes. Adds this version.json and a CHANGELOG entry. No behaviour change."
+    }
+  ]
+}

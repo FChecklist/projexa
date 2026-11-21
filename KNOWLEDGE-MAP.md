@@ -10,6 +10,19 @@ Written by BOSS for every repository, so any session knows what is done and what
 
 - Status: Live. A separate repository from compliance-tracker.
 
+## Version (added 21 Nov 2026)
+
+- Current version: **0.1.0** (matches `package.json`).
+- The version file is `public/version.json`, served as `/version.json` on the site. It holds product, version, releasedAt, releasedAtIST, commit and a `changes[]` list of `{version, releasedAt, notes}`.
+- Release notes live in `CHANGELOG.md` (newest entry first, append only; never rewrite old entries).
+- How to bump, for every deployed change: pick the new MAJOR.MINOR.PATCH (PATCH for fixes, MINOR for new features, MAJOR for breaking changes), then in the same PR update all of these together:
+  - `package.json` `version`
+  - `public/version.json` (new `version`, `releasedAt`, `releasedAtIST`, `commit`, and a new first item in `changes[]`)
+  - a new entry at the top of `CHANGELOG.md`
+  - the "Current version" line in this section
+- The `commit` field is the main commit the release describes; it cannot name the PR's own merge commit, so use the latest commit on `main` the release builds on.
+- Deploys are owner-gated (see `VERCEL_DEPLOY_OWNER_GUIDE.md`). A version bump in a PR is not a deploy.
+
 ## All products and repositories
 
 | Repository | Product | What it is for | Status 14 Nov 2026 |
