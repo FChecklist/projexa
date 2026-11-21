@@ -1,5 +1,21 @@
 # Changelog — projexa
 
+## 0.1.0 — version numbering baseline (2026-11-21)
+Version numbering is now mandatory for every deployed change. This entry
+starts it; the older entries below carry dates, not version numbers, and are
+left as they were.
+
+- **Version chosen: 0.1.0** — the version already declared in `package.json`.
+  It was never bumped before, so it is the real current version; no new
+  number was invented.
+- Added `public/version.json` (served at `/version.json`) with the product
+  name, version, release time (UTC and IST), the commit it describes
+  (`4ffdca2`, the tip of `main` when this was written) and a `changes[]` list.
+- Added a Version section to `KNOWLEDGE-MAP.md` explaining where the file
+  lives and how to bump.
+- Docs and metadata only. No behaviour change, no deploy, no change to
+  `vercel.json`, env or deploy config.
+
 ## R80: rewrite 22 stale E2E specs, fix 3 real product bugs, split the left panel into 3 equal thirds (2026-09-08)
 Owner's "R80" work order: exhaustive wiring testing with Playwright, on
 LOCAL + SUPABASE + GITHUB (production deploy is owner-gated and was NOT
