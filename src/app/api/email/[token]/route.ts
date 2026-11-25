@@ -36,8 +36,10 @@ function page(title: string, body: string, status: number): NextResponse {
 <style>body{font-family:Inter,Arial,sans-serif;background:#FFFDF9;margin:0;padding:48px 20px;color:#1C2B3A}
 .card{max-width:420px;margin:0 auto;background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:28px;text-align:center}
 h1{font-size:18px;margin:0 0 10px}p{font-size:14px;color:#4B5568;line-height:1.5;margin:0}
-button{display:inline-block;padding:10px 24px;background:#1C2B3A;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer}</style></head>
-<body><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
+button{display:inline-block;padding:10px 24px;background:#1C2B3A;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer}
+.mark139{position:absolute;top:0;left:0;right:0;margin:0;padding:1px 0 0;text-align:center;line-height:1;pointer-events:none;user-select:none;z-index:2147483647;font-family:"Noto Sans Devanagari","Mukta","Nirmala UI","Mangal","Kohinoor Devanagari","Devanagari Sangam MN",sans-serif;font-size:6px;font-weight:700;color:#0B2A6B}
+.mark139 span{display:inline-block;border-bottom:.5px solid #7A1010;padding-bottom:.5px}</style></head>
+<body><div class="mark139" lang="hi" aria-hidden="true"><span>१३९</span></div><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
   return new NextResponse(html, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
@@ -47,8 +49,10 @@ function confirmPage(action: OneClickAction): NextResponse {
 <style>body{font-family:Inter,Arial,sans-serif;background:#FFFDF9;margin:0;padding:48px 20px;color:#1C2B3A}
 .card{max-width:420px;margin:0 auto;background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:28px;text-align:center}
 h1{font-size:18px;margin:0 0 10px}p{font-size:14px;color:#4B5568;line-height:1.5;margin:0 0 20px}
-button{display:inline-block;padding:10px 24px;background:#1C2B3A;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer}</style></head>
-<body><div class="card"><h1>Confirm</h1><p>You're about to <strong>${ACTION_LABELS[action]}</strong>. This link cannot be used again after you confirm.</p>
+button{display:inline-block;padding:10px 24px;background:#1C2B3A;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer}
+.mark139{position:absolute;top:0;left:0;right:0;margin:0;padding:1px 0 0;text-align:center;line-height:1;pointer-events:none;user-select:none;z-index:2147483647;font-family:"Noto Sans Devanagari","Mukta","Nirmala UI","Mangal","Kohinoor Devanagari","Devanagari Sangam MN",sans-serif;font-size:6px;font-weight:700;color:#0B2A6B}
+.mark139 span{display:inline-block;border-bottom:.5px solid #7A1010;padding-bottom:.5px}</style></head>
+<body><div class="mark139" lang="hi" aria-hidden="true"><span>१३९</span></div><div class="card"><h1>Confirm</h1><p>You're about to <strong>${ACTION_LABELS[action]}</strong>. This link cannot be used again after you confirm.</p>
 <form method="POST"><button type="submit">Confirm</button></form></div></body></html>`;
   return new NextResponse(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
 }

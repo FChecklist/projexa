@@ -1,5 +1,12 @@
 # Changelog — projexa
 
+## 0.1.1: the small mark "१३९" at the top centre of every page (2026-11-25)
+Owner order, approved 25 Nov 2026: three Devanagari numerals at the very top centre of every page, 6px bold dark blue `#0B2A6B`
+with a hairline dark red `#7A1010` underline; absolute, no clicks, hidden from screen readers and copy. Added to the root layout
+(and `globals.css`), `global-error.tsx`, the sign-in-unavailable page in `middleware.ts`, the offline page in `sw-core.ts`, both
+pages of `api/email/[token]`, the static not-found page in `scripts/stage-static-pages.mjs`, `public/connect-ai.html` and the
+extension `popup.html`. Guard test: `src/lib/mark139.test.ts`. No other change.
+
 ## R80: rewrite 22 stale E2E specs, fix 3 real product bugs, split the left panel into 3 equal thirds (2026-09-08)
 Owner's "R80" work order: exhaustive wiring testing with Playwright, on
 LOCAL + SUPABASE + GITHUB (production deploy is owner-gated and was NOT
