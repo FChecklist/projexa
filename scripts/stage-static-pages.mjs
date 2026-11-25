@@ -49,7 +49,7 @@ export const HEADERS = `# AUDIT-100 B60 -- written by scripts/stage-static-pages
   Cache-Control: no-cache
 `;
 
-export const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not found</title></head><body><p>Not found.</p></body></html>\n`;
+export const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Not found</title><style>.mark139{position:absolute;top:0;left:0;right:0;margin:0;padding:1px 0 0;text-align:center;line-height:1;pointer-events:none;user-select:none;z-index:2147483647;font-family:"Noto Sans Devanagari","Mukta","Nirmala UI","Mangal","Kohinoor Devanagari","Devanagari Sangam MN",sans-serif;font-size:6px;font-weight:700;color:#0B2A6B}.mark139 span{display:inline-block;border-bottom:.5px solid #7A1010;padding-bottom:.5px}</style></head><body><div class="mark139" lang="hi" aria-hidden="true"><span>१३९</span></div><p>Not found.</p></body></html>\n`;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");

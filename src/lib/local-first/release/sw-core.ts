@@ -159,8 +159,8 @@ export function createSwCore(scope: SwScopeLike, config: SwCoreConfig): SwCore {
 
   function offlinePage(): Response {
     const html =
-      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PROJEXA</title></head>' +
-      '<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;color:#1c2b3a"><h1 style="font-size:1.25rem">PROJEXA is not saved on this laptop yet</h1>' +
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PROJEXA</title><style>.mark139{position:absolute;top:0;left:0;right:0;margin:0;padding:1px 0 0;text-align:center;line-height:1;pointer-events:none;user-select:none;z-index:2147483647;font-family:"Noto Sans Devanagari","Mukta","Nirmala UI","Mangal","Kohinoor Devanagari","Devanagari Sangam MN",sans-serif;font-size:6px;font-weight:700;color:#0B2A6B}.mark139 span{display:inline-block;border-bottom:.5px solid #7A1010;padding-bottom:.5px}</style></head>' +
+      '<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;color:#1c2b3a"><div class="mark139" lang="hi" aria-hidden="true"><span>१३९</span></div><h1 style="font-size:1.25rem">PROJEXA is not saved on this laptop yet</h1>' +
       "<p>Open PROJEXA once while you are online. It will save itself to this laptop, and after that it keeps working without a connection.</p></body></html>";
     return new Response(html, { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }

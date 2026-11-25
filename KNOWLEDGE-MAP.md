@@ -10,6 +10,8 @@ Written by BOSS for every repository, so any session knows what is done and what
 
 - Status: Live. A separate repository from compliance-tracker.
 
+- Version 0.1.1 (25 Nov 2026): the small mark १३९ at the top centre of every page; guard in `src/lib/mark139.test.ts`.
+
 ## All products and repositories
 
 | Repository | Product | What it is for | Status 14 Nov 2026 |
